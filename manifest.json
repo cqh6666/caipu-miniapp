@@ -54,6 +54,7 @@
         "setting" : {
             "urlCheck" : false
         },
+        "mergeVirtualHostAttributes" : true,
         "usingComponents" : true
     },
     "mp-alipay" : {
@@ -63,6 +64,7 @@
         "usingComponents" : true
     },
     "mp-toutiao" : {
+        "mergeVirtualHostAttributes" : true,
         "usingComponents" : true
     },
     "uniStatistics" : {

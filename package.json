@@ -1,0 +1,25 @@
+{
+  "name": "caipu-miniapp",
+  "version": "1.0.0",
+  "description": "一个基于 `uni-app` 的微信小程序项目，当前仓库处于初始化阶段，默认页面仍是模板页。",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cqh6666/caipu-miniapp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cqh6666/caipu-miniapp/issues"
+  },
+  "homepage": "https://github.com/cqh6666/caipu-miniapp#readme",
+  "dependencies": {
+    "clipboard": "^2.0.11",
+    "dayjs": "^1.11.19",
+    "uview-plus": "^3.7.13"
+  }
+}
