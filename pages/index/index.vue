@@ -24,6 +24,28 @@
 						</view>
 					</view>
 
+					<view class="meal-tabs">
+						<view
+							v-for="tab in mealTabs"
+							:key="tab.value"
+							class="meal-tab"
+							:class="{ 'meal-tab--active': activeMealType === tab.value }"
+							@tap="activeMealType = tab.value"
+						>
+							<view class="meal-tab__left">
+								<view class="meal-tab__icon-shell">
+									<up-icon
+										:name="tab.icon"
+										size="12"
+										:color="activeMealType === tab.value ? tab.activeColor : '#8e8479'"
+									></up-icon>
+								</view>
+								<text class="meal-tab__text">{{ tab.label }}</text>
+							</view>
+							<text class="meal-tab__count">{{ mealTypeCount(tab.value) }}</text>
+						</view>
+					</view>
+
 					<scroll-view class="status-scroll" scroll-x>
 						<view class="status-track">
 							<view
@@ -47,7 +69,7 @@
 				</view>
 
 				<view class="list-caption">
-					<text class="list-caption__text">{{ filteredRecipes.length }} 道记录</text>
+					<text class="list-caption__text">{{ currentMealLabel }} · {{ filteredRecipes.length }} 道记录</text>
 				</view>
 
 				<view v-if="filteredRecipes.length" class="recipe-list">
@@ -112,49 +134,51 @@
 			<template v-else>
 				<view class="page-header">
 					<text class="page-header__title">我们的厨房</text>
-					<text class="page-header__summary">这里只看简单结果：吃过多少，还有多少想吃。</text>
+					<text class="page-header__summary">按早餐和正餐分开看，哪些吃过，哪些还想吃。</text>
 				</view>
 
-				<view class="stats-panel">
-					<view class="stat-box">
-						<text class="stat-box__value">{{ wishlistRecipes.length }}</text>
-						<text class="stat-box__label">想吃</text>
-					</view>
-					<view class="stat-box">
-						<text class="stat-box__value">{{ doneRecipes.length }}</text>
-						<text class="stat-box__label">吃过</text>
-					</view>
-				</view>
-
-				<view class="simple-panel">
-					<view class="simple-panel__header">
-						<text class="simple-panel__title">最近吃过</text>
-						<text class="simple-panel__meta">{{ doneRecipes.length }} 道</text>
-					</view>
-					<view v-if="doneRecipes.length" class="simple-list">
-						<view v-for="recipe in doneRecipes" :key="recipe.id" class="simple-list__item">
-							<text class="simple-list__title">{{ recipe.title }}</text>
-							<text class="simple-list__meta">{{ recipe.ingredient }}</text>
+				<view class="meal-panel-list">
+					<view
+						v-for="section in mealSections"
+						:key="section.value"
+						class="meal-panel"
+					>
+						<view class="meal-panel__header">
+							<text class="meal-panel__title">{{ section.label }}</text>
+							<text class="meal-panel__meta">想吃 {{ section.wishlist.length }} · 吃过 {{ section.done.length }}</text>
 						</view>
-					</view>
-					<view v-else class="soft-empty">
-						<text class="soft-empty__text">还没有标记为吃过的菜。</text>
-					</view>
-				</view>
 
-				<view class="simple-panel">
-					<view class="simple-panel__header">
-						<text class="simple-panel__title">想吃清单</text>
-						<text class="simple-panel__meta">{{ wishlistRecipes.length }} 道</text>
-					</view>
-					<view v-if="wishlistRecipes.length" class="simple-list">
-						<view v-for="recipe in wishlistRecipes" :key="recipe.id" class="simple-list__item">
-							<text class="simple-list__title">{{ recipe.title }}</text>
-							<text class="simple-list__meta">{{ recipe.ingredient }}</text>
+						<view class="meal-panel__block">
+							<view class="meal-panel__block-header">
+								<up-icon name="heart-fill" size="12" color="#9a7b65"></up-icon>
+								<text class="meal-panel__block-title">想吃</text>
+							</view>
+							<view v-if="section.wishlist.length" class="simple-list">
+								<view v-for="recipe in section.wishlist" :key="recipe.id" class="simple-list__item">
+									<text class="simple-list__title">{{ recipe.title }}</text>
+									<text class="simple-list__meta">{{ recipe.ingredient }}</text>
+								</view>
+							</view>
+							<view v-else class="soft-empty soft-empty--inline">
+								<text class="soft-empty__text">这一类暂时没有想吃的菜。</text>
+							</view>
 						</view>
-					</view>
-					<view v-else class="soft-empty">
-						<text class="soft-empty__text">想吃清单已经清空，可以继续加新菜。</text>
+
+						<view class="meal-panel__block">
+							<view class="meal-panel__block-header">
+								<up-icon name="checkmark-circle-fill" size="12" color="#6f826d"></up-icon>
+								<text class="meal-panel__block-title">吃过</text>
+							</view>
+							<view v-if="section.done.length" class="simple-list">
+								<view v-for="recipe in section.done" :key="recipe.id" class="simple-list__item">
+									<text class="simple-list__title">{{ recipe.title }}</text>
+									<text class="simple-list__meta">{{ recipe.ingredient }}</text>
+								</view>
+							</view>
+							<view v-else class="soft-empty soft-empty--inline">
+								<text class="soft-empty__text">这一类还没有吃过的记录。</text>
+							</view>
+						</view>
 					</view>
 				</view>
 			</template>
@@ -237,6 +261,21 @@
 					</view>
 
 					<view class="form-field">
+						<text class="form-field__label">分类</text>
+						<view class="choice-row">
+							<view
+								v-for="tab in mealTabs"
+								:key="tab.value"
+								class="choice-chip"
+								:class="{ 'choice-chip--active': draft.mealType === tab.value }"
+								@tap="draft.mealType = tab.value"
+							>
+								<text class="choice-chip__text">{{ tab.label }}</text>
+							</view>
+						</view>
+					</view>
+
+					<view class="form-field">
 						<text class="form-field__label">状态</text>
 						<view class="choice-row">
 							<view
@@ -288,10 +327,15 @@ export default {
 		return {
 			statusMap,
 			activeSection: 'library',
+			activeMealType: 'main',
 			activeStatus: 'all',
 			searchKeyword: '',
 			selectedRecipeId: '',
 			showAddSheet: false,
+			mealTabs: [
+				{ label: '早餐', value: 'breakfast', icon: 'clock-fill', activeColor: '#a06a3f' },
+				{ label: '正餐', value: 'main', icon: 'grid-fill', activeColor: '#5b4a3b' }
+			],
 			statusTabs: [
 				{ label: '全部', value: 'all' },
 				{ label: '想吃', value: 'wishlist' },
@@ -304,38 +348,52 @@ export default {
 			draft: {
 				title: '',
 				ingredient: '',
+				mealType: 'breakfast',
 				status: 'wishlist',
 				note: ''
 			},
 			recipes: [
-				{ id: 'r1', title: '番茄滑蛋牛肉', ingredient: '牛肉', status: 'done', note: '下饭' },
-				{ id: 'r2', title: '神仙糖醋排骨', ingredient: '排骨', status: 'wishlist', note: '周末吃' },
-				{ id: 'r3', title: '蒜香虾仁意面', ingredient: '虾仁', status: 'wishlist', note: '' },
-				{ id: 'r4', title: '低卡燕麦松饼', ingredient: '燕麦', status: 'done', note: '早餐' },
-				{ id: 'r5', title: '周末寿喜锅', ingredient: '牛肉', status: 'wishlist', note: '' }
+				{ id: 'r1', title: '番茄滑蛋牛肉', ingredient: '牛肉', mealType: 'main', status: 'done', note: '下饭' },
+				{ id: 'r2', title: '神仙糖醋排骨', ingredient: '排骨', mealType: 'main', status: 'wishlist', note: '周末吃' },
+				{ id: 'r3', title: '蒜香虾仁意面', ingredient: '虾仁', mealType: 'main', status: 'wishlist', note: '' },
+				{ id: 'r4', title: '低卡燕麦松饼', ingredient: '燕麦', mealType: 'breakfast', status: 'done', note: '简单快手' },
+				{ id: 'r5', title: '周末寿喜锅', ingredient: '牛肉', mealType: 'main', status: 'wishlist', note: '' },
+				{ id: 'r6', title: '牛油果煎蛋吐司', ingredient: '牛油果', mealType: 'breakfast', status: 'wishlist', note: '十分钟内' }
 			]
 		}
 	},
 	computed: {
+		currentMealLabel() {
+			return this.mealTabs.find((tab) => tab.value === this.activeMealType)?.label || '早餐'
+		},
 		wishlistRecipes() {
 			return this.recipes.filter((recipe) => recipe.status === 'wishlist')
 		},
 		doneRecipes() {
 			return this.recipes.filter((recipe) => recipe.status === 'done')
 		},
+		mealSections() {
+			return this.mealTabs.map((tab) => ({
+				value: tab.value,
+				label: tab.label,
+				wishlist: this.recipes.filter((recipe) => recipe.mealType === tab.value && recipe.status === 'wishlist'),
+				done: this.recipes.filter((recipe) => recipe.mealType === tab.value && recipe.status === 'done')
+			}))
+		},
 		librarySummary() {
-			return `想吃 ${this.wishlistRecipes.length} · 吃过 ${this.doneRecipes.length}`
+			return `先按早餐和正餐整理，再看想吃和吃过。`
 		},
 		filteredRecipes() {
 			const keyword = this.searchKeyword.trim().toLowerCase()
 			return this.recipes.filter((recipe) => {
+				const matchedMealType = recipe.mealType === this.activeMealType
 				const matchedStatus = this.activeStatus === 'all' || recipe.status === this.activeStatus
 				const matchedKeyword =
 					!keyword ||
 					recipe.title.toLowerCase().includes(keyword) ||
 					recipe.ingredient.toLowerCase().includes(keyword) ||
 					recipe.note.toLowerCase().includes(keyword)
-				return matchedStatus && matchedKeyword
+				return matchedMealType && matchedStatus && matchedKeyword
 			})
 		},
 		sheetButtonStyle() {
@@ -347,6 +405,9 @@ export default {
 		}
 	},
 	methods: {
+		mealTypeCount(type) {
+			return this.recipes.filter((recipe) => recipe.mealType === type).length
+		},
 		selectRecipe(recipeId) {
 			this.selectedRecipeId = recipeId
 		},
@@ -397,17 +458,20 @@ export default {
 				id: `recipe-${Date.now()}`,
 				title,
 				ingredient: this.draft.ingredient.trim() || '未分类',
+				mealType: this.draft.mealType,
 				status: this.draft.status,
 				note: this.draft.note.trim()
 			}
 			this.recipes = [newRecipe, ...this.recipes]
 			this.selectedRecipeId = newRecipe.id
 			this.activeSection = 'library'
+			this.activeMealType = newRecipe.mealType
 			this.activeStatus = 'all'
 			this.searchKeyword = ''
 			this.draft = {
 				title: '',
 				ingredient: '',
+				mealType: this.activeMealType,
 				status: 'wishlist',
 				note: ''
 			}
@@ -465,6 +529,58 @@ export default {
 		gap: 10rpx;
 	}
 
+	.meal-tabs {
+		margin-top: 14rpx;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10rpx;
+	}
+
+	.meal-tab {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 18rpx 18rpx;
+		border-radius: 18rpx;
+		background: #f3efe9;
+		border: 1px solid rgba(0, 0, 0, 0.02);
+	}
+
+	.meal-tab--active {
+		background: #ffffff;
+		border: 1px solid rgba(91, 74, 59, 0.14);
+		box-shadow: 0 6rpx 16rpx rgba(56, 44, 30, 0.04);
+	}
+
+	.meal-tab__left {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		min-width: 0;
+	}
+
+	.meal-tab__icon-shell {
+		width: 28rpx;
+		height: 28rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.7);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.meal-tab__text {
+		font-size: 25rpx;
+		font-weight: 700;
+		color: #4d433a;
+	}
+
+	.meal-tab__count {
+		font-size: 22rpx;
+		color: #8d847a;
+	}
+
 	.search-box {
 		flex: 1;
 		height: 72rpx;
@@ -506,7 +622,7 @@ export default {
 	}
 
 	.status-scroll {
-		margin-top: 14rpx;
+		margin-top: 12rpx;
 		white-space: nowrap;
 	}
 
@@ -543,13 +659,13 @@ export default {
 	}
 
 	.list-caption {
-		margin-top: 18rpx;
+		margin-top: 16rpx;
 		padding: 0 2rpx;
 	}
 
 	.list-caption__text {
 		font-size: 22rpx;
-		color: #968b80;
+		color: #84786d;
 	}
 
 	.recipe-list {
@@ -711,11 +827,68 @@ export default {
 		color: #8d847a;
 	}
 
+	.soft-empty--inline {
+		margin-top: 0;
+		padding: 18rpx 16rpx;
+		align-items: flex-start;
+		text-align: left;
+	}
+
 	.stats-panel {
 		margin-top: 16rpx;
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 12rpx;
+	}
+
+	.meal-panel-list {
+		margin-top: 16rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 14rpx;
+	}
+
+	.meal-panel {
+		border-radius: 20rpx;
+		background: rgba(255, 255, 255, 0.88);
+		border: 1px solid rgba(0, 0, 0, 0.03);
+		box-shadow: 0 8rpx 18rpx rgba(56, 44, 30, 0.04);
+		padding: 18rpx;
+	}
+
+	.meal-panel__header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12rpx;
+	}
+
+	.meal-panel__title {
+		font-size: 28rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.meal-panel__meta {
+		font-size: 22rpx;
+		color: #8d847a;
+	}
+
+	.meal-panel__block {
+		margin-top: 14rpx;
+	}
+
+	.meal-panel__block-header {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		margin-bottom: 8rpx;
+	}
+
+	.meal-panel__block-title {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #6d6257;
 	}
 
 	.stat-box,
