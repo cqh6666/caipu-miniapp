@@ -13,6 +13,12 @@
 			"style": {
 				"navigationBarTitleText": "我们的数字厨房"
 			}
+		},
+		{
+			"path": "pages/recipe-detail/index",
+			"style": {
+				"navigationBarTitleText": "菜品详情"
+			}
 		}
 	],
 	"globalStyle": {

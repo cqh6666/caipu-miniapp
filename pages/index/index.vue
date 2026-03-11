@@ -14,7 +14,7 @@
 							<input
 								v-model="searchKeyword"
 								class="search-box__input"
-								placeholder="搜菜名或食材"
+								placeholder="搜菜名、备注或链接"
 								placeholder-class="search-box__placeholder"
 							/>
 						</view>
@@ -78,7 +78,7 @@
 						:key="recipe.id"
 						class="recipe-item"
 						:class="{ 'recipe-item--active': selectedRecipeId === recipe.id }"
-						@tap="selectRecipe(recipe.id)"
+						@tap="openRecipeDetail(recipe.id)"
 					>
 						<view
 							class="recipe-item__marker"
@@ -88,7 +88,7 @@
 							<view class="recipe-item__top">
 								<view class="recipe-item__text">
 									<text class="recipe-item__title">{{ recipe.title }}</text>
-									<text class="recipe-item__meta">{{ recipe.ingredient }}<text v-if="recipe.note"> · {{ recipe.note }}</text></text>
+									<text class="recipe-item__meta">{{ recipeSecondaryText(recipe) }}</text>
 								</view>
 								<view
 									class="recipe-switch"
@@ -154,9 +154,9 @@
 								<text class="meal-panel__block-title">想吃</text>
 							</view>
 							<view v-if="section.wishlist.length" class="simple-list">
-								<view v-for="recipe in section.wishlist" :key="recipe.id" class="simple-list__item">
+								<view v-for="recipe in section.wishlist" :key="recipe.id" class="simple-list__item simple-list__item--link" @tap="openRecipeDetail(recipe.id)">
 									<text class="simple-list__title">{{ recipe.title }}</text>
-									<text class="simple-list__meta">{{ recipe.ingredient }}</text>
+									<text class="simple-list__meta">{{ recipeSecondaryText(recipe) }}</text>
 								</view>
 							</view>
 							<view v-else class="soft-empty soft-empty--inline">
@@ -170,9 +170,9 @@
 								<text class="meal-panel__block-title">吃过</text>
 							</view>
 							<view v-if="section.done.length" class="simple-list">
-								<view v-for="recipe in section.done" :key="recipe.id" class="simple-list__item">
+								<view v-for="recipe in section.done" :key="recipe.id" class="simple-list__item simple-list__item--link" @tap="openRecipeDetail(recipe.id)">
 									<text class="simple-list__title">{{ recipe.title }}</text>
-									<text class="simple-list__meta">{{ recipe.ingredient }}</text>
+									<text class="simple-list__meta">{{ recipeSecondaryText(recipe) }}</text>
 								</view>
 							</view>
 							<view v-else class="soft-empty soft-empty--inline">
@@ -226,66 +226,108 @@
 		<up-popup
 			:show="showAddSheet"
 			mode="bottom"
-			round="24"
-			overlayOpacity="0.28"
-			:safeAreaInsetBottom="true"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
 			@close="closeAddSheet"
 		>
 			<view class="sheet">
 				<view class="sheet__header">
-					<text class="sheet__title">新增一道菜</text>
+					<view class="sheet__heading">
+						<text class="sheet__title">添加菜品</text>
+						<text class="sheet__subtitle">先记下来，后面再慢慢补全</text>
+					</view>
 					<view class="sheet__close" @tap="closeAddSheet">
 						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
 					</view>
 				</view>
 
-				<view class="sheet__body">
+				<scroll-view class="sheet__body" scroll-y>
 					<view class="form-field">
 						<text class="form-field__label">菜名</text>
-						<up-input
+						<input
 							v-model="draft.title"
-							placeholder="例如：番茄炒蛋"
-							border="surround"
-							clearable
-						></up-input>
+							class="sheet-input sheet-input--title"
+							placeholder="输入菜名"
+							placeholder-class="sheet-input__placeholder"
+							maxlength="40"
+						/>
 					</view>
 
 					<view class="form-field">
-						<text class="form-field__label">食材</text>
-						<up-input
-							v-model="draft.ingredient"
-							placeholder="例如：鸡蛋"
-							border="surround"
-							clearable
-						></up-input>
+						<text class="form-field__label">链接</text>
+						<input
+							v-model="draft.link"
+							class="sheet-input"
+							placeholder="支持直接粘贴菜谱或视频链接"
+							placeholder-class="sheet-input__placeholder"
+							maxlength="300"
+						/>
+					</view>
+
+					<view class="form-field">
+						<text class="form-field__label">成品图（可选）</text>
+						<view
+							class="upload-card"
+							:class="{ 'upload-card--filled': !!draft.image }"
+							@tap="chooseDraftImage"
+						>
+							<template v-if="draft.image">
+								<image class="upload-card__thumb" :src="draft.image" mode="aspectFill"></image>
+								<view class="upload-card__content">
+									<text class="upload-card__title">已上传成品图</text>
+									<text class="upload-card__desc">点击卡片可替换，也可以直接删除。</text>
+									<view class="upload-card__actions">
+										<view class="upload-card__action" @tap.stop="chooseDraftImage">
+											<text class="upload-card__action-text">替换</text>
+										</view>
+										<view class="upload-card__action upload-card__action--danger" @tap.stop="removeDraftImage">
+											<text class="upload-card__action-text upload-card__action-text--danger">删除</text>
+										</view>
+									</view>
+								</view>
+							</template>
+							<template v-else>
+								<view class="upload-card__empty">
+									<view class="upload-card__plus">
+										<up-icon name="plus" size="20" color="#8c8074"></up-icon>
+									</view>
+									<text class="upload-card__empty-title">上传成品图</text>
+								</view>
+							</template>
+						</view>
 					</view>
 
 					<view class="form-field">
 						<text class="form-field__label">分类</text>
-						<view class="choice-row">
+						<view class="segment">
 							<view
 								v-for="tab in mealTabs"
 								:key="tab.value"
-								class="choice-chip"
-								:class="{ 'choice-chip--active': draft.mealType === tab.value }"
+								class="segment__item"
+								:class="{ 'segment__item--active': draft.mealType === tab.value }"
 								@tap="draft.mealType = tab.value"
 							>
-								<text class="choice-chip__text">{{ tab.label }}</text>
+								<text class="segment__text">{{ tab.label }}</text>
 							</view>
 						</view>
 					</view>
 
 					<view class="form-field">
 						<text class="form-field__label">状态</text>
-						<view class="choice-row">
+						<view class="segment">
 							<view
 								v-for="tab in draftStatusOptions"
 								:key="tab.value"
-								class="choice-chip"
-								:class="{ 'choice-chip--active': draft.status === tab.value }"
+								class="segment__item"
+								:class="{
+									'segment__item--active': draft.status === tab.value,
+									'segment__item--wishlist': draft.status === tab.value && tab.value === 'wishlist',
+									'segment__item--done': draft.status === tab.value && tab.value === 'done'
+								}"
 								@tap="draft.status = tab.value"
 							>
-								<text class="choice-chip__text">{{ tab.label }}</text>
+								<text class="segment__text">{{ tab.label }}</text>
 							</view>
 						</view>
 					</view>
@@ -294,21 +336,25 @@
 						<text class="form-field__label">备注</text>
 						<textarea
 							v-model="draft.note"
-							class="form-field__textarea"
-							placeholder="可选"
-							auto-height
+							class="sheet-textarea"
+							placeholder="比如口味、做法备注、视频亮点"
+							placeholder-class="sheet-textarea__placeholder"
+							maxlength="300"
 						/>
 					</view>
-				</view>
+				</scroll-view>
 
 				<view class="sheet__footer">
-					<up-button
-						type="primary"
-						text="保存"
-						shape="circle"
-						:customStyle="sheetButtonStyle"
+					<view class="sheet-action" @tap="closeAddSheet">
+						<text class="sheet-action__text">取消</text>
+					</view>
+					<view
+						class="sheet-action sheet-action--primary"
+						:class="{ 'sheet-action--disabled': !canSubmitDraft }"
 						@tap="submitDraft"
-					></up-button>
+					>
+						<text class="sheet-action__text sheet-action__text--primary">保存</text>
+					</view>
 				</view>
 			</view>
 		</up-popup>
@@ -316,11 +362,30 @@
 </template>
 
 <script>
+import {
+	createRecipeFromDraft,
+	getRecipeSecondaryText,
+	loadRecipes,
+	mealTypeOptions,
+	saveRecipes,
+	statusOptions
+} from '../../utils/recipe-store'
+
 const statusMap = {
 	all: { label: '全部', icon: 'list-dot' },
 	wishlist: { label: '想吃', icon: 'heart-fill' },
 	done: { label: '吃过', icon: 'checkmark-circle-fill' }
 }
+
+const createEmptyDraft = (overrides = {}) => ({
+	title: '',
+	link: '',
+	image: '',
+	mealType: 'breakfast',
+	status: 'wishlist',
+	note: '',
+	...overrides
+})
 
 export default {
 	data() {
@@ -332,35 +397,19 @@ export default {
 			searchKeyword: '',
 			selectedRecipeId: '',
 			showAddSheet: false,
-			mealTabs: [
-				{ label: '早餐', value: 'breakfast', icon: 'clock-fill', activeColor: '#a06a3f' },
-				{ label: '正餐', value: 'main', icon: 'grid-fill', activeColor: '#5b4a3b' }
-			],
+			mealTabs: mealTypeOptions,
 			statusTabs: [
 				{ label: '全部', value: 'all' },
 				{ label: '想吃', value: 'wishlist' },
 				{ label: '吃过', value: 'done' }
 			],
-			draftStatusOptions: [
-				{ label: '想吃', value: 'wishlist' },
-				{ label: '吃过', value: 'done' }
-			],
-			draft: {
-				title: '',
-				ingredient: '',
-				mealType: 'breakfast',
-				status: 'wishlist',
-				note: ''
-			},
-			recipes: [
-				{ id: 'r1', title: '番茄滑蛋牛肉', ingredient: '牛肉', mealType: 'main', status: 'done', note: '下饭' },
-				{ id: 'r2', title: '神仙糖醋排骨', ingredient: '排骨', mealType: 'main', status: 'wishlist', note: '周末吃' },
-				{ id: 'r3', title: '蒜香虾仁意面', ingredient: '虾仁', mealType: 'main', status: 'wishlist', note: '' },
-				{ id: 'r4', title: '低卡燕麦松饼', ingredient: '燕麦', mealType: 'breakfast', status: 'done', note: '简单快手' },
-				{ id: 'r5', title: '周末寿喜锅', ingredient: '牛肉', mealType: 'main', status: 'wishlist', note: '' },
-				{ id: 'r6', title: '牛油果煎蛋吐司', ingredient: '牛油果', mealType: 'breakfast', status: 'wishlist', note: '十分钟内' }
-			]
+			draftStatusOptions: statusOptions,
+			draft: createEmptyDraft(),
+			recipes: []
 		}
+	},
+	onShow() {
+		this.refreshRecipes()
 	},
 	computed: {
 		currentMealLabel() {
@@ -391,37 +440,51 @@ export default {
 				const matchedKeyword =
 					!keyword ||
 					recipe.title.toLowerCase().includes(keyword) ||
-					recipe.ingredient.toLowerCase().includes(keyword) ||
-					recipe.note.toLowerCase().includes(keyword)
+					(recipe.ingredient || '').toLowerCase().includes(keyword) ||
+					(recipe.link || '').toLowerCase().includes(keyword) ||
+					(recipe.note || '').toLowerCase().includes(keyword)
 				return matchedMealType && matchedStatus && matchedKeyword
 			})
 		},
-		sheetButtonStyle() {
-			return {
-				width: '100%',
-				height: '84rpx',
-				fontWeight: '600'
-			}
+		canSubmitDraft() {
+			return !!this.draft.title.trim()
 		}
 	},
 	methods: {
+		refreshRecipes() {
+			this.recipes = loadRecipes()
+		},
+		recipeSecondaryText(recipe) {
+			return getRecipeSecondaryText(recipe)
+		},
+		createDraftFromContext() {
+			const defaultStatus = ['wishlist', 'done'].includes(this.activeStatus) ? this.activeStatus : 'wishlist'
+			return createEmptyDraft({
+				mealType: this.activeMealType || 'breakfast',
+				status: defaultStatus
+			})
+		},
 		mealTypeCount(type) {
 			return this.recipes.filter((recipe) => recipe.mealType === type).length
 		},
-		selectRecipe(recipeId) {
+		openRecipeDetail(recipeId) {
 			this.selectedRecipeId = recipeId
+			uni.navigateTo({
+				url: `/pages/recipe-detail/index?id=${recipeId}`
+			})
 		},
 		nextStatusText(status) {
 			return status === 'done' ? '标记想吃' : '标记吃过'
 		},
 		toggleRecipeStatus(recipeId) {
-			this.recipes = this.recipes.map((recipe) => {
+			const nextRecipes = this.recipes.map((recipe) => {
 				if (recipe.id !== recipeId) return recipe
 				return {
 					...recipe,
 					status: recipe.status === 'done' ? 'wishlist' : 'done'
 				}
 			})
+			this.recipes = saveRecipes(nextRecipes)
 		},
 		drawTonight() {
 			const pool = this.wishlistRecipes.length ? this.wishlistRecipes : this.recipes
@@ -440,42 +503,38 @@ export default {
 			})
 		},
 		openAddSheet() {
+			this.draft = this.createDraftFromContext()
 			this.showAddSheet = true
 		},
 		closeAddSheet() {
 			this.showAddSheet = false
+			this.draft = this.createDraftFromContext()
+		},
+		chooseDraftImage() {
+			uni.chooseImage({
+				count: 1,
+				sizeType: ['compressed'],
+				sourceType: ['album', 'camera'],
+				success: ({ tempFilePaths }) => {
+					if (!tempFilePaths || !tempFilePaths.length) return
+					this.draft.image = tempFilePaths[0]
+				}
+			})
+		},
+		removeDraftImage() {
+			this.draft.image = ''
 		},
 		submitDraft() {
-			const title = this.draft.title.trim()
-			if (!title) {
-				uni.showToast({
-					title: '先输入菜名',
-					icon: 'none'
-				})
-				return
-			}
-			const newRecipe = {
-				id: `recipe-${Date.now()}`,
-				title,
-				ingredient: this.draft.ingredient.trim() || '未分类',
-				mealType: this.draft.mealType,
-				status: this.draft.status,
-				note: this.draft.note.trim()
-			}
-			this.recipes = [newRecipe, ...this.recipes]
+			if (!this.canSubmitDraft) return
+			const newRecipe = createRecipeFromDraft(this.draft)
+			this.recipes = saveRecipes([newRecipe, ...this.recipes])
 			this.selectedRecipeId = newRecipe.id
 			this.activeSection = 'library'
 			this.activeMealType = newRecipe.mealType
 			this.activeStatus = 'all'
 			this.searchKeyword = ''
-			this.draft = {
-				title: '',
-				ingredient: '',
-				mealType: this.activeMealType,
-				status: 'wishlist',
-				note: ''
-			}
 			this.showAddSheet = false
+			this.draft = this.createDraftFromContext()
 			uni.showToast({
 				title: '已保存',
 				icon: 'none'
@@ -952,6 +1011,10 @@ export default {
 		border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 	}
 
+	.simple-list__item--link:active {
+		opacity: 0.82;
+	}
+
 	.simple-list__item:last-child {
 		border-bottom: 0;
 	}
@@ -1031,91 +1094,287 @@ export default {
 	}
 
 	.sheet {
-		padding: 22rpx 22rpx 32rpx;
-		background: #fffdf9;
+		height: 78vh;
+		background: #ffffff;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.sheet__header {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: space-between;
 		gap: 16rpx;
+		padding: 28rpx 28rpx 18rpx;
+	}
+
+	.sheet__heading {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.sheet__title {
-		font-size: 30rpx;
+		font-size: 38rpx;
 		font-weight: 700;
 		color: #2f2923;
+	}
+
+	.sheet__subtitle {
+		display: block;
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: #9b9186;
 	}
 
 	.sheet__close {
 		width: 68rpx;
 		height: 68rpx;
 		border-radius: 18rpx;
-		background: #f3eee8;
+		background: #f4f0eb;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		flex-shrink: 0;
 	}
 
 	.sheet__body {
-		margin-top: 22rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 18rpx;
+		flex: 1;
+		min-height: 0;
+		padding: 0 28rpx 28rpx;
+		box-sizing: border-box;
 	}
 
 	.form-field {
 		display: flex;
 		flex-direction: column;
-		gap: 10rpx;
+		gap: 12rpx;
+		margin-top: 26rpx;
+	}
+
+	.form-field:first-child {
+		margin-top: 0;
 	}
 
 	.form-field__label {
-		font-size: 24rpx;
-		font-weight: 600;
-		color: #6f655b;
+		font-size: 22rpx;
+		font-weight: 500;
+		color: #9b9186;
 	}
 
-	.choice-row {
-		display: flex;
-		gap: 10rpx;
-	}
-
-	.choice-chip {
-		padding: 12rpx 18rpx;
-		border-radius: 999rpx;
-		background: #efebe5;
-	}
-
-	.choice-chip--active {
-		background: #2f2923;
-	}
-
-	.choice-chip__text {
-		font-size: 23rpx;
-		font-weight: 600;
-		color: #6f655b;
-	}
-
-	.choice-chip--active .choice-chip__text {
-		color: #ffffff;
-	}
-
-	.form-field__textarea {
+	.sheet-input,
+	.sheet-textarea {
 		width: 100%;
-		min-height: 120rpx;
-		padding: 20rpx;
 		box-sizing: border-box;
-		border-radius: 20rpx;
-		background: #fbfaf8;
-		border: 1px solid rgba(0, 0, 0, 0.04);
-		font-size: 26rpx;
-		line-height: 1.6;
+		border-radius: 24rpx;
+		background: #f7f4f0;
+		border: 1px solid #ebe4db;
 		color: #2f2923;
 	}
 
+	.sheet-input {
+		height: 88rpx;
+		padding: 0 24rpx;
+		font-size: 27rpx;
+	}
+
+	.sheet-input--title {
+		height: 96rpx;
+		font-size: 30rpx;
+		font-weight: 600;
+		background: #ffffff;
+		border-color: #e3dbd2;
+	}
+
+	.sheet-input__placeholder,
+	.sheet-textarea__placeholder {
+		color: #b7aea3;
+	}
+
+	.sheet-textarea {
+		min-height: 180rpx;
+		padding: 22rpx 24rpx;
+		font-size: 26rpx;
+		line-height: 1.6;
+	}
+
+	.upload-card {
+		min-height: 168rpx;
+		padding: 20rpx;
+		box-sizing: border-box;
+		border-radius: 24rpx;
+		border: 1px dashed #d8cec3;
+		background: #faf7f3;
+		display: flex;
+		align-items: center;
+	}
+
+	.upload-card--filled {
+		border-style: solid;
+		background: #ffffff;
+	}
+
+	.upload-card__empty {
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 14rpx;
+	}
+
+	.upload-card__plus {
+		width: 68rpx;
+		height: 68rpx;
+		border-radius: 20rpx;
+		background: #f1ebe4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.upload-card__empty-title {
+		font-size: 25rpx;
+		font-weight: 600;
+		color: #75685c;
+	}
+
+	.upload-card__thumb {
+		width: 148rpx;
+		height: 148rpx;
+		border-radius: 20rpx;
+		background: #f1ebe4;
+		flex-shrink: 0;
+	}
+
+	.upload-card__content {
+		flex: 1;
+		min-width: 0;
+		margin-left: 20rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.upload-card__title {
+		font-size: 28rpx;
+		font-weight: 600;
+		color: #2f2923;
+	}
+
+	.upload-card__desc {
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: #95897e;
+	}
+
+	.upload-card__actions {
+		display: flex;
+		gap: 12rpx;
+		margin-top: 4rpx;
+	}
+
+	.upload-card__action {
+		padding: 10rpx 18rpx;
+		border-radius: 999rpx;
+		background: #f1ebe4;
+	}
+
+	.upload-card__action--danger {
+		background: #f8eeea;
+	}
+
+	.upload-card__action-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #6c6156;
+	}
+
+	.upload-card__action-text--danger {
+		color: #b4664c;
+	}
+
+	.segment {
+		display: flex;
+		gap: 10rpx;
+		padding: 8rpx;
+		border-radius: 24rpx;
+		background: #f3efea;
+	}
+
+	.segment__item {
+		flex: 1;
+		height: 76rpx;
+		border-radius: 18rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+	}
+
+	.segment__item--active {
+		background: #ffffff;
+		box-shadow: 0 8rpx 18rpx rgba(59, 47, 36, 0.06);
+	}
+
+	.segment__item--wishlist {
+		background: #f3e7de;
+	}
+
+	.segment__item--done {
+		background: #e8efe5;
+	}
+
+	.segment__text {
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #867a6f;
+	}
+
+	.segment__item--active .segment__text {
+		color: #5b4a3b;
+	}
+
 	.sheet__footer {
-		margin-top: 24rpx;
+		padding: 18rpx 28rpx calc(env(safe-area-inset-bottom) + 20rpx);
+		border-top: 1px solid rgba(91, 74, 59, 0.08);
+		background: #ffffff;
+		display: flex;
+		gap: 16rpx;
+	}
+
+	.sheet-action {
+		flex: 1;
+		height: 88rpx;
+		border-radius: 24rpx;
+		background: #f1ede8;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.sheet-action--primary {
+		background: #5b4a3b;
+		box-shadow: 0 12rpx 20rpx rgba(91, 74, 59, 0.16);
+	}
+
+	.sheet-action--disabled {
+		background: #d9d1c8;
+		box-shadow: none;
+		pointer-events: none;
+	}
+
+	.sheet-action__text {
+		font-size: 28rpx;
+		font-weight: 600;
+		color: #675c51;
+	}
+
+	.sheet-action__text--primary {
+		color: #ffffff;
+	}
+
+	.sheet-action--disabled .sheet-action__text--primary {
+		opacity: 0.76;
 	}
 </style>
