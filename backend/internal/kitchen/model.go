@@ -9,6 +9,7 @@ type Summary struct {
 type Member struct {
 	UserID        int64  `json:"userId"`
 	Nickname      string `json:"nickname"`
+	AvatarURL     string `json:"avatarUrl"`
 	Role          string `json:"role"`
 	JoinedAt      string `json:"joinedAt"`
 	IsCurrentUser bool   `json:"isCurrentUser"`

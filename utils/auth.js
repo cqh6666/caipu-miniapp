@@ -4,6 +4,7 @@ import { clearSessionState, getAccessToken, getSessionState, setAccessToken, set
 
 let pendingSessionPromise = null
 const DEV_IDENTITY_STORAGE_KEY = 'caipu-miniapp-dev-identity'
+const FALLBACK_NICKNAME_PREFIX = '厨友'
 
 function normalizeKitchen(kitchen = {}) {
 	return {
@@ -117,6 +118,81 @@ function getMiniProgramAppID() {
 	}
 }
 
+function getUserProfileFromPayload(payload = {}) {
+	const userInfo = payload?.userInfo || payload
+	return {
+		nickname: String(userInfo?.nickName || userInfo?.nickname || '').trim(),
+		avatarUrl: String(userInfo?.avatarUrl || userInfo?.avatarURL || '').trim()
+	}
+}
+
+function getOptionalWeChatProfile() {
+	return new Promise((resolve) => {
+		if (typeof uni.getUserInfo !== 'function') {
+			resolve({})
+			return
+		}
+
+		uni.getUserInfo({
+			provider: 'weixin',
+			success: (result) => {
+				resolve(getUserProfileFromPayload(result))
+			},
+			fail: () => {
+				resolve({})
+			}
+		})
+	})
+}
+
+function isFallbackNickname(value = '') {
+	return String(value).trim().startsWith(FALLBACK_NICKNAME_PREFIX)
+}
+
+function shouldSyncUserProfile(currentUser = {}, profile = {}) {
+	const nickname = String(profile.nickname || '').trim()
+	const avatarUrl = String(profile.avatarUrl || '').trim()
+	if (!nickname && !avatarUrl) {
+		return false
+	}
+
+	const currentNickname = String(currentUser?.nickname || '').trim()
+	const currentAvatarUrl = String(currentUser?.avatarUrl || '').trim()
+	if (nickname && (!currentNickname || isFallbackNickname(currentNickname))) {
+		return true
+	}
+	if (avatarUrl && currentAvatarUrl !== avatarUrl) {
+		return true
+	}
+	return false
+}
+
+function isLegacyProfileRequestError(error) {
+	const message = String(error?.message || '').trim().toLowerCase()
+	const statusCode = Number(error?.statusCode) || 0
+	return statusCode === 404 || statusCode === 405 || message === 'invalid request body' || message === 'request body is required'
+}
+
+async function updateSessionUserProfile(profile = {}) {
+	try {
+		const payload = await request({
+			url: '/api/auth/profile',
+			method: 'PATCH',
+			data: {
+				nickname: profile.nickname || '',
+				avatarUrl: profile.avatarUrl || ''
+			}
+		})
+
+		return payload?.user || null
+	} catch (error) {
+		if (isLegacyProfileRequestError(error)) {
+			return null
+		}
+		throw error
+	}
+}
+
 async function createSession() {
 	if (shouldUseDevLogin()) {
 		const payload = await request({
@@ -132,15 +208,35 @@ async function createSession() {
 	}
 
 	const code = await loginWithWeChat()
-	const payload = await request({
-		url: '/api/auth/wechat/login',
-		method: 'POST',
-		data: {
-			code,
-			appId: getMiniProgramAppID()
-		},
-		auth: false
-	})
+	const profile = await getOptionalWeChatProfile()
+	let payload
+	try {
+		payload = await request({
+			url: '/api/auth/wechat/login',
+			method: 'POST',
+			data: {
+				code,
+				appId: getMiniProgramAppID(),
+				nickname: profile.nickname || '',
+				avatarUrl: profile.avatarUrl || ''
+			},
+			auth: false
+		})
+	} catch (error) {
+		if (!isLegacyProfileRequestError(error)) {
+			throw error
+		}
+
+		payload = await request({
+			url: '/api/auth/wechat/login',
+			method: 'POST',
+			data: {
+				code,
+				appId: getMiniProgramAppID()
+			},
+			auth: false
+		})
+	}
 
 	return normalizeSessionPayload(payload, payload?.token || '')
 }
@@ -160,6 +256,19 @@ export async function ensureSession(options = {}) {
 						url: '/api/auth/me',
 						method: 'GET'
 					})
+					const profile = await getOptionalWeChatProfile()
+					try {
+						if (shouldSyncUserProfile(payload?.user, profile)) {
+							const user = await updateSessionUserProfile(profile)
+							if (user) {
+								payload.user = user
+							}
+						}
+					} catch (error) {
+						if (!isLegacyProfileRequestError(error)) {
+							throw error
+						}
+					}
 					if (shouldRefreshDevSession(payload)) {
 						clearSessionState()
 						uni.setStorageSync(DEV_IDENTITY_STORAGE_KEY, getConfiguredDevLoginIdentity())

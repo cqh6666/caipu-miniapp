@@ -19,10 +19,17 @@ type SessionResponse struct {
 }
 
 type wechatLoginRequest struct {
-	Code  string `json:"code"`
-	AppID string `json:"appId"`
+	Code      string `json:"code"`
+	AppID     string `json:"appId"`
+	Nickname  string `json:"nickname"`
+	AvatarURL string `json:"avatarUrl"`
 }
 
 type devLoginRequest struct {
 	Identity string `json:"identity"`
+}
+
+type updateProfileRequest struct {
+	Nickname  string `json:"nickname"`
+	AvatarURL string `json:"avatarUrl"`
 }

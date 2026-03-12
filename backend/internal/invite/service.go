@@ -13,6 +13,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/profile"
 )
 
 const (
@@ -241,7 +242,7 @@ func toInvite(record inviteRecord) Invite {
 		SharePath:     "/pages/invite/index?token=" + url.QueryEscape(record.Token),
 		Inviter: Inviter{
 			ID:       record.InviterUserID,
-			Nickname: inviterNickname(record.InviterNickname),
+			Nickname: profile.DisplayName(record.InviterNickname, record.InviterUserID, ""),
 		},
 	}
 }
@@ -267,14 +268,6 @@ func effectiveStatus(record inviteRecord) (string, error) {
 	}
 
 	return record.Status, nil
-}
-
-func inviterNickname(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "厨房成员"
-	}
-	return value
 }
 
 func normalizeInviteCode(value string) string {

@@ -209,7 +209,10 @@
 							class="member-card"
 							:class="{ 'member-card--self': member.isCurrentUser }"
 						>
-							<view class="member-card__avatar">{{ memberInitial(member) }}</view>
+							<view class="member-card__avatar">
+								<image v-if="member.avatarUrl" class="member-card__avatar-image" :src="member.avatarUrl" mode="aspectFill"></image>
+								<text v-else>{{ memberInitial(member) }}</text>
+							</view>
 							<view class="member-card__body">
 								<view class="member-card__top">
 									<text class="member-card__name">{{ memberDisplayName(member) }}</text>
@@ -806,7 +809,7 @@ export default {
 			return '成员'
 		},
 		memberDisplayName(member = {}) {
-			return member.nickname || `成员 ${member.userId || ''}`.trim()
+			return member.nickname || `厨友 ${member.userId || ''}`.trim()
 		},
 		memberInitial(member = {}) {
 			const name = this.memberDisplayName(member)
@@ -1361,6 +1364,13 @@ export default {
 		font-weight: 700;
 		color: #5b4a3b;
 		flex-shrink: 0;
+		overflow: hidden;
+	}
+
+	.member-card__avatar-image {
+		width: 100%;
+		height: 100%;
+		display: block;
 	}
 
 	.member-card__body {

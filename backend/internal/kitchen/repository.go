@@ -52,6 +52,7 @@ func (r *Repository) ListMembers(ctx context.Context, kitchenID, currentUserID i
 SELECT
   u.id,
   COALESCE(u.nickname, ''),
+  COALESCE(u.avatar_url, ''),
   km.role,
   km.joined_at,
   CASE WHEN km.user_id = ? THEN 1 ELSE 0 END AS is_current_user
@@ -81,6 +82,7 @@ ORDER BY
 		if err := rows.Scan(
 			&item.UserID,
 			&item.Nickname,
+			&item.AvatarURL,
 			&item.Role,
 			&item.JoinedAt,
 			&isCurrentUser,

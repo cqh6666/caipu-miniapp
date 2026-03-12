@@ -21,7 +21,7 @@ func (h *Handler) WechatLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.service.LoginWithWechatCode(r.Context(), req.Code, req.AppID)
+	session, err := h.service.LoginWithWechatCode(r.Context(), req.Code, req.AppID, req.Nickname, req.AvatarURL)
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -60,4 +60,28 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.WriteData(w, http.StatusOK, session)
+}
+
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	var req updateProfileRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	user, err := h.service.UpdateProfile(r.Context(), userID, req.Nickname, req.AvatarURL)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"user": user,
+	})
 }

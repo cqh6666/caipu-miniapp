@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/profile"
 )
 
 type Repository struct {
@@ -55,12 +56,17 @@ func (r *Repository) FindOrCreateByOpenID(ctx context.Context, openID, nickname,
 
 	user, err := r.findByOpenID(ctx, openID)
 	if err == nil {
-		return user, nil
+		return r.EnsureProfile(ctx, user, nickname, avatarURL)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return User{}, fmt.Errorf("find user by openid: %w", err)
 	}
 
+	nickname = strings.TrimSpace(nickname)
+	if nickname == "" {
+		nickname = profile.FallbackNickname(0, openID)
+	}
+	avatarURL = strings.TrimSpace(avatarURL)
 	now := time.Now().Format(time.RFC3339)
 	result, insertErr := r.db.ExecContext(
 		ctx,
@@ -74,7 +80,7 @@ func (r *Repository) FindOrCreateByOpenID(ctx context.Context, openID, nickname,
 	if insertErr != nil {
 		user, retryErr := r.findByOpenID(ctx, openID)
 		if retryErr == nil {
-			return user, nil
+			return r.EnsureProfile(ctx, user, nickname, avatarURL)
 		}
 		return User{}, fmt.Errorf("create user: %w", insertErr)
 	}
@@ -87,11 +93,51 @@ func (r *Repository) FindOrCreateByOpenID(ctx context.Context, openID, nickname,
 	return User{
 		ID:        userID,
 		OpenID:    openID,
-		Nickname:  strings.TrimSpace(nickname),
-		AvatarURL: strings.TrimSpace(avatarURL),
+		Nickname:  nickname,
+		AvatarURL: avatarURL,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
+}
+
+func (r *Repository) EnsureProfile(ctx context.Context, user User, nickname, avatarURL string) (User, error) {
+	nextNickname := strings.TrimSpace(user.Nickname)
+	providedNickname := strings.TrimSpace(nickname)
+	if providedNickname != "" && (nextNickname == "" || profile.IsFallbackNickname(nextNickname)) {
+		nextNickname = providedNickname
+	}
+	if nextNickname == "" {
+		nextNickname = profile.FallbackNickname(user.ID, user.OpenID)
+	}
+
+	nextAvatarURL := strings.TrimSpace(user.AvatarURL)
+	providedAvatarURL := strings.TrimSpace(avatarURL)
+	if providedAvatarURL != "" && providedAvatarURL != nextAvatarURL {
+		nextAvatarURL = providedAvatarURL
+	}
+
+	if nextNickname == strings.TrimSpace(user.Nickname) && nextAvatarURL == strings.TrimSpace(user.AvatarURL) {
+		user.Nickname = nextNickname
+		user.AvatarURL = nextAvatarURL
+		return user, nil
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	if _, err := r.db.ExecContext(
+		ctx,
+		`UPDATE users SET nickname = ?, avatar_url = ?, updated_at = ? WHERE id = ?`,
+		nullableString(nextNickname),
+		nullableString(nextAvatarURL),
+		now,
+		user.ID,
+	); err != nil {
+		return User{}, fmt.Errorf("update user profile: %w", err)
+	}
+
+	user.Nickname = nextNickname
+	user.AvatarURL = nextAvatarURL
+	user.UpdatedAt = now
+	return user, nil
 }
 
 func (r *Repository) findByOpenID(ctx context.Context, openID string) (User, error) {

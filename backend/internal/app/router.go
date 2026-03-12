@@ -60,6 +60,7 @@ func NewRouter(
 			authRouter.Group(func(protected chi.Router) {
 				protected.Use(authMiddleware)
 				protected.Get("/me", authHandler.Me)
+				protected.Patch("/profile", authHandler.UpdateProfile)
 			})
 		})
 

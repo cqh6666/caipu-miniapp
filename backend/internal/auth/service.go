@@ -35,7 +35,7 @@ func NewService(
 	}
 }
 
-func (s *Service) LoginWithWechatCode(ctx context.Context, code, appID string) (SessionResponse, error) {
+func (s *Service) LoginWithWechatCode(ctx context.Context, code, appID, nickname, avatarURL string) (SessionResponse, error) {
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return SessionResponse{}, common.NewAppError(common.CodeBadRequest, "code is required", http.StatusBadRequest)
@@ -51,7 +51,7 @@ func (s *Service) LoginWithWechatCode(ctx context.Context, code, appID string) (
 		return SessionResponse{}, err
 	}
 
-	user, err := s.repo.FindOrCreateByOpenID(ctx, session.OpenID, "", "")
+	user, err := s.repo.FindOrCreateByOpenID(ctx, session.OpenID, nickname, avatarURL)
 	if err != nil {
 		return SessionResponse{}, fmt.Errorf("find or create user: %w", err)
 	}
@@ -80,7 +80,26 @@ func (s *Service) CurrentSession(ctx context.Context, userID int64) (SessionResp
 		return SessionResponse{}, err
 	}
 
+	user, err = s.repo.EnsureProfile(ctx, user, "", "")
+	if err != nil {
+		return SessionResponse{}, fmt.Errorf("ensure current user profile: %w", err)
+	}
+
 	return s.buildSession(ctx, user, false)
+}
+
+func (s *Service) UpdateProfile(ctx context.Context, userID int64, nickname, avatarURL string) (User, error) {
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return User{}, err
+	}
+
+	user, err = s.repo.EnsureProfile(ctx, user, nickname, avatarURL)
+	if err != nil {
+		return User{}, fmt.Errorf("update user profile: %w", err)
+	}
+
+	return user, nil
 }
 
 func (s *Service) buildSession(ctx context.Context, user User, includeToken bool) (SessionResponse, error) {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/profile"
 )
 
 const defaultKitchenName = "我们的厨房"
@@ -27,7 +28,16 @@ func (s *Service) ListMembers(ctx context.Context, userID, kitchenID int64) ([]M
 		return nil, err
 	}
 
-	return s.repo.ListMembers(ctx, kitchenID, userID)
+	items, err := s.repo.ListMembers(ctx, kitchenID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	for index := range items {
+		items[index].Nickname = profile.DisplayName(items[index].Nickname, items[index].UserID, "")
+	}
+
+	return items, nil
 }
 
 func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64) (Summary, error) {
