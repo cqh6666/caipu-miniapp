@@ -59,7 +59,7 @@ func New(cfg config.Config) (*App, error) {
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpireHours)
 	authRepo := auth.NewRepository(dbConn)
 	wechatClient := wechat.NewClient(cfg.WechatAppID, cfg.WechatAppSecret)
-	authService := auth.NewService(authRepo, kitchenService, tokenManager, wechatClient)
+	authService := auth.NewService(authRepo, kitchenService, tokenManager, wechatClient, cfg.WechatAppID)
 	authHandler := auth.NewHandler(authService)
 	authMiddleware := appmiddleware.Authenticate(tokenManager)
 

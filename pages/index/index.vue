@@ -164,6 +164,37 @@
 					</view>
 				</view>
 
+				<view class="member-panel">
+					<view class="member-panel__header">
+						<view class="member-panel__heading">
+							<text class="member-panel__title">厨房成员</text>
+							<text class="member-panel__desc">一起维护这间厨房的人都会显示在这里。</text>
+						</view>
+						<text class="member-panel__meta">{{ memberPanelSummary }}</text>
+					</view>
+
+					<view v-if="kitchenMembers.length" class="member-list">
+						<view
+							v-for="member in kitchenMembers"
+							:key="member.userId"
+							class="member-card"
+							:class="{ 'member-card--self': member.isCurrentUser }"
+						>
+							<view class="member-card__avatar">{{ memberInitial(member) }}</view>
+							<view class="member-card__body">
+								<text class="member-card__name">{{ memberDisplayName(member) }}</text>
+								<text class="member-card__meta">{{ memberRoleLabel(member.role) }}{{ member.isCurrentUser ? ' · 你' : '' }}</text>
+							</view>
+						</view>
+					</view>
+
+					<view v-else class="soft-empty soft-empty--inline member-panel__empty">
+						<text class="soft-empty__text">
+							{{ isLoadingKitchenMembers ? '正在获取成员信息...' : '这间厨房暂时只有你，邀请好友后会显示在这里。' }}
+						</text>
+					</view>
+				</view>
+
 				<view class="meal-panel-list">
 					<view
 						v-for="section in mealSections"
@@ -470,8 +501,8 @@ import {
 	statusOptions,
 	toggleRecipeStatusById
 } from '../../utils/recipe-store'
-import { createKitchenInvite } from '../../utils/kitchen-api'
-import { ensureSession, getCurrentKitchenId, getSessionSnapshot, setCurrentKitchenId } from '../../utils/auth'
+import { createKitchenInvite, listKitchenMembers } from '../../utils/kitchen-api'
+import { ensureSession, getCurrentKitchenId, getFriendlySessionErrorMessage, getSessionSnapshot, setCurrentKitchenId } from '../../utils/auth'
 
 const statusMap = {
 	all: { label: '全部', icon: 'list-dot' },
@@ -512,9 +543,13 @@ export default {
 			kitchenOptions: [],
 			currentKitchenName: '',
 			currentKitchenRole: '',
+			kitchenMembers: [],
+			kitchenMembersKitchenId: 0,
 			activeInvite: null,
+			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
+			isLoadingKitchenMembers: false,
 			isPreparingInvite: false
 		}
 	},
@@ -550,7 +585,7 @@ export default {
 			return this.kitchenOptions.length > 1
 		},
 		currentKitchenDisplayName() {
-			return this.currentKitchenName || (this.isSyncing ? '正在获取厨房信息' : '暂时无法连接厨房')
+			return this.currentKitchenName || (this.isSyncing ? '正在获取厨房信息' : this.syncErrorMessage || '暂时无法连接厨房')
 		},
 		currentKitchenRoleLabel() {
 			if (this.currentKitchenRole === 'owner') return '创建者'
@@ -582,14 +617,32 @@ export default {
 			}))
 		},
 		librarySummary() {
+			if (!this.currentKitchenName && this.syncErrorMessage) {
+				return this.syncErrorMessage
+			}
 			return this.isSyncing ? '正在同步这份菜单。' : '先按早餐和正餐整理，再看想吃和吃过。'
 		},
 		kitchenSummary() {
+			if (!this.currentKitchenName && this.syncErrorMessage) {
+				return this.syncErrorMessage
+			}
 			if (!this.currentKitchenName) {
 				return this.isSyncing ? '正在连接厨房。' : '按早餐和正餐分开看，哪些吃过，哪些还想吃。'
 			}
 
 			return this.isSyncing ? '正在同步当前厨房。' : '这里汇总的是当前厨房里的全部菜品状态。'
+		},
+		memberPanelSummary() {
+			if (!this.currentKitchenName && this.isSyncing) {
+				return '同步中'
+			}
+			if (this.isLoadingKitchenMembers) {
+				return '加载中'
+			}
+			if (!this.kitchenMembers.length) {
+				return '等待成员加入'
+			}
+			return `${this.kitchenMembers.length} 位成员`
 		},
 		filteredRecipes() {
 			const keyword = this.searchKeyword.trim().toLowerCase()
@@ -640,6 +693,10 @@ export default {
 			this.kitchenOptions = Array.isArray(snapshot?.kitchens) ? snapshot.kitchens : []
 			this.currentKitchenName = snapshot?.currentKitchen?.name || ''
 			this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
+			if (Number(snapshot?.currentKitchenId) !== this.kitchenMembersKitchenId) {
+				this.kitchenMembers = []
+				this.kitchenMembersKitchenId = Number(snapshot?.currentKitchenId) || 0
+			}
 			this.activeInvite = null
 		},
 		async refreshRecipes(options = {}) {
@@ -652,12 +709,20 @@ export default {
 			try {
 				this.isSyncing = true
 				const session = await ensureSession()
+				this.syncErrorMessage = ''
 				this.applySession(session)
-				const recipes = await loadRecipes({ forceRefresh: true })
+				const kitchenId = getCurrentKitchenId()
+				const [recipes] = await Promise.all([
+					loadRecipes({ forceRefresh: true }),
+					this.refreshKitchenMembers({ kitchenId, silent: true })
+				])
 				this.recipes = recipes
 			} catch (error) {
+				this.syncErrorMessage = getFriendlySessionErrorMessage(error)
 				this.applySession()
 				this.recipes = getCachedRecipes()
+				this.kitchenMembers = []
+				this.kitchenMembersKitchenId = 0
 				if (!silent) {
 					uni.showToast({
 						title: error?.message || '同步失败',
@@ -670,6 +735,55 @@ export default {
 		},
 		recipeSecondaryText(recipe) {
 			return getRecipeSecondaryText(recipe)
+		},
+		memberRoleLabel(role) {
+			if (role === 'owner') return '创建者'
+			if (role === 'admin') return '管理员'
+			if (role === 'member') return '成员'
+			return '成员'
+		},
+		memberDisplayName(member = {}) {
+			return member.nickname || `成员 ${member.userId || ''}`.trim()
+		},
+		memberInitial(member = {}) {
+			const name = this.memberDisplayName(member)
+			return name.slice(0, 1)
+		},
+		async refreshKitchenMembers(options = {}) {
+			const { kitchenId = getCurrentKitchenId(), silent = true } = options
+			const targetKitchenId = Number(kitchenId) || 0
+			if (!targetKitchenId) {
+				this.kitchenMembers = []
+				this.kitchenMembersKitchenId = 0
+				return []
+			}
+
+			this.isLoadingKitchenMembers = true
+
+			try {
+				const items = await listKitchenMembers(targetKitchenId)
+				if (targetKitchenId === getCurrentKitchenId()) {
+					this.kitchenMembers = items
+					this.kitchenMembersKitchenId = targetKitchenId
+				}
+				return items
+			} catch (error) {
+				if (targetKitchenId === getCurrentKitchenId()) {
+					this.kitchenMembers = []
+					this.kitchenMembersKitchenId = targetKitchenId
+				}
+				if (!silent) {
+					uni.showToast({
+						title: error?.message || '获取成员失败',
+						icon: 'none'
+					})
+				}
+				return []
+			} finally {
+				if (targetKitchenId === getCurrentKitchenId()) {
+					this.isLoadingKitchenMembers = false
+				}
+			}
 		},
 		createDraftFromContext() {
 			const defaultStatus = ['wishlist', 'done'].includes(this.activeStatus) ? this.activeStatus : 'wishlist'
@@ -969,6 +1083,107 @@ export default {
 		font-size: 23rpx;
 		font-weight: 700;
 		color: #5b4a3b;
+	}
+
+	.member-panel {
+		margin-top: 18rpx;
+		padding: 22rpx 20rpx;
+		border-radius: 24rpx;
+		background: rgba(255, 255, 255, 0.92);
+		border: 1px solid rgba(91, 74, 59, 0.06);
+		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
+	}
+
+	.member-panel__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.member-panel__heading {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.member-panel__title {
+		display: block;
+		font-size: 28rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.member-panel__desc {
+		display: block;
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		line-height: 1.55;
+		color: #887b6f;
+	}
+
+	.member-panel__meta {
+		flex-shrink: 0;
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #8a7d70;
+	}
+
+	.member-list {
+		margin-top: 18rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.member-card {
+		padding: 18rpx 16rpx;
+		border-radius: 18rpx;
+		background: #f6f1ea;
+		display: flex;
+		align-items: center;
+		gap: 14rpx;
+	}
+
+	.member-card--self {
+		background: #efe8dd;
+		border: 1px solid rgba(91, 74, 59, 0.08);
+	}
+
+	.member-card__avatar {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 999rpx;
+		background: linear-gradient(180deg, #e8d8c5 0%, #dbc4a8 100%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 24rpx;
+		font-weight: 700;
+		color: #5b4a3b;
+		flex-shrink: 0;
+	}
+
+	.member-card__body {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6rpx;
+	}
+
+	.member-card__name {
+		font-size: 25rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.member-card__meta {
+		font-size: 22rpx;
+		color: #85796e;
+	}
+
+	.member-panel__empty {
+		margin-top: 18rpx;
 	}
 
 	.invite-sheet {

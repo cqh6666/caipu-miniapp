@@ -16,6 +16,7 @@ type Service struct {
 	kitchen      *kitchen.Service
 	tokenManager *TokenManager
 	wechatClient wechat.Client
+	wechatAppID  string
 }
 
 func NewService(
@@ -23,19 +24,26 @@ func NewService(
 	kitchenService *kitchen.Service,
 	tokenManager *TokenManager,
 	wechatClient wechat.Client,
+	wechatAppID string,
 ) *Service {
 	return &Service{
 		repo:         repo,
 		kitchen:      kitchenService,
 		tokenManager: tokenManager,
 		wechatClient: wechatClient,
+		wechatAppID:  strings.TrimSpace(wechatAppID),
 	}
 }
 
-func (s *Service) LoginWithWechatCode(ctx context.Context, code string) (SessionResponse, error) {
+func (s *Service) LoginWithWechatCode(ctx context.Context, code, appID string) (SessionResponse, error) {
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return SessionResponse{}, common.NewAppError(common.CodeBadRequest, "code is required", http.StatusBadRequest)
+	}
+
+	appID = strings.TrimSpace(appID)
+	if appID != "" && s.wechatAppID != "" && appID != s.wechatAppID {
+		return SessionResponse{}, common.NewAppError(common.CodeBadRequest, "mini program appId does not match backend wechat config", http.StatusBadRequest)
 	}
 
 	session, err := s.wechatClient.Code2Session(ctx, code)

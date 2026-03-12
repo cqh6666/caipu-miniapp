@@ -104,6 +104,19 @@ function loginWithWeChat() {
 	})
 }
 
+function getMiniProgramAppID() {
+	if (typeof uni.getAccountInfoSync !== 'function') {
+		return ''
+	}
+
+	try {
+		const accountInfo = uni.getAccountInfoSync()
+		return String(accountInfo?.miniProgram?.appId || '').trim()
+	} catch (error) {
+		return ''
+	}
+}
+
 async function createSession() {
 	if (shouldUseDevLogin()) {
 		const payload = await request({
@@ -122,7 +135,10 @@ async function createSession() {
 	const payload = await request({
 		url: '/api/auth/wechat/login',
 		method: 'POST',
-		data: { code },
+		data: {
+			code,
+			appId: getMiniProgramAppID()
+		},
 		auth: false
 	})
 
@@ -227,6 +243,26 @@ export function updateSessionKitchens(payload = {}) {
 
 	setSessionState(nextSession)
 	return nextSession
+}
+
+export function getFriendlySessionErrorMessage(error) {
+	const message = String(error?.message || '').trim()
+	if (!message) {
+		return '暂时无法登录，请稍后再试'
+	}
+	if (message === 'wechat login is not configured') {
+		return '微信登录尚未配置'
+	}
+	if (message === 'mini program appId does not match backend wechat config') {
+		return '小程序 AppID 与后端配置不一致'
+	}
+	if (message === 'wechat login failed') {
+		return '微信登录失败，请稍后重试'
+	}
+	if (message === '网络请求失败') {
+		return '暂时无法连接服务器'
+	}
+	return message
 }
 
 export function clearSession() {

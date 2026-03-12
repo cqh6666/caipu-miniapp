@@ -1,5 +1,12 @@
 import { request } from './http'
 
+export function listKitchenMembers(kitchenId) {
+	return request({
+		url: `/api/kitchens/${kitchenId}/members`,
+		method: 'GET'
+	}).then((data) => data?.items || [])
+}
+
 export function createKitchenInvite(kitchenId, payload = {}) {
 	return request({
 		url: `/api/kitchens/${kitchenId}/invites`,

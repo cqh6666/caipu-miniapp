@@ -12,6 +12,7 @@
   - `GET /api/auth/me`
   - `GET /api/kitchens`
   - `POST /api/kitchens`
+  - `GET /api/kitchens/{kitchenID}/members`
 - 接入 `recipe` 闭环：
   - `GET /api/kitchens/{kitchenID}/recipes`
   - `POST /api/kitchens/{kitchenID}/recipes`
@@ -35,6 +36,8 @@
 - 前端 `utils/recipe-store.js` 已改为“本地缓存 + 远端 API”模式
 - 前端新增 `utils/auth.js`、`utils/http.js`、`utils/kitchen-api.js`、`utils/recipe-api.js`、`utils/upload-api.js`
 - 前端首页已接入厨房切换器和邀请成员入口，并新增 `pages/invite/index.vue` 处理邀请预览与接受加入
+- 前端“厨房”页已接入成员面板，可按当前厨房展示成员列表和自己的角色
+- 正式微信登录链路补充了 `appId` 透传与校验，前端也支持显式切换 `dev / wechat / auto` 登录模式
 - `.gitignore` 已覆盖 SQLite 运行产物、本地环境文件、备份和覆盖率输出
 
 ### Notes

@@ -69,6 +69,7 @@ func NewRouter(
 			protected.Use(authMiddleware)
 			protected.Get("/kitchens", kitchenHandler.List)
 			protected.Post("/kitchens", kitchenHandler.Create)
+			protected.Get("/kitchens/{kitchenID}/members", kitchenHandler.ListMembers)
 			protected.Post("/kitchens/{kitchenID}/invites", inviteHandler.Create)
 			protected.Post("/invites/{token}/accept", inviteHandler.Accept)
 			protected.Get("/kitchens/{kitchenID}/recipes", recipeHandler.List)

@@ -22,6 +22,14 @@ func (s *Service) ListByUserID(ctx context.Context, userID int64) ([]Summary, er
 	return s.repo.ListByUserID(ctx, userID)
 }
 
+func (s *Service) ListMembers(ctx context.Context, userID, kitchenID int64) ([]Member, error) {
+	if err := s.EnsureMember(ctx, userID, kitchenID); err != nil {
+		return nil, err
+	}
+
+	return s.repo.ListMembers(ctx, kitchenID, userID)
+}
+
 func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64) (Summary, error) {
 	items, err := s.repo.ListByUserID(ctx, userID)
 	if err != nil {

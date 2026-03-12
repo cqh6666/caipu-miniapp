@@ -1,10 +1,19 @@
 const apiBaseURL = 'http://127.0.0.1:8080'
 
-const autoAuthMode = /127\.0\.0\.1|localhost/.test(apiBaseURL) ? 'dev' : 'wechat'
+const requestedAuthMode = 'auto'
+
+function resolveAuthMode(mode, baseURL) {
+	if (mode === 'dev' || mode === 'wechat') {
+		return mode
+	}
+
+	return /127\.0\.0\.1|localhost/.test(baseURL) ? 'dev' : 'wechat'
+}
 
 export const appConfig = {
 	apiBaseURL,
-	authMode: autoAuthMode,
+	authMode: resolveAuthMode(requestedAuthMode, apiBaseURL),
+	authModeSetting: requestedAuthMode,
 	devLoginIdentity: 'alice',
 	devLoginIdentityMode: 'fixed',
 	requestTimeout: 15000

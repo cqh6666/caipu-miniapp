@@ -68,7 +68,7 @@
 </template>
 
 <script>
-import { ensureSession, getSessionSnapshot, setCurrentKitchenId, updateSessionKitchens } from '../../utils/auth'
+import { ensureSession, getFriendlySessionErrorMessage, getSessionSnapshot, setCurrentKitchenId, updateSessionKitchens } from '../../utils/auth'
 import { acceptInvite, previewInvite } from '../../utils/kitchen-api'
 
 const inviteStatusLabelMap = {
@@ -232,7 +232,7 @@ export default {
 				})
 			} catch (error) {
 				uni.showToast({
-					title: error?.message || '加入失败',
+					title: getFriendlySessionErrorMessage(error) || '加入失败',
 					icon: 'none'
 				})
 			} finally {

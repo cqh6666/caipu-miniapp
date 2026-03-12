@@ -39,6 +39,7 @@
 - 菜品数据已接入后端接口，并按 `kitchenId` 维度缓存到本地存储
 - “我们的厨房”页按 `早餐 / 正餐` 分组查看 `想吃 / 吃过` 统计和列表
 - 首页支持查看当前厨房，并在多个厨房之间切换
+- “厨房”页支持查看当前厨房成员列表
 - “厨房”页支持生成邀请并分享给微信好友
 - 新增邀请页，支持预览邀请并加入共享厨房
 
@@ -96,6 +97,14 @@
 - `utils/recipe-store.js` 负责菜品数据归一化、本地缓存和远端同步
 - `unpackage/` 是构建产物目录，默认不纳入 Git 管理
 
+正式微信登录切换说明：
+
+- 把 `utils/app-config.js` 里的 `apiBaseURL` 改成已配置到小程序后台的 `HTTPS` 域名
+- 把 `utils/app-config.js` 里的 `authModeSetting` 改成 `wechat`，或保留 `auto` 并使用非 localhost 域名
+- 后端 `WECHAT_APP_ID` 必须和 `manifest.json` 里的 `mp-weixin.appid` 一致
+- 后端补齐 `WECHAT_APP_SECRET`
+- 更完整的项目专用清单见 `docs/wechat-login-checklist.md`
+
 ## 交互说明
 
 - `早餐 / 正餐`：
@@ -114,7 +123,7 @@
 ## 当前限制
 
 - 当前默认使用 `utils/app-config.js` 里的本地后端地址和 `dev-login`
-- 成员管理页、邀请撤销、邀请记录列表还未接到前端 UI
+- 成员移除、角色调整、邀请撤销、邀请记录列表还未接到前端 UI
 - 链接解析内容目前为固定结构和本地 mock，尚未接入自动解析或 AI 能力
 - 暂未提供菜品排序、自定义标签或批量管理能力
 

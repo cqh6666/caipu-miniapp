@@ -21,7 +21,7 @@ func (h *Handler) WechatLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.service.LoginWithWechatCode(r.Context(), req.Code)
+	session, err := h.service.LoginWithWechatCode(r.Context(), req.Code, req.AppID)
 	if err != nil {
 		common.WriteError(w, err)
 		return

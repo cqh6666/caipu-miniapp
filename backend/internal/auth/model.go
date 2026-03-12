@@ -19,7 +19,8 @@ type SessionResponse struct {
 }
 
 type wechatLoginRequest struct {
-	Code string `json:"code"`
+	Code  string `json:"code"`
+	AppID string `json:"appId"`
 }
 
 type devLoginRequest struct {

@@ -47,6 +47,57 @@ ORDER BY k.updated_at DESC, k.id DESC
 	return items, nil
 }
 
+func (r *Repository) ListMembers(ctx context.Context, kitchenID, currentUserID int64) ([]Member, error) {
+	const query = `
+SELECT
+  u.id,
+  COALESCE(u.nickname, ''),
+  km.role,
+  km.joined_at,
+  CASE WHEN km.user_id = ? THEN 1 ELSE 0 END AS is_current_user
+FROM kitchen_members km
+JOIN users u ON u.id = km.user_id
+WHERE km.kitchen_id = ?
+ORDER BY
+  CASE km.role
+    WHEN 'owner' THEN 0
+    WHEN 'admin' THEN 1
+    ELSE 2
+  END,
+  km.joined_at ASC,
+  u.id ASC
+`
+
+	rows, err := r.db.QueryContext(ctx, query, currentUserID, kitchenID)
+	if err != nil {
+		return nil, fmt.Errorf("list kitchen members: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Member, 0)
+	for rows.Next() {
+		var item Member
+		var isCurrentUser int
+		if err := rows.Scan(
+			&item.UserID,
+			&item.Nickname,
+			&item.Role,
+			&item.JoinedAt,
+			&isCurrentUser,
+		); err != nil {
+			return nil, fmt.Errorf("scan kitchen member: %w", err)
+		}
+		item.IsCurrentUser = isCurrentUser == 1
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate kitchen members: %w", err)
+	}
+
+	return items, nil
+}
+
 func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, name string) (Summary, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

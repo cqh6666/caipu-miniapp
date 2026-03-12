@@ -27,6 +27,14 @@ cp configs/example.env configs/local.env
 go run ./cmd/server
 ```
 
+正式微信登录接线：
+
+1. 把 `configs/local.env` 或线上环境变量中的 `WECHAT_APP_ID` 设为和 `manifest.json` 里 `mp-weixin.appid` 相同的值
+2. 填入对应小程序后台的 `WECHAT_APP_SECRET`
+3. 确保前端 `utils/app-config.js` 指向已配置在微信小程序后台的 `HTTPS` 服务域名
+4. 前端切到 `wechat` 或 `auto + 非 localhost 域名` 模式
+5. 真机登录时，前端会把当前小程序 `appId` 一并带给后端；后端若发现和配置不一致，会直接返回明确错误
+
 填充演示数据：
 
 ```bash
@@ -44,6 +52,7 @@ go run ./cmd/seed-demo
 - `GET /api/auth/me`
 - `GET /api/kitchens`
 - `POST /api/kitchens`
+- `GET /api/kitchens/{kitchenID}/members`
 - `GET /api/invites/{token}`
 - `POST /api/kitchens/{kitchenID}/invites`
 - `POST /api/invites/{token}/accept`
@@ -113,7 +122,7 @@ go run ./cmd/server -migrate-only
 
 后续第一批建议实现顺序：
 
-1. 增加成员管理
+1. 增加成员移除和角色调整
 2. 增加编辑记录和冲突提示
 3. 增加邀请撤销和邀请列表
 4. 增加操作日志和基础测试
