@@ -1,6 +1,6 @@
-const apiBaseURL = 'http://127.0.0.1:8080'
+const apiBaseURL = 'https://www.gxm1227.top'
 
-const requestedAuthMode = 'auto'
+const requestedAuthMode = 'wechat'
 
 function resolveAuthMode(mode, baseURL) {
 	if (mode === 'dev' || mode === 'wechat') {
