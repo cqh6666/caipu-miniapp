@@ -12,6 +12,18 @@ node_modules/
 # Build output
 unpackage/
 dist/
+backend/bin/
+backend/tmp/
+backend/.env
+backend/.env.*
+backend/coverage.out
+backend/coverage/
+backend/backups/
+backend/configs/local.env
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+backend/data/uploads/
 
 # Logs
 *.log
