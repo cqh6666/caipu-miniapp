@@ -66,6 +66,24 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) PreviewByCode(w http.ResponseWriter, r *http.Request) {
+	code := strings.TrimSpace(chi.URLParam(r, "code"))
+	if code == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite code is required", http.StatusBadRequest))
+		return
+	}
+
+	item, err := h.service.PreviewByCode(r.Context(), code)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"invite": item,
+	})
+}
+
 func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 	userID, ok := common.CurrentUserID(r.Context())
 	if !ok {
@@ -80,6 +98,28 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.service.Accept(r.Context(), userID, token)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, result)
+}
+
+func (h *Handler) AcceptByCode(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	code := strings.TrimSpace(chi.URLParam(r, "code"))
+	if code == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite code is required", http.StatusBadRequest))
+		return
+	}
+
+	result, err := h.service.AcceptByCode(r.Context(), userID, code)
 	if err != nil {
 		common.WriteError(w, err)
 		return

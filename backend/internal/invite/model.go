@@ -19,6 +19,7 @@ type Invite struct {
 	KitchenID     int64   `json:"kitchenId"`
 	KitchenName   string  `json:"kitchenName"`
 	Token         string  `json:"token"`
+	Code          string  `json:"code"`
 	Status        string  `json:"status"`
 	MaxUses       int     `json:"maxUses"`
 	UsedCount     int     `json:"usedCount"`
@@ -49,6 +50,7 @@ type inviteRecord struct {
 	InviterUserID   int64
 	InviterNickname string
 	Token           string
+	Code            string
 	Status          string
 	MaxUses         int
 	UsedCount       int
@@ -60,6 +62,7 @@ type createInviteParams struct {
 	KitchenID     int64
 	InviterUserID int64
 	Token         string
+	Code          string
 	Status        string
 	MaxUses       int
 	ExpiresAt     string

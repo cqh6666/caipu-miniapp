@@ -64,6 +64,7 @@ func NewRouter(
 		})
 
 		api.Get("/invites/{token}", inviteHandler.Preview)
+		api.Get("/invite-codes/{code}", inviteHandler.PreviewByCode)
 
 		api.Group(func(protected chi.Router) {
 			protected.Use(authMiddleware)
@@ -72,6 +73,7 @@ func NewRouter(
 			protected.Get("/kitchens/{kitchenID}/members", kitchenHandler.ListMembers)
 			protected.Post("/kitchens/{kitchenID}/invites", inviteHandler.Create)
 			protected.Post("/invites/{token}/accept", inviteHandler.Accept)
+			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)
 			protected.Get("/kitchens/{kitchenID}/recipes", recipeHandler.List)
 			protected.Post("/kitchens/{kitchenID}/recipes", recipeHandler.Create)
 			protected.Get("/recipes/{recipeID}", recipeHandler.Detail)

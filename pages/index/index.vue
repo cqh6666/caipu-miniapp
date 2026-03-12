@@ -157,9 +157,15 @@
 								></up-icon>
 							</view>
 						</view>
-						<view class="kitchen-invite-button" @tap="openInviteSheet">
-							<up-icon name="share" size="16" color="#5b4a3b"></up-icon>
-							<text class="kitchen-invite-button__text">邀请成员</text>
+						<view class="kitchen-action-group">
+							<view class="kitchen-invite-button" @tap="openInviteSheet">
+								<up-icon name="share" size="16" color="#5b4a3b"></up-icon>
+								<text class="kitchen-invite-button__text">邀请成员</text>
+							</view>
+							<view class="kitchen-invite-button kitchen-invite-button--secondary" @tap="openInviteCodeSheet">
+								<up-icon name="edit-pen" size="16" color="#5b4a3b"></up-icon>
+								<text class="kitchen-invite-button__text">填邀请码</text>
+							</view>
 						</view>
 					</view>
 				</view>
@@ -329,9 +335,18 @@
 							<text class="invite-sheet__label">当前状态</text>
 							<text class="invite-sheet__value">{{ inviteStatusText }}</text>
 						</view>
+						<view class="invite-sheet__row invite-sheet__row--stack">
+							<text class="invite-sheet__label">邀请码</text>
+							<view class="invite-sheet__code-row">
+								<text class="invite-sheet__code">{{ formattedActiveInviteCode }}</text>
+								<view class="invite-sheet__copy" @tap="copyInviteCode">
+									<text class="invite-sheet__copy-text">复制</text>
+								</view>
+							</view>
+						</view>
 						<view class="invite-sheet__tips">
 							<up-icon name="info-circle-fill" size="15" color="#a17d63"></up-icon>
-							<text class="invite-sheet__tips-text">朋友打开分享卡片后，会进入邀请页确认加入。加入后你们会看到同一个厨房的数据。</text>
+							<text class="invite-sheet__tips-text">如果暂时不能微信分享，就把邀请码发给朋友。对方输入后，也能进入邀请页确认加入。</text>
 						</view>
 					</view>
 				</scroll-view>
@@ -348,6 +363,52 @@
 					</button>
 					<view class="invite-sheet__action" @tap="previewInvitePage">
 						<text class="invite-sheet__action-text">预览邀请页</text>
+					</view>
+				</view>
+			</view>
+		</up-popup>
+
+		<up-popup
+			:show="showInviteCodeSheet"
+			mode="bottom"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
+			@close="closeInviteCodeSheet"
+		>
+			<view class="invite-code-sheet">
+				<view class="invite-code-sheet__header">
+					<view class="invite-code-sheet__heading">
+						<text class="invite-code-sheet__title">输入邀请码</text>
+						<text class="invite-code-sheet__subtitle">让朋友把邀请码发给你，输入后就能进入邀请页确认加入。</text>
+					</view>
+					<view class="invite-code-sheet__close" @tap="closeInviteCodeSheet">
+						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
+					</view>
+				</view>
+
+				<view class="invite-code-sheet__body">
+					<input
+						:value="inviteCodeInput"
+						class="invite-code-sheet__input"
+						placeholder="输入邀请码，例如 AB12-CD34"
+						placeholder-class="invite-code-sheet__placeholder"
+						maxlength="9"
+						@input="handleInviteCodeInput"
+					/>
+					<text class="invite-code-sheet__hint">输入后会先打开邀请页，再由你确认是否加入。</text>
+				</view>
+
+				<view class="invite-code-sheet__footer">
+					<view class="sheet-action" @tap="closeInviteCodeSheet">
+						<text class="sheet-action__text">取消</text>
+					</view>
+					<view
+						class="sheet-action sheet-action--primary"
+						:class="{ 'sheet-action--disabled': !canSubmitInviteCode }"
+						@tap="submitInviteCode"
+					>
+						<text class="sheet-action__text sheet-action__text--primary">继续</text>
 					</view>
 				</view>
 			</view>
@@ -501,7 +562,7 @@ import {
 	statusOptions,
 	toggleRecipeStatusById
 } from '../../utils/recipe-store'
-import { createKitchenInvite, listKitchenMembers } from '../../utils/kitchen-api'
+import { createKitchenInvite, formatInviteCode, listKitchenMembers, normalizeInviteCode } from '../../utils/kitchen-api'
 import { ensureSession, getCurrentKitchenId, getFriendlySessionErrorMessage, getSessionSnapshot, setCurrentKitchenId } from '../../utils/auth'
 
 const statusMap = {
@@ -531,6 +592,7 @@ export default {
 			selectedRecipeId: '',
 			showAddSheet: false,
 			showInviteSheet: false,
+			showInviteCodeSheet: false,
 			mealTabs: mealTypeOptions,
 			statusTabs: [
 				{ label: '全部', value: 'all' },
@@ -546,6 +608,7 @@ export default {
 			kitchenMembers: [],
 			kitchenMembersKitchenId: 0,
 			activeInvite: null,
+			inviteCodeInput: '',
 			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
@@ -682,6 +745,12 @@ export default {
 				revoked: '已失效'
 			}
 			return statusLabelMap[this.activeInvite.status] || this.activeInvite.status
+		},
+		formattedActiveInviteCode() {
+			return formatInviteCode(this.activeInvite?.code || '') || '--'
+		},
+		canSubmitInviteCode() {
+			return !!normalizeInviteCode(this.inviteCodeInput)
 		},
 		canSubmitDraft() {
 			return !!this.draft.title.trim()
@@ -908,6 +977,17 @@ export default {
 		closeInviteSheet() {
 			this.showInviteSheet = false
 		},
+		openInviteCodeSheet() {
+			this.inviteCodeInput = ''
+			this.showInviteCodeSheet = true
+		},
+		closeInviteCodeSheet() {
+			this.showInviteCodeSheet = false
+			this.inviteCodeInput = ''
+		},
+		handleInviteCodeInput(event) {
+			this.inviteCodeInput = formatInviteCode(event?.detail?.value || '')
+		},
 		async prepareInvite() {
 			if (this.isPreparingInvite) return
 
@@ -926,6 +1006,25 @@ export default {
 				this.isPreparingInvite = false
 			}
 		},
+		copyInviteCode() {
+			if (!this.activeInvite?.code) {
+				uni.showToast({
+					title: '请先生成邀请码',
+					icon: 'none'
+				})
+				return
+			}
+
+			uni.setClipboardData({
+				data: formatInviteCode(this.activeInvite.code),
+				success: () => {
+					uni.showToast({
+						title: '邀请码已复制',
+						icon: 'none'
+					})
+				}
+			})
+		},
 		previewInvitePage() {
 			if (!this.activeInvite?.sharePath) {
 				uni.showToast({
@@ -937,6 +1036,21 @@ export default {
 
 			uni.navigateTo({
 				url: this.activeInvite.sharePath
+			})
+		},
+		submitInviteCode() {
+			const code = normalizeInviteCode(this.inviteCodeInput)
+			if (!code) {
+				uni.showToast({
+					title: '请先输入邀请码',
+					icon: 'none'
+				})
+				return
+			}
+
+			this.closeInviteCodeSheet()
+			uni.navigateTo({
+				url: `/pages/invite/index?code=${encodeURIComponent(code)}`
 			})
 		},
 		openKitchenSelector() {
@@ -1064,9 +1178,15 @@ export default {
 		gap: 12rpx;
 	}
 
+	.kitchen-action-group {
+		margin-top: 8rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
 	.kitchen-invite-button {
 		width: 154rpx;
-		margin-top: 8rpx;
 		padding: 18rpx 14rpx;
 		border-radius: 22rpx;
 		background: linear-gradient(180deg, #f0e6da 0%, #eadbc9 100%);
@@ -1077,6 +1197,10 @@ export default {
 		align-items: center;
 		justify-content: center;
 		gap: 10rpx;
+	}
+
+	.kitchen-invite-button--secondary {
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(245, 239, 231, 0.96) 100%);
 	}
 
 	.kitchen-invite-button__text {
@@ -1303,6 +1427,11 @@ export default {
 		gap: 16rpx;
 	}
 
+	.invite-sheet__row--stack {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
 	.invite-sheet__label {
 		font-size: 23rpx;
 		color: #8b7e72;
@@ -1314,6 +1443,35 @@ export default {
 		font-size: 24rpx;
 		font-weight: 600;
 		color: #40372f;
+	}
+
+	.invite-sheet__code-row {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.invite-sheet__code {
+		font-size: 32rpx;
+		font-weight: 700;
+		letter-spacing: 3rpx;
+		color: #2f2923;
+		font-family: 'SF Mono', 'Menlo', monospace;
+	}
+
+	.invite-sheet__copy {
+		flex-shrink: 0;
+		padding: 12rpx 18rpx;
+		border-radius: 999rpx;
+		background: #f2eadf;
+	}
+
+	.invite-sheet__copy-text {
+		font-size: 22rpx;
+		font-weight: 700;
+		color: #6e5f50;
 	}
 
 	.invite-sheet__tips {
@@ -1367,6 +1525,89 @@ export default {
 
 	.invite-sheet__action-text--primary {
 		color: #ffffff;
+	}
+
+	.invite-code-sheet {
+		padding: 26rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+		background: #f8f4ee;
+	}
+
+	.invite-code-sheet__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 18rpx;
+	}
+
+	.invite-code-sheet__heading {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.invite-code-sheet__title {
+		display: block;
+		font-size: 36rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.invite-code-sheet__subtitle {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 24rpx;
+		line-height: 1.6;
+		color: #8a7d70;
+	}
+
+	.invite-code-sheet__close {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.75);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.invite-code-sheet__body {
+		margin-top: 22rpx;
+		padding: 24rpx;
+		border-radius: 24rpx;
+		background: rgba(255, 255, 255, 0.94);
+		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
+	}
+
+	.invite-code-sheet__input {
+		height: 96rpx;
+		padding: 0 24rpx;
+		border-radius: 20rpx;
+		background: #f8f3ec;
+		font-size: 32rpx;
+		font-weight: 700;
+		letter-spacing: 3rpx;
+		color: #2f2923;
+		font-family: 'SF Mono', 'Menlo', monospace;
+	}
+
+	.invite-code-sheet__placeholder {
+		font-size: 28rpx;
+		font-weight: 600;
+		letter-spacing: 1rpx;
+		color: #b0a59a;
+	}
+
+	.invite-code-sheet__hint {
+		display: block;
+		margin-top: 14rpx;
+		font-size: 22rpx;
+		line-height: 1.6;
+		color: #82766b;
+	}
+
+	.invite-code-sheet__footer {
+		margin-top: 22rpx;
+		display: flex;
+		gap: 12rpx;
 	}
 
 	.toolbar {

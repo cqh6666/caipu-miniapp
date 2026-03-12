@@ -2,6 +2,7 @@ package invite
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -17,7 +18,10 @@ import (
 const (
 	maxInviteExpireHours = 720
 	maxInviteUses        = 20
+	inviteCodeLength     = 8
 )
+
+const inviteCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 type Service struct {
 	repo               *Repository
@@ -57,11 +61,17 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 		return Invite{}, fmt.Errorf("generate invite token: %w", err)
 	}
 
+	code, err := s.generateInviteCode(ctx)
+	if err != nil {
+		return Invite{}, err
+	}
+
 	now := time.Now()
 	record, err := s.repo.Create(ctx, createInviteParams{
 		KitchenID:     kitchenID,
 		InviterUserID: userID,
 		Token:         token,
+		Code:          code,
 		Status:        statusActive,
 		MaxUses:       maxUses,
 		ExpiresAt:     now.Add(time.Duration(expireHours) * time.Hour).Format(time.RFC3339),
@@ -83,12 +93,34 @@ func (s *Service) Preview(ctx context.Context, token string) (Invite, error) {
 	return toInvite(record), nil
 }
 
+func (s *Service) PreviewByCode(ctx context.Context, code string) (Invite, error) {
+	record, err := s.findByCode(ctx, code)
+	if err != nil {
+		return Invite{}, err
+	}
+
+	return toInvite(record), nil
+}
+
 func (s *Service) Accept(ctx context.Context, userID int64, token string) (AcceptResult, error) {
 	record, err := s.findByToken(ctx, token)
 	if err != nil {
 		return AcceptResult{}, err
 	}
 
+	return s.acceptRecord(ctx, userID, record)
+}
+
+func (s *Service) AcceptByCode(ctx context.Context, userID int64, code string) (AcceptResult, error) {
+	record, err := s.findByCode(ctx, code)
+	if err != nil {
+		return AcceptResult{}, err
+	}
+
+	return s.acceptRecord(ctx, userID, record)
+}
+
+func (s *Service) acceptRecord(ctx context.Context, userID int64, record inviteRecord) (AcceptResult, error) {
 	status, err := effectiveStatus(record)
 	if err != nil {
 		return AcceptResult{}, err
@@ -150,6 +182,23 @@ func (s *Service) findByToken(ctx context.Context, token string) (inviteRecord, 
 	return record, nil
 }
 
+func (s *Service) findByCode(ctx context.Context, code string) (inviteRecord, error) {
+	code = normalizeInviteCode(code)
+	if code == "" {
+		return inviteRecord{}, common.NewAppError(common.CodeBadRequest, "invite code is required", http.StatusBadRequest)
+	}
+
+	record, err := s.repo.FindByCode(ctx, code)
+	if errors.Is(err, sql.ErrNoRows) {
+		return inviteRecord{}, common.ErrNotFound
+	}
+	if err != nil {
+		return inviteRecord{}, err
+	}
+
+	return record, nil
+}
+
 func (s *Service) normalizeCreateRequest(req createInviteRequest) (maxUses int, expireHours int, err error) {
 	maxUses = req.MaxUses
 	if maxUses <= 0 {
@@ -182,6 +231,7 @@ func toInvite(record inviteRecord) Invite {
 		KitchenID:     record.KitchenID,
 		KitchenName:   record.KitchenName,
 		Token:         record.Token,
+		Code:          record.Code,
 		Status:        status,
 		MaxUses:       record.MaxUses,
 		UsedCount:     record.UsedCount,
@@ -225,4 +275,44 @@ func inviterNickname(value string) string {
 		return "厨房成员"
 	}
 	return value
+}
+
+func normalizeInviteCode(value string) string {
+	value = strings.TrimSpace(strings.ToUpper(value))
+	value = strings.ReplaceAll(value, "-", "")
+	value = strings.ReplaceAll(value, " ", "")
+	return value
+}
+
+func (s *Service) generateInviteCode(ctx context.Context) (string, error) {
+	for attempt := 0; attempt < 12; attempt++ {
+		code, err := newInviteCode()
+		if err != nil {
+			return "", fmt.Errorf("generate invite code: %w", err)
+		}
+
+		_, err = s.repo.FindByCode(ctx, code)
+		if errors.Is(err, sql.ErrNoRows) {
+			return code, nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return "", fmt.Errorf("generate invite code: too many collisions")
+}
+
+func newInviteCode() (string, error) {
+	buffer := make([]byte, inviteCodeLength)
+	randomBytes := make([]byte, inviteCodeLength)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", err
+	}
+
+	for index, value := range randomBytes {
+		buffer[index] = inviteCodeAlphabet[int(value)%len(inviteCodeAlphabet)]
+	}
+
+	return string(buffer), nil
 }

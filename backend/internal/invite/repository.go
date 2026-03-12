@@ -8,6 +8,24 @@ import (
 	"time"
 )
 
+const findInviteBaseQuery = `
+SELECT ki.id,
+       ki.kitchen_id,
+       k.name,
+       ki.inviter_user_id,
+       COALESCE(u.nickname, ''),
+       ki.token,
+       COALESCE(ki.code, ''),
+       ki.status,
+       ki.max_uses,
+       ki.used_count,
+       ki.expires_at,
+       ki.created_at
+FROM kitchen_invites ki
+JOIN kitchens k ON k.id = ki.kitchen_id
+JOIN users u ON u.id = ki.inviter_user_id
+`
+
 type Repository struct {
 	db *sql.DB
 }
@@ -19,11 +37,12 @@ func NewRepository(db *sql.DB) *Repository {
 func (r *Repository) Create(ctx context.Context, params createInviteParams) (inviteRecord, error) {
 	_, err := r.db.ExecContext(
 		ctx,
-		`INSERT INTO kitchen_invites (kitchen_id, inviter_user_id, token, status, max_uses, used_count, expires_at, created_at)
-		 VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+		`INSERT INTO kitchen_invites (kitchen_id, inviter_user_id, token, code, status, max_uses, used_count, expires_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		params.KitchenID,
 		params.InviterUserID,
 		params.Token,
+		params.Code,
 		params.Status,
 		params.MaxUses,
 		params.ExpiresAt,
@@ -37,21 +56,7 @@ func (r *Repository) Create(ctx context.Context, params createInviteParams) (inv
 }
 
 func (r *Repository) FindByToken(ctx context.Context, token string) (inviteRecord, error) {
-	const query = `
-SELECT ki.id,
-       ki.kitchen_id,
-       k.name,
-       ki.inviter_user_id,
-       COALESCE(u.nickname, ''),
-       ki.token,
-       ki.status,
-       ki.max_uses,
-       ki.used_count,
-       ki.expires_at,
-       ki.created_at
-FROM kitchen_invites ki
-JOIN kitchens k ON k.id = ki.kitchen_id
-JOIN users u ON u.id = ki.inviter_user_id
+	const query = findInviteBaseQuery + `
 WHERE ki.token = ?
 LIMIT 1
 `
@@ -64,6 +69,7 @@ LIMIT 1
 		&item.InviterUserID,
 		&item.InviterNickname,
 		&item.Token,
+		&item.Code,
 		&item.Status,
 		&item.MaxUses,
 		&item.UsedCount,
@@ -72,6 +78,34 @@ LIMIT 1
 	)
 	if err != nil {
 		return inviteRecord{}, fmt.Errorf("find invite by token: %w", err)
+	}
+
+	return item, nil
+}
+
+func (r *Repository) FindByCode(ctx context.Context, code string) (inviteRecord, error) {
+	const query = findInviteBaseQuery + `
+WHERE ki.code = ?
+LIMIT 1
+`
+
+	var item inviteRecord
+	err := r.db.QueryRowContext(ctx, query, code).Scan(
+		&item.ID,
+		&item.KitchenID,
+		&item.KitchenName,
+		&item.InviterUserID,
+		&item.InviterNickname,
+		&item.Token,
+		&item.Code,
+		&item.Status,
+		&item.MaxUses,
+		&item.UsedCount,
+		&item.ExpiresAt,
+		&item.CreatedAt,
+	)
+	if err != nil {
+		return inviteRecord{}, fmt.Errorf("find invite by code: %w", err)
 	}
 
 	return item, nil

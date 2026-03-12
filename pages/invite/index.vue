@@ -43,6 +43,10 @@
 						<text class="invite-summary__label">剩余名额</text>
 						<text class="invite-summary__value">{{ inviteRemainingText }}</text>
 					</view>
+					<view v-if="inviteCodeText" class="invite-summary__item">
+						<text class="invite-summary__label">邀请码</text>
+						<text class="invite-summary__value invite-summary__value--code">{{ inviteCodeText }}</text>
+					</view>
 				</view>
 
 				<view class="invite-notice" :class="{ 'invite-notice--success': hasAccepted || alreadyMember }">
@@ -69,7 +73,7 @@
 
 <script>
 import { ensureSession, getFriendlySessionErrorMessage, getSessionSnapshot, setCurrentKitchenId, updateSessionKitchens } from '../../utils/auth'
-import { acceptInvite, previewInvite } from '../../utils/kitchen-api'
+import { acceptInvite, acceptInviteByCode, formatInviteCode, normalizeInviteCode, previewInvite, previewInviteByCode } from '../../utils/kitchen-api'
 
 const inviteStatusLabelMap = {
 	active: '可加入',
@@ -82,6 +86,7 @@ export default {
 	data() {
 		return {
 			token: '',
+			code: '',
 			invite: null,
 			session: getSessionSnapshot(),
 			isLoading: true,
@@ -103,6 +108,9 @@ export default {
 		inviteRemainingText() {
 			if (!this.invite) return '--'
 			return `${this.invite.remainingUses} / ${this.invite.maxUses}`
+		},
+		inviteCodeText() {
+			return formatInviteCode(this.invite?.code || this.code)
 		},
 		alreadyMember() {
 			if (!this.invite?.kitchenId) return false
@@ -160,13 +168,14 @@ export default {
 	},
 	onLoad(options) {
 		this.token = options?.token || ''
+		this.code = normalizeInviteCode(options?.code || '')
 	},
 	onShow() {
 		this.initializePage()
 	},
 	methods: {
 		async initializePage() {
-			if (!this.token) {
+			if (!this.token && !this.code) {
 				this.errorMessage = '缺少邀请参数，无法判断你要加入哪一个厨房。'
 				this.isLoading = false
 				return
@@ -177,7 +186,7 @@ export default {
 			this.hasAccepted = false
 
 			try {
-				const invite = await previewInvite(this.token)
+				const invite = this.code ? await previewInviteByCode(this.code) : await previewInvite(this.token)
 				this.invite = invite
 			} catch (error) {
 				this.errorMessage = error?.message || '这份邀请不存在，或已经被撤回。'
@@ -219,7 +228,7 @@ export default {
 
 			try {
 				await ensureSession()
-				const result = await acceptInvite(this.token)
+				const result = this.code ? await acceptInviteByCode(this.code) : await acceptInvite(this.token)
 				this.invite = result?.invite || this.invite
 				this.session = updateSessionKitchens({
 					kitchens: result?.kitchens,
@@ -355,6 +364,11 @@ export default {
 		font-size: 24rpx;
 		font-weight: 600;
 		color: #3f3730;
+	}
+
+	.invite-summary__value--code {
+		font-family: 'SF Mono', 'Menlo', monospace;
+		letter-spacing: 2rpx;
 	}
 
 	.invite-notice {
