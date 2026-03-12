@@ -9,9 +9,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/bootstrap"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/db"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
+	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/wechat"
 )
 
 type App struct {
@@ -34,7 +40,26 @@ func New(cfg config.Config) (*App, error) {
 		return nil, err
 	}
 
-	router := NewRouter(cfg, logger)
+	kitchenRepo := kitchen.NewRepository(dbConn)
+	kitchenService := kitchen.NewService(kitchenRepo)
+	kitchenHandler := kitchen.NewHandler(kitchenService)
+
+	inviteRepo := invite.NewRepository(dbConn)
+	inviteService := invite.NewService(inviteRepo, kitchenService, cfg.InviteDefaultExpireHours, cfg.InviteDefaultMaxUses)
+	inviteHandler := invite.NewHandler(inviteService)
+
+	recipeRepo := recipe.NewRepository(dbConn)
+	recipeService := recipe.NewService(recipeRepo, kitchenService)
+	recipeHandler := recipe.NewHandler(recipeService)
+
+	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpireHours)
+	authRepo := auth.NewRepository(dbConn)
+	wechatClient := wechat.NewClient(cfg.WechatAppID, cfg.WechatAppSecret)
+	authService := auth.NewService(authRepo, kitchenService, tokenManager, wechatClient)
+	authHandler := auth.NewHandler(authService)
+	authMiddleware := appmiddleware.Authenticate(tokenManager)
+
+	router := NewRouter(cfg, logger, authHandler, kitchenHandler, inviteHandler, recipeHandler, authMiddleware)
 
 	server := &http.Server{
 		Addr:              cfg.AppAddr,
