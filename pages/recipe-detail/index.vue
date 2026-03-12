@@ -271,6 +271,7 @@
 <script>
 import {
 	deleteRecipeById,
+	getCachedRecipeById,
 	getRecipeById,
 	mealTypeLabelMap,
 	mealTypeOptions,
@@ -307,7 +308,10 @@ export default {
 			showEditSheet: false,
 			editDraft: createEmptyDraft(),
 			mealTabs: mealTypeOptions,
-			statusTabs: statusOptions
+			statusTabs: statusOptions,
+			isLoadingRecipe: false,
+			isSavingRecipe: false,
+			isDeletingRecipe: false
 		}
 	},
 	computed: {
@@ -334,8 +338,35 @@ export default {
 		this.loadRecipe()
 	},
 	methods: {
-		loadRecipe() {
-			this.recipe = this.recipeId ? getRecipeById(this.recipeId) : null
+		async loadRecipe() {
+			if (!this.recipeId) {
+				this.recipe = null
+				return
+			}
+
+			const cachedRecipe = getCachedRecipeById(this.recipeId)
+			if (cachedRecipe) {
+				this.applyRecipe(cachedRecipe)
+			}
+
+			try {
+				this.isLoadingRecipe = true
+				const recipe = await getRecipeById(this.recipeId, { preferCache: !cachedRecipe })
+				this.applyRecipe(recipe)
+			} catch (error) {
+				if (!cachedRecipe) {
+					this.recipe = null
+					uni.showToast({
+						title: error?.message || '加载失败',
+						icon: 'none'
+					})
+				}
+			} finally {
+				this.isLoadingRecipe = false
+			}
+		},
+		applyRecipe(recipe) {
+			this.recipe = recipe
 			if (this.recipe?.title) {
 				uni.setNavigationBarTitle({
 					title: this.recipe.title
@@ -378,27 +409,44 @@ export default {
 		removeEditImage() {
 			this.editDraft.image = ''
 		},
-		saveEditDraft() {
-			if (!this.canSaveEditDraft) return
-			updateRecipeById(this.recipeId, {
-				title: this.editDraft.title.trim(),
-				ingredient: this.editDraft.ingredient.trim(),
-				link: this.editDraft.link.trim(),
-				image: this.editDraft.image,
-				mealType: this.editDraft.mealType,
-				status: this.editDraft.status,
-				parsedContent: {
-					ingredients: textToList(this.editDraft.ingredientsText),
-					steps: textToList(this.editDraft.stepsText)
-				},
-				note: this.editDraft.note.trim()
+		async saveEditDraft() {
+			if (!this.canSaveEditDraft || this.isSavingRecipe) return
+
+			this.isSavingRecipe = true
+			uni.showLoading({
+				title: '保存中',
+				mask: true
 			})
-			this.closeEditSheet()
-			this.loadRecipe()
-			uni.showToast({
-				title: '已保存',
-				icon: 'none'
-			})
+
+			try {
+				const recipe = await updateRecipeById(this.recipeId, {
+					title: this.editDraft.title.trim(),
+					ingredient: this.editDraft.ingredient.trim(),
+					link: this.editDraft.link.trim(),
+					image: this.editDraft.image,
+					mealType: this.editDraft.mealType,
+					status: this.editDraft.status,
+					parsedContent: {
+						ingredients: textToList(this.editDraft.ingredientsText),
+						steps: textToList(this.editDraft.stepsText)
+					},
+					note: this.editDraft.note.trim()
+				})
+				this.closeEditSheet()
+				this.applyRecipe(recipe)
+				uni.showToast({
+					title: '已保存',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '保存失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isSavingRecipe = false
+				uni.hideLoading()
+			}
 		},
 		confirmDeleteRecipe() {
 			if (!this.recipe) return
@@ -406,18 +454,39 @@ export default {
 				title: '删除菜品',
 				content: '删除后会从列表和详情页移除。',
 				confirmColor: '#c16a51',
-				success: ({ confirm }) => {
+				success: async ({ confirm }) => {
 					if (!confirm) return
-					deleteRecipeById(this.recipeId)
-					uni.showToast({
-						title: '已删除',
-						icon: 'none'
-					})
-					setTimeout(() => {
-						this.goBack()
-					}, 280)
+					await this.deleteCurrentRecipe()
 				}
 			})
+		},
+		async deleteCurrentRecipe() {
+			if (this.isDeletingRecipe) return
+
+			this.isDeletingRecipe = true
+			uni.showLoading({
+				title: '删除中',
+				mask: true
+			})
+
+			try {
+				await deleteRecipeById(this.recipeId)
+				uni.showToast({
+					title: '已删除',
+					icon: 'none'
+				})
+				setTimeout(() => {
+					this.goBack()
+				}, 280)
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '删除失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isDeletingRecipe = false
+				uni.hideLoading()
+			}
 		},
 		copyLink() {
 			if (!this.recipe?.link) {

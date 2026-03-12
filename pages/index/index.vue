@@ -134,7 +134,34 @@
 			<template v-else>
 				<view class="page-header">
 					<text class="page-header__title">我们的厨房</text>
-					<text class="page-header__summary">按早餐和正餐分开看，哪些吃过，哪些还想吃。</text>
+					<text class="page-header__summary">{{ kitchenSummary }}</text>
+					<view class="kitchen-entry-bar">
+						<view
+							class="kitchen-switcher"
+							:class="{ 'kitchen-switcher--disabled': !currentKitchenName }"
+							@tap="openKitchenSelector"
+						>
+							<view class="kitchen-switcher__main">
+								<view class="kitchen-switcher__badge">
+									<up-icon name="grid-fill" size="12" color="#5b4a3b"></up-icon>
+									<text class="kitchen-switcher__badge-text">当前厨房</text>
+								</view>
+								<text class="kitchen-switcher__name">{{ currentKitchenDisplayName }}</text>
+							</view>
+							<view class="kitchen-switcher__aside">
+								<text class="kitchen-switcher__meta">{{ kitchenSwitcherMeta }}</text>
+								<up-icon
+									:name="canSwitchKitchen ? 'arrow-down' : 'checkmark'"
+									size="14"
+									:color="canSwitchKitchen ? '#7f7265' : '#9b8f83'"
+								></up-icon>
+							</view>
+						</view>
+						<view class="kitchen-invite-button" @tap="openInviteSheet">
+							<up-icon name="share" size="16" color="#5b4a3b"></up-icon>
+							<text class="kitchen-invite-button__text">邀请成员</text>
+						</view>
+					</view>
 				</view>
 
 				<view class="meal-panel-list">
@@ -222,6 +249,78 @@
 				<text class="nav-item__label">厨房</text>
 			</view>
 		</view>
+
+		<up-popup
+			:show="showInviteSheet"
+			mode="bottom"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
+			@close="closeInviteSheet"
+		>
+			<view class="invite-sheet">
+				<view class="invite-sheet__header">
+					<view class="invite-sheet__heading">
+						<text class="invite-sheet__title">邀请成员</text>
+						<text class="invite-sheet__subtitle">把这间厨房分享给朋友，一起维护同一份菜单。</text>
+					</view>
+					<view class="invite-sheet__close" @tap="closeInviteSheet">
+						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
+					</view>
+				</view>
+
+				<scroll-view class="invite-sheet__body" scroll-y>
+					<view class="invite-sheet__card">
+						<view class="invite-sheet__badge">
+							<up-icon name="grid-fill" size="12" color="#5b4a3b"></up-icon>
+							<text class="invite-sheet__badge-text">分享对象</text>
+						</view>
+						<text class="invite-sheet__kitchen">{{ currentKitchenDisplayName }}</text>
+						<text class="invite-sheet__note">{{ inviteSheetSummary }}</text>
+					</view>
+
+					<view v-if="isPreparingInvite" class="invite-sheet__state">
+						<up-icon name="reload" size="22" color="#8d8074"></up-icon>
+						<text class="invite-sheet__state-title">正在生成邀请</text>
+						<text class="invite-sheet__state-desc">很快就好，生成后就能直接发给微信好友。</text>
+					</view>
+
+					<view v-else-if="activeInvite" class="invite-sheet__details">
+						<view class="invite-sheet__row">
+							<text class="invite-sheet__label">有效期</text>
+							<text class="invite-sheet__value">{{ inviteExpiresText }}</text>
+						</view>
+						<view class="invite-sheet__row">
+							<text class="invite-sheet__label">可加入次数</text>
+							<text class="invite-sheet__value">{{ inviteQuotaText }}</text>
+						</view>
+						<view class="invite-sheet__row">
+							<text class="invite-sheet__label">当前状态</text>
+							<text class="invite-sheet__value">{{ inviteStatusText }}</text>
+						</view>
+						<view class="invite-sheet__tips">
+							<up-icon name="info-circle-fill" size="15" color="#a17d63"></up-icon>
+							<text class="invite-sheet__tips-text">朋友打开分享卡片后，会进入邀请页确认加入。加入后你们会看到同一个厨房的数据。</text>
+						</view>
+					</view>
+				</scroll-view>
+
+				<view class="invite-sheet__footer">
+					<button
+						class="invite-sheet__action invite-sheet__action--primary"
+						open-type="share"
+						:disabled="!activeInvite || isPreparingInvite"
+					>
+						<text class="invite-sheet__action-text invite-sheet__action-text--primary">
+							{{ isPreparingInvite ? '生成中...' : '发送给微信好友' }}
+						</text>
+					</button>
+					<view class="invite-sheet__action" @tap="previewInvitePage">
+						<text class="invite-sheet__action-text">预览邀请页</text>
+					</view>
+				</view>
+			</view>
+		</up-popup>
 
 		<up-popup
 			:show="showAddSheet"
@@ -364,12 +463,15 @@
 <script>
 import {
 	createRecipeFromDraft,
+	getCachedRecipes,
 	getRecipeSecondaryText,
 	loadRecipes,
 	mealTypeOptions,
-	saveRecipes,
-	statusOptions
+	statusOptions,
+	toggleRecipeStatusById
 } from '../../utils/recipe-store'
+import { createKitchenInvite } from '../../utils/kitchen-api'
+import { ensureSession, getCurrentKitchenId, getSessionSnapshot, setCurrentKitchenId } from '../../utils/auth'
 
 const statusMap = {
 	all: { label: '全部', icon: 'list-dot' },
@@ -397,6 +499,7 @@ export default {
 			searchKeyword: '',
 			selectedRecipeId: '',
 			showAddSheet: false,
+			showInviteSheet: false,
 			mealTabs: mealTypeOptions,
 			statusTabs: [
 				{ label: '全部', value: 'all' },
@@ -405,11 +508,36 @@ export default {
 			],
 			draftStatusOptions: statusOptions,
 			draft: createEmptyDraft(),
-			recipes: []
+			recipes: [],
+			kitchenOptions: [],
+			currentKitchenName: '',
+			currentKitchenRole: '',
+			activeInvite: null,
+			isSyncing: false,
+			isSubmittingDraft: false,
+			isPreparingInvite: false
+		}
+	},
+	onLoad(options) {
+		if (options?.section === 'kitchen') {
+			this.activeSection = 'kitchen'
 		}
 	},
 	onShow() {
 		this.refreshRecipes()
+	},
+	onShareAppMessage(res) {
+		if (res?.from === 'button' && this.activeInvite?.sharePath) {
+			return {
+				title: `${this.currentKitchenName || '我们的厨房'} 邀请你一起维护菜单`,
+				path: this.activeInvite.sharePath
+			}
+		}
+
+		return {
+			title: '来看看我们的数字厨房',
+			path: '/pages/index/index'
+		}
 	},
 	computed: {
 		currentMealLabel() {
@@ -417,6 +545,30 @@ export default {
 		},
 		wishlistRecipes() {
 			return this.recipes.filter((recipe) => recipe.status === 'wishlist')
+		},
+		canSwitchKitchen() {
+			return this.kitchenOptions.length > 1
+		},
+		currentKitchenDisplayName() {
+			return this.currentKitchenName || (this.isSyncing ? '正在获取厨房信息' : '暂时无法连接厨房')
+		},
+		currentKitchenRoleLabel() {
+			if (this.currentKitchenRole === 'owner') return '创建者'
+			if (this.currentKitchenRole === 'admin') return '管理员'
+			if (this.currentKitchenRole === 'member') return '成员'
+			return ''
+		},
+		kitchenSwitcherMeta() {
+			if (!this.currentKitchenName) {
+				return this.isSyncing ? '同步中' : '等待连接'
+			}
+
+			if (this.canSwitchKitchen) {
+				const prefix = this.currentKitchenRoleLabel || '已连接'
+				return `${prefix} · ${this.kitchenOptions.length} 个厨房`
+			}
+
+			return this.currentKitchenRoleLabel || '已连接'
 		},
 		doneRecipes() {
 			return this.recipes.filter((recipe) => recipe.status === 'done')
@@ -430,7 +582,14 @@ export default {
 			}))
 		},
 		librarySummary() {
-			return `先按早餐和正餐整理，再看想吃和吃过。`
+			return this.isSyncing ? '正在同步这份菜单。' : '先按早餐和正餐整理，再看想吃和吃过。'
+		},
+		kitchenSummary() {
+			if (!this.currentKitchenName) {
+				return this.isSyncing ? '正在连接厨房。' : '按早餐和正餐分开看，哪些吃过，哪些还想吃。'
+			}
+
+			return this.isSyncing ? '正在同步当前厨房。' : '这里汇总的是当前厨房里的全部菜品状态。'
 		},
 		filteredRecipes() {
 			const keyword = this.searchKeyword.trim().toLowerCase()
@@ -446,13 +605,68 @@ export default {
 				return matchedMealType && matchedStatus && matchedKeyword
 			})
 		},
+		inviteSheetSummary() {
+			if (!this.currentKitchenName) {
+				return '等厨房信息同步完成后，就可以生成邀请。'
+			}
+
+			return `好友加入后，会把「${this.currentKitchenName}」加入自己的厨房列表。`
+		},
+		inviteExpiresText() {
+			if (!this.activeInvite?.expiresAt) return '--'
+			return this.activeInvite.expiresAt.replace('T', ' ').replace(/\+\d{2}:\d{2}$/, '').slice(0, 16)
+		},
+		inviteQuotaText() {
+			if (!this.activeInvite) return '--'
+			return `剩余 ${this.activeInvite.remainingUses} 次，共 ${this.activeInvite.maxUses} 次`
+		},
+		inviteStatusText() {
+			if (!this.activeInvite?.status) return '--'
+			const statusLabelMap = {
+				active: '可加入',
+				expired: '已过期',
+				used_up: '名额已满',
+				revoked: '已失效'
+			}
+			return statusLabelMap[this.activeInvite.status] || this.activeInvite.status
+		},
 		canSubmitDraft() {
 			return !!this.draft.title.trim()
 		}
 	},
 	methods: {
-		refreshRecipes() {
-			this.recipes = loadRecipes()
+		applySession(session = getSessionSnapshot()) {
+			const snapshot = session || getSessionSnapshot()
+			this.kitchenOptions = Array.isArray(snapshot?.kitchens) ? snapshot.kitchens : []
+			this.currentKitchenName = snapshot?.currentKitchen?.name || ''
+			this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
+			this.activeInvite = null
+		},
+		async refreshRecipes(options = {}) {
+			const { silent = true } = options
+			const cachedRecipes = getCachedRecipes()
+			if (cachedRecipes.length) {
+				this.recipes = cachedRecipes
+			}
+
+			try {
+				this.isSyncing = true
+				const session = await ensureSession()
+				this.applySession(session)
+				const recipes = await loadRecipes({ forceRefresh: true })
+				this.recipes = recipes
+			} catch (error) {
+				this.applySession()
+				this.recipes = getCachedRecipes()
+				if (!silent) {
+					uni.showToast({
+						title: error?.message || '同步失败',
+						icon: 'none'
+					})
+				}
+			} finally {
+				this.isSyncing = false
+			}
 		},
 		recipeSecondaryText(recipe) {
 			return getRecipeSecondaryText(recipe)
@@ -477,14 +691,18 @@ export default {
 			return status === 'done' ? '标记想吃' : '标记吃过'
 		},
 		toggleRecipeStatus(recipeId) {
-			const nextRecipes = this.recipes.map((recipe) => {
-				if (recipe.id !== recipeId) return recipe
-				return {
-					...recipe,
-					status: recipe.status === 'done' ? 'wishlist' : 'done'
-				}
-			})
-			this.recipes = saveRecipes(nextRecipes)
+			this.toggleRecipeStatusAsync(recipeId)
+		},
+		async toggleRecipeStatusAsync(recipeId) {
+			try {
+				await toggleRecipeStatusById(recipeId)
+				this.recipes = getCachedRecipes()
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '更新状态失败',
+					icon: 'none'
+				})
+			}
 		},
 		drawTonight() {
 			const pool = this.wishlistRecipes.length ? this.wishlistRecipes : this.recipes
@@ -524,20 +742,110 @@ export default {
 		removeDraftImage() {
 			this.draft.image = ''
 		},
-		submitDraft() {
-			if (!this.canSubmitDraft) return
-			const newRecipe = createRecipeFromDraft(this.draft)
-			this.recipes = saveRecipes([newRecipe, ...this.recipes])
-			this.selectedRecipeId = newRecipe.id
-			this.activeSection = 'library'
-			this.activeMealType = newRecipe.mealType
-			this.activeStatus = 'all'
-			this.searchKeyword = ''
-			this.showAddSheet = false
-			this.draft = this.createDraftFromContext()
-			uni.showToast({
-				title: '已保存',
-				icon: 'none'
+		async submitDraft() {
+			if (!this.canSubmitDraft || this.isSubmittingDraft) return
+
+			this.isSubmittingDraft = true
+			uni.showLoading({
+				title: '保存中',
+				mask: true
+			})
+
+			try {
+				const newRecipe = await createRecipeFromDraft(this.draft)
+				this.recipes = getCachedRecipes()
+				this.selectedRecipeId = newRecipe.id
+				this.activeSection = 'library'
+				this.activeMealType = newRecipe.mealType
+				this.activeStatus = 'all'
+				this.searchKeyword = ''
+				this.showAddSheet = false
+				this.draft = this.createDraftFromContext()
+				uni.showToast({
+					title: '已保存',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '保存失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isSubmittingDraft = false
+				uni.hideLoading()
+			}
+		},
+		async openInviteSheet() {
+			if (!this.currentKitchenName) {
+				await this.refreshRecipes({ silent: false })
+			}
+
+			if (!getCurrentKitchenId()) {
+				uni.showToast({
+					title: '还没拿到厨房信息',
+					icon: 'none'
+				})
+				return
+			}
+
+			this.showInviteSheet = true
+			await this.prepareInvite()
+		},
+		closeInviteSheet() {
+			this.showInviteSheet = false
+		},
+		async prepareInvite() {
+			if (this.isPreparingInvite) return
+
+			this.isPreparingInvite = true
+			this.activeInvite = null
+
+			try {
+				const invite = await createKitchenInvite(getCurrentKitchenId(), {})
+				this.activeInvite = invite
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '生成邀请失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isPreparingInvite = false
+			}
+		},
+		previewInvitePage() {
+			if (!this.activeInvite?.sharePath) {
+				uni.showToast({
+					title: '请先生成邀请',
+					icon: 'none'
+				})
+				return
+			}
+
+			uni.navigateTo({
+				url: this.activeInvite.sharePath
+			})
+		},
+		openKitchenSelector() {
+			if (!this.kitchenOptions.length) return
+			if (this.kitchenOptions.length <= 1) {
+				uni.showToast({
+					title: '当前只有一个厨房',
+					icon: 'none'
+				})
+				return
+			}
+
+			uni.showActionSheet({
+				itemList: this.kitchenOptions.map((item) => item.name),
+				success: async ({ tapIndex }) => {
+					const nextKitchen = this.kitchenOptions[tapIndex]
+					if (!nextKitchen || nextKitchen.id === getSessionSnapshot()?.currentKitchenId) return
+					setCurrentKitchenId(nextKitchen.id)
+					this.applySession()
+					this.selectedRecipeId = ''
+					this.searchKeyword = ''
+					await this.refreshRecipes({ silent: false })
+				}
 			})
 		}
 	}
@@ -571,6 +879,279 @@ export default {
 		font-size: 23rpx;
 		line-height: 1.5;
 		color: #8d847a;
+	}
+
+	.kitchen-switcher {
+		flex: 1;
+		margin-top: 8rpx;
+		padding: 18rpx 20rpx;
+		border-radius: 22rpx;
+		background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 242, 235, 0.95) 100%);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow: 0 10rpx 22rpx rgba(56, 44, 30, 0.05);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.kitchen-switcher--disabled {
+		opacity: 0.76;
+	}
+
+	.kitchen-switcher__main {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 10rpx;
+	}
+
+	.kitchen-switcher__badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 8rpx;
+		align-self: flex-start;
+		padding: 8rpx 14rpx;
+		border-radius: 999rpx;
+		background: rgba(91, 74, 59, 0.08);
+	}
+
+	.kitchen-switcher__badge-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #6a5a4b;
+	}
+
+	.kitchen-switcher__name {
+		font-size: 30rpx;
+		font-weight: 700;
+		line-height: 1.32;
+		color: #2f2923;
+	}
+
+	.kitchen-switcher__aside {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+	}
+
+	.kitchen-switcher__meta {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #8a7d70;
+	}
+
+	.kitchen-entry-bar {
+		margin-top: 8rpx;
+		display: flex;
+		align-items: stretch;
+		gap: 12rpx;
+	}
+
+	.kitchen-invite-button {
+		width: 154rpx;
+		margin-top: 8rpx;
+		padding: 18rpx 14rpx;
+		border-radius: 22rpx;
+		background: linear-gradient(180deg, #f0e6da 0%, #eadbc9 100%);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow: 0 10rpx 22rpx rgba(56, 44, 30, 0.05);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 10rpx;
+	}
+
+	.kitchen-invite-button__text {
+		font-size: 23rpx;
+		font-weight: 700;
+		color: #5b4a3b;
+	}
+
+	.invite-sheet {
+		padding: 26rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+		background: #f8f4ee;
+	}
+
+	.invite-sheet__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 18rpx;
+	}
+
+	.invite-sheet__heading {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.invite-sheet__title {
+		display: block;
+		font-size: 36rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.invite-sheet__subtitle {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 24rpx;
+		line-height: 1.6;
+		color: #8a7d70;
+	}
+
+	.invite-sheet__close {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.75);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.invite-sheet__body {
+		max-height: 58vh;
+		margin-top: 22rpx;
+	}
+
+	.invite-sheet__card,
+	.invite-sheet__details,
+	.invite-sheet__state {
+		padding: 24rpx;
+		border-radius: 24rpx;
+		background: rgba(255, 255, 255, 0.94);
+		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
+	}
+
+	.invite-sheet__badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 8rpx;
+		padding: 8rpx 14rpx;
+		border-radius: 999rpx;
+		background: rgba(91, 74, 59, 0.08);
+	}
+
+	.invite-sheet__badge-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #6c5d4e;
+	}
+
+	.invite-sheet__kitchen {
+		display: block;
+		margin-top: 18rpx;
+		font-size: 34rpx;
+		font-weight: 700;
+		line-height: 1.32;
+		color: #2f2923;
+	}
+
+	.invite-sheet__note,
+	.invite-sheet__state-desc {
+		display: block;
+		margin-top: 12rpx;
+		font-size: 24rpx;
+		line-height: 1.65;
+		color: #82766b;
+	}
+
+	.invite-sheet__state {
+		margin-top: 16rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 12rpx;
+	}
+
+	.invite-sheet__state-title {
+		font-size: 30rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.invite-sheet__details {
+		margin-top: 16rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 16rpx;
+	}
+
+	.invite-sheet__row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.invite-sheet__label {
+		font-size: 23rpx;
+		color: #8b7e72;
+	}
+
+	.invite-sheet__value {
+		flex: 1;
+		text-align: right;
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #40372f;
+	}
+
+	.invite-sheet__tips {
+		padding-top: 6rpx;
+		display: flex;
+		align-items: flex-start;
+		gap: 10rpx;
+	}
+
+	.invite-sheet__tips-text {
+		flex: 1;
+		font-size: 23rpx;
+		line-height: 1.6;
+		color: #7d6f61;
+	}
+
+	.invite-sheet__footer {
+		margin-top: 22rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.invite-sheet__action {
+		height: 92rpx;
+		border-radius: 22rpx;
+		background: #ece6de;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+	}
+
+	.invite-sheet__action::after {
+		border: none;
+	}
+
+	.invite-sheet__action--primary {
+		background: #3f352d;
+	}
+
+	.invite-sheet__action[disabled] {
+		opacity: 0.7;
+	}
+
+	.invite-sheet__action-text {
+		font-size: 26rpx;
+		font-weight: 700;
+		color: #5c5146;
+	}
+
+	.invite-sheet__action-text--primary {
+		color: #ffffff;
 	}
 
 	.toolbar {

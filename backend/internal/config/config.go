@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -46,7 +47,7 @@ func Load() (Config, error) {
 		SQLiteBusyTimeoutMS:      getInt("SQLITE_BUSY_TIMEOUT_MS", 5000),
 		MigrationDir:             filepath.Clean(getEnv("MIGRATION_DIR", "./migrations")),
 		UploadDir:                filepath.Clean(getEnv("UPLOAD_DIR", "./data/uploads")),
-		UploadPublicBaseURL:      getEnv("UPLOAD_PUBLIC_BASE_URL", "https://api.example.com/uploads"),
+		UploadPublicBaseURL:      strings.TrimSpace(os.Getenv("UPLOAD_PUBLIC_BASE_URL")),
 		UploadMaxImageMB:         int64(getInt("UPLOAD_MAX_IMAGE_MB", 10)),
 		InviteDefaultExpireHours: getInt("INVITE_DEFAULT_EXPIRE_HOURS", 72),
 		InviteDefaultMaxUses:     getInt("INVITE_DEFAULT_MAX_USES", 10),

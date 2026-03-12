@@ -1,7 +1,9 @@
 <script>
+	import { ensureSession } from './utils/auth'
+
 	export default {
 		onLaunch: function() {
-			console.log('App Launch')
+			ensureSession().catch(() => {})
 		},
 		onShow: function() {
 			console.log('App Show')

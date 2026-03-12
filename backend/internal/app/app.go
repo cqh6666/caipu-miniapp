@@ -17,6 +17,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/wechat"
 )
 
@@ -52,6 +53,9 @@ func New(cfg config.Config) (*App, error) {
 	recipeService := recipe.NewService(recipeRepo, kitchenService)
 	recipeHandler := recipe.NewHandler(recipeService)
 
+	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
+	uploadHandler := upload.NewHandler(uploadService)
+
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpireHours)
 	authRepo := auth.NewRepository(dbConn)
 	wechatClient := wechat.NewClient(cfg.WechatAppID, cfg.WechatAppSecret)
@@ -59,7 +63,7 @@ func New(cfg config.Config) (*App, error) {
 	authHandler := auth.NewHandler(authService)
 	authMiddleware := appmiddleware.Authenticate(tokenManager)
 
-	router := NewRouter(cfg, logger, authHandler, kitchenHandler, inviteHandler, recipeHandler, authMiddleware)
+	router := NewRouter(cfg, logger, authHandler, kitchenHandler, inviteHandler, recipeHandler, uploadHandler, authMiddleware)
 
 	server := &http.Server{
 		Addr:              cfg.AppAddr,

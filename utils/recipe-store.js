@@ -1,4 +1,15 @@
-const RECIPE_STORAGE_KEY = 'caipu-miniapp-recipes'
+import { ensureSession, getCurrentKitchenId } from './auth'
+import {
+	createRecipe,
+	deleteRecipe,
+	getRecipeDetail,
+	listRecipes,
+	updateRecipe,
+	updateRecipeStatus
+} from './recipe-api'
+import { ensureUploadedImage } from './upload-api'
+
+const RECIPE_STORAGE_PREFIX = 'caipu-miniapp-recipes'
 
 export const mealTypeOptions = [
 	{ label: '早餐', value: 'breakfast', icon: 'clock-fill', activeColor: '#a06a3f' },
@@ -20,92 +31,9 @@ export const statusLabelMap = {
 	done: '吃过'
 }
 
-const defaultRecipes = [
-	{
-		id: 'r1',
-		title: '番茄滑蛋牛肉',
-		ingredient: '牛肉',
-		link: 'https://www.xiachufang.com/recipe/107000001/',
-		image: '',
-		mealType: 'main',
-		status: 'done',
-		note: '下饭',
-		parsedContent: {
-			ingredients: ['牛里脊 200g', '番茄 2个', '鸡蛋 3个', '蒜末 少许', '生抽、盐、黑胡椒 适量'],
-			steps: ['牛肉切片后用少量生抽和黑胡椒抓匀，静置十分钟。', '番茄先炒软出汁，鸡蛋单独滑散备用。', '牛肉快速滑熟，再把番茄和鸡蛋回锅翻匀即可。']
-		}
-	},
-	{
-		id: 'r2',
-		title: '神仙糖醋排骨',
-		ingredient: '排骨',
-		link: 'https://www.bilibili.com/video/BV1ab411c7Z9',
-		image: '',
-		mealType: 'main',
-		status: 'wishlist',
-		note: '周末吃',
-		parsedContent: {
-			ingredients: ['小排 500g', '冰糖 适量', '生抽 2勺', '香醋 3勺', '姜片 3片'],
-			steps: ['排骨焯水后沥干，先小火煎出表面金黄。', '按糖醋汁比例下锅焖煮，让排骨慢慢收汁入味。', '最后开大火收浓汤汁，表面裹匀亮晶晶的糖醋汁。']
-		}
-	},
-	{
-		id: 'r3',
-		title: '蒜香虾仁意面',
-		ingredient: '虾仁',
-		link: 'https://www.xiachufang.com/recipe/104999888/',
-		image: '',
-		mealType: 'main',
-		status: 'wishlist',
-		note: '',
-		parsedContent: {
-			ingredients: ['意面 1把', '虾仁 180g', '蒜末 4瓣', '黄油 1小块', '欧芹碎、盐、黑胡椒 适量'],
-			steps: ['意面煮到略带硬芯，留半杯面汤备用。', '黄油炒香蒜末和虾仁，再加入意面和面汤翻匀。', '最后撒欧芹碎和黑胡椒，口味会更像餐厅版。']
-		}
-	},
-	{
-		id: 'r4',
-		title: '低卡燕麦松饼',
-		ingredient: '燕麦',
-		link: 'https://www.douyin.com/video/7400000000000000001',
-		image: '',
-		mealType: 'breakfast',
-		status: 'done',
-		note: '简单快手',
-		parsedContent: {
-			ingredients: ['即食燕麦 50g', '香蕉 1根', '鸡蛋 1个', '牛奶 适量', '蜂蜜 少许'],
-			steps: ['把燕麦、香蕉、鸡蛋和牛奶打成略稠的面糊。', '平底锅小火分次煎成圆饼，两面上色即可。', '出锅后淋一点蜂蜜或配酸奶，早餐会更完整。']
-		}
-	},
-	{
-		id: 'r5',
-		title: '周末寿喜锅',
-		ingredient: '牛肉',
-		link: 'https://www.xiachufang.com/recipe/106123456/',
-		image: '',
-		mealType: 'main',
-		status: 'wishlist',
-		note: '',
-		parsedContent: {
-			ingredients: ['肥牛卷 300g', '娃娃菜 1颗', '豆腐 1盒', '香菇 6朵', '寿喜烧酱汁 1份'],
-			steps: ['先把汤底调好，再按耐煮到易熟的顺序摆入食材。', '牛肉最后下锅涮煮，保证口感嫩。', '边煮边吃，汤汁收浓后蘸生鸡蛋液会更日式。']
-		}
-	},
-	{
-		id: 'r6',
-		title: '牛油果煎蛋吐司',
-		ingredient: '牛油果',
-		link: 'https://www.bilibili.com/video/BV1xx411x7T8',
-		image: '',
-		mealType: 'breakfast',
-		status: 'wishlist',
-		note: '十分钟内',
-		parsedContent: {
-			ingredients: ['吐司 2片', '牛油果 1个', '鸡蛋 1个', '海盐、黑胡椒 适量', '柠檬汁 少许'],
-			steps: ['吐司先烤脆，牛油果压泥后拌一点柠檬汁。', '鸡蛋煎到自己喜欢的熟度，再铺到吐司上。', '最后撒上海盐和黑胡椒，整体会更清爽。']
-		}
-	}
-]
+function getRecipeStorageKey(kitchenId) {
+	return `${RECIPE_STORAGE_PREFIX}:${kitchenId}`
+}
 
 function cloneParsedContent(parsedContent = {}) {
 	const ingredients = Array.isArray(parsedContent.ingredients) ? parsedContent.ingredients.filter(Boolean) : []
@@ -135,15 +63,20 @@ export function buildFallbackParsedContent(recipe = {}) {
 }
 
 export function normalizeRecipe(recipe = {}) {
+	const image = recipe.image || recipe.imageUrl || ''
 	const normalized = {
-		id: recipe.id || `recipe-${Date.now()}`,
+		id: recipe.id || '',
+		kitchenId: Number(recipe.kitchenId) || 0,
 		title: (recipe.title || '').trim(),
 		ingredient: (recipe.ingredient || '').trim(),
 		link: (recipe.link || '').trim(),
-		image: recipe.image || '',
+		image,
+		imageUrl: image,
 		mealType: recipe.mealType || 'breakfast',
 		status: recipe.status || 'wishlist',
-		note: (recipe.note || '').trim()
+		note: (recipe.note || '').trim(),
+		createdAt: recipe.createdAt || '',
+		updatedAt: recipe.updatedAt || ''
 	}
 
 	const parsedContent = cloneParsedContent(recipe.parsedContent)
@@ -152,6 +85,20 @@ export function normalizeRecipe(recipe = {}) {
 	return {
 		...normalized,
 		parsedContent: hasParsedContent ? parsedContent : buildFallbackParsedContent(normalized)
+	}
+}
+
+function buildRecipePayload(recipe = {}) {
+	const normalized = normalizeRecipe(recipe)
+	return {
+		title: normalized.title,
+		ingredient: normalized.ingredient,
+		link: normalized.link,
+		imageUrl: normalized.imageUrl,
+		mealType: normalized.mealType,
+		status: normalized.status,
+		note: normalized.note,
+		parsedContent: normalized.parsedContent
 	}
 }
 
@@ -175,53 +122,122 @@ export function getRecipeSecondaryText(recipe = {}) {
 	return `${mealLabel} · ${statusLabel}`
 }
 
-export function saveRecipes(recipes = []) {
+function loadRecipesForKitchen(kitchenId) {
+	if (!kitchenId) return []
+	const storedRecipes = uni.getStorageSync(getRecipeStorageKey(kitchenId))
+	if (!Array.isArray(storedRecipes)) return []
+	return storedRecipes.map((recipe) => normalizeRecipe(recipe))
+}
+
+function saveRecipesForKitchen(kitchenId, recipes = []) {
+	if (!kitchenId) return []
 	const normalizedRecipes = recipes.map((recipe) => normalizeRecipe(recipe))
-	uni.setStorageSync(RECIPE_STORAGE_KEY, normalizedRecipes)
+	uni.setStorageSync(getRecipeStorageKey(kitchenId), normalizedRecipes)
 	return normalizedRecipes
 }
 
-export function loadRecipes() {
-	const storedRecipes = uni.getStorageSync(RECIPE_STORAGE_KEY)
-	if (Array.isArray(storedRecipes)) {
-		return storedRecipes.map((recipe) => normalizeRecipe(recipe))
+function upsertRecipeInCache(recipe = {}) {
+	const normalized = normalizeRecipe(recipe)
+	const kitchenId = normalized.kitchenId || getCurrentKitchenId()
+	const current = loadRecipesForKitchen(kitchenId)
+	const filtered = current.filter((item) => item.id !== normalized.id)
+	const nextRecipes = [normalized, ...filtered].sort((left, right) => {
+		return (right.updatedAt || '').localeCompare(left.updatedAt || '') || right.id.localeCompare(left.id)
+	})
+	saveRecipesForKitchen(kitchenId, nextRecipes)
+	return normalized
+}
+
+function removeRecipeFromCache(recipeId, kitchenId = getCurrentKitchenId()) {
+	const current = loadRecipesForKitchen(kitchenId)
+	const nextRecipes = current.filter((item) => item.id !== recipeId)
+	saveRecipesForKitchen(kitchenId, nextRecipes)
+	return nextRecipes
+}
+
+async function resolveRecipeImage(recipe = {}) {
+	return ensureUploadedImage(recipe.image || recipe.imageUrl || '')
+}
+
+export function getCachedRecipes(kitchenId = getCurrentKitchenId()) {
+	return loadRecipesForKitchen(kitchenId)
+}
+
+export function getCachedRecipeById(recipeId, kitchenId = getCurrentKitchenId()) {
+	return loadRecipesForKitchen(kitchenId).find((item) => item.id === recipeId) || null
+}
+
+export async function syncRecipes(filters = {}) {
+	const session = await ensureSession()
+	const kitchenId = Number(session?.currentKitchenId) || 0
+	if (!kitchenId) return []
+
+	const items = await listRecipes(kitchenId, filters)
+	return saveRecipesForKitchen(kitchenId, items)
+}
+
+export async function loadRecipes(options = {}) {
+	const { forceRefresh = false, filters = {} } = options
+	await ensureSession()
+
+	if (!forceRefresh) {
+		const cached = getCachedRecipes()
+		if (cached.length) {
+			return cached
+		}
 	}
 
-	return saveRecipes(defaultRecipes)
+	return syncRecipes(filters)
 }
 
-export function getRecipeById(recipeId) {
-	return loadRecipes().find((recipe) => recipe.id === recipeId) || null
+export async function getRecipeById(recipeId, options = {}) {
+	const { preferCache = true } = options
+	await ensureSession()
+
+	if (preferCache) {
+		const cached = getCachedRecipeById(recipeId)
+		if (cached) return cached
+	}
+
+	const item = await getRecipeDetail(recipeId)
+	return upsertRecipeInCache(item)
 }
 
-export function createRecipeFromDraft(draft = {}) {
-	return normalizeRecipe({
-		id: `recipe-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-		title: draft.title,
-		ingredient: draft.ingredient,
-		link: draft.link,
-		image: draft.image,
-		mealType: draft.mealType,
-		status: draft.status,
-		parsedContent: draft.parsedContent,
-		note: draft.note
+export async function createRecipeFromDraft(draft = {}) {
+	const session = await ensureSession()
+	const kitchenId = Number(session?.currentKitchenId) || 0
+	const imageUrl = await resolveRecipeImage(draft)
+	const payload = buildRecipePayload({
+		...draft,
+		image: imageUrl
 	})
+	const item = await createRecipe(kitchenId, payload)
+	return upsertRecipeInCache(item)
 }
 
-export function updateRecipeById(recipeId, updates = {}) {
-	const recipes = loadRecipes()
-	const nextRecipes = recipes.map((recipe) => {
-		if (recipe.id !== recipeId) return recipe
-		return normalizeRecipe({
-			...recipe,
-			...updates,
-			parsedContent: updates.parsedContent || recipe.parsedContent
-		})
+export async function updateRecipeById(recipeId, updates = {}) {
+	const current = await getRecipeById(recipeId)
+	const image = Object.prototype.hasOwnProperty.call(updates, 'image') ? updates.image : current.image
+	const imageUrl = await ensureUploadedImage(image)
+	const payload = buildRecipePayload({
+		...current,
+		...updates,
+		image: imageUrl
 	})
-	return saveRecipes(nextRecipes)
+	const item = await updateRecipe(recipeId, payload)
+	return upsertRecipeInCache(item)
 }
 
-export function deleteRecipeById(recipeId) {
-	const recipes = loadRecipes().filter((recipe) => recipe.id !== recipeId)
-	return saveRecipes(recipes)
+export async function toggleRecipeStatusById(recipeId) {
+	const current = await getRecipeById(recipeId)
+	const nextStatus = current.status === 'done' ? 'wishlist' : 'done'
+	const item = await updateRecipeStatus(recipeId, nextStatus)
+	return upsertRecipeInCache(item)
+}
+
+export async function deleteRecipeById(recipeId) {
+	const current = await getRecipeById(recipeId, { preferCache: true })
+	await deleteRecipe(recipeId)
+	removeRecipeFromCache(recipeId, current?.kitchenId || getCurrentKitchenId())
+	return true
 }

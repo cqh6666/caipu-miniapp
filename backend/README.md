@@ -10,7 +10,7 @@
 - 数据库：`SQLite`
 - 迁移：启动时自动执行 `migrations/*.sql`
 - 健康检查：`GET /healthz`、`GET /api/healthz`
-- 已实现首批业务闭环：`auth + kitchens + invite + recipe`
+- 已实现首批业务闭环：`auth + kitchens + invite + recipe + upload`
 
 技术评估结论：
 
@@ -26,6 +26,15 @@ cd backend
 cp configs/example.env configs/local.env
 go run ./cmd/server
 ```
+
+填充演示数据：
+
+```bash
+cd backend
+go run ./cmd/seed-demo
+```
+
+这会确保本地数据库里存在两个开发用户 `alice` / `recipe-user`，并生成一个共享厨房 `联调试吃厨房` 以及多条早餐、正餐、想吃、吃过样例数据，方便直接联调前端。
 
 当前可用接口：
 
@@ -44,6 +53,7 @@ go run ./cmd/server
 - `PUT /api/recipes/{recipeID}`
 - `PATCH /api/recipes/{recipeID}/status`
 - `DELETE /api/recipes/{recipeID}`
+- `POST /api/uploads/images`
 
 仅本地环境开放的调试接口：
 
@@ -74,6 +84,10 @@ curl -s -X POST http://127.0.0.1:8080/api/kitchens/1/recipes \
   -H "Authorization: Bearer $token" \
   -H 'Content-Type: application/json' \
   -d '{"title":"番茄滑蛋牛肉","ingredient":"牛肉","mealType":"main","status":"wishlist","parsedContent":{"ingredients":["牛肉 200g"],"steps":["下锅翻炒"]}}'
+
+curl -s -X POST http://127.0.0.1:8080/api/uploads/images \
+  -H "Authorization: Bearer $token" \
+  -F "file=@/path/to/your-image.png"
 ```
 
 只执行迁移：
@@ -90,10 +104,17 @@ go run ./cmd/server -migrate-only
 - `GET /api/invites/{token}` 可在登录前预览邀请
 - 同一用户重复接受同一厨房邀请时会幂等返回 `alreadyMember=true`
 
+当前上传策略：
+
+- 图片接口为 `POST /api/uploads/images`
+- 默认支持 `jpg`、`png`、`webp`、`gif`
+- `UPLOAD_PUBLIC_BASE_URL` 为空时，会按当前请求域名自动拼接图片地址
+- 上传后的静态资源通过 `/uploads/*` 提供访问
+
 后续第一批建议实现顺序：
 
-1. `upload`：图片上传
-2. 把前端 `recipe-store` 对接到远端 `recipe API`
-3. 增加成员管理
-4. 增加编辑记录和冲突提示
-5. 增加邀请撤销和邀请列表
+1. 增加成员管理
+2. 增加编辑记录和冲突提示
+3. 增加邀请撤销和邀请列表
+4. 增加操作日志和基础测试
+5. 接入正式微信登录域名和线上部署配置

@@ -15,6 +15,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
 
 func NewRouter(
@@ -24,6 +25,7 @@ func NewRouter(
 	kitchenHandler *kitchen.Handler,
 	inviteHandler *invite.Handler,
 	recipeHandler *recipe.Handler,
+	uploadHandler *upload.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -44,6 +46,7 @@ func NewRouter(
 	}
 
 	r.Get("/healthz", healthHandler)
+	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(cfg.UploadDir))))
 	r.Route("/api", func(api chi.Router) {
 		api.Get("/healthz", healthHandler)
 
@@ -74,6 +77,7 @@ func NewRouter(
 			protected.Put("/recipes/{recipeID}", recipeHandler.Update)
 			protected.Patch("/recipes/{recipeID}/status", recipeHandler.UpdateStatus)
 			protected.Delete("/recipes/{recipeID}", recipeHandler.Delete)
+			protected.Post("/uploads/images", uploadHandler.UploadImage)
 		})
 	})
 

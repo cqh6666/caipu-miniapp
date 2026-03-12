@@ -1,0 +1,234 @@
+import { appConfig } from './app-config'
+import { request } from './http'
+import { clearSessionState, getAccessToken, getSessionState, setAccessToken, setSessionState } from './session-storage'
+
+let pendingSessionPromise = null
+const DEV_IDENTITY_STORAGE_KEY = 'caipu-miniapp-dev-identity'
+
+function normalizeKitchen(kitchen = {}) {
+	return {
+		id: Number(kitchen.id) || 0,
+		name: kitchen.name || '我们的厨房',
+		role: kitchen.role || 'member'
+	}
+}
+
+function normalizeSessionPayload(payload = {}, tokenOverride = '') {
+	const previous = getSessionState()
+	const kitchens = Array.isArray(payload.kitchens) ? payload.kitchens.map((item) => normalizeKitchen(item)) : []
+	const preferredKitchenId =
+		Number(previous?.currentKitchenId) ||
+		Number(payload.currentKitchenId) ||
+		Number(kitchens[0]?.id) ||
+		0
+
+	const currentKitchenId = kitchens.some((item) => item.id === preferredKitchenId)
+		? preferredKitchenId
+		: Number(kitchens[0]?.id) || 0
+
+	const token = tokenOverride || payload.token || getAccessToken() || ''
+	const currentKitchen = kitchens.find((item) => item.id === currentKitchenId) || null
+
+	const session = {
+		token,
+		user: payload.user || previous?.user || null,
+		kitchens,
+		currentKitchenId,
+		currentKitchen,
+		syncedAt: new Date().toISOString()
+	}
+
+	setAccessToken(token)
+	setSessionState(session)
+	return session
+}
+
+function shouldUseDevLogin() {
+	return appConfig.authMode === 'dev'
+}
+
+function getConfiguredDevLoginIdentity() {
+	const value = String(appConfig.devLoginIdentity || '').trim()
+	return value || 'demo'
+}
+
+function getExpectedDevOpenID() {
+	return `dev:${getConfiguredDevLoginIdentity()}`
+}
+
+function getDevLoginIdentity() {
+	const configuredIdentity = getConfiguredDevLoginIdentity()
+	if (appConfig.devLoginIdentityMode === 'fixed') {
+		uni.setStorageSync(DEV_IDENTITY_STORAGE_KEY, configuredIdentity)
+		return configuredIdentity
+	}
+
+	const storedIdentity = uni.getStorageSync(DEV_IDENTITY_STORAGE_KEY)
+	if (storedIdentity) {
+		return storedIdentity
+	}
+
+	const generatedIdentity = `${configuredIdentity}-${Math.random().toString(36).slice(2, 8)}`
+	uni.setStorageSync(DEV_IDENTITY_STORAGE_KEY, generatedIdentity)
+	return generatedIdentity
+}
+
+function shouldRefreshDevSession(payload = {}) {
+	if (!shouldUseDevLogin() || appConfig.devLoginIdentityMode !== 'fixed') {
+		return false
+	}
+
+	const actualOpenID = String(payload?.user?.openid || '').trim()
+	if (!actualOpenID) {
+		return false
+	}
+
+	return actualOpenID !== getExpectedDevOpenID()
+}
+
+function loginWithWeChat() {
+	return new Promise((resolve, reject) => {
+		uni.login({
+			provider: 'weixin',
+			success: (result) => {
+				if (!result?.code) {
+					reject(new Error('微信登录失败'))
+					return
+				}
+				resolve(result.code)
+			},
+			fail: (error) => {
+				reject(new Error(error?.errMsg || '微信登录失败'))
+			}
+		})
+	})
+}
+
+async function createSession() {
+	if (shouldUseDevLogin()) {
+		const payload = await request({
+			url: '/api/auth/dev-login',
+			method: 'POST',
+			data: {
+				identity: getDevLoginIdentity()
+			},
+			auth: false
+		})
+
+		return normalizeSessionPayload(payload, payload?.token || '')
+	}
+
+	const code = await loginWithWeChat()
+	const payload = await request({
+		url: '/api/auth/wechat/login',
+		method: 'POST',
+		data: { code },
+		auth: false
+	})
+
+	return normalizeSessionPayload(payload, payload?.token || '')
+}
+
+export async function ensureSession(options = {}) {
+	const { force = false } = options
+	if (pendingSessionPromise) {
+		return pendingSessionPromise
+	}
+
+	pendingSessionPromise = (async () => {
+		if (!force) {
+			const storedToken = getAccessToken()
+			if (storedToken) {
+				try {
+					const payload = await request({
+						url: '/api/auth/me',
+						method: 'GET'
+					})
+					if (shouldRefreshDevSession(payload)) {
+						clearSessionState()
+						uni.setStorageSync(DEV_IDENTITY_STORAGE_KEY, getConfiguredDevLoginIdentity())
+						return createSession()
+					}
+					return normalizeSessionPayload(payload, storedToken)
+				} catch (error) {
+					clearSessionState()
+				}
+			}
+		}
+
+		return createSession()
+	})()
+
+	try {
+		return await pendingSessionPromise
+	} finally {
+		pendingSessionPromise = null
+	}
+}
+
+export function getSessionSnapshot() {
+	const session = getSessionState()
+	if (!session) return null
+
+	const kitchens = Array.isArray(session.kitchens) ? session.kitchens.map((item) => normalizeKitchen(item)) : []
+	const currentKitchenId = Number(session.currentKitchenId) || Number(kitchens[0]?.id) || 0
+	const currentKitchen = kitchens.find((item) => item.id === currentKitchenId) || null
+
+	return {
+		...session,
+		kitchens,
+		currentKitchenId,
+		currentKitchen,
+		token: getAccessToken() || session.token || ''
+	}
+}
+
+export function getCurrentKitchenId() {
+	return Number(getSessionSnapshot()?.currentKitchenId) || 0
+}
+
+export function getCurrentKitchen() {
+	return getSessionSnapshot()?.currentKitchen || null
+}
+
+export function setCurrentKitchenId(kitchenId) {
+	const session = getSessionSnapshot()
+	if (!session) return null
+
+	const value = Number(kitchenId) || 0
+	const currentKitchen = session.kitchens.find((item) => item.id === value)
+	if (!currentKitchen) {
+		return session
+	}
+
+	const nextSession = {
+		...session,
+		currentKitchenId: currentKitchen.id,
+		currentKitchen,
+		syncedAt: new Date().toISOString()
+	}
+	setSessionState(nextSession)
+	return nextSession
+}
+
+export function updateSessionKitchens(payload = {}) {
+	const session = getSessionSnapshot()
+	const kitchens = Array.isArray(payload.kitchens) ? payload.kitchens.map((item) => normalizeKitchen(item)) : session?.kitchens || []
+	const nextKitchenID = Number(payload.currentKitchenId) || Number(session?.currentKitchenId) || Number(kitchens[0]?.id) || 0
+	const currentKitchen = kitchens.find((item) => item.id === nextKitchenID) || kitchens[0] || null
+
+	const nextSession = {
+		...(session || {}),
+		kitchens,
+		currentKitchenId: currentKitchen?.id || 0,
+		currentKitchen,
+		syncedAt: new Date().toISOString()
+	}
+
+	setSessionState(nextSession)
+	return nextSession
+}
+
+export function clearSession() {
+	clearSessionState()
+}
