@@ -16,7 +16,8 @@ export const appConfig = {
 	authModeSetting: requestedAuthMode,
 	devLoginIdentity: 'alice',
 	devLoginIdentityMode: 'fixed',
-	requestTimeout: 15000
+	requestTimeout: 15000,
+	inviteShareEnabled: false
 }
 
 export function resolveAPIURL(path = '') {
