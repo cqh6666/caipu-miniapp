@@ -149,6 +149,12 @@ function isFallbackNickname(value = '') {
 	return String(value).trim().startsWith(FALLBACK_NICKNAME_PREFIX)
 }
 
+export function isProfileIncomplete(user = {}) {
+	const nickname = String(user?.nickname || '').trim()
+	const avatarUrl = String(user?.avatarUrl || '').trim()
+	return !avatarUrl || !nickname || isFallbackNickname(nickname)
+}
+
 function shouldSyncUserProfile(currentUser = {}, profile = {}) {
 	const nickname = String(profile.nickname || '').trim()
 	const avatarUrl = String(profile.avatarUrl || '').trim()
@@ -191,6 +197,13 @@ async function updateSessionUserProfile(profile = {}) {
 		}
 		throw error
 	}
+}
+
+export async function saveCurrentUserProfile(profile = {}) {
+	const user = await updateSessionUserProfile(profile)
+	if (!user) return null
+	updateSessionUser(user)
+	return user
 }
 
 async function createSession() {
@@ -347,6 +360,21 @@ export function updateSessionKitchens(payload = {}) {
 		kitchens,
 		currentKitchenId: currentKitchen?.id || 0,
 		currentKitchen,
+		syncedAt: new Date().toISOString()
+	}
+
+	setSessionState(nextSession)
+	return nextSession
+}
+
+export function updateSessionUser(user = {}) {
+	const session = getSessionSnapshot()
+	const nextSession = {
+		...(session || {}),
+		user: {
+			...(session?.user || {}),
+			...(user || {})
+		},
 		syncedAt: new Date().toISOString()
 	}
 

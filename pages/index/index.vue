@@ -404,6 +404,66 @@
 		</up-popup>
 
 		<up-popup
+			:show="showProfileSheet"
+			mode="bottom"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
+			@close="closeProfileSheet"
+		>
+			<view class="profile-sheet">
+				<view class="profile-sheet__header">
+					<view class="profile-sheet__heading">
+						<text class="profile-sheet__title">完善资料</text>
+						<text class="profile-sheet__subtitle">设置头像和昵称后，厨房成员会更容易认出你。</text>
+					</view>
+					<view class="profile-sheet__close" @tap="closeProfileSheet">
+						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
+					</view>
+				</view>
+
+				<form class="profile-sheet__body" @submit="submitProfile">
+					<button class="profile-sheet__avatar-button" open-type="chooseAvatar" @chooseavatar="handleChooseAvatar">
+						<image v-if="profileAvatarPreview" class="profile-sheet__avatar-image" :src="profileAvatarPreview" mode="aspectFill"></image>
+						<view v-else class="profile-sheet__avatar-fallback">{{ profileAvatarFallback }}</view>
+					</button>
+					<text class="profile-sheet__avatar-tip">点击头像选择你的微信头像</text>
+
+					<view class="profile-sheet__field">
+						<text class="profile-sheet__label">昵称</text>
+						<input
+							:value="profileDraft.nickname"
+							class="profile-sheet__input"
+							type="nickname"
+							name="nickname"
+							placeholder="输入昵称"
+							placeholder-class="profile-sheet__placeholder"
+							maxlength="20"
+							@input="handleProfileNicknameInput"
+						/>
+						<text class="profile-sheet__hint">点击输入框时，键盘上方会出现微信昵称。</text>
+					</view>
+
+					<view class="profile-sheet__footer">
+						<button class="sheet-action" form-type="reset" @tap="closeProfileSheet">
+							<text class="sheet-action__text">暂不设置</text>
+						</button>
+						<button
+							class="sheet-action sheet-action--primary"
+							:class="{ 'sheet-action--disabled': !canSubmitProfile || isSubmittingProfile }"
+							form-type="submit"
+							:disabled="!canSubmitProfile || isSubmittingProfile"
+						>
+							<text class="sheet-action__text sheet-action__text--primary">
+								{{ isSubmittingProfile ? '保存中...' : '保存资料' }}
+							</text>
+						</button>
+					</view>
+				</form>
+			</view>
+		</up-popup>
+
+		<up-popup
 			:show="showAddSheet"
 			mode="bottom"
 			round="32"
@@ -543,6 +603,7 @@
 
 <script>
 import { appConfig } from '../../utils/app-config'
+import { ensureUploadedImage } from '../../utils/upload-api'
 import {
 	createRecipeFromDraft,
 	getCachedRecipes,
@@ -553,7 +614,15 @@ import {
 	toggleRecipeStatusById
 } from '../../utils/recipe-store'
 import { createKitchenInvite, formatInviteCode, listKitchenMembers, normalizeInviteCode } from '../../utils/kitchen-api'
-import { ensureSession, getCurrentKitchenId, getFriendlySessionErrorMessage, getSessionSnapshot, setCurrentKitchenId } from '../../utils/auth'
+import {
+	ensureSession,
+	getCurrentKitchenId,
+	getFriendlySessionErrorMessage,
+	getSessionSnapshot,
+	isProfileIncomplete,
+	saveCurrentUserProfile,
+	setCurrentKitchenId
+} from '../../utils/auth'
 
 const statusMap = {
 	all: { label: '全部', icon: 'list-dot' },
@@ -583,6 +652,7 @@ export default {
 			showAddSheet: false,
 			showInviteSheet: false,
 			showInviteCodeSheet: false,
+			showProfileSheet: false,
 			mealTabs: mealTypeOptions,
 			statusTabs: [
 				{ label: '全部', value: 'all' },
@@ -593,6 +663,7 @@ export default {
 			draft: createEmptyDraft(),
 			recipes: [],
 			kitchenOptions: [],
+			currentUser: null,
 			currentKitchenName: '',
 			currentKitchenRole: '',
 			kitchenMembers: [],
@@ -600,9 +671,15 @@ export default {
 			activeInvite: null,
 			inviteCodeCopied: false,
 			inviteCodeInput: '',
+			profileDraft: {
+				nickname: '',
+				avatarUrl: ''
+			},
+			hasDismissedProfilePrompt: false,
 			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
+			isSubmittingProfile: false,
 			isLoadingKitchenMembers: false,
 			isPreparingInvite: false
 		}
@@ -745,6 +822,16 @@ export default {
 			if (!this.activeInvite) return '--'
 			return `${this.inviteRemainingUsesText} 可加入 · ${this.inviteExpiresText} 过期`
 		},
+		profileAvatarPreview() {
+			return this.profileDraft.avatarUrl || this.currentUser?.avatarUrl || ''
+		},
+		profileAvatarFallback() {
+			const name = (this.profileDraft.nickname || this.currentUser?.nickname || '厨友').trim()
+			return name.slice(0, 1) || '厨'
+		},
+		canSubmitProfile() {
+			return !!String(this.profileDraft.nickname || '').trim() || !!String(this.profileDraft.avatarUrl || '').trim()
+		},
 		canSubmitInviteCode() {
 			return !!normalizeInviteCode(this.inviteCodeInput)
 		},
@@ -755,6 +842,7 @@ export default {
 	methods: {
 		applySession(session = getSessionSnapshot()) {
 			const snapshot = session || getSessionSnapshot()
+			this.currentUser = snapshot?.user || null
 			this.kitchenOptions = Array.isArray(snapshot?.kitchens) ? snapshot.kitchens : []
 			this.currentKitchenName = snapshot?.currentKitchen?.name || ''
 			this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
@@ -764,6 +852,7 @@ export default {
 			}
 			this.activeInvite = null
 			this.inviteCodeCopied = false
+			this.maybePromptProfile()
 		},
 		async refreshRecipes(options = {}) {
 			const { silent = true } = options
@@ -820,6 +909,68 @@ export default {
 				return '你正在维护这间厨房。'
 			}
 			return '已加入这间共享厨房。'
+		},
+		resetProfileDraft() {
+			this.profileDraft = {
+				nickname: '',
+				avatarUrl: ''
+			}
+		},
+		maybePromptProfile() {
+			if (appConfig.authMode !== 'wechat') return
+			if (this.hasDismissedProfilePrompt || this.showProfileSheet) return
+			if (!isProfileIncomplete(this.currentUser)) return
+			this.profileDraft = {
+				nickname: this.currentUser?.nickname && !String(this.currentUser.nickname).startsWith('厨友') ? this.currentUser.nickname : '',
+				avatarUrl: ''
+			}
+			this.showProfileSheet = true
+		},
+		closeProfileSheet() {
+			this.showProfileSheet = false
+			this.hasDismissedProfilePrompt = true
+			this.resetProfileDraft()
+		},
+		handleChooseAvatar(event) {
+			const avatarUrl = String(event?.detail?.avatarUrl || '').trim()
+			if (!avatarUrl) return
+			this.profileDraft.avatarUrl = avatarUrl
+		},
+		handleProfileNicknameInput(event) {
+			this.profileDraft.nickname = String(event?.detail?.value || '').trim()
+		},
+		async submitProfile(event) {
+			if (this.isSubmittingProfile || !this.canSubmitProfile) return
+
+			const submittedNickname = String(event?.detail?.value?.nickname || this.profileDraft.nickname || '').trim()
+			this.isSubmittingProfile = true
+
+			try {
+				const avatarUrl = await ensureUploadedImage(this.profileDraft.avatarUrl)
+				const user = await saveCurrentUserProfile({
+					nickname: submittedNickname,
+					avatarUrl
+				})
+				if (!user) {
+					throw new Error('当前后端暂不支持保存资料')
+				}
+				this.showProfileSheet = false
+				this.hasDismissedProfilePrompt = true
+				this.resetProfileDraft()
+				this.applySession()
+				await this.refreshKitchenMembers({ silent: true })
+				uni.showToast({
+					title: '资料已更新',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '保存资料失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isSubmittingProfile = false
+			}
 		},
 		async refreshKitchenMembers(options = {}) {
 			const { kitchenId = getCurrentKitchenId(), silent = true } = options
@@ -1737,6 +1888,143 @@ export default {
 		gap: 12rpx;
 	}
 
+	.profile-sheet {
+		padding: 26rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+		background: #f8f4ee;
+	}
+
+	.profile-sheet__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 18rpx;
+	}
+
+	.profile-sheet__heading {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.profile-sheet__title {
+		display: block;
+		font-size: 36rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.profile-sheet__subtitle {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 24rpx;
+		line-height: 1.6;
+		color: #8a7d70;
+	}
+
+	.profile-sheet__close {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.75);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.profile-sheet__body {
+		margin-top: 22rpx;
+		padding: 24rpx;
+		border-radius: 24rpx;
+		background: rgba(255, 255, 255, 0.94);
+		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.profile-sheet__avatar-button {
+		width: 144rpx;
+		height: 144rpx;
+		padding: 0;
+		border-radius: 999rpx;
+		background: transparent;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+	}
+
+	.profile-sheet__avatar-button::after {
+		border: none;
+	}
+
+	.profile-sheet__avatar-image,
+	.profile-sheet__avatar-fallback {
+		width: 144rpx;
+		height: 144rpx;
+		border-radius: 999rpx;
+	}
+
+	.profile-sheet__avatar-image {
+		display: block;
+	}
+
+	.profile-sheet__avatar-fallback {
+		background: linear-gradient(180deg, #e8d8c5 0%, #dbc4a8 100%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 48rpx;
+		font-weight: 700;
+		color: #5b4a3b;
+	}
+
+	.profile-sheet__avatar-tip {
+		margin-top: 16rpx;
+		font-size: 22rpx;
+		color: #877a6e;
+	}
+
+	.profile-sheet__field {
+		width: 100%;
+		margin-top: 28rpx;
+	}
+
+	.profile-sheet__label {
+		display: block;
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #594c40;
+	}
+
+	.profile-sheet__input {
+		margin-top: 12rpx;
+		height: 92rpx;
+		padding: 0 24rpx;
+		border-radius: 20rpx;
+		background: #f8f3ec;
+		font-size: 28rpx;
+		color: #2f2923;
+	}
+
+	.profile-sheet__placeholder {
+		color: #b0a59a;
+	}
+
+	.profile-sheet__hint {
+		display: block;
+		margin-top: 12rpx;
+		font-size: 22rpx;
+		line-height: 1.6;
+		color: #8a7d70;
+	}
+
+	.profile-sheet__footer {
+		width: 100%;
+		margin-top: 28rpx;
+		display: flex;
+		gap: 12rpx;
+	}
+
 	.toolbar {
 		margin-top: 16rpx;
 		padding: 18rpx;
@@ -2509,12 +2797,21 @@ export default {
 
 	.sheet-action {
 		flex: 1;
+		width: 100%;
 		height: 88rpx;
+		padding: 0;
 		border-radius: 24rpx;
 		background: #f1ede8;
+		border: none;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		box-sizing: border-box;
+		line-height: 1;
+	}
+
+	.sheet-action::after {
+		border: none;
 	}
 
 	.sheet-action--primary {
