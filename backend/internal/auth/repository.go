@@ -63,7 +63,7 @@ func (r *Repository) FindOrCreateByOpenID(ctx context.Context, openID, nickname,
 	}
 
 	nickname = strings.TrimSpace(nickname)
-	if nickname == "" {
+	if profile.IsPlaceholderNickname(nickname) {
 		nickname = profile.FallbackNickname(0, openID)
 	}
 	avatarURL = strings.TrimSpace(avatarURL)
@@ -103,10 +103,10 @@ func (r *Repository) FindOrCreateByOpenID(ctx context.Context, openID, nickname,
 func (r *Repository) EnsureProfile(ctx context.Context, user User, nickname, avatarURL string) (User, error) {
 	nextNickname := strings.TrimSpace(user.Nickname)
 	providedNickname := strings.TrimSpace(nickname)
-	if providedNickname != "" && (nextNickname == "" || profile.IsFallbackNickname(nextNickname)) {
+	if !profile.IsPlaceholderNickname(providedNickname) && profile.IsPlaceholderNickname(nextNickname) {
 		nextNickname = providedNickname
 	}
-	if nextNickname == "" {
+	if profile.IsPlaceholderNickname(nextNickname) {
 		nextNickname = profile.FallbackNickname(user.ID, user.OpenID)
 	}
 

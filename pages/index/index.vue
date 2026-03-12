@@ -620,6 +620,7 @@ import {
 	getFriendlySessionErrorMessage,
 	getSessionSnapshot,
 	isProfileIncomplete,
+	isPlaceholderNickname,
 	saveCurrentUserProfile,
 	setCurrentKitchenId
 } from '../../utils/auth'
@@ -921,7 +922,7 @@ export default {
 			if (this.hasDismissedProfilePrompt || this.showProfileSheet) return
 			if (!isProfileIncomplete(this.currentUser)) return
 			this.profileDraft = {
-				nickname: this.currentUser?.nickname && !String(this.currentUser.nickname).startsWith('厨友') ? this.currentUser.nickname : '',
+				nickname: !isPlaceholderNickname(this.currentUser?.nickname) ? this.currentUser.nickname : '',
 				avatarUrl: ''
 			}
 			this.showProfileSheet = true

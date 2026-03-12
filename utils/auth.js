@@ -5,6 +5,7 @@ import { clearSessionState, getAccessToken, getSessionState, setAccessToken, set
 let pendingSessionPromise = null
 const DEV_IDENTITY_STORAGE_KEY = 'caipu-miniapp-dev-identity'
 const FALLBACK_NICKNAME_PREFIX = '厨友'
+const PLACEHOLDER_NICKNAMES = new Set(['微信用户', 'wechat user'])
 
 function normalizeKitchen(kitchen = {}) {
 	return {
@@ -149,10 +150,16 @@ function isFallbackNickname(value = '') {
 	return String(value).trim().startsWith(FALLBACK_NICKNAME_PREFIX)
 }
 
+export function isPlaceholderNickname(value = '') {
+	const nickname = String(value).trim()
+	if (!nickname) return true
+	return isFallbackNickname(nickname) || PLACEHOLDER_NICKNAMES.has(nickname.toLowerCase())
+}
+
 export function isProfileIncomplete(user = {}) {
 	const nickname = String(user?.nickname || '').trim()
 	const avatarUrl = String(user?.avatarUrl || '').trim()
-	return !avatarUrl || !nickname || isFallbackNickname(nickname)
+	return !avatarUrl || isPlaceholderNickname(nickname)
 }
 
 function shouldSyncUserProfile(currentUser = {}, profile = {}) {
@@ -164,7 +171,7 @@ function shouldSyncUserProfile(currentUser = {}, profile = {}) {
 
 	const currentNickname = String(currentUser?.nickname || '').trim()
 	const currentAvatarUrl = String(currentUser?.avatarUrl || '').trim()
-	if (nickname && (!currentNickname || isFallbackNickname(currentNickname))) {
+	if (nickname && !isPlaceholderNickname(nickname) && (!currentNickname || isPlaceholderNickname(currentNickname))) {
 		return true
 	}
 	if (avatarUrl && currentAvatarUrl !== avatarUrl) {

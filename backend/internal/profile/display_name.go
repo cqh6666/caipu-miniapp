@@ -27,9 +27,14 @@ var fallbackWords = []string{
 	"豆乳",
 }
 
+var placeholderNames = map[string]struct{}{
+	"微信用户":    {},
+	"wechat user": {},
+}
+
 func DisplayName(current string, userID int64, openID string) string {
 	current = strings.TrimSpace(current)
-	if current != "" {
+	if current != "" && !IsPlaceholderNickname(current) {
 		return current
 	}
 
@@ -45,6 +50,19 @@ func FallbackNickname(userID int64, openID string) string {
 
 func IsFallbackNickname(value string) bool {
 	return strings.HasPrefix(strings.TrimSpace(value), fallbackPrefix)
+}
+
+func IsPlaceholderNickname(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return true
+	}
+	if IsFallbackNickname(trimmed) {
+		return true
+	}
+
+	_, ok := placeholderNames[strings.ToLower(trimmed)]
+	return ok
 }
 
 func seedValue(userID int64, openID string) uint32 {
