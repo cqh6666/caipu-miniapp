@@ -25,6 +25,12 @@
 			"style": {
 				"navigationBarTitleText": "加入厨房"
 			}
+		},
+		{
+			"path": "pages/app-settings/index",
+			"style": {
+				"navigationBarTitleText": "应用设置"
+			}
 		}
 	],
 	"globalStyle": {

@@ -27,6 +27,28 @@ cp configs/example.env configs/local.env
 go run ./cmd/server
 ```
 
+和 B 站自动解析相关的可选配置：
+
+- `RECIPE_AUTO_PARSE_ENABLED`
+- `RECIPE_AUTO_PARSE_INTERVAL_SECONDS`
+- `RECIPE_AUTO_PARSE_BATCH_SIZE`
+- `CREDENTIALS_SECRET`
+- `APP_SETTINGS_ACCESS_MODE`
+- `APP_ADMIN_OPENIDS`
+- `APP_SETTINGS_ALLOWED_OPENIDS`
+- `AI_BASE_URL`
+- `AI_API_KEY`
+- `AI_MODEL`
+- `AI_TIMEOUT_SECONDS`
+
+应用级 B 站配置页访问控制：
+
+- `APP_SETTINGS_ACCESS_MODE=all`：所有登录用户都能进入隐藏设置页
+- `APP_SETTINGS_ACCESS_MODE=admin`：只有 `APP_ADMIN_OPENIDS` 里的用户能进入
+- `APP_SETTINGS_ACCESS_MODE=whitelist`：`APP_ADMIN_OPENIDS` 和 `APP_SETTINGS_ALLOWED_OPENIDS` 里的用户都能进入
+- `APP_ADMIN_OPENIDS` / `APP_SETTINGS_ALLOWED_OPENIDS` 都用用户 `openid`，多个值用英文逗号分隔
+- 开发登录时，`openid` 形如 `dev:alice`
+
 正式微信登录接线：
 
 1. 把 `configs/local.env` 或线上环境变量中的 `WECHAT_APP_ID` 设为和 `manifest.json` 里 `mp-weixin.appid` 相同的值
@@ -44,22 +66,29 @@ go run ./cmd/seed-demo
 
 这会确保本地数据库里存在两个开发用户 `alice` / `recipe-user`，并生成一个共享厨房 `联调试吃厨房` 以及多条早餐、正餐、想吃、吃过样例数据，方便直接联调前端。
 
+B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bilibili-link-parser-poc.md)
+
 当前可用接口：
 
 - `GET /healthz`
 - `GET /api/healthz`
 - `POST /api/auth/wechat/login`
 - `GET /api/auth/me`
+- `GET /api/app-settings/bilibili-session`
+- `PUT /api/app-settings/bilibili-session`
+- `DELETE /api/app-settings/bilibili-session`
 - `GET /api/kitchens`
 - `POST /api/kitchens`
 - `GET /api/kitchens/{kitchenID}/members`
 - `GET /api/invites/{token}`
 - `POST /api/kitchens/{kitchenID}/invites`
 - `POST /api/invites/{token}/accept`
+- `POST /api/link-parsers/bilibili`
 - `GET /api/kitchens/{kitchenID}/recipes`
 - `POST /api/kitchens/{kitchenID}/recipes`
 - `GET /api/recipes/{recipeID}`
 - `PUT /api/recipes/{recipeID}`
+- `POST /api/recipes/{recipeID}/reparse`
 - `PATCH /api/recipes/{recipeID}/status`
 - `DELETE /api/recipes/{recipeID}`
 - `POST /api/uploads/images`
@@ -92,7 +121,7 @@ curl -s http://127.0.0.1:8080/api/invites/$invite
 curl -s -X POST http://127.0.0.1:8080/api/kitchens/1/recipes \
   -H "Authorization: Bearer $token" \
   -H 'Content-Type: application/json' \
-  -d '{"title":"番茄滑蛋牛肉","ingredient":"牛肉","mealType":"main","status":"wishlist","parsedContent":{"ingredients":["牛肉 200g"],"steps":["下锅翻炒"]}}'
+  -d '{"title":"番茄滑蛋牛肉","ingredient":"","link":"https://www.bilibili.com/video/BV1aWCEYHErc","mealType":"main","status":"wishlist","parsedContent":{"ingredients":["番茄滑蛋牛肉 1份","正餐常用配菜 适量","基础调味 适量"],"steps":["先整理这道菜的核心做法。","按自己的口味调整成容易复刻的版本。","做完以后补充口感和火候记录。"]}}'
 
 curl -s -X POST http://127.0.0.1:8080/api/uploads/images \
   -H "Authorization: Bearer $token" \
@@ -119,6 +148,16 @@ go run ./cmd/server -migrate-only
 - 默认支持 `jpg`、`png`、`webp`、`gif`
 - `UPLOAD_PUBLIC_BASE_URL` 为空时，会按当前请求域名自动拼接图片地址
 - 上传后的静态资源通过 `/uploads/*` 提供访问
+
+当前 B 站自动解析策略：
+
+- 保存菜谱时如果识别到 B 站链接，会自动标记为 `parseStatus=pending`
+- 后端定时任务按 `RECIPE_AUTO_PARSE_INTERVAL_SECONDS` 扫描并解析
+- 如果配置了全局 `SESSDATA`，解析器会自动带上登录态请求 B 站字幕接口
+- 隐藏设置页的访问权限由 `APP_SETTINGS_ACCESS_MODE` 控制，当前默认值是 `all`
+- 成功后会自动补齐 `ingredient`、`parsedContent.ingredients`、`parsedContent.steps`
+- 失败后会保留 `parseStatus=failed` 和 `parseError`
+- 可通过 `POST /api/recipes/{recipeID}/reparse` 手动重新入队
 
 后续第一批建议实现顺序：
 

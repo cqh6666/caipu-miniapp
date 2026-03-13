@@ -11,6 +11,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 )
 
 var (
@@ -78,6 +79,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 	item.UpdatedBy = userID
 	item.CreatedAt = now
 	item.UpdatedAt = now
+	applyCreateParseState(&item, req, now)
 
 	return s.repo.Create(ctx, item)
 }
@@ -115,6 +117,7 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	next.CreatedAt = current.CreatedAt
 	next.UpdatedBy = userID
 	next.UpdatedAt = time.Now().Format(time.RFC3339)
+	applyUpdateParseState(&next, current, req, next.UpdatedAt)
 
 	updated, err := s.repo.Update(ctx, next)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -125,6 +128,55 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	}
 
 	return updated, nil
+}
+
+func applyCreateParseState(item *Recipe, req createRecipeRequest, now string) {
+	if item == nil {
+		return
+	}
+
+	if shouldQueueAutoParse(req.Link, req.ParsedContent, req.MealType, req.Title, req.Ingredient) {
+		item.ParseStatus = ParseStatusPending
+		item.ParseSource = "bilibili"
+		item.ParseError = ""
+		item.ParseRequestedAt = now
+		item.ParseFinishedAt = ""
+		return
+	}
+
+	item.ParseStatus = ParseStatusIdle
+	item.ParseSource = ""
+	item.ParseError = ""
+	item.ParseRequestedAt = ""
+	item.ParseFinishedAt = ""
+}
+
+func applyUpdateParseState(item *Recipe, current Recipe, req updateRecipeRequest, now string) {
+	if item == nil {
+		return
+	}
+
+	linkChanged := strings.TrimSpace(req.Link) != strings.TrimSpace(current.Link)
+	switch {
+	case linkparse.SupportsBilibiliURL(req.Link) && (linkChanged || shouldQueueAutoParse(req.Link, req.ParsedContent, req.MealType, req.Title, req.Ingredient)):
+		item.ParseStatus = ParseStatusPending
+		item.ParseSource = "bilibili"
+		item.ParseError = ""
+		item.ParseRequestedAt = now
+		item.ParseFinishedAt = ""
+	case linkparse.SupportsBilibiliURL(req.Link):
+		item.ParseStatus = current.ParseStatus
+		item.ParseSource = current.ParseSource
+		item.ParseError = current.ParseError
+		item.ParseRequestedAt = current.ParseRequestedAt
+		item.ParseFinishedAt = current.ParseFinishedAt
+	default:
+		item.ParseStatus = ParseStatusIdle
+		item.ParseSource = ""
+		item.ParseError = ""
+		item.ParseRequestedAt = ""
+		item.ParseFinishedAt = ""
+	}
 }
 
 func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID string, status string) (Recipe, error) {
@@ -146,6 +198,38 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID strin
 	}
 
 	current.Status = status
+	current.UpdatedBy = userID
+	current.UpdatedAt = now
+	return current, nil
+}
+
+func (s *Service) RequeueAutoParse(ctx context.Context, userID int64, recipeID string) (Recipe, error) {
+	current, err := s.GetByID(ctx, userID, recipeID)
+	if err != nil {
+		return Recipe{}, err
+	}
+
+	if !linkparse.SupportsBilibiliURL(current.Link) {
+		return Recipe{}, common.NewAppError(common.CodeBadRequest, "only bilibili links can be reparsed", http.StatusBadRequest)
+	}
+
+	switch current.ParseStatus {
+	case ParseStatusPending, ParseStatusProcessing:
+		return current, nil
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	if err := s.repo.RequeueAutoParse(ctx, recipeID, userID, "bilibili", now); errors.Is(err, sql.ErrNoRows) {
+		return Recipe{}, common.ErrNotFound
+	} else if err != nil {
+		return Recipe{}, err
+	}
+
+	current.ParseStatus = ParseStatusPending
+	current.ParseSource = "bilibili"
+	current.ParseError = ""
+	current.ParseRequestedAt = now
+	current.ParseFinishedAt = ""
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
 	return current, nil
@@ -276,6 +360,46 @@ func cleanLines(lines []string) []string {
 		items = append(items, line)
 	}
 	return items
+}
+
+func shouldQueueAutoParse(link string, content ParsedContent, mealType, title, ingredient string) bool {
+	if !linkparse.SupportsBilibiliURL(link) {
+		return false
+	}
+
+	return !hasUserProvidedParsedContent(content, mealType, title, ingredient)
+}
+
+func hasMeaningfulParsedContent(content ParsedContent) bool {
+	return len(cleanLines(content.Ingredients)) > 0 || len(cleanLines(content.Steps)) > 0
+}
+
+func hasUserProvidedParsedContent(content ParsedContent, mealType, title, ingredient string) bool {
+	if !hasMeaningfulParsedContent(content) {
+		return false
+	}
+
+	fallback := normalizeParsedContent(ParsedContent{}, mealType, title, ingredient)
+	requestedIngredients := cleanLines(content.Ingredients)
+	requestedSteps := cleanLines(content.Steps)
+	fallbackIngredients := cleanLines(fallback.Ingredients)
+	fallbackSteps := cleanLines(fallback.Steps)
+
+	return !stringSlicesEqual(requestedIngredients, fallbackIngredients) || !stringSlicesEqual(requestedSteps, fallbackSteps)
+}
+
+func stringSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func isAllowedMealType(value string) bool {

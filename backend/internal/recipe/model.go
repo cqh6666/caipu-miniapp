@@ -5,21 +5,34 @@ type ParsedContent struct {
 	Steps       []string `json:"steps"`
 }
 
+const (
+	ParseStatusIdle       = ""
+	ParseStatusPending    = "pending"
+	ParseStatusProcessing = "processing"
+	ParseStatusDone       = "done"
+	ParseStatusFailed     = "failed"
+)
+
 type Recipe struct {
-	ID            string        `json:"id"`
-	KitchenID     int64         `json:"kitchenId"`
-	Title         string        `json:"title"`
-	Ingredient    string        `json:"ingredient"`
-	Link          string        `json:"link"`
-	ImageURL      string        `json:"imageUrl"`
-	MealType      string        `json:"mealType"`
-	Status        string        `json:"status"`
-	Note          string        `json:"note"`
-	ParsedContent ParsedContent `json:"parsedContent"`
-	CreatedBy     int64         `json:"createdBy"`
-	UpdatedBy     int64         `json:"updatedBy"`
-	CreatedAt     string        `json:"createdAt"`
-	UpdatedAt     string        `json:"updatedAt"`
+	ID               string        `json:"id"`
+	KitchenID        int64         `json:"kitchenId"`
+	Title            string        `json:"title"`
+	Ingredient       string        `json:"ingredient"`
+	Link             string        `json:"link"`
+	ImageURL         string        `json:"imageUrl"`
+	MealType         string        `json:"mealType"`
+	Status           string        `json:"status"`
+	Note             string        `json:"note"`
+	ParsedContent    ParsedContent `json:"parsedContent"`
+	ParseStatus      string        `json:"parseStatus"`
+	ParseSource      string        `json:"parseSource"`
+	ParseError       string        `json:"parseError"`
+	ParseRequestedAt string        `json:"parseRequestedAt"`
+	ParseFinishedAt  string        `json:"parseFinishedAt"`
+	CreatedBy        int64         `json:"createdBy"`
+	UpdatedBy        int64         `json:"updatedBy"`
+	CreatedAt        string        `json:"createdAt"`
+	UpdatedAt        string        `json:"updatedAt"`
 }
 
 type ListFilter struct {

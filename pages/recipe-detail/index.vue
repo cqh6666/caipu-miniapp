@@ -40,6 +40,27 @@
 							<text class="detail-link-text" selectable>{{ recipe.link }}</text>
 						</view>
 					</view>
+					<view
+						v-if="parseStatusMeta"
+						class="detail-parse"
+						:class="`detail-parse--${parseStatusMeta.tone}`"
+					>
+						<view class="detail-parse__body">
+							<view class="detail-parse__badge">
+								<text class="detail-parse__badge-text">{{ parseStatusMeta.label }}</text>
+							</view>
+							<text class="detail-parse__desc">{{ parseStatusDescription }}</text>
+							<text v-if="parseStatusSourceLabel" class="detail-parse__meta">{{ parseStatusSourceLabel }}</text>
+						</view>
+						<view
+							v-if="canRetryParse"
+							class="detail-parse__action"
+							:class="{ 'detail-parse__action--disabled': isReparseSubmitting }"
+							@tap="retryAutoParse"
+						>
+							<text class="detail-parse__action-text">{{ isReparseSubmitting ? '重新加入中...' : '重新解析' }}</text>
+						</view>
+					</view>
 					<text v-else class="detail-empty">暂无链接。</text>
 				</view>
 
@@ -284,6 +305,7 @@ import {
 	getRecipeById,
 	mealTypeLabelMap,
 	mealTypeOptions,
+	reparseRecipeById,
 	statusLabelMap,
 	statusOptions,
 	updateRecipeById
@@ -309,6 +331,43 @@ const textToList = (text = '') =>
 		.map((item) => item.trim())
 		.filter(Boolean)
 
+const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
+const parseStatusMetaMap = {
+	pending: {
+		label: '等待解析',
+		tone: 'pending',
+		description: '已加入后台队列，稍后会自动整理食材和步骤。'
+	},
+	processing: {
+		label: '解析中',
+		tone: 'processing',
+		description: '后台正在解析链接内容，结果会自动更新。'
+	},
+	done: {
+		label: '已自动整理',
+		tone: 'done',
+		description: '食材和步骤已由后台自动补齐。'
+	},
+	failed: {
+		label: '解析失败',
+		tone: 'failed',
+		description: '这次自动整理没成功，可以重新发起一次解析。'
+	}
+}
+
+function isBilibiliLink(link = '') {
+	return /(bilibili\.com|b23\.tv|bili2233\.cn)/i.test(String(link).trim())
+}
+
+function formatParseSourceLabel(source = '') {
+	const value = String(source).trim()
+	if (!value) return ''
+	if (value === 'bilibili') return '来源：B 站链接自动解析'
+	if (value === 'bilibili:ai') return '来源：B 站内容 + AI 总结'
+	if (value === 'bilibili:heuristic') return '来源：B 站简介规则整理'
+	return `来源：${value}`
+}
+
 export default {
 	data() {
 		return {
@@ -321,7 +380,9 @@ export default {
 			isLoadingRecipe: false,
 			isUploadingHeroImage: false,
 			isSavingRecipe: false,
-			isDeletingRecipe: false
+			isDeletingRecipe: false,
+			isReparseSubmitting: false,
+			parsePollingTimer: null
 		}
 	},
 	computed: {
@@ -337,6 +398,33 @@ export default {
 		parsedSteps() {
 			return this.recipe?.parsedContent?.steps || []
 		},
+		parseStatusMeta() {
+			const status = String(this.recipe?.parseStatus || '').trim()
+			if (status && parseStatusMetaMap[status]) {
+				return parseStatusMetaMap[status]
+			}
+			if (this.isBilibiliRecipe) {
+				return parseStatusMetaMap.pending
+			}
+			return null
+		},
+		parseStatusDescription() {
+			if (!this.parseStatusMeta) return ''
+			const errorMessage = String(this.recipe?.parseError || '').trim()
+			if ((this.recipe?.parseStatus || '') === 'failed' && errorMessage) {
+				return errorMessage
+			}
+			return this.parseStatusMeta.description
+		},
+		parseStatusSourceLabel() {
+			return formatParseSourceLabel(this.recipe?.parseSource || '')
+		},
+		isBilibiliRecipe() {
+			return isBilibiliLink(this.recipe?.link || '')
+		},
+		canRetryParse() {
+			return this.isBilibiliRecipe && this.recipe?.parseStatus === 'failed'
+		},
 		canSaveEditDraft() {
 			return !!this.editDraft.title.trim()
 		}
@@ -346,6 +434,12 @@ export default {
 	},
 	onShow() {
 		this.loadRecipe()
+	},
+	onHide() {
+		this.stopParsePolling()
+	},
+	onUnload() {
+		this.stopParsePolling()
 	},
 	methods: {
 		async loadRecipe() {
@@ -381,6 +475,37 @@ export default {
 				uni.setNavigationBarTitle({
 					title: this.recipe.title
 				})
+			}
+			this.syncParsePolling()
+		},
+		syncParsePolling() {
+			const status = String(this.recipe?.parseStatus || '').trim()
+			if (!ACTIVE_PARSE_STATUSES.includes(status)) {
+				this.stopParsePolling()
+				return
+			}
+
+			if (this.parsePollingTimer) return
+
+			this.parsePollingTimer = setInterval(() => {
+				this.refreshParseStatus()
+			}, 4000)
+		},
+		stopParsePolling() {
+			if (!this.parsePollingTimer) return
+			clearInterval(this.parsePollingTimer)
+			this.parsePollingTimer = null
+		},
+		async refreshParseStatus() {
+			if (!this.recipeId || this.isLoadingRecipe || this.isSavingRecipe || this.isDeletingRecipe || this.isReparseSubmitting) {
+				return
+			}
+
+			try {
+				const recipe = await getRecipeById(this.recipeId, { preferCache: false })
+				this.applyRecipe(recipe)
+			} catch (error) {
+				// Ignore transient polling errors and keep the last known state on screen.
 			}
 		},
 		createDraftFromRecipe(recipe = {}) {
@@ -504,6 +629,32 @@ export default {
 				})
 			} finally {
 				this.isSavingRecipe = false
+				uni.hideLoading()
+			}
+		},
+		async retryAutoParse() {
+			if (!this.canRetryParse || this.isReparseSubmitting) return
+
+			this.isReparseSubmitting = true
+			uni.showLoading({
+				title: '重新加入中',
+				mask: true
+			})
+
+			try {
+				const recipe = await reparseRecipeById(this.recipeId)
+				this.applyRecipe(recipe)
+				uni.showToast({
+					title: '已重新加入解析队列',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '重新解析失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isReparseSubmitting = false
 				uni.hideLoading()
 			}
 		},
@@ -781,6 +932,89 @@ export default {
 
 	.detail-empty {
 		color: #9e9387;
+	}
+
+	.detail-parse {
+		margin-top: 18rpx;
+		padding: 18rpx 20rpx;
+		border-radius: 20rpx;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 18rpx;
+	}
+
+	.detail-parse--pending,
+	.detail-parse--processing {
+		background: #f7f1e7;
+		border: 1px solid rgba(195, 150, 89, 0.16);
+	}
+
+	.detail-parse--done {
+		background: #eef5ee;
+		border: 1px solid rgba(111, 130, 109, 0.16);
+	}
+
+	.detail-parse--failed {
+		background: #fbefec;
+		border: 1px solid rgba(193, 106, 81, 0.14);
+	}
+
+	.detail-parse__body {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.detail-parse__badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 6rpx 14rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.72);
+	}
+
+	.detail-parse__badge-text {
+		font-size: 20rpx;
+		font-weight: 700;
+		color: #6e5f50;
+	}
+
+	.detail-parse__desc,
+	.detail-parse__meta {
+		display: block;
+		line-height: 1.6;
+	}
+
+	.detail-parse__desc {
+		margin-top: 10rpx;
+		font-size: 23rpx;
+		color: #5e544b;
+		word-break: break-all;
+	}
+
+	.detail-parse__meta {
+		margin-top: 6rpx;
+		font-size: 21rpx;
+		color: #978b80;
+	}
+
+	.detail-parse__action {
+		flex-shrink: 0;
+		padding: 14rpx 18rpx;
+		border-radius: 999rpx;
+		background: #ffffff;
+		box-shadow: 0 8rpx 16rpx rgba(91, 74, 59, 0.06);
+	}
+
+	.detail-parse__action--disabled {
+		opacity: 0.6;
+	}
+
+	.detail-parse__action-text {
+		font-size: 22rpx;
+		font-weight: 700;
+		color: #b4664c;
 	}
 
 	.parsed-section {

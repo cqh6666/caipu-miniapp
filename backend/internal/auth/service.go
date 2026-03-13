@@ -12,11 +12,14 @@ import (
 )
 
 type Service struct {
-	repo         *Repository
-	kitchen      *kitchen.Service
-	tokenManager *TokenManager
-	wechatClient wechat.Client
-	wechatAppID  string
+	repo                      *Repository
+	kitchen                   *kitchen.Service
+	tokenManager              *TokenManager
+	wechatClient              wechat.Client
+	wechatAppID               string
+	adminOpenIDs              map[string]struct{}
+	appSettingsAccessMode     string
+	appSettingsAllowedOpenIDs map[string]struct{}
 }
 
 func NewService(
@@ -25,13 +28,37 @@ func NewService(
 	tokenManager *TokenManager,
 	wechatClient wechat.Client,
 	wechatAppID string,
+	adminOpenIDs []string,
+	appSettingsAccessMode string,
+	appSettingsAllowedOpenIDs []string,
 ) *Service {
+	adminSet := make(map[string]struct{}, len(adminOpenIDs))
+	for _, openID := range adminOpenIDs {
+		openID = strings.TrimSpace(openID)
+		if openID == "" {
+			continue
+		}
+		adminSet[openID] = struct{}{}
+	}
+
+	allowedSet := make(map[string]struct{}, len(appSettingsAllowedOpenIDs))
+	for _, openID := range appSettingsAllowedOpenIDs {
+		openID = strings.TrimSpace(openID)
+		if openID == "" {
+			continue
+		}
+		allowedSet[openID] = struct{}{}
+	}
+
 	return &Service{
-		repo:         repo,
-		kitchen:      kitchenService,
-		tokenManager: tokenManager,
-		wechatClient: wechatClient,
-		wechatAppID:  strings.TrimSpace(wechatAppID),
+		repo:                      repo,
+		kitchen:                   kitchenService,
+		tokenManager:              tokenManager,
+		wechatClient:              wechatClient,
+		wechatAppID:               strings.TrimSpace(wechatAppID),
+		adminOpenIDs:              adminSet,
+		appSettingsAccessMode:     strings.TrimSpace(strings.ToLower(appSettingsAccessMode)),
+		appSettingsAllowedOpenIDs: allowedSet,
 	}
 }
 
@@ -98,8 +125,21 @@ func (s *Service) UpdateProfile(ctx context.Context, userID int64, nickname, ava
 	if err != nil {
 		return User{}, fmt.Errorf("update user profile: %w", err)
 	}
+	user = s.enrichUser(user)
 
 	return user, nil
+}
+
+func (s *Service) EnsureCanManageAppSettings(ctx context.Context, userID int64) error {
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !s.canManageAppSettings(user) {
+		return common.ErrForbidden
+	}
+
+	return nil
 }
 
 func (s *Service) buildSession(ctx context.Context, user User, includeToken bool) (SessionResponse, error) {
@@ -114,6 +154,8 @@ func (s *Service) buildSession(ctx context.Context, user User, includeToken bool
 	if len(kitchens) == 0 {
 		return SessionResponse{}, common.ErrInternal.WithErr(fmt.Errorf("user %d has no kitchens after bootstrap", user.ID))
 	}
+
+	user = s.enrichUser(user)
 
 	response := SessionResponse{
 		User:             user,
@@ -141,4 +183,37 @@ func normalizeIdentity(identity string) string {
 		return "demo"
 	}
 	return identity
+}
+
+func (s *Service) isAdminUser(user User) bool {
+	if len(s.adminOpenIDs) == 0 {
+		return false
+	}
+
+	_, ok := s.adminOpenIDs[strings.TrimSpace(user.OpenID)]
+	return ok
+}
+
+func (s *Service) canManageAppSettings(user User) bool {
+	if s.isAdminUser(user) {
+		return true
+	}
+
+	switch s.appSettingsAccessMode {
+	case "all", "":
+		return true
+	case "admin":
+		return false
+	case "whitelist":
+		_, ok := s.appSettingsAllowedOpenIDs[strings.TrimSpace(user.OpenID)]
+		return ok
+	default:
+		return false
+	}
+}
+
+func (s *Service) enrichUser(user User) User {
+	user.IsAdmin = s.isAdminUser(user)
+	user.CanManageAppSettings = s.canManageAppSettings(user)
+	return user
 }

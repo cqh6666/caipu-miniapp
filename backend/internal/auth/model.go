@@ -3,12 +3,14 @@ package auth
 import "github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 
 type User struct {
-	ID        int64  `json:"id"`
-	OpenID    string `json:"openid"`
-	Nickname  string `json:"nickname,omitempty"`
-	AvatarURL string `json:"avatarUrl,omitempty"`
-	CreatedAt string `json:"createdAt,omitempty"`
-	UpdatedAt string `json:"updatedAt,omitempty"`
+	ID                   int64  `json:"id"`
+	OpenID               string `json:"openid"`
+	Nickname             string `json:"nickname,omitempty"`
+	AvatarURL            string `json:"avatarUrl,omitempty"`
+	IsAdmin              bool   `json:"isAdmin"`
+	CanManageAppSettings bool   `json:"canManageAppSettings"`
+	CreatedAt            string `json:"createdAt,omitempty"`
+	UpdatedAt            string `json:"updatedAt,omitempty"`
 }
 
 type SessionResponse struct {

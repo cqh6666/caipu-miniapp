@@ -249,6 +249,23 @@
 						</view>
 					</view>
 				</view>
+
+				<view
+					class="app-intro"
+					@tap="openAppIntro"
+					@touchstart="handleAppIntroTouchStart"
+					@touchend="handleAppIntroTouchEnd"
+					@touchcancel="handleAppIntroTouchCancel"
+				>
+					<view class="app-intro__header">
+						<text class="app-intro__label">应用简介</text>
+						<text class="app-intro__hint">点按查看作用说明</text>
+					</view>
+					<text class="app-intro__text">和家人共享菜单，记录想吃和吃过，也能把视频菜谱自动整理成食材与步骤。</text>
+					<view class="app-intro__progress-track">
+						<view class="app-intro__progress-fill" :style="{ width: `${appIntroPressProgress}%` }"></view>
+					</view>
+				</view>
 			</template>
 		</view>
 
@@ -613,6 +630,7 @@
 
 <script>
 import { appConfig } from '../../utils/app-config'
+import { getBilibiliSessionSetting } from '../../utils/app-settings-api'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import {
 	createRecipeFromDraft,
@@ -687,6 +705,7 @@ export default {
 				nickname: '',
 				avatarUrl: ''
 			},
+			appIntroPressProgress: 0,
 			hasDismissedProfilePrompt: false,
 			syncErrorMessage: '',
 			isSyncing: false,
@@ -704,6 +723,12 @@ export default {
 	},
 	onShow() {
 		this.refreshRecipes()
+	},
+	onHide() {
+		this.clearAppIntroPressState()
+	},
+	onUnload() {
+		this.clearAppIntroPressState()
 	},
 	onShareAppMessage(res) {
 		if (res?.from === 'button' && this.activeInvite?.sharePath) {
@@ -742,6 +767,9 @@ export default {
 			if (this.currentKitchenRole === 'admin') return '管理员'
 			if (this.currentKitchenRole === 'member') return '成员'
 			return ''
+		},
+		canOpenAppSettings() {
+			return !!this.currentUser?.canManageAppSettings
 		},
 		currentKitchenMetaText() {
 			if (!this.currentKitchenName) {
@@ -921,6 +949,74 @@ export default {
 				return '你正在维护这间厨房。'
 			}
 			return '已加入这间共享厨房。'
+		},
+		openAppIntro() {
+			if (Date.now() - (this.appIntroPressTriggeredAt || 0) < 800) {
+				return
+			}
+
+			uni.showModal({
+				title: '应用简介',
+				content: '这是一份给家庭和小团队共用的数字厨房：你可以记录想吃和吃过的菜，也可以贴上 B 站链接，让后台自动整理食材和步骤。',
+				showCancel: false,
+				confirmText: '知道了'
+			})
+		},
+		handleAppIntroTouchStart() {
+			this.clearAppIntroPressState()
+			if (this.activeSection !== 'kitchen' || !this.canOpenAppSettings) {
+				return
+			}
+
+			const startedAt = Date.now()
+			this.appIntroPressStartedAt = startedAt
+			this.appIntroProgressTimer = setInterval(() => {
+				const elapsed = Date.now() - startedAt
+				const progress = Math.max(0, Math.min(100, Math.round((elapsed / 2000) * 100)))
+				this.appIntroPressProgress = progress
+			}, 80)
+			this.appIntroPressTimer = setTimeout(() => {
+				this.appIntroPressTriggeredAt = Date.now()
+				this.clearAppIntroPressState()
+				this.openAppSettings()
+			}, 2000)
+		},
+		handleAppIntroTouchEnd() {
+			this.clearAppIntroPressState()
+		},
+		handleAppIntroTouchCancel() {
+			this.clearAppIntroPressState()
+		},
+		clearAppIntroPressState() {
+			if (this.appIntroPressTimer) {
+				clearTimeout(this.appIntroPressTimer)
+				this.appIntroPressTimer = null
+			}
+			if (this.appIntroProgressTimer) {
+				clearInterval(this.appIntroProgressTimer)
+				this.appIntroProgressTimer = null
+			}
+			this.appIntroPressStartedAt = 0
+			this.appIntroPressProgress = 0
+		},
+		async openAppSettings() {
+			if (!this.canOpenAppSettings) {
+				return
+			}
+
+			try {
+				await getBilibiliSessionSetting()
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '暂时无法打开设置',
+					icon: 'none'
+				})
+				return
+			}
+
+			uni.navigateTo({
+				url: '/pages/app-settings/index'
+			})
 		},
 		resetProfileDraft() {
 			this.profileDraft = {
@@ -1699,6 +1795,57 @@ export default {
 		font-size: 22rpx;
 		font-weight: 600;
 		color: #6e5f50;
+	}
+
+	.app-intro {
+		margin-top: 18rpx;
+		padding: 22rpx 24rpx;
+		border-radius: 24rpx;
+		background: linear-gradient(135deg, rgba(255, 248, 240, 0.95), rgba(244, 236, 227, 0.96));
+		border: 1px solid rgba(184, 166, 148, 0.26);
+		box-shadow: 0 16rpx 30rpx rgba(105, 82, 61, 0.08);
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.app-intro__header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.app-intro__label {
+		font-size: 24rpx;
+		font-weight: 700;
+		color: #5d4c3c;
+	}
+
+	.app-intro__hint {
+		font-size: 20rpx;
+		color: #928474;
+	}
+
+	.app-intro__text {
+		font-size: 23rpx;
+		line-height: 1.7;
+		color: #78695b;
+	}
+
+	.app-intro__progress-track {
+		width: 100%;
+		height: 8rpx;
+		border-radius: 999rpx;
+		background: rgba(120, 105, 91, 0.12);
+		overflow: hidden;
+	}
+
+	.app-intro__progress-fill {
+		height: 100%;
+		border-radius: inherit;
+		background: linear-gradient(90deg, #d69a63, #7f6750);
+		transition: width 0.08s linear;
 	}
 
 	.invite-sheet {

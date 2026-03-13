@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -13,6 +14,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
@@ -21,10 +23,12 @@ import (
 func NewRouter(
 	cfg config.Config,
 	logger *slog.Logger,
+	appSettingsHandler *appsettings.Handler,
 	authHandler *auth.Handler,
 	kitchenHandler *kitchen.Handler,
 	inviteHandler *invite.Handler,
 	recipeHandler *recipe.Handler,
+	linkParseHandler *linkparse.Handler,
 	uploadHandler *upload.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 ) http.Handler {
@@ -69,6 +73,9 @@ func NewRouter(
 
 		api.Group(func(protected chi.Router) {
 			protected.Use(authMiddleware)
+			protected.Get("/app-settings/bilibili-session", appSettingsHandler.GetBilibiliSession)
+			protected.Put("/app-settings/bilibili-session", appSettingsHandler.UpdateBilibiliSession)
+			protected.Delete("/app-settings/bilibili-session", appSettingsHandler.ClearBilibiliSession)
 			protected.Get("/kitchens", kitchenHandler.List)
 			protected.Post("/kitchens", kitchenHandler.Create)
 			protected.Patch("/kitchens/{kitchenID}", kitchenHandler.Update)
@@ -76,10 +83,12 @@ func NewRouter(
 			protected.Post("/kitchens/{kitchenID}/invites", inviteHandler.Create)
 			protected.Post("/invites/{token}/accept", inviteHandler.Accept)
 			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)
+			protected.Post("/link-parsers/bilibili", linkParseHandler.ParseBilibili)
 			protected.Get("/kitchens/{kitchenID}/recipes", recipeHandler.List)
 			protected.Post("/kitchens/{kitchenID}/recipes", recipeHandler.Create)
 			protected.Get("/recipes/{recipeID}", recipeHandler.Detail)
 			protected.Put("/recipes/{recipeID}", recipeHandler.Update)
+			protected.Post("/recipes/{recipeID}/reparse", recipeHandler.RequeueAutoParse)
 			protected.Patch("/recipes/{recipeID}/status", recipeHandler.UpdateStatus)
 			protected.Delete("/recipes/{recipeID}", recipeHandler.Delete)
 			protected.Post("/uploads/images", uploadHandler.UploadImage)

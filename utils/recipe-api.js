@@ -31,6 +31,14 @@ export function updateRecipe(recipeId, payload) {
 	}).then((data) => data?.recipe || null)
 }
 
+export function reparseRecipe(recipeId) {
+	return request({
+		url: `/api/recipes/${recipeId}/reparse`,
+		method: 'POST',
+		data: {}
+	}).then((data) => data?.recipe || null)
+}
+
 export function updateRecipeStatus(recipeId, status) {
 	return request({
 		url: `/api/recipes/${recipeId}/status`,

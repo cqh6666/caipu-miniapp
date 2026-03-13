@@ -4,6 +4,7 @@ import {
 	deleteRecipe,
 	getRecipeDetail,
 	listRecipes,
+	reparseRecipe,
 	updateRecipe,
 	updateRecipeStatus
 } from './recipe-api'
@@ -75,6 +76,11 @@ export function normalizeRecipe(recipe = {}) {
 		mealType: recipe.mealType || 'breakfast',
 		status: recipe.status || 'wishlist',
 		note: (recipe.note || '').trim(),
+		parseStatus: (recipe.parseStatus || '').trim(),
+		parseSource: (recipe.parseSource || '').trim(),
+		parseError: (recipe.parseError || '').trim(),
+		parseRequestedAt: recipe.parseRequestedAt || '',
+		parseFinishedAt: recipe.parseFinishedAt || '',
 		createdAt: recipe.createdAt || '',
 		updatedAt: recipe.updatedAt || ''
 	}
@@ -232,6 +238,11 @@ export async function toggleRecipeStatusById(recipeId) {
 	const current = await getRecipeById(recipeId)
 	const nextStatus = current.status === 'done' ? 'wishlist' : 'done'
 	const item = await updateRecipeStatus(recipeId, nextStatus)
+	return upsertRecipeInCache(item)
+}
+
+export async function reparseRecipeById(recipeId) {
+	const item = await reparseRecipe(recipeId)
 	return upsertRecipeInCache(item)
 }
 
