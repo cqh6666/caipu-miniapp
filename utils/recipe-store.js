@@ -46,7 +46,7 @@ function cloneParsedContent(parsedContent = {}) {
 }
 
 export function buildFallbackParsedContent(recipe = {}) {
-	const mealLabel = mealTypeLabelMap[recipe.mealType] || '这道菜'
+	const mealLabel = recipe.mealType === 'main' ? '正餐' : '早餐'
 	const mainIngredient = (recipe.ingredient || recipe.title || '主食材').trim()
 
 	return {
@@ -56,11 +56,25 @@ export function buildFallbackParsedContent(recipe = {}) {
 			'基础调味 适量'
 		],
 		steps: [
-			`先从链接里抓出 ${recipe.title || '这道菜'} 的核心做法。`,
-			'按自己的口味整理成容易复刻的家常版本。',
-			'做完以后回来补充口感、火候和踩坑点。'
+			'先整理这道菜的核心做法。',
+			'按自己的口味调整成容易复刻的版本。',
+			'做完以后补充口感和火候记录。'
 		]
 	}
+}
+
+function stringSlicesEqual(left = [], right = []) {
+	if (left.length !== right.length) return false
+	return left.every((item, index) => item === right[index])
+}
+
+function isFallbackParsedContent(recipe = {}, parsedContent = {}) {
+	const current = cloneParsedContent(parsedContent)
+	const fallback = buildFallbackParsedContent(recipe)
+	return (
+		stringSlicesEqual(current.ingredients, fallback.ingredients) &&
+		stringSlicesEqual(current.steps, fallback.steps)
+	)
 }
 
 export function normalizeRecipe(recipe = {}) {
@@ -96,6 +110,10 @@ export function normalizeRecipe(recipe = {}) {
 
 function buildRecipePayload(recipe = {}) {
 	const normalized = normalizeRecipe(recipe)
+	const parsedContent = isFallbackParsedContent(normalized, normalized.parsedContent)
+		? { ingredients: [], steps: [] }
+		: normalized.parsedContent
+
 	return {
 		title: normalized.title,
 		ingredient: normalized.ingredient,
@@ -104,7 +122,7 @@ function buildRecipePayload(recipe = {}) {
 		mealType: normalized.mealType,
 		status: normalized.status,
 		note: normalized.note,
-		parsedContent: normalized.parsedContent
+		parsedContent
 	}
 }
 

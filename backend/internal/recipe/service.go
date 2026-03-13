@@ -323,6 +323,10 @@ func normalizeParsedContent(content ParsedContent, mealType, title, ingredient s
 		}
 	}
 
+	return defaultParsedContent(mealType, title, ingredient)
+}
+
+func defaultParsedContent(mealType, title, ingredient string) ParsedContent {
 	mainIngredient := ingredient
 	if mainIngredient == "" {
 		mainIngredient = title
@@ -346,6 +350,39 @@ func normalizeParsedContent(content ParsedContent, mealType, title, ingredient s
 			"先整理这道菜的核心做法。",
 			"按自己的口味调整成容易复刻的版本。",
 			"做完以后补充口感和火候记录。",
+		},
+	}
+}
+
+func legacyFrontendFallbackParsedContent(mealType, title, ingredient string) ParsedContent {
+	mainIngredient := ingredient
+	if mainIngredient == "" {
+		mainIngredient = title
+	}
+	if mainIngredient == "" {
+		mainIngredient = "主食材"
+	}
+
+	mealLabel := "早餐"
+	if mealType == "main" {
+		mealLabel = "正餐"
+	}
+
+	titleLabel := title
+	if titleLabel == "" {
+		titleLabel = "这道菜"
+	}
+
+	return ParsedContent{
+		Ingredients: []string{
+			mainIngredient + " 1份",
+			mealLabel + "常用配菜 适量",
+			"基础调味 适量",
+		},
+		Steps: []string{
+			"先从链接里抓出 " + titleLabel + " 的核心做法。",
+			"按自己的口味整理成容易复刻的家常版本。",
+			"做完以后回来补充口感、火候和踩坑点。",
 		},
 	}
 }
@@ -379,13 +416,21 @@ func hasUserProvidedParsedContent(content ParsedContent, mealType, title, ingred
 		return false
 	}
 
-	fallback := normalizeParsedContent(ParsedContent{}, mealType, title, ingredient)
 	requestedIngredients := cleanLines(content.Ingredients)
 	requestedSteps := cleanLines(content.Steps)
-	fallbackIngredients := cleanLines(fallback.Ingredients)
-	fallbackSteps := cleanLines(fallback.Steps)
 
-	return !stringSlicesEqual(requestedIngredients, fallbackIngredients) || !stringSlicesEqual(requestedSteps, fallbackSteps)
+	for _, fallback := range []ParsedContent{
+		defaultParsedContent(mealType, title, ingredient),
+		legacyFrontendFallbackParsedContent(mealType, title, ingredient),
+	} {
+		fallbackIngredients := cleanLines(fallback.Ingredients)
+		fallbackSteps := cleanLines(fallback.Steps)
+		if stringSlicesEqual(requestedIngredients, fallbackIngredients) && stringSlicesEqual(requestedSteps, fallbackSteps) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func stringSlicesEqual(left, right []string) bool {

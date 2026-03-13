@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +83,8 @@ func (w *AutoParseWorker) runBatch(parent context.Context) {
 	ctx, cancel := context.WithTimeout(parent, defaultAutoParseJobTimeout)
 	defer cancel()
 
+	w.enqueueLegacyCandidates(ctx)
+
 	items, err := w.repo.ListPendingAutoParse(ctx, w.batchSize)
 	if err != nil {
 		w.logger.Error("list pending recipe auto-parse jobs failed", "error", err)
@@ -92,6 +95,36 @@ func (w *AutoParseWorker) runBatch(parent context.Context) {
 		if err := w.processOne(parent, item); err != nil && !errors.Is(err, context.Canceled) {
 			w.logger.Error("process recipe auto-parse job failed", "recipeID", item.ID, "error", err)
 		}
+	}
+}
+
+func (w *AutoParseWorker) enqueueLegacyCandidates(ctx context.Context) {
+	scanLimit := int(math.Max(float64(w.batchSize*10), 50))
+	items, err := w.repo.ListLegacyAutoParseCandidates(ctx, scanLimit)
+	if err != nil {
+		w.logger.Error("list legacy recipe auto-parse candidates failed", "error", err)
+		return
+	}
+
+	queued := 0
+	now := time.Now().Format(time.RFC3339)
+	for _, item := range items {
+		if !shouldQueueAutoParse(item.Link, item.ParsedContent, item.MealType, item.Title, item.Ingredient) {
+			continue
+		}
+
+		marked, err := w.repo.MarkAutoParsePending(ctx, item.ID, "bilibili", now)
+		if err != nil {
+			w.logger.Error("mark legacy recipe auto-parse pending failed", "recipeID", item.ID, "error", err)
+			continue
+		}
+		if marked {
+			queued++
+		}
+	}
+
+	if queued > 0 {
+		w.logger.Info("requeued legacy recipe auto-parse jobs", "count", queued)
 	}
 }
 

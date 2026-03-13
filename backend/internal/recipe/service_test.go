@@ -11,6 +11,15 @@ func TestHasUserProvidedParsedContentTreatsFallbackAsEmpty(t *testing.T) {
 	}
 }
 
+func TestHasUserProvidedParsedContentTreatsLegacyFrontendFallbackAsEmpty(t *testing.T) {
+	t.Parallel()
+
+	fallback := legacyFrontendFallbackParsedContent("main", "番茄牛腩", "牛腩")
+	if hasUserProvidedParsedContent(fallback, "main", "番茄牛腩", "牛腩") {
+		t.Fatal("legacy frontend fallback parsed content should not be treated as user-provided content")
+	}
+}
+
 func TestHasUserProvidedParsedContentRecognizesManualContent(t *testing.T) {
 	t.Parallel()
 
@@ -39,6 +48,25 @@ func TestApplyCreateParseStateQueuesSupportedBilibiliLink(t *testing.T) {
 			"番茄牛腩",
 			"",
 		),
+	}
+
+	applyCreateParseState(&item, req, "2026-03-14T00:00:00Z")
+
+	if item.ParseStatus != ParseStatusPending {
+		t.Fatalf("ParseStatus = %q, want %q", item.ParseStatus, ParseStatusPending)
+	}
+}
+
+func TestApplyCreateParseStateQueuesLegacyFrontendFallbackBilibiliLink(t *testing.T) {
+	t.Parallel()
+
+	item := Recipe{}
+	req := createRecipeRequest{
+		Title:         "番茄牛腩",
+		Ingredient:    "",
+		Link:          "https://www.bilibili.com/video/BV1aWCEYHErc",
+		MealType:      "main",
+		ParsedContent: legacyFrontendFallbackParsedContent("main", "番茄牛腩", ""),
 	}
 
 	applyCreateParseState(&item, req, "2026-03-14T00:00:00Z")

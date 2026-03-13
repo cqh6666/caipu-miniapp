@@ -299,6 +299,46 @@ LIMIT ?`
 	return items, nil
 }
 
+func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
+	const query = `
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''),
+       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
+       created_by, updated_by, created_at, updated_at
+FROM recipes
+WHERE deleted_at IS NULL
+  AND COALESCE(parse_status, '') = ''
+  AND (
+    instr(lower(COALESCE(link, '')), 'bilibili.com') > 0
+    OR instr(lower(COALESCE(link, '')), 'b23.tv') > 0
+    OR instr(lower(COALESCE(link, '')), 'bili2233.cn') > 0
+  )
+ORDER BY created_at ASC, id ASC
+LIMIT ?`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list legacy auto parse recipes: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Recipe, 0, limit)
+	for rows.Next() {
+		item, err := scanRecipe(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate legacy auto parse recipes: %w", err)
+	}
+
+	return items, nil
+}
+
 func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource string) (bool, error) {
 	result, err := r.db.ExecContext(
 		ctx,
@@ -317,6 +357,30 @@ WHERE id = ? AND deleted_at IS NULL AND parse_status = ?`,
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("read auto parse processing rows: %w", err)
+	}
+
+	return rowsAffected > 0, nil
+}
+
+func (r *Repository) MarkAutoParsePending(ctx context.Context, recipeID, parseSource, requestedAt string) (bool, error) {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL, updated_at = ?
+WHERE id = ? AND deleted_at IS NULL AND COALESCE(parse_status, '') = ''`,
+		ParseStatusPending,
+		parseSource,
+		requestedAt,
+		requestedAt,
+		recipeID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("mark recipe auto parse pending: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read auto parse pending rows: %w", err)
 	}
 
 	return rowsAffected > 0, nil
