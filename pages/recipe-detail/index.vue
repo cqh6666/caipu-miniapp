@@ -2,13 +2,22 @@
 	<view class="detail-page">
 		<template v-if="recipe">
 			<scroll-view class="detail-scroll" scroll-y>
-				<view class="hero-card" :class="{ 'hero-card--empty': !recipe.image }">
+				<view
+					class="hero-card"
+					:class="{ 'hero-card--empty': !recipe.image }"
+					@tap="handleHeroCardTap"
+				>
 					<image v-if="recipe.image" class="hero-card__image" :src="recipe.image" mode="aspectFill"></image>
+					<view v-if="recipe.image" class="hero-card__preview-tip">
+						<up-icon name="photo" size="14" color="#ffffff"></up-icon>
+						<text class="hero-card__preview-tip-text">查看大图</text>
+					</view>
 					<view v-else class="hero-card__placeholder">
-						<view class="hero-card__empty-badge">
-							<text class="hero-card__empty-badge-text">成品图</text>
+						<view class="hero-card__placeholder-mask"></view>
+						<view class="hero-card__upload-action" :class="{ 'hero-card__upload-action--loading': isUploadingHeroImage }">
+							<up-icon :name="isUploadingHeroImage ? 'reload' : 'plus'" size="18" color="#5b4a3b"></up-icon>
+							<text class="hero-card__upload-action-text">{{ isUploadingHeroImage ? '上传中...' : '上传成品图' }}</text>
 						</view>
-						<text class="hero-card__empty-title">暂无成品图</text>
 					</view>
 				</view>
 
@@ -310,6 +319,7 @@ export default {
 			mealTabs: mealTypeOptions,
 			statusTabs: statusOptions,
 			isLoadingRecipe: false,
+			isUploadingHeroImage: false,
 			isSavingRecipe: false,
 			isDeletingRecipe: false
 		}
@@ -391,9 +401,58 @@ export default {
 			this.editDraft = this.createDraftFromRecipe(this.recipe)
 			this.showEditSheet = true
 		},
+		handleHeroCardTap() {
+			if (!this.recipe) return
+			if (this.recipe.image) {
+				this.previewRecipeImage()
+				return
+			}
+			this.chooseHeroImage()
+		},
 		closeEditSheet() {
 			this.showEditSheet = false
 			this.editDraft = createEmptyDraft()
+		},
+		chooseHeroImage() {
+			if (!this.recipe || this.isUploadingHeroImage) return
+
+			uni.chooseImage({
+				count: 1,
+				sizeType: ['compressed'],
+				sourceType: ['album', 'camera'],
+				success: ({ tempFilePaths }) => {
+					if (!tempFilePaths || !tempFilePaths.length) return
+					this.saveHeroImage(tempFilePaths[0])
+				}
+			})
+		},
+		async saveHeroImage(imagePath = '') {
+			if (!imagePath || !this.recipeId || this.isUploadingHeroImage) return
+
+			this.isUploadingHeroImage = true
+			uni.showLoading({
+				title: '上传中',
+				mask: true
+			})
+
+			try {
+				const recipe = await updateRecipeById(this.recipeId, {
+					image: imagePath
+				})
+				this.applyRecipe(recipe)
+				uni.showToast({
+					title: '已添加成品图',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '上传失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isUploadingHeroImage = false
+				uni.hideLoading()
+			}
 		},
 		chooseEditImage() {
 			uni.chooseImage({
@@ -506,6 +565,15 @@ export default {
 				}
 			})
 		},
+		previewRecipeImage() {
+			const imageUrl = String(this.recipe?.image || '').trim()
+			if (!imageUrl) return
+
+			uni.previewImage({
+				current: imageUrl,
+				urls: [imageUrl]
+			})
+		},
 		goBack() {
 			if (getCurrentPages().length > 1) {
 				uni.navigateBack()
@@ -540,12 +608,13 @@ export default {
 	}
 
 	.hero-card {
+		position: relative;
 		overflow: hidden;
 		min-height: 380rpx;
 	}
 
 	.hero-card--empty {
-		min-height: 240rpx;
+		min-height: 380rpx;
 	}
 
 	.hero-card__image {
@@ -554,34 +623,69 @@ export default {
 		display: block;
 	}
 
-	.hero-card__placeholder {
-		min-height: 240rpx;
-		padding: 34rpx;
-		box-sizing: border-box;
-		background: linear-gradient(135deg, #f6efe7 0%, #ece4da 100%);
+	.hero-card__preview-tip {
+		position: absolute;
+		right: 22rpx;
+		bottom: 22rpx;
+		padding: 10rpx 16rpx;
+		border-radius: 999rpx;
+		background: rgba(47, 41, 35, 0.46);
 		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.hero-card__preview-tip-text {
+		font-size: 21rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.hero-card__placeholder {
+		position: relative;
+		min-height: 380rpx;
+		box-sizing: border-box;
+		background:
+			linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
+			linear-gradient(135deg, #ddd2c4 0%, #cfbfae 100%);
+		display: flex;
+		align-items: center;
 		justify-content: center;
 	}
 
-	.hero-card__empty-badge {
-		padding: 10rpx 18rpx;
+	.hero-card__placeholder-mask {
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)),
+			radial-gradient(circle at center, rgba(255, 255, 255, 0.2), transparent 60%);
+	}
+
+	.hero-card__upload-action {
+		position: relative;
+		z-index: 1;
+		padding: 16rpx 28rpx;
 		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.62);
+		border: 1px solid rgba(255, 255, 255, 0.58);
+		background: rgba(255, 255, 255, 0.74);
+		box-shadow: 0 8rpx 18rpx rgba(91, 74, 59, 0.08);
+		display: inline-flex;
+		align-items: center;
+		gap: 10rpx;
 	}
 
-	.hero-card__empty-badge-text {
-		font-size: 21rpx;
+	.hero-card__upload-action--loading {
+		background: rgba(246, 242, 237, 0.9);
+	}
+
+	.hero-card__upload-action-text {
+		font-size: 25rpx;
 		font-weight: 600;
-		color: #8e8174;
-	}
-
-	.hero-card__empty-title {
-		margin-top: 16rpx;
-		font-size: 34rpx;
-		font-weight: 700;
-		color: #5a4f46;
+		line-height: 1;
+		color: #5b4a3b;
 	}
 
 	.detail-head {
