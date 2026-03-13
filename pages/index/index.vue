@@ -131,13 +131,8 @@
 				</view>
 			</template>
 
-			<template v-else>
-				<view class="page-header">
-					<text class="page-header__title">我的厨房</text>
-					<text class="page-header__summary">{{ kitchenSummary }}</text>
-				</view>
-
-				<view class="kitchen-hero">
+				<template v-else>
+					<view class="kitchen-hero">
 					<view
 						class="kitchen-card"
 						:class="{ 'kitchen-card--disabled': !currentKitchenName }"
@@ -149,15 +144,30 @@
 								<text class="kitchen-card__badge-text">当前厨房</text>
 							</view>
 							<view class="kitchen-card__switch">
-								<text class="kitchen-card__switch-text">{{ canSwitchKitchen ? '切换' : '已连接' }}</text>
+								<text class="kitchen-card__switch-text">{{ canSwitchKitchen ? '切换' : kitchenConnectionLabel }}</text>
 								<up-icon
-									:name="canSwitchKitchen ? 'arrow-right' : 'checkmark'"
+									v-if="canSwitchKitchen"
+									name="arrow-right"
 									size="14"
-									:color="canSwitchKitchen ? '#7f7265' : '#9b8f83'"
+									color="#7f7265"
 								></up-icon>
+								<view
+									v-else
+									class="kitchen-card__status-dot"
+									:class="{ 'kitchen-card__status-dot--connected': isKitchenConnected }"
+								></view>
 							</view>
 						</view>
-						<text class="kitchen-card__name">{{ currentKitchenDisplayName }}</text>
+						<view class="kitchen-card__name-row">
+							<text class="kitchen-card__name">{{ currentKitchenDisplayName }}</text>
+							<view
+								v-if="currentKitchenName"
+								class="kitchen-card__name-edit"
+								@tap.stop="openKitchenNameSheet"
+							>
+								<up-icon name="edit-pen" size="15" color="#6e5f50"></up-icon>
+							</view>
+						</view>
 						<text class="kitchen-card__meta">{{ currentKitchenMetaText }}</text>
 						<view v-if="currentKitchenName" class="kitchen-card__tags">
 							<view class="kitchen-card__tag">
@@ -613,7 +623,7 @@ import {
 	statusOptions,
 	toggleRecipeStatusById
 } from '../../utils/recipe-store'
-import { createKitchenInvite, formatInviteCode, listKitchenMembers, normalizeInviteCode } from '../../utils/kitchen-api'
+import { createKitchenInvite, formatInviteCode, listKitchenMembers, normalizeInviteCode, updateKitchen } from '../../utils/kitchen-api'
 import {
 	ensureSession,
 	getCurrentKitchenId,
@@ -622,7 +632,8 @@ import {
 	isProfileIncomplete,
 	isPlaceholderNickname,
 	saveCurrentUserProfile,
-	setCurrentKitchenId
+	setCurrentKitchenId,
+	updateSessionKitchen
 } from '../../utils/auth'
 
 const statusMap = {
@@ -680,6 +691,7 @@ export default {
 			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
+			isSubmittingKitchenName: false,
 			isSubmittingProfile: false,
 			isLoadingKitchenMembers: false,
 			isPreparingInvite: false
@@ -716,6 +728,12 @@ export default {
 		canSwitchKitchen() {
 			return this.kitchenOptions.length > 1
 		},
+		isKitchenConnected() {
+			return !!this.currentKitchenName
+		},
+		kitchenConnectionLabel() {
+			return this.isKitchenConnected ? '已连接' : '未连接'
+		},
 		currentKitchenDisplayName() {
 			return this.currentKitchenName || (this.isSyncing ? '正在获取厨房信息' : this.syncErrorMessage || '暂时无法连接厨房')
 		},
@@ -743,13 +761,6 @@ export default {
 				return this.syncErrorMessage
 			}
 			return this.isSyncing ? '正在同步这份菜单。' : '先按早餐和正餐整理，再看想吃和吃过。'
-		},
-		kitchenSummary() {
-			if (!this.currentKitchenName && this.syncErrorMessage) {
-				return this.syncErrorMessage
-			}
-
-			return this.isSyncing ? '正在同步厨房与成员信息。' : '邀请成员，一起维护这份菜单'
 		},
 		inviteActionDescription() {
 			return this.showInviteShareAction ? '复制邀请码或直接分享给朋友' : '复制邀请码发给朋友'
@@ -1147,6 +1158,70 @@ export default {
 			this.showInviteCodeSheet = false
 			this.inviteCodeInput = ''
 		},
+		openKitchenNameSheet() {
+			if (!getCurrentKitchenId()) {
+				uni.showToast({
+					title: '还没拿到厨房信息',
+					icon: 'none'
+				})
+				return
+			}
+
+			this.promptKitchenName()
+		},
+		promptKitchenName() {
+			if (this.isSubmittingKitchenName) return
+
+			uni.showModal({
+				title: '修改厨房名',
+				editable: true,
+				content: this.currentKitchenName || '',
+				placeholderText: '输入厨房名称',
+				confirmText: '保存',
+				cancelText: '取消',
+				success: async (result) => {
+					if (!result?.confirm) return
+					const submittedName = String(result?.content || '').trim()
+					await this.submitKitchenName(submittedName)
+				}
+			})
+		},
+		async submitKitchenName(submittedName = '') {
+			const nextName = String(submittedName || '').trim()
+			if (this.isSubmittingKitchenName || !nextName) return
+
+			this.isSubmittingKitchenName = true
+
+			try {
+				const kitchen = await updateKitchen(getCurrentKitchenId(), {
+					name: nextName
+				})
+				if (!kitchen) {
+					throw new Error('修改厨房名失败')
+				}
+
+				const currentInvite = this.activeInvite
+				const nextSession = updateSessionKitchen(kitchen)
+				this.applySession(nextSession)
+				if (Number(currentInvite?.kitchenId) === Number(kitchen.id)) {
+					this.activeInvite = {
+						...currentInvite,
+						kitchenName: kitchen.name
+					}
+				}
+				uni.showToast({
+					title: '厨房名已更新',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '修改厨房名失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isSubmittingKitchenName = false
+			}
+		},
 		handleInviteCodeInput(event) {
 			this.inviteCodeInput = formatInviteCode(event?.detail?.value || '')
 		},
@@ -1328,11 +1403,42 @@ export default {
 		color: #6a5a4b;
 	}
 
+	.kitchen-card__status-dot {
+		width: 14rpx;
+		height: 14rpx;
+		border-radius: 999rpx;
+		background: #b9b0a5;
+		box-shadow: 0 0 0 6rpx rgba(185, 176, 165, 0.18);
+		flex-shrink: 0;
+	}
+
+	.kitchen-card__status-dot--connected {
+		background: #78b86d;
+		box-shadow: 0 0 0 6rpx rgba(120, 184, 109, 0.16);
+	}
+
 	.kitchen-card__name {
 		font-size: 38rpx;
 		font-weight: 700;
 		line-height: 1.28;
 		color: #2f2923;
+	}
+
+	.kitchen-card__name-row {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
+	.kitchen-card__name-edit {
+		width: 52rpx;
+		height: 52rpx;
+		border-radius: 16rpx;
+		background: rgba(91, 74, 59, 0.08);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
 	}
 
 	.kitchen-card__meta {

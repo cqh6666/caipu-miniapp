@@ -18,3 +18,7 @@ type Member struct {
 type createKitchenRequest struct {
 	Name string `json:"name"`
 }
+
+type updateKitchenRequest struct {
+	Name string `json:"name"`
+}

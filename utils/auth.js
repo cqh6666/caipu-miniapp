@@ -374,6 +374,45 @@ export function updateSessionKitchens(payload = {}) {
 	return nextSession
 }
 
+export function updateSessionKitchen(kitchen = {}) {
+	const session = getSessionSnapshot()
+	if (!session) return null
+
+	const targetKitchenId = Number(kitchen.id) || 0
+	if (!targetKitchenId) {
+		return session
+	}
+
+	let found = false
+	const kitchens = (session.kitchens || []).map((item) => {
+		if (Number(item.id) !== targetKitchenId) {
+			return normalizeKitchen(item)
+		}
+
+		found = true
+		return normalizeKitchen({
+			...item,
+			...kitchen
+		})
+	})
+
+	if (!found) {
+		return session
+	}
+
+	const currentKitchenId = Number(session.currentKitchenId) || 0
+	const currentKitchen = kitchens.find((item) => item.id === currentKitchenId) || null
+	const nextSession = {
+		...session,
+		kitchens,
+		currentKitchen,
+		syncedAt: new Date().toISOString()
+	}
+
+	setSessionState(nextSession)
+	return nextSession
+}
+
 export function updateSessionUser(user = {}) {
 	const session = getSessionSnapshot()
 	const nextSession = {

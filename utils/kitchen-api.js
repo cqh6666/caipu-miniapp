@@ -25,6 +25,14 @@ export function createKitchenInvite(kitchenId, payload = {}) {
 	}).then((data) => data?.invite || null)
 }
 
+export function updateKitchen(kitchenId, payload = {}) {
+	return request({
+		url: `/api/kitchens/${kitchenId}`,
+		method: 'PATCH',
+		data: payload
+	}).then((data) => data?.kitchen || null)
+}
+
 export function previewInvite(token) {
 	return request({
 		url: `/api/invites/${token}`,

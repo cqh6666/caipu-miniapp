@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -54,15 +55,40 @@ func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64) (Summa
 }
 
 func (s *Service) CreateKitchen(ctx context.Context, userID int64, name string) (Summary, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return Summary{}, common.NewAppError(common.CodeBadRequest, "kitchen name is required", http.StatusBadRequest)
-	}
-	if len([]rune(name)) > 40 {
-		return Summary{}, common.NewAppError(common.CodeBadRequest, "kitchen name must be 40 characters or fewer", http.StatusBadRequest)
+	name, err := validateKitchenName(name)
+	if err != nil {
+		return Summary{}, err
 	}
 
 	return s.repo.CreateWithOwner(ctx, userID, name)
+}
+
+func (s *Service) UpdateKitchen(ctx context.Context, userID, kitchenID int64, name string) (Summary, error) {
+	name, err := validateKitchenName(name)
+	if err != nil {
+		return Summary{}, err
+	}
+
+	if err := s.EnsureMember(ctx, userID, kitchenID); err != nil {
+		return Summary{}, err
+	}
+
+	if err := s.repo.UpdateName(ctx, kitchenID, name); err != nil {
+		return Summary{}, err
+	}
+
+	items, err := s.repo.ListByUserID(ctx, userID)
+	if err != nil {
+		return Summary{}, err
+	}
+
+	for _, item := range items {
+		if item.ID == kitchenID {
+			return item, nil
+		}
+	}
+
+	return Summary{}, common.ErrInternal.WithErr(fmt.Errorf("updated kitchen %d not found in user list", kitchenID))
 }
 
 func (s *Service) EnsureMember(ctx context.Context, userID, kitchenID int64) error {
@@ -75,4 +101,16 @@ func (s *Service) EnsureMember(ctx context.Context, userID, kitchenID int64) err
 	}
 
 	return nil
+}
+
+func validateKitchenName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", common.NewAppError(common.CodeBadRequest, "kitchen name is required", http.StatusBadRequest)
+	}
+	if len([]rune(name)) > 40 {
+		return "", common.NewAppError(common.CodeBadRequest, "kitchen name must be 40 characters or fewer", http.StatusBadRequest)
+	}
+
+	return name, nil
 }

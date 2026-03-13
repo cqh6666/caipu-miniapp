@@ -93,6 +93,7 @@
 - 路由和 `easycom` 配置位于 `pages.json`
 - `uview-plus` 通过 npm 接入，主题和基础样式已完成全局接线
 - 前端接口和登录配置位于 `utils/app-config.js`
+- `utils/app-config.js` 里的 `inviteShareEnabled` 可控制“邀请成员”里是否展示“发送给微信好友”按钮
 - `utils/auth.js` 负责登录态恢复、厨房上下文和 token 持久化
 - `utils/recipe-store.js` 负责菜品数据归一化、本地缓存和远端同步
 - `unpackage/` 是构建产物目录，默认不纳入 Git 管理

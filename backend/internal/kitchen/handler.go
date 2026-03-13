@@ -59,6 +59,36 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	kitchenID, err := parseKitchenID(r)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	var req updateKitchenRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	item, err := h.service.UpdateKitchen(r.Context(), userID, kitchenID, req.Name)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"kitchen": item,
+	})
+}
+
 func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	userID, ok := common.CurrentUserID(r.Context())
 	if !ok {

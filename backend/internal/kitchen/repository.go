@@ -149,6 +149,20 @@ func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, nam
 	}, nil
 }
 
+func (r *Repository) UpdateName(ctx context.Context, kitchenID int64, name string) error {
+	if _, err := r.db.ExecContext(
+		ctx,
+		`UPDATE kitchens SET name = ?, updated_at = ? WHERE id = ?`,
+		name,
+		time.Now().Format(time.RFC3339),
+		kitchenID,
+	); err != nil {
+		return fmt.Errorf("update kitchen name: %w", err)
+	}
+
+	return nil
+}
+
 func (r *Repository) HasMembership(ctx context.Context, userID, kitchenID int64) (bool, error) {
 	var exists int
 	err := r.db.QueryRowContext(
