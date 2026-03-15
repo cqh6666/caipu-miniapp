@@ -20,13 +20,36 @@ func (h *Handler) ParseBilibili(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req parseBilibiliRequest
+	var req parseLinkRequest
 	if err := common.DecodeJSON(r, &req); err != nil {
 		common.WriteError(w, err)
 		return
 	}
 
 	result, err := h.service.ParseBilibili(r.Context(), req.URL)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"result": result,
+	})
+}
+
+func (h *Handler) ParseXiaohongshu(w http.ResponseWriter, r *http.Request) {
+	if _, ok := common.CurrentUserID(r.Context()); !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	var req parseLinkRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	result, err := h.service.ParseXiaohongshu(r.Context(), req.URL)
 	if err != nil {
 		common.WriteError(w, err)
 		return

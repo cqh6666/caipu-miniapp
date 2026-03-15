@@ -45,6 +45,11 @@ type Options struct {
 	AIModel                  string
 	AITimeout                time.Duration
 	BilibiliSessdataProvider func(context.Context) string
+	XHSSidecarEnabled        bool
+	XHSSidecarBaseURL        string
+	XHSSidecarTimeout        time.Duration
+	XHSSidecarProvider       string
+	XHSSidecarAPIKey         string
 	HTTPClient               *http.Client
 	AIHTTPClient             *http.Client
 	ResolveURLClient         *http.Client
@@ -54,6 +59,7 @@ type Service struct {
 	httpClient               *http.Client
 	resolveURLClient         *http.Client
 	ai                       *aiClient
+	xhs                      *xiaohongshuClient
 	bilibiliSessdataProvider func(context.Context) string
 }
 
@@ -160,6 +166,21 @@ func NewService(opts Options) *Service {
 		resolveURLClient = httpClient
 	}
 
+	var xhs *xiaohongshuClient
+	if opts.XHSSidecarEnabled && strings.TrimSpace(opts.XHSSidecarBaseURL) != "" {
+		xhsHTTPClient := &http.Client{Timeout: defaultHTTPTimeout}
+		if opts.XHSSidecarTimeout > 0 {
+			xhsHTTPClient.Timeout = opts.XHSSidecarTimeout
+		}
+
+		xhs = &xiaohongshuClient{
+			baseURL:  strings.TrimRight(strings.TrimSpace(opts.XHSSidecarBaseURL), "/"),
+			provider: firstNonEmpty(strings.TrimSpace(opts.XHSSidecarProvider), "auto"),
+			apiKey:   strings.TrimSpace(opts.XHSSidecarAPIKey),
+			client:   xhsHTTPClient,
+		}
+	}
+
 	var summaryAI *aiClient
 	if strings.TrimSpace(opts.AIModel) != "" {
 		aiHTTPClient := opts.AIHTTPClient
@@ -188,6 +209,7 @@ func NewService(opts Options) *Service {
 		httpClient:               httpClient,
 		resolveURLClient:         resolveURLClient,
 		ai:                       summaryAI,
+		xhs:                      xhs,
 		bilibiliSessdataProvider: opts.BilibiliSessdataProvider,
 	}
 }
@@ -296,39 +318,20 @@ func (s *Service) VerifyBilibiliSessdata(ctx context.Context, sessdata string) e
 }
 
 func extractInputURL(rawInput string) (string, error) {
-	value := strings.TrimSpace(rawInput)
-	if value == "" {
-		return "", common.NewAppError(common.CodeBadRequest, "url is required", http.StatusBadRequest)
-	}
-
-	if match := firstURLPattern.FindString(value); match != "" {
-		value = strings.TrimRight(match, "。；;，,）)]】>")
-	}
-
-	if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
-		value = "https://" + value
+	value, err := extractSupportedURL(rawInput)
+	if err != nil {
+		return "", common.NewAppError(common.CodeBadRequest, "invalid bilibili url", http.StatusBadRequest)
 	}
 
 	u, err := url.Parse(value)
-	if err != nil || strings.TrimSpace(u.Host) == "" {
+	if err != nil {
+		return "", common.NewAppError(common.CodeBadRequest, "invalid bilibili url", http.StatusBadRequest)
+	}
+	if strings.TrimSpace(u.Host) == "" {
 		return "", common.NewAppError(common.CodeBadRequest, "invalid bilibili url", http.StatusBadRequest)
 	}
 
 	return u.String(), nil
-}
-
-func SupportsBilibiliURL(rawInput string) bool {
-	normalized, err := extractInputURL(rawInput)
-	if err != nil {
-		return false
-	}
-
-	u, err := url.Parse(normalized)
-	if err != nil {
-		return false
-	}
-
-	return isResolvableBilibiliHost(u.Host)
 }
 
 func (s *Service) resolveVideoRef(ctx context.Context, rawURL string) (videoRef, []string, error) {

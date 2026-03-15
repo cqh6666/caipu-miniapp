@@ -40,6 +40,11 @@ go run ./cmd/server
 - `AI_API_KEY`
 - `AI_MODEL`
 - `AI_TIMEOUT_SECONDS`
+- `XHS_SIDECAR_ENABLED`
+- `XHS_SIDECAR_BASE_URL`
+- `XHS_SIDECAR_TIMEOUT_SECONDS`
+- `XHS_SIDECAR_PROVIDER`
+- `XHS_SIDECAR_API_KEY`
 
 应用级 B 站配置页访问控制：
 
@@ -68,6 +73,13 @@ go run ./cmd/seed-demo
 
 B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bilibili-link-parser-poc.md)
 
+小红书接入评估与 sidecar 方案见：
+
+- [docs/xiaohongshu-link-parser-feasibility.md](./docs/xiaohongshu-link-parser-feasibility.md)
+- [docs/xiaohongshu-sidecar-api-plan.md](./docs/xiaohongshu-sidecar-api-plan.md)
+- [docs/xiaohongshu-integration-guide.md](./docs/xiaohongshu-integration-guide.md)
+- [docs/xiaohongshu-cloud-deploy.md](./docs/xiaohongshu-cloud-deploy.md)
+
 当前可用接口：
 
 - `GET /healthz`
@@ -84,6 +96,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/kitchens/{kitchenID}/invites`
 - `POST /api/invites/{token}/accept`
 - `POST /api/link-parsers/bilibili`
+- `POST /api/link-parsers/xiaohongshu`
 - `GET /api/kitchens/{kitchenID}/recipes`
 - `POST /api/kitchens/{kitchenID}/recipes`
 - `GET /api/recipes/{recipeID}`
@@ -158,6 +171,15 @@ go run ./cmd/server -migrate-only
 - 成功后会自动补齐 `ingredient`、`parsedContent.ingredients`、`parsedContent.steps`
 - 失败后会保留 `parseStatus=failed` 和 `parseError`
 - 可通过 `POST /api/recipes/{recipeID}/reparse` 手动重新入队
+
+当前小红书预留策略：
+
+- 保存菜谱时如果识别到小红书链接，也会自动标记为 `parseStatus=pending`
+- 后端 worker 会按平台路由到小红书 sidecar
+- 是否真正启用，由 `XHS_SIDECAR_ENABLED` 控制
+- 当前仓库已包含 sidecar、provider 路由和 RedNote 初始化脚本，目录在 [xhs-sidecar](/Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar)
+- 推荐优先使用 `XHS_SIDECAR_PROVIDER=auto`，让 `importer` 先尝试、`rednote` 兜底
+- 更完整的使用说明见 [xiaohongshu-integration-guide.md](/Users/alexh/github_proj/caipu-miniapp/backend/docs/xiaohongshu-integration-guide.md)
 
 后续第一批建议实现顺序：
 

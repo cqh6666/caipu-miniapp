@@ -355,8 +355,8 @@ const parseStatusMetaMap = {
 	}
 }
 
-function isBilibiliLink(link = '') {
-	return /(bilibili\.com|b23\.tv|bili2233\.cn)/i.test(String(link).trim())
+function isAutoParseSupportedLink(link = '') {
+	return /(bilibili\.com|b23\.tv|bili2233\.cn|xiaohongshu\.com|xhslink\.com)/i.test(String(link).trim())
 }
 
 function formatParseSourceLabel(source = '') {
@@ -365,6 +365,9 @@ function formatParseSourceLabel(source = '') {
 	if (value === 'bilibili') return '来源：B 站链接自动解析'
 	if (value === 'bilibili:ai') return '来源：B 站内容 + AI 总结'
 	if (value === 'bilibili:heuristic') return '来源：B 站简介规则整理'
+	if (value === 'xiaohongshu') return '来源：小红书链接自动解析'
+	if (value === 'xiaohongshu:ai') return '来源：小红书图文 + AI 总结'
+	if (value === 'xiaohongshu:heuristic') return '来源：小红书正文规则整理'
 	return `来源：${value}`
 }
 
@@ -403,7 +406,7 @@ export default {
 			if (status && parseStatusMetaMap[status]) {
 				return parseStatusMetaMap[status]
 			}
-			if (this.isBilibiliRecipe) {
+			if (this.isAutoParseRecipe) {
 				return parseStatusMetaMap.pending
 			}
 			return null
@@ -419,11 +422,11 @@ export default {
 		parseStatusSourceLabel() {
 			return formatParseSourceLabel(this.recipe?.parseSource || '')
 		},
-		isBilibiliRecipe() {
-			return isBilibiliLink(this.recipe?.link || '')
+		isAutoParseRecipe() {
+			return isAutoParseSupportedLink(this.recipe?.link || '')
 		},
 		canRetryParse() {
-			return this.isBilibiliRecipe && this.recipe?.parseStatus === 'failed'
+			return this.isAutoParseRecipe && this.recipe?.parseStatus === 'failed'
 		},
 		canSaveEditDraft() {
 			return !!this.editDraft.title.trim()

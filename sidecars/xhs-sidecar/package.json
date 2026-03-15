@@ -1,0 +1,14 @@
+{
+  "name": "xhs-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Xiaohongshu sidecar stub for caipu-miniapp",
+  "scripts": {
+    "start": "node server.js",
+    "rednote:init": "node scripts/rednote-init.js",
+    "rednote:status": "node scripts/rednote-status.js"
+  },
+  "dependencies": {
+    "playwright": "^1.53.0"
+  }
+}

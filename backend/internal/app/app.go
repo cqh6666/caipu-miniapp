@@ -60,10 +60,15 @@ func New(cfg config.Config) (*App, error) {
 	recipeHandler := recipe.NewHandler(recipeService)
 
 	linkParseService := linkparse.NewService(linkparse.Options{
-		AIBaseURL: cfg.AIBaseURL,
-		AIAPIKey:  cfg.AIAPIKey,
-		AIModel:   cfg.AIModel,
-		AITimeout: time.Duration(cfg.AITimeoutSeconds) * time.Second,
+		AIBaseURL:          cfg.AIBaseURL,
+		AIAPIKey:           cfg.AIAPIKey,
+		AIModel:            cfg.AIModel,
+		AITimeout:          time.Duration(cfg.AITimeoutSeconds) * time.Second,
+		XHSSidecarEnabled:  cfg.XHSSidecarEnabled,
+		XHSSidecarBaseURL:  cfg.XHSSidecarBaseURL,
+		XHSSidecarTimeout:  time.Duration(cfg.XHSSidecarTimeoutSeconds) * time.Second,
+		XHSSidecarProvider: cfg.XHSSidecarProvider,
+		XHSSidecarAPIKey:   cfg.XHSSidecarAPIKey,
 		BilibiliSessdataProvider: func(ctx context.Context) string {
 			if appSettingsService == nil {
 				return ""

@@ -313,6 +313,8 @@ WHERE deleted_at IS NULL
     instr(lower(COALESCE(link, '')), 'bilibili.com') > 0
     OR instr(lower(COALESCE(link, '')), 'b23.tv') > 0
     OR instr(lower(COALESCE(link, '')), 'bili2233.cn') > 0
+    OR instr(lower(COALESCE(link, '')), 'xiaohongshu.com') > 0
+    OR instr(lower(COALESCE(link, '')), 'xhslink.com') > 0
   )
 ORDER BY created_at ASC, id ASC
 LIMIT ?`

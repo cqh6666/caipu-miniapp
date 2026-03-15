@@ -75,3 +75,30 @@ func TestApplyCreateParseStateQueuesLegacyFrontendFallbackBilibiliLink(t *testin
 		t.Fatalf("ParseStatus = %q, want %q", item.ParseStatus, ParseStatusPending)
 	}
 }
+
+func TestApplyCreateParseStateQueuesSupportedXiaohongshuLink(t *testing.T) {
+	t.Parallel()
+
+	item := Recipe{}
+	req := createRecipeRequest{
+		Title:      "番茄牛腩",
+		Ingredient: "",
+		Link:       "https://www.xiaohongshu.com/explore/68abcd1234",
+		MealType:   "main",
+		ParsedContent: normalizeParsedContent(
+			ParsedContent{},
+			"main",
+			"番茄牛腩",
+			"",
+		),
+	}
+
+	applyCreateParseState(&item, req, "2026-03-15T00:00:00Z")
+
+	if item.ParseStatus != ParseStatusPending {
+		t.Fatalf("ParseStatus = %q, want %q", item.ParseStatus, ParseStatusPending)
+	}
+	if item.ParseSource != "xiaohongshu" {
+		t.Fatalf("ParseSource = %q, want %q", item.ParseSource, "xiaohongshu")
+	}
+}

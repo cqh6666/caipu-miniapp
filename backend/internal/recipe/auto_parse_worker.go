@@ -109,11 +109,15 @@ func (w *AutoParseWorker) enqueueLegacyCandidates(ctx context.Context) {
 	queued := 0
 	now := time.Now().Format(time.RFC3339)
 	for _, item := range items {
+		platform := linkparse.DetectParsePlatform(item.Link)
+		if platform == "" {
+			continue
+		}
 		if !shouldQueueAutoParse(item.Link, item.ParsedContent, item.MealType, item.Title, item.Ingredient) {
 			continue
 		}
 
-		marked, err := w.repo.MarkAutoParsePending(ctx, item.ID, "bilibili", now)
+		marked, err := w.repo.MarkAutoParsePending(ctx, item.ID, platform, now)
 		if err != nil {
 			w.logger.Error("mark legacy recipe auto-parse pending failed", "recipeID", item.ID, "error", err)
 			continue
@@ -132,7 +136,12 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	ctx, cancel := context.WithTimeout(parent, defaultAutoParseJobTimeout)
 	defer cancel()
 
-	marked, err := w.repo.MarkAutoParseProcessing(ctx, item.ID, "bilibili")
+	platform := linkparse.DetectParsePlatform(item.Link)
+	if platform == "" {
+		return errors.New("unsupported auto-parse link")
+	}
+
+	marked, err := w.repo.MarkAutoParseProcessing(ctx, item.ID, platform)
 	if err != nil {
 		return err
 	}
@@ -140,10 +149,10 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 		return nil
 	}
 
-	result, err := w.parser.ParseBilibili(ctx, item.Link)
+	result, err := w.parser.ParseRecipeLink(ctx, item.Link)
 	if err != nil {
 		finishedAt := time.Now().Format(time.RFC3339)
-		if markErr := w.repo.MarkAutoParseFailed(ctx, item.ID, "bilibili", err.Error(), finishedAt); markErr != nil {
+		if markErr := w.repo.MarkAutoParseFailed(ctx, item.ID, platform, err.Error(), finishedAt); markErr != nil {
 			w.logger.Error("mark recipe auto-parse failed state failed", "recipeID", item.ID, "error", markErr)
 		}
 		return err

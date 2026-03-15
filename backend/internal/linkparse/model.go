@@ -13,6 +13,12 @@ type RecipeDraft struct {
 	ParsedContent ParsedContent `json:"parsedContent"`
 }
 
+type RecipeParseOutcome struct {
+	Source      string      `json:"source"`
+	SummaryMode string      `json:"summaryMode"`
+	RecipeDraft RecipeDraft `json:"recipeDraft"`
+}
+
 type BilibiliParseResult struct {
 	Source            string      `json:"source"`
 	Link              string      `json:"link"`
@@ -34,6 +40,27 @@ type BilibiliParseResult struct {
 	Warnings          []string    `json:"warnings"`
 }
 
-type parseBilibiliRequest struct {
+type XiaohongshuParseResult struct {
+	Source            string      `json:"source"`
+	Link              string      `json:"link"`
+	CanonicalURL      string      `json:"canonicalUrl"`
+	ProviderRequested string      `json:"providerRequested"`
+	ProviderUsed      string      `json:"providerUsed"`
+	Title             string      `json:"title"`
+	Content           string      `json:"content"`
+	CoverURL          string      `json:"coverUrl"`
+	Images            []string    `json:"images"`
+	Videos            []string    `json:"videos"`
+	Tags              []string    `json:"tags"`
+	Author            string      `json:"author"`
+	NoteType          string      `json:"noteType"`
+	NoteID            string      `json:"noteId"`
+	XSECToken         string      `json:"xsecToken"`
+	SummaryMode       string      `json:"summaryMode"`
+	RecipeDraft       RecipeDraft `json:"recipeDraft"`
+	Warnings          []string    `json:"warnings"`
+}
+
+type parseLinkRequest struct {
 	URL string `json:"url"`
 }

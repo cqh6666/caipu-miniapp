@@ -135,9 +135,10 @@ func applyCreateParseState(item *Recipe, req createRecipeRequest, now string) {
 		return
 	}
 
-	if shouldQueueAutoParse(req.Link, req.ParsedContent, req.MealType, req.Title, req.Ingredient) {
+	platform := linkparse.DetectParsePlatform(req.Link)
+	if platform != "" && shouldQueueAutoParse(req.Link, req.ParsedContent, req.MealType, req.Title, req.Ingredient) {
 		item.ParseStatus = ParseStatusPending
-		item.ParseSource = "bilibili"
+		item.ParseSource = platform
 		item.ParseError = ""
 		item.ParseRequestedAt = now
 		item.ParseFinishedAt = ""
@@ -157,14 +158,15 @@ func applyUpdateParseState(item *Recipe, current Recipe, req updateRecipeRequest
 	}
 
 	linkChanged := strings.TrimSpace(req.Link) != strings.TrimSpace(current.Link)
+	platform := linkparse.DetectParsePlatform(req.Link)
 	switch {
-	case linkparse.SupportsBilibiliURL(req.Link) && (linkChanged || shouldQueueAutoParse(req.Link, req.ParsedContent, req.MealType, req.Title, req.Ingredient)):
+	case platform != "" && (linkChanged || shouldQueueAutoParse(req.Link, req.ParsedContent, req.MealType, req.Title, req.Ingredient)):
 		item.ParseStatus = ParseStatusPending
-		item.ParseSource = "bilibili"
+		item.ParseSource = platform
 		item.ParseError = ""
 		item.ParseRequestedAt = now
 		item.ParseFinishedAt = ""
-	case linkparse.SupportsBilibiliURL(req.Link):
+	case platform != "":
 		item.ParseStatus = current.ParseStatus
 		item.ParseSource = current.ParseSource
 		item.ParseError = current.ParseError
@@ -209,8 +211,9 @@ func (s *Service) RequeueAutoParse(ctx context.Context, userID int64, recipeID s
 		return Recipe{}, err
 	}
 
-	if !linkparse.SupportsBilibiliURL(current.Link) {
-		return Recipe{}, common.NewAppError(common.CodeBadRequest, "only bilibili links can be reparsed", http.StatusBadRequest)
+	platform := linkparse.DetectParsePlatform(current.Link)
+	if platform == "" {
+		return Recipe{}, common.NewAppError(common.CodeBadRequest, "only supported links can be reparsed", http.StatusBadRequest)
 	}
 
 	switch current.ParseStatus {
@@ -219,14 +222,14 @@ func (s *Service) RequeueAutoParse(ctx context.Context, userID int64, recipeID s
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	if err := s.repo.RequeueAutoParse(ctx, recipeID, userID, "bilibili", now); errors.Is(err, sql.ErrNoRows) {
+	if err := s.repo.RequeueAutoParse(ctx, recipeID, userID, platform, now); errors.Is(err, sql.ErrNoRows) {
 		return Recipe{}, common.ErrNotFound
 	} else if err != nil {
 		return Recipe{}, err
 	}
 
 	current.ParseStatus = ParseStatusPending
-	current.ParseSource = "bilibili"
+	current.ParseSource = platform
 	current.ParseError = ""
 	current.ParseRequestedAt = now
 	current.ParseFinishedAt = ""
@@ -400,7 +403,7 @@ func cleanLines(lines []string) []string {
 }
 
 func shouldQueueAutoParse(link string, content ParsedContent, mealType, title, ingredient string) bool {
-	if !linkparse.SupportsBilibiliURL(link) {
+	if !linkparse.SupportsAutoParseURL(link) {
 		return false
 	}
 

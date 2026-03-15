@@ -26,6 +26,11 @@ type Config struct {
 	AIAPIKey                  string
 	AIModel                   string
 	AITimeoutSeconds          int
+	XHSSidecarEnabled         bool
+	XHSSidecarBaseURL         string
+	XHSSidecarTimeoutSeconds  int
+	XHSSidecarProvider        string
+	XHSSidecarAPIKey          string
 	WechatAppID               string
 	WechatAppSecret           string
 	SQLitePath                string
@@ -60,6 +65,11 @@ func Load() (Config, error) {
 		AIAPIKey:                  strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIModel:                   strings.TrimSpace(os.Getenv("AI_MODEL")),
 		AITimeoutSeconds:          getInt("AI_TIMEOUT_SECONDS", 30),
+		XHSSidecarEnabled:         getBool("XHS_SIDECAR_ENABLED", false),
+		XHSSidecarBaseURL:         strings.TrimSpace(os.Getenv("XHS_SIDECAR_BASE_URL")),
+		XHSSidecarTimeoutSeconds:  getInt("XHS_SIDECAR_TIMEOUT_SECONDS", 25),
+		XHSSidecarProvider:        strings.TrimSpace(strings.ToLower(getEnv("XHS_SIDECAR_PROVIDER", "auto"))),
+		XHSSidecarAPIKey:          strings.TrimSpace(os.Getenv("XHS_SIDECAR_API_KEY")),
 		WechatAppID:               os.Getenv("WECHAT_APP_ID"),
 		WechatAppSecret:           os.Getenv("WECHAT_APP_SECRET"),
 		SQLitePath:                filepath.Clean(getEnv("SQLITE_PATH", "./data/app.db")),
@@ -87,6 +97,10 @@ func Load() (Config, error) {
 		return Config{}, errors.New("AI_TIMEOUT_SECONDS must be positive")
 	}
 
+	if cfg.XHSSidecarTimeoutSeconds <= 0 {
+		return Config{}, errors.New("XHS_SIDECAR_TIMEOUT_SECONDS must be positive")
+	}
+
 	if cfg.InviteDefaultExpireHours <= 0 {
 		return Config{}, errors.New("INVITE_DEFAULT_EXPIRE_HOURS must be positive")
 	}
@@ -109,6 +123,14 @@ func Load() (Config, error) {
 	case "admin", "whitelist":
 	default:
 		return Config{}, errors.New("APP_SETTINGS_ACCESS_MODE must be one of all, admin, whitelist")
+	}
+
+	switch cfg.XHSSidecarProvider {
+	case "", "auto":
+		cfg.XHSSidecarProvider = "auto"
+	case "importer", "rednote":
+	default:
+		return Config{}, errors.New("XHS_SIDECAR_PROVIDER must be one of auto, importer, rednote")
 	}
 
 	if cfg.CredentialsSecret == "" {

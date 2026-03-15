@@ -84,6 +84,7 @@ func NewRouter(
 			protected.Post("/invites/{token}/accept", inviteHandler.Accept)
 			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)
 			protected.Post("/link-parsers/bilibili", linkParseHandler.ParseBilibili)
+			protected.Post("/link-parsers/xiaohongshu", linkParseHandler.ParseXiaohongshu)
 			protected.Get("/kitchens/{kitchenID}/recipes", recipeHandler.List)
 			protected.Post("/kitchens/{kitchenID}/recipes", recipeHandler.Create)
 			protected.Get("/recipes/{recipeID}", recipeHandler.Detail)
