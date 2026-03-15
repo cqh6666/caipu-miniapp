@@ -3,6 +3,9 @@ const { defaultCookiePath, summarizeRuntime } = require("../lib/rednote-runtime"
 function readConfig() {
   return {
     rednoteCookiePath: String(process.env.XHS_REDNOTE_COOKIE_PATH || "").trim() || defaultCookiePath(),
+    rednoteCookieHeader:
+      String(process.env.XHS_REDNOTE_COOKIE_HEADER || process.env.XHS_REDNOTE_COOKIE || "").trim(),
+    rednoteCookieDomain: String(process.env.XHS_REDNOTE_COOKIE_DOMAIN || ".xiaohongshu.com").trim() || ".xiaohongshu.com",
     rednoteBrowserHeadless: String(process.env.XHS_BROWSER_HEADLESS || "").trim().toLowerCase() !== "false",
     rednoteBrowserPath: String(process.env.XHS_REDNOTE_BROWSER_PATH || "").trim()
   };

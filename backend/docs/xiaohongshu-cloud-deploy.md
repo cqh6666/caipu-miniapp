@@ -67,6 +67,8 @@ XHS_PROVIDER_REDNOTE_ENABLED=true
 XHS_SIDECAR_STUB_MODE=echo
 XHS_INTERNAL_API_KEY=replace-with-random-secret
 XHS_REDNOTE_COOKIE_PATH=/srv/caipu-miniapp/runtime/rednote/cookies.json
+XHS_REDNOTE_COOKIE_HEADER=
+XHS_REDNOTE_COOKIE_DOMAIN=.xiaohongshu.com
 XHS_BROWSER_HEADLESS=true
 XHS_REDNOTE_BROWSER_PATH=
 XHS_REDNOTE_LOGIN_URL=https://www.xiaohongshu.com/
@@ -78,6 +80,14 @@ XHS_REDNOTE_TIMEOUT_MS=15000
 ```env
 XHS_SIDECAR_STUB_MODE=off
 ```
+
+如果你想像 B 站那样直接维护一段 Cookie 字符串，也可以直接写：
+
+```env
+XHS_REDNOTE_COOKIE_HEADER=你的整段Cookie
+```
+
+这种情况下可以不依赖 `cookies.json`；如果两者同时存在，sidecar 会优先使用 `XHS_REDNOTE_COOKIE_HEADER`。
 
 ## 6. 初始化 RedNote 登录态
 
@@ -109,6 +119,8 @@ npm run rednote:status
 - `playwrightAvailable=true`
 - `browserInstalled=true`
 - `loggedIn=true`
+
+如果你已经准备好了整段 Cookie 字符串，也可以跳过这一步，直接把它写进 `XHS_REDNOTE_COOKIE_HEADER`。
 
 ## 7. 创建 sidecar systemd 服务
 
@@ -248,7 +260,7 @@ npx playwright install chromium
 
 ### `rednote` 返回 `login_required`
 
-说明 Cookie 文件不存在、为空，或者初始化登录态没有完成。重新执行：
+说明 Cookie 文件不存在、为空，或者整段 Cookie 字符串无效。文件模式下可以重新执行：
 
 ```bash
 cd /srv/caipu-miniapp/sidecars/xhs-sidecar

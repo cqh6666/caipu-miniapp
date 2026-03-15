@@ -24,6 +24,11 @@
 - 也已经可以接 RedNote 登录态路线
 - 但整体还不适合直接当生产级小红书解析服务
 
+RedNote 登录态现在支持两种来源：
+
+- `XHS_REDNOTE_COOKIE_PATH`：`cookies.json` 文件
+- `XHS_REDNOTE_COOKIE_HEADER`：浏览器里复制出来的整段 `Cookie:` 字符串
+
 ## 支持的接口
 
 - `GET /v1/health`
@@ -74,6 +79,8 @@ XHS_PROVIDER_REDNOTE_ENABLED=true
 XHS_SIDECAR_STUB_MODE=echo
 XHS_INTERNAL_API_KEY=
 XHS_REDNOTE_COOKIE_PATH=
+XHS_REDNOTE_COOKIE_HEADER=
+XHS_REDNOTE_COOKIE_DOMAIN=.xiaohongshu.com
 XHS_BROWSER_HEADLESS=true
 XHS_REDNOTE_BROWSER_PATH=
 XHS_REDNOTE_LOGIN_URL=https://www.xiaohongshu.com/
@@ -83,16 +90,20 @@ XHS_REDNOTE_TIMEOUT_MS=15000
 说明：
 
 - `XHS_PROVIDER_DEFAULT`: `auto | importer | rednote`
+- `XHS_REDNOTE_COOKIE_HEADER`: 支持直接粘贴整段浏览器 Cookie，适合像 B 站那样维护
+- `XHS_REDNOTE_COOKIE_DOMAIN`: 把整段 Cookie 转成 Playwright Cookie 时使用的默认域名
 - `XHS_SIDECAR_STUB_MODE`:
   - `off`: importer 只做真实轻量抓取，不做文本回退
   - `echo`: 先做真实轻量抓取，失败后回退到“分享文本里 URL 之外的文字”
   - `demo`: 返回固定演示数据
 - `XHS_REDNOTE_COOKIE_PATH`: RedNote / 小红书登录态 cookie 文件路径，默认是 `~/.mcp/rednote/cookies.json`
+- 如果 `XHS_REDNOTE_COOKIE_HEADER` 和 `XHS_REDNOTE_COOKIE_PATH` 同时配置，优先使用 `XHS_REDNOTE_COOKIE_HEADER`
 - `XHS_BROWSER_HEADLESS`: RedNote provider 是否无头运行
 - `XHS_REDNOTE_BROWSER_PATH`: 可选，自定义浏览器可执行文件路径
 - `XHS_REDNOTE_LOGIN_URL`: 初始化登录时打开的页面
 - `XHS_REDNOTE_TIMEOUT_MS`: RedNote provider 页面等待超时
 - `/v1/auth/rednote/status` 现在会区分：
+  - `cookieSource`: `header | file`
   - `playwrightAvailable`: Node 包是否可用
   - `browserInstalled`: Chromium 二进制是否已准备好
   - `ready`: Cookie、Playwright、浏览器三者都已就绪
@@ -131,9 +142,10 @@ curl -s -X POST http://127.0.0.1:8091/v1/parse/xiaohongshu \
 当前已经按 RedNote-MCP 的思路接了一版最小可用 provider：
 
 1. 读取 cookie 文件
-2. 动态加载 `playwright` / `playwright-core`
-3. 打开真实页面
-4. 抓取 DOM 中的 title/content/tags/images/videos
+2. 或读取整段 Cookie 字符串
+3. 动态加载 `playwright` / `playwright-core`
+4. 打开真实页面
+5. 抓取 DOM 中的 title/content/tags/images/videos
 
 推荐先执行一次：
 
@@ -178,6 +190,18 @@ npx playwright install
 ```bash
 XHS_REDNOTE_COOKIE_PATH=~/.mcp/rednote/cookies.json
 ```
+
+如果你想像 B 站那样直接维护一段字符串，也可以直接配置：
+
+```bash
+XHS_REDNOTE_COOKIE_HEADER='a1=xxx; webId=xxx; gid=xxx'
+```
+
+这种方式更适合云服务器，但同样需要注意：
+
+- 它本质上也是登录凭证
+- 修改后需要重启 sidecar
+- 过期后需要重新替换
 
 ## 注意
 

@@ -135,6 +135,8 @@ XHS_PROVIDER_REDNOTE_ENABLED=true
 XHS_SIDECAR_STUB_MODE=echo
 XHS_INTERNAL_API_KEY=
 XHS_REDNOTE_COOKIE_PATH=
+XHS_REDNOTE_COOKIE_HEADER=
+XHS_REDNOTE_COOKIE_DOMAIN=.xiaohongshu.com
 XHS_BROWSER_HEADLESS=true
 XHS_REDNOTE_BROWSER_PATH=
 XHS_REDNOTE_LOGIN_URL=https://www.xiaohongshu.com/
@@ -175,6 +177,7 @@ XHS_REDNOTE_TIMEOUT_MS=15000
 当前能力：
 
 - 读取 Cookie 文件
+- 或直接读取整段 Cookie 字符串
 - 动态加载 `playwright`
 - 打开真实页面并抓取 DOM
 - 提取 `title / content / tags / images / videos / author / counters`
@@ -184,6 +187,19 @@ XHS_REDNOTE_TIMEOUT_MS=15000
 - 需要 Cookie
 - 需要 `playwright` 包
 - 需要 Chromium 浏览器二进制
+
+### 关于 Cookie 维护方式
+
+当前 `rednote` 支持两种登录态来源：
+
+- `XHS_REDNOTE_COOKIE_PATH`
+- `XHS_REDNOTE_COOKIE_HEADER`
+
+如果两者同时配置，sidecar 会优先使用：
+
+- `XHS_REDNOTE_COOKIE_HEADER`
+
+所以如果你更希望像 B 站那样直接维护一段 Cookie 字符串，可以直接粘贴浏览器里复制出来的整段值。
 
 ## RedNote 初始化步骤
 
@@ -216,6 +232,7 @@ npm run rednote:status
 
 状态里重点看这几个字段：
 
+- `cookieSource`
 - `playwrightAvailable`
 - `browserInstalled`
 - `loggedIn`

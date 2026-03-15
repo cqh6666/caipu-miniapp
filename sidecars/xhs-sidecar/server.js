@@ -20,6 +20,9 @@ function readConfig() {
     stubMode: String(process.env.XHS_SIDECAR_STUB_MODE || "echo").trim().toLowerCase() || "echo",
     apiKey: String(process.env.XHS_INTERNAL_API_KEY || "").trim(),
     rednoteCookiePath: String(process.env.XHS_REDNOTE_COOKIE_PATH || "").trim(),
+    rednoteCookieHeader:
+      String(process.env.XHS_REDNOTE_COOKIE_HEADER || process.env.XHS_REDNOTE_COOKIE || "").trim(),
+    rednoteCookieDomain: String(process.env.XHS_REDNOTE_COOKIE_DOMAIN || ".xiaohongshu.com").trim() || ".xiaohongshu.com",
     rednoteBrowserHeadless: getEnvBool("XHS_BROWSER_HEADLESS", true),
     rednoteBrowserPath: String(process.env.XHS_REDNOTE_BROWSER_PATH || "").trim(),
     rednoteTimeoutMS: Number(process.env.XHS_REDNOTE_TIMEOUT_MS || 15000)
@@ -251,6 +254,7 @@ function createServer(config) {
             enabled: config.rednoteEnabled,
             loggedIn: !!rednoteStatus.loggedIn,
             ready: !!rednoteStatus.ready,
+            cookieSource: rednoteStatus.cookieSource || "file",
             cookieCount: rednoteStatus.cookieCount || 0,
             cookieUpdatedAt: rednoteStatus.cookieUpdatedAt || "",
             playwrightAvailable: !!rednoteStatus.playwrightAvailable,
@@ -284,6 +288,7 @@ function createServer(config) {
             supportsVideoNotes: true,
             loggedIn: !!rednoteStatus.loggedIn,
             ready: !!rednoteStatus.ready,
+            cookieSource: rednoteStatus.cookieSource || "file",
             cookieCount: rednoteStatus.cookieCount || 0,
             cookieUpdatedAt: rednoteStatus.cookieUpdatedAt || "",
             playwrightAvailable: !!rednoteStatus.playwrightAvailable,
@@ -303,6 +308,7 @@ function createServer(config) {
         provider: "rednote",
         loggedIn: !!rednoteStatus.loggedIn,
         ready: !!rednoteStatus.ready,
+        cookieSource: rednoteStatus.cookieSource || "file",
         cookiePath: rednoteStatus.cookiePath || "",
         cookieCount: rednoteStatus.cookieCount || 0,
         playwrightAvailable: !!rednoteStatus.playwrightAvailable,

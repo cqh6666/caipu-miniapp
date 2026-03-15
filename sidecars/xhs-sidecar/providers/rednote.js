@@ -168,12 +168,15 @@ async function parseViaRednote(input, config) {
   }
 
   const cookiePath = config.rednoteCookiePath || defaultCookiePath();
-  const cookieState = loadCookies(cookiePath);
+  const cookieState = loadCookies(config);
   if (!cookieState.exists || cookieState.cookies.length === 0) {
     return {
       ok: false,
       errorCode: "login_required",
-      errorMessage: `rednote cookie file not found or empty: ${cookiePath}`
+      errorMessage:
+        cookieState.source === "header"
+          ? "rednote cookie header is empty or invalid"
+          : `rednote cookie file not found or empty: ${cookiePath}`
     };
   }
 
