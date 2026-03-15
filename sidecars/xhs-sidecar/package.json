@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "rednote:init": "node scripts/rednote-init.js",
-    "rednote:status": "node scripts/rednote-status.js"
+    "rednote:status": "node scripts/rednote-status.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "playwright": "^1.53.0"

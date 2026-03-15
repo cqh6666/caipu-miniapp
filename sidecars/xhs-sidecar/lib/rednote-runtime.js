@@ -14,6 +14,16 @@ const SET_COOKIE_ATTRIBUTES = new Set([
   "partitioned"
 ]);
 
+const LIKELY_LOGIN_COOKIE_NAMES = new Set([
+  "a1",
+  "webid",
+  "gid",
+  "web_session",
+  "web_session_id",
+  "websectiga",
+  "websectiga_v2"
+]);
+
 function defaultCookiePath() {
   return path.join(os.homedir(), ".mcp", "rednote", "cookies.json");
 }
@@ -82,8 +92,62 @@ function buildCookieFromHeaderPair(name, value, domain) {
   };
 }
 
+function normalizeCookieHeader(rawHeader) {
+  return String(rawHeader || "")
+    .trim()
+    .replace(/^cookie\s*:\s*/i, "")
+    .trim();
+}
+
+function hasLikelyLoginCookies(cookies) {
+  const names = new Set((cookies || []).map((cookie) => String(cookie?.name || "").trim().toLowerCase()).filter(Boolean));
+  if (names.size === 0) {
+    return false;
+  }
+
+  if (names.has("a1") || names.has("web_session") || names.has("web_session_id")) {
+    return true;
+  }
+
+  return names.has("webid") && names.has("gid");
+}
+
+function validateCookieState(cookieState) {
+  if (cookieState.parseError) {
+    return {
+      ok: false,
+      errorMessage:
+        cookieState.source === "header"
+          ? `invalid cookie header: ${cookieState.parseError}`
+          : `invalid cookie file: ${cookieState.parseError}`
+    };
+  }
+
+  if (!cookieState.exists || cookieState.cookies.length === 0) {
+    return {
+      ok: false,
+      errorMessage:
+        cookieState.source === "header"
+          ? "rednote cookie header is empty or invalid"
+          : "rednote cookie file not found or empty"
+    };
+  }
+
+  if (!hasLikelyLoginCookies(cookieState.cookies)) {
+    return {
+      ok: false,
+      errorMessage:
+        cookieState.source === "header"
+          ? "rednote cookie header does not include expected login cookies"
+          : "rednote cookie file does not include expected login cookies"
+    };
+  }
+
+  return { ok: true, errorMessage: "" };
+}
+
 function parseCookieHeader(rawHeader, domain) {
-  const pairs = String(rawHeader || "")
+  const pairs = normalizeCookieHeader(rawHeader)
     .split(";")
     .map((part) => part.trim())
     .filter(Boolean);
@@ -159,6 +223,7 @@ function buildBrowserLaunchOptions(config, overrides = {}) {
 function summarizeRuntime(config) {
   const cookiePath = config.rednoteCookiePath || defaultCookiePath();
   const cookieState = loadCookies(config);
+  const cookieValidation = validateCookieState(cookieState);
   const playwright = canUsePlaywright();
   const playwrightAvailable = !!(playwright && playwright.chromium);
   let browserInstalled = false;
@@ -173,13 +238,11 @@ function summarizeRuntime(config) {
     }
   }
 
-  const loggedIn = cookieState.exists && cookieState.cookies.length > 0 && !cookieState.parseError;
+  const loggedIn = cookieValidation.ok;
   let lastError = "";
 
-  if (cookieState.parseError) {
-    lastError = `invalid cookie file: ${cookieState.parseError}`;
-  } else if (!cookieState.exists || cookieState.cookies.length === 0) {
-    lastError = `rednote cookie file not found or empty: ${cookiePath}`;
+  if (!cookieValidation.ok) {
+    lastError = cookieValidation.errorMessage;
   } else if (!playwrightAvailable) {
     lastError = "playwright is not installed";
   } else if (!browserInstalled) {
@@ -204,8 +267,11 @@ module.exports = {
   canUsePlaywright,
   defaultCookiePath,
   ensureCookieDir,
+  hasLikelyLoginCookies,
   loadCookies,
   loadCookiesFromHeader,
+  normalizeCookieHeader,
   summarizeRuntime,
+  validateCookieState,
   writeCookies
 };

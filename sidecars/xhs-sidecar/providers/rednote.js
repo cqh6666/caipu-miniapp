@@ -4,7 +4,8 @@ const {
   canUsePlaywright,
   defaultCookiePath,
   loadCookies,
-  summarizeRuntime
+  summarizeRuntime,
+  validateCookieState
 } = require("../lib/rednote-runtime");
 
 function unique(items) {
@@ -169,14 +170,17 @@ async function parseViaRednote(input, config) {
 
   const cookiePath = config.rednoteCookiePath || defaultCookiePath();
   const cookieState = loadCookies(config);
-  if (!cookieState.exists || cookieState.cookies.length === 0) {
+  const cookieValidation = validateCookieState(cookieState);
+  if (!cookieValidation.ok) {
     return {
       ok: false,
       errorCode: "login_required",
       errorMessage:
         cookieState.source === "header"
-          ? "rednote cookie header is empty or invalid"
-          : `rednote cookie file not found or empty: ${cookiePath}`
+          ? cookieValidation.errorMessage
+          : cookieValidation.errorMessage === "rednote cookie file not found or empty"
+            ? `rednote cookie file not found or empty: ${cookiePath}`
+            : cookieValidation.errorMessage
     };
   }
 
@@ -195,7 +199,15 @@ async function parseViaRednote(input, config) {
   try {
     browser = await playwright.chromium.launch(buildBrowserLaunchOptions(config));
     context = await browser.newContext();
-    await context.addCookies(cookieState.cookies);
+    try {
+      await context.addCookies(cookieState.cookies);
+    } catch (error) {
+      return {
+        ok: false,
+        errorCode: "login_required",
+        errorMessage: "rednote cookies are invalid for browser injection"
+      };
+    }
     page = await context.newPage();
     page.setDefaultTimeout(config.rednoteTimeoutMS);
 
@@ -246,6 +258,13 @@ async function parseViaRednote(input, config) {
         ok: false,
         errorCode: "login_required",
         errorMessage: "rednote page requires login"
+      };
+    }
+    if (/setCookies|addCookies|cookie/i.test(message)) {
+      return {
+        ok: false,
+        errorCode: "login_required",
+        errorMessage: "rednote cookies are invalid for browser injection"
       };
     }
     if (/Executable doesn't exist|browserType\.launch/i.test(message)) {
