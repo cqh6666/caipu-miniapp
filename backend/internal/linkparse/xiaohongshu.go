@@ -98,7 +98,7 @@ func (s *Service) PreviewXiaohongshu(ctx context.Context, rawInput string) (Link
 		Platform:     "xiaohongshu",
 		Link:         result.Link,
 		CanonicalURL: firstNonEmpty(result.CanonicalURL, result.Link),
-		Title:        sanitizePreviewTitle(result.Title),
+		Title:        s.finalizePreviewTitle(ctx, result.Title),
 		CoverURL:     firstNonEmpty(result.CoverURL, firstImage(result.Images)),
 		ImageURLs:    preferredXiaohongshuImages(result),
 		ProviderUsed: result.ProviderUsed,
