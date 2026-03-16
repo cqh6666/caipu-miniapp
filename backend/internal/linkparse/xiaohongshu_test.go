@@ -113,3 +113,58 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 		t.Fatalf("RecipeDraft.ImageURLs[0] = %q, want %q", got, want)
 	}
 }
+
+func TestPreviewXiaohongshuUsesSidecar(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"ok": true,
+			"platform": "xiaohongshu",
+			"providerRequested": "auto",
+			"providerUsed": "importer",
+			"normalized": {
+				"shareUrl": "http://xhslink.com/o/demo123",
+				"canonicalUrl": "https://www.xiaohongshu.com/explore/68abcd1234",
+				"noteId": "68abcd1234"
+			},
+			"note": {
+				"title": "番茄土豆炖牛腩教程来咯～",
+				"content": "正文",
+				"tags": ["家常菜"],
+				"images": ["http://ci.xiaohongshu.com/1.jpg", "https://ci.xiaohongshu.com/2.jpg"],
+				"videos": [],
+				"coverUrl": "http://ci.xiaohongshu.com/cover.jpg",
+				"author": {"name": "测试厨房"},
+				"noteType": "image"
+			},
+			"warnings": ["demo"]
+		}`))
+	}))
+	defer server.Close()
+
+	svc := NewService(Options{
+		XHSSidecarEnabled:  true,
+		XHSSidecarBaseURL:  server.URL,
+		XHSSidecarTimeout:  3 * time.Second,
+		XHSSidecarProvider: "auto",
+	})
+
+	result, err := svc.PreviewXiaohongshu(context.Background(), "http://xhslink.com/o/demo123")
+	if err != nil {
+		t.Fatalf("PreviewXiaohongshu returned error: %v", err)
+	}
+	if got, want := result.Platform, "xiaohongshu"; got != want {
+		t.Fatalf("Platform = %q, want %q", got, want)
+	}
+	if got, want := result.Title, "番茄土豆炖牛腩教程来咯"; got != want {
+		t.Fatalf("Title = %q, want %q", got, want)
+	}
+	if got, want := result.CoverURL, "https://ci.xiaohongshu.com/cover.jpg"; got != want {
+		t.Fatalf("CoverURL = %q, want %q", got, want)
+	}
+	if got, want := len(result.ImageURLs), 2; got != want {
+		t.Fatalf("len(ImageURLs) = %d, want %d", got, want)
+	}
+}

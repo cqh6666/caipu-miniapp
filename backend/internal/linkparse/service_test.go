@@ -91,3 +91,26 @@ func TestSummarizeHeuristically(t *testing.T) {
 		t.Fatalf("len(ImageURLs) = %d, want %d", got, want)
 	}
 }
+
+func TestSanitizePreviewTitle(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"【香菜牛肉最好吃的做法~-哔哩哔哩】", "香菜牛肉最好吃的做法"},
+		{"番茄土豆炖牛腩教程来咯～", "番茄土豆炖牛腩教程来咯"},
+		{"  红烧牛腩 - 小红书  ", "红烧牛腩"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			if got := sanitizePreviewTitle(tc.input); got != tc.want {
+				t.Fatalf("sanitizePreviewTitle(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}

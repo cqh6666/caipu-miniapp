@@ -511,25 +511,29 @@
 
 				<scroll-view class="sheet__body" scroll-y>
 					<view class="form-field">
-						<text class="form-field__label">菜名</text>
+						<text class="form-field__label">菜谱链接</text>
 						<input
-							v-model="draft.title"
-							class="sheet-input sheet-input--title"
-							placeholder="输入菜名"
+							:value="draft.link"
+							class="sheet-input"
+							placeholder="支持直接粘贴 B 站或小红书分享链接"
 							placeholder-class="sheet-input__placeholder"
-							maxlength="40"
+							maxlength="300"
+							@input="handleDraftLinkInput"
 						/>
+						<text v-if="draftLinkAssistText" class="form-field__hint">{{ draftLinkAssistText }}</text>
 					</view>
 
 					<view class="form-field">
-						<text class="form-field__label">链接</text>
+						<text class="form-field__label">菜名</text>
 						<input
-							v-model="draft.link"
-							class="sheet-input"
-							placeholder="支持直接粘贴菜谱或视频链接"
+							:value="draft.title"
+							class="sheet-input sheet-input--title"
+							placeholder="可手动填写，或等待系统自动识别"
 							placeholder-class="sheet-input__placeholder"
-							maxlength="300"
+							maxlength="40"
+							@input="handleDraftTitleInput"
 						/>
+						<text v-if="draftTitleAssistText" class="form-field__hint">{{ draftTitleAssistText }}</text>
 					</view>
 
 					<view class="form-field">
@@ -631,6 +635,7 @@
 <script>
 import { appConfig } from '../../utils/app-config'
 import { getBilibiliSessionSetting } from '../../utils/app-settings-api'
+import { previewRecipeLink } from '../../utils/recipe-api'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import {
 	MAX_RECIPE_IMAGES,
@@ -671,6 +676,54 @@ const createEmptyDraft = (overrides = {}) => ({
 	...overrides
 })
 
+const firstUrlPattern = /https?:\/\/[^\s]+/i
+
+function detectDraftLinkPlatform(input = '') {
+	const value = String(input || '').toLowerCase()
+	if (!value) return ''
+	if (value.includes('bilibili.com') || value.includes('b23.tv') || value.includes('bili2233.cn')) return 'bilibili'
+	if (value.includes('xiaohongshu.com') || value.includes('xhslink.com')) return 'xiaohongshu'
+	return ''
+}
+
+function normalizeDraftAutoTitle(input = '') {
+	let title = String(input || '').trim()
+	if (!title) return ''
+	const bracketMatch = title.match(/[【\[]([^】\]]+)[】\]]/)
+	if (bracketMatch && bracketMatch[1]) {
+		title = bracketMatch[1].trim()
+	}
+	title = title
+		.replace(/\s*-\s*(哔哩哔哩|小红书)\s*$/i, '')
+		.replace(/复制后打开【小红书】查看笔记!?/g, '')
+		.trim()
+	title = title.replace(/[。！!~～\s]+$/g, '').trim()
+	return title
+}
+
+function guessDraftTitleFromShareText(input = '') {
+	const raw = String(input || '').trim()
+	if (!raw) return ''
+
+	const text = raw
+		.replace(firstUrlPattern, ' ')
+		.replace(/复制后打开【小红书】查看笔记!?/g, ' ')
+		.replace(/发布了一篇小红书笔记.*$/g, ' ')
+		.replace(/快来看吧.*$/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+
+	if (!text) return ''
+
+	const bracketMatch = text.match(/[【\[]([^】\]]+)[】\]]/)
+	if (bracketMatch && bracketMatch[1]) {
+		return normalizeDraftAutoTitle(bracketMatch[1])
+	}
+
+	const line = text.split(/[。\n]/).map((item) => item.trim()).filter(Boolean)[0] || ''
+	return normalizeDraftAutoTitle(line)
+}
+
 export default {
 	data() {
 		return {
@@ -707,6 +760,13 @@ export default {
 				nickname: '',
 				avatarUrl: ''
 			},
+			draftAutoTitle: '',
+			draftTitleTouched: false,
+			draftLinkPreviewPlatform: '',
+			draftLinkPreviewError: '',
+			draftLinkPreviewTimer: null,
+			draftLinkPreviewRequestID: 0,
+			isDraftLinkPreviewing: false,
 			appIntroPressProgress: 0,
 			hasDismissedProfilePrompt: false,
 			syncErrorMessage: '',
@@ -727,9 +787,11 @@ export default {
 		this.refreshRecipes()
 	},
 	onHide() {
+		this.clearDraftLinkPreviewState()
 		this.clearAppIntroPressState()
 	},
 	onUnload() {
+		this.clearDraftLinkPreviewState()
 		this.clearAppIntroPressState()
 	},
 	onShareAppMessage(res) {
@@ -879,6 +941,30 @@ export default {
 		},
 		canSubmitDraft() {
 			return !!this.draft.title.trim()
+		},
+		draftLinkPlatformLabel() {
+			if (this.draftLinkPreviewPlatform === 'bilibili') return 'B 站'
+			if (this.draftLinkPreviewPlatform === 'xiaohongshu') return '小红书'
+			return '链接'
+		},
+		draftTitleAssistText() {
+			if (!this.draftAutoTitle) return ''
+			if (this.draftTitleTouched) {
+				return `已识别出原始标题，当前保留你手动填写的菜名。`
+			}
+			return `已从${this.draftLinkPlatformLabel}链接识别菜名，可直接保存。`
+		},
+		draftLinkAssistText() {
+			if (this.isDraftLinkPreviewing) {
+				return `正在从${this.draftLinkPlatformLabel}链接识别菜名...`
+			}
+			if (this.draftLinkPreviewError) {
+				return this.draftLinkPreviewError
+			}
+			if (this.draft.link.trim()) {
+				return '支持直接粘贴 B 站或小红书分享链接，系统会自动帮你补标题。'
+			}
+			return ''
 		}
 	},
 	methods: {
@@ -1125,6 +1211,114 @@ export default {
 				status: defaultStatus
 			})
 		},
+		resetDraftAssistState() {
+			this.clearDraftLinkPreviewState()
+			this.draftAutoTitle = ''
+			this.draftTitleTouched = false
+			this.draftLinkPreviewPlatform = ''
+			this.draftLinkPreviewError = ''
+		},
+		clearDraftLinkPreviewState() {
+			if (this.draftLinkPreviewTimer) {
+				clearTimeout(this.draftLinkPreviewTimer)
+				this.draftLinkPreviewTimer = null
+			}
+			this.draftLinkPreviewRequestID += 1
+			this.isDraftLinkPreviewing = false
+		},
+		applyDraftAutoTitle(title = '') {
+			const normalizedTitle = normalizeDraftAutoTitle(title)
+			if (!normalizedTitle) return
+
+			const currentTitle = String(this.draft.title || '').trim()
+			const previousAutoTitle = String(this.draftAutoTitle || '').trim()
+			const canReplace = !currentTitle || !this.draftTitleTouched || (previousAutoTitle && currentTitle === previousAutoTitle)
+
+			this.draftAutoTitle = normalizedTitle
+			if (canReplace) {
+				this.draft.title = normalizedTitle
+				this.draftTitleTouched = false
+			}
+		},
+		handleDraftTitleInput(event) {
+			const value = String(event?.detail?.value || '')
+			this.draft.title = value
+
+			const normalizedTitle = value.trim()
+			if (!normalizedTitle) {
+				this.draftTitleTouched = false
+				return
+			}
+
+			const autoTitle = String(this.draftAutoTitle || '').trim()
+			this.draftTitleTouched = autoTitle ? normalizedTitle !== autoTitle : true
+		},
+		handleDraftLinkInput(event) {
+			const value = String(event?.detail?.value || '')
+			this.draft.link = value
+			this.scheduleDraftLinkPreview(value)
+		},
+		scheduleDraftLinkPreview(rawInput = '') {
+			this.clearDraftLinkPreviewState()
+			this.draftLinkPreviewError = ''
+
+			const value = String(rawInput || '').trim()
+			const previousAutoTitle = String(this.draftAutoTitle || '').trim()
+			if (!value) {
+				if (!this.draftTitleTouched && previousAutoTitle && String(this.draft.title || '').trim() === previousAutoTitle) {
+					this.draft.title = ''
+				}
+				this.draftAutoTitle = ''
+				this.draftLinkPreviewPlatform = ''
+				return
+			}
+
+			const platform = detectDraftLinkPlatform(value)
+			this.draftLinkPreviewPlatform = platform
+
+			const guessedTitle = guessDraftTitleFromShareText(value)
+			if (guessedTitle) {
+				this.applyDraftAutoTitle(guessedTitle)
+			}
+
+			if (!platform) {
+				if (!guessedTitle && !this.draftTitleTouched && previousAutoTitle && String(this.draft.title || '').trim() === previousAutoTitle) {
+					this.draft.title = ''
+					this.draftAutoTitle = ''
+				}
+				return
+			}
+
+			const requestID = this.draftLinkPreviewRequestID
+			this.isDraftLinkPreviewing = true
+			this.draftLinkPreviewTimer = setTimeout(async () => {
+				try {
+					const result = await previewRecipeLink(value)
+					if (requestID !== this.draftLinkPreviewRequestID) return
+
+					this.isDraftLinkPreviewing = false
+					this.draftLinkPreviewTimer = null
+					this.draftLinkPreviewPlatform = detectDraftLinkPlatform(result?.canonicalUrl || result?.link || value) || platform
+
+					const previewTitle = normalizeDraftAutoTitle(result?.title || '')
+					if (previewTitle) {
+						this.applyDraftAutoTitle(previewTitle)
+						return
+					}
+
+					if (!guessedTitle) {
+						this.draftLinkPreviewError = '暂时没识别到菜名，可继续手动填写。'
+					}
+				} catch (error) {
+					if (requestID !== this.draftLinkPreviewRequestID) return
+					this.isDraftLinkPreviewing = false
+					this.draftLinkPreviewTimer = null
+					if (!guessedTitle) {
+						this.draftLinkPreviewError = error?.message || '暂时无法识别链接标题，可先手动填写。'
+					}
+				}
+			}, 480)
+		},
 		mealTypeCount(type) {
 			return this.recipes.filter((recipe) => recipe.mealType === type).length
 		},
@@ -1168,10 +1362,12 @@ export default {
 			})
 		},
 		openAddSheet() {
+			this.resetDraftAssistState()
 			this.draft = this.createDraftFromContext()
 			this.showAddSheet = true
 		},
 		closeAddSheet() {
+			this.resetDraftAssistState()
 			this.showAddSheet = false
 			this.draft = this.createDraftFromContext()
 		},
@@ -1231,6 +1427,7 @@ export default {
 				this.activeStatus = 'all'
 				this.searchKeyword = ''
 				this.showAddSheet = false
+				this.resetDraftAssistState()
 				this.draft = this.createDraftFromContext()
 				uni.showToast({
 					title: '已保存',

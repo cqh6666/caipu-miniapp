@@ -88,7 +88,46 @@ func (s *Service) ParseRecipeLink(ctx context.Context, rawInput string) (RecipeP
 	}
 }
 
+func (s *Service) PreviewXiaohongshu(ctx context.Context, rawInput string) (LinkPreviewResult, error) {
+	result, err := s.fetchXiaohongshuPreview(ctx, rawInput)
+	if err != nil {
+		return LinkPreviewResult{}, err
+	}
+
+	return LinkPreviewResult{
+		Platform:     "xiaohongshu",
+		Link:         result.Link,
+		CanonicalURL: firstNonEmpty(result.CanonicalURL, result.Link),
+		Title:        sanitizePreviewTitle(result.Title),
+		CoverURL:     firstNonEmpty(result.CoverURL, firstImage(result.Images)),
+		ImageURLs:    preferredXiaohongshuImages(result),
+		ProviderUsed: result.ProviderUsed,
+		Warnings:     result.Warnings,
+	}, nil
+}
+
 func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (XiaohongshuParseResult, error) {
+	result, err := s.fetchXiaohongshuPreview(ctx, rawInput)
+	if err != nil {
+		return XiaohongshuParseResult{}, err
+	}
+
+	if s.ai != nil {
+		draft, err := s.ai.summarizeXiaohongshu(ctx, result)
+		if err == nil {
+			result.SummaryMode = "ai"
+			result.RecipeDraft = normalizeXiaohongshuDraft(result, draft)
+			return result, nil
+		}
+		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则总结。")
+	}
+
+	result.SummaryMode = "heuristic"
+	result.RecipeDraft = summarizeXiaohongshuHeuristically(result)
+	return result, nil
+}
+
+func (s *Service) fetchXiaohongshuPreview(ctx context.Context, rawInput string) (XiaohongshuParseResult, error) {
 	if s == nil || s.xhs == nil {
 		return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "xiaohongshu sidecar is not configured", http.StatusInternalServerError)
 	}
@@ -167,19 +206,6 @@ func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (Xiaoho
 		XSECToken:         strings.TrimSpace(parsed.Normalized.XSECToken),
 		Warnings:          parsed.Warnings,
 	}
-
-	if s.ai != nil {
-		draft, err := s.ai.summarizeXiaohongshu(ctx, result)
-		if err == nil {
-			result.SummaryMode = "ai"
-			result.RecipeDraft = normalizeXiaohongshuDraft(result, draft)
-			return result, nil
-		}
-		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则总结。")
-	}
-
-	result.SummaryMode = "heuristic"
-	result.RecipeDraft = summarizeXiaohongshuHeuristically(result)
 	return result, nil
 }
 

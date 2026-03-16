@@ -8,6 +8,14 @@ export function listRecipes(kitchenId, filters = {}) {
 	}).then((data) => data?.items || [])
 }
 
+export function previewRecipeLink(url) {
+	return request({
+		url: '/api/link-parsers/preview',
+		method: 'POST',
+		data: { url }
+	}).then((data) => data?.result || null)
+}
+
 export function createRecipe(kitchenId, payload) {
 	return request({
 		url: `/api/kitchens/${kitchenId}/recipes`,

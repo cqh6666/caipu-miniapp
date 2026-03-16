@@ -21,6 +21,17 @@ type RecipeParseOutcome struct {
 	RecipeDraft RecipeDraft `json:"recipeDraft"`
 }
 
+type LinkPreviewResult struct {
+	Platform     string   `json:"platform"`
+	Link         string   `json:"link"`
+	CanonicalURL string   `json:"canonicalUrl"`
+	Title        string   `json:"title"`
+	CoverURL     string   `json:"coverUrl"`
+	ImageURLs    []string `json:"imageUrls"`
+	ProviderUsed string   `json:"providerUsed,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
+}
+
 type BilibiliParseResult struct {
 	Source            string      `json:"source"`
 	Link              string      `json:"link"`

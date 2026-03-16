@@ -14,6 +14,29 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+func (h *Handler) PreviewLink(w http.ResponseWriter, r *http.Request) {
+	if _, ok := common.CurrentUserID(r.Context()); !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	var req parseLinkRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	result, err := h.service.PreviewLink(r.Context(), req.URL)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"result": result,
+	})
+}
+
 func (h *Handler) ParseBilibili(w http.ResponseWriter, r *http.Request) {
 	if _, ok := common.CurrentUserID(r.Context()); !ok {
 		common.WriteError(w, common.ErrUnauthorized)

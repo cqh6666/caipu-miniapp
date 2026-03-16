@@ -76,6 +76,7 @@ func NewRouter(
 			protected.Get("/app-settings/bilibili-session", appSettingsHandler.GetBilibiliSession)
 			protected.Put("/app-settings/bilibili-session", appSettingsHandler.UpdateBilibiliSession)
 			protected.Delete("/app-settings/bilibili-session", appSettingsHandler.ClearBilibiliSession)
+			protected.Post("/link-parsers/preview", linkParseHandler.PreviewLink)
 			protected.Get("/kitchens", kitchenHandler.List)
 			protected.Post("/kitchens", kitchenHandler.Create)
 			protected.Patch("/kitchens/{kitchenID}", kitchenHandler.Update)

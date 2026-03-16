@@ -214,6 +214,47 @@ func NewService(opts Options) *Service {
 	}
 }
 
+func (s *Service) PreviewLink(ctx context.Context, rawInput string) (LinkPreviewResult, error) {
+	switch DetectParsePlatform(rawInput) {
+	case "bilibili":
+		return s.PreviewBilibili(ctx, rawInput)
+	case "xiaohongshu":
+		return s.PreviewXiaohongshu(ctx, rawInput)
+	default:
+		return LinkPreviewResult{}, common.NewAppError(common.CodeBadRequest, "unsupported preview link", http.StatusBadRequest)
+	}
+}
+
+func (s *Service) PreviewBilibili(ctx context.Context, rawInput string) (LinkPreviewResult, error) {
+	inputURL, err := extractInputURL(rawInput)
+	if err != nil {
+		return LinkPreviewResult{}, err
+	}
+
+	ref, warnings, err := s.resolveVideoRef(ctx, inputURL)
+	if err != nil {
+		return LinkPreviewResult{}, err
+	}
+
+	view, err := s.fetchView(ctx, ref, s.currentSessdata(ctx))
+	if err != nil {
+		return LinkPreviewResult{}, err
+	}
+
+	page, pageWarnings := pickPage(view.Data.Pages, ref.Page)
+	warnings = append(warnings, pageWarnings...)
+
+	return LinkPreviewResult{
+		Platform:     "bilibili",
+		Link:         ref.URL,
+		CanonicalURL: ref.URL,
+		Title:        sanitizePreviewTitle(firstNonEmpty(view.Data.Title, page.Part)),
+		CoverURL:     strings.TrimSpace(view.Data.Pic),
+		ImageURLs:    draftImageURLs(strings.TrimSpace(view.Data.Pic)),
+		Warnings:     warnings,
+	}, nil
+}
+
 func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliParseResult, error) {
 	inputURL, err := extractInputURL(rawInput)
 	if err != nil {
@@ -988,4 +1029,20 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func sanitizePreviewTitle(raw string) string {
+	title := strings.TrimSpace(raw)
+	if title == "" {
+		return ""
+	}
+
+	if match := regexp.MustCompile(`[【\[]([^】\]]+)[】\]]`).FindStringSubmatch(title); len(match) == 2 {
+		title = strings.TrimSpace(match[1])
+	}
+
+	title = strings.TrimSpace(regexp.MustCompile(`\s*-\s*(哔哩哔哩|小红书)\s*$`).ReplaceAllString(title, ""))
+	title = strings.TrimSpace(strings.Trim(title, "[]【】"))
+	title = strings.TrimSpace(strings.TrimRight(title, "。！!~～ "))
+	return title
 }
