@@ -25,6 +25,8 @@ var (
 	}
 )
 
+const maxRecipeImages = 9
+
 type Service struct {
 	repo    *Repository
 	kitchen *kitchen.Service
@@ -62,7 +64,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 		return Recipe{}, err
 	}
 
-	item, err := normalizeRecipeInput(req.Title, req.Ingredient, req.Link, req.ImageURL, req.MealType, req.Status, req.Note, req.ParsedContent)
+	item, err := normalizeRecipeInput(req.Title, req.Ingredient, req.Link, req.ImageURL, req.ImageURLs, req.MealType, req.Status, req.Note, req.ParsedContent)
 	if err != nil {
 		return Recipe{}, err
 	}
@@ -106,7 +108,7 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 		return Recipe{}, err
 	}
 
-	next, err := normalizeRecipeInput(req.Title, req.Ingredient, req.Link, req.ImageURL, req.MealType, req.Status, req.Note, req.ParsedContent)
+	next, err := normalizeRecipeInput(req.Title, req.Ingredient, req.Link, req.ImageURL, req.ImageURLs, req.MealType, req.Status, req.Note, req.ParsedContent)
 	if err != nil {
 		return Recipe{}, err
 	}
@@ -258,6 +260,7 @@ func normalizeRecipeInput(
 	ingredient string,
 	link string,
 	imageURL string,
+	imageURLs []string,
 	mealType string,
 	status string,
 	note string,
@@ -283,6 +286,9 @@ func normalizeRecipeInput(
 	if len([]rune(link)) > 300 {
 		return Recipe{}, common.NewAppError(common.CodeBadRequest, "link must be 300 characters or fewer", http.StatusBadRequest)
 	}
+	if len([]rune(imageURL)) > 500 {
+		return Recipe{}, common.NewAppError(common.CodeBadRequest, "imageUrl must be 500 characters or fewer", http.StatusBadRequest)
+	}
 	if len([]rune(note)) > 300 {
 		return Recipe{}, common.NewAppError(common.CodeBadRequest, "note must be 300 characters or fewer", http.StatusBadRequest)
 	}
@@ -301,18 +307,61 @@ func normalizeRecipeInput(
 		return Recipe{}, common.NewAppError(common.CodeBadRequest, "invalid status", http.StatusBadRequest)
 	}
 
+	normalizedImages, err := normalizeImageURLs(imageURL, imageURLs)
+	if err != nil {
+		return Recipe{}, err
+	}
 	normalizedContent := normalizeParsedContent(parsedContent, mealType, title, ingredient)
 
 	return Recipe{
 		Title:         title,
 		Ingredient:    ingredient,
 		Link:          link,
-		ImageURL:      imageURL,
+		ImageURL:      firstImageURL(normalizedImages),
+		ImageURLs:     normalizedImages,
 		MealType:      mealType,
 		Status:        status,
 		Note:          note,
 		ParsedContent: normalizedContent,
 	}, nil
+}
+
+func normalizeImageURLs(imageURL string, imageURLs []string) ([]string, error) {
+	candidates := make([]string, 0, len(imageURLs)+1)
+	candidates = append(candidates, imageURLs...)
+	if strings.TrimSpace(imageURL) != "" {
+		candidates = append(candidates, imageURL)
+	}
+
+	normalized := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, raw := range candidates {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if len([]rune(value)) > 500 {
+			return nil, common.NewAppError(common.CodeBadRequest, "each imageUrl must be 500 characters or fewer", http.StatusBadRequest)
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+
+	if len(normalized) > maxRecipeImages {
+		return nil, common.NewAppError(common.CodeBadRequest, "at most 9 images are allowed", http.StatusBadRequest)
+	}
+
+	return normalized, nil
+}
+
+func firstImageURL(imageURLs []string) string {
+	if len(imageURLs) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(imageURLs[0])
 }
 
 func normalizeParsedContent(content ParsedContent, mealType, title, ingredient string) ParsedContent {

@@ -534,35 +534,35 @@
 
 					<view class="form-field">
 						<text class="form-field__label">成品图（可选）</text>
-						<view
-							class="upload-card"
-							:class="{ 'upload-card--filled': !!draft.image }"
-							@tap="chooseDraftImage"
-						>
-							<template v-if="draft.image">
-								<image class="upload-card__thumb" :src="draft.image" mode="aspectFill"></image>
-								<view class="upload-card__content">
-									<text class="upload-card__title">已上传成品图</text>
-									<text class="upload-card__desc">点击卡片可替换，也可以直接删除。</text>
-									<view class="upload-card__actions">
-										<view class="upload-card__action" @tap.stop="chooseDraftImage">
-											<text class="upload-card__action-text">替换</text>
-										</view>
-										<view class="upload-card__action upload-card__action--danger" @tap.stop="removeDraftImage">
-											<text class="upload-card__action-text upload-card__action-text--danger">删除</text>
-										</view>
-									</view>
+						<view class="upload-gallery">
+							<view
+								v-for="(image, index) in draft.images"
+								:key="`draft-image-${index}`"
+								class="upload-gallery__item"
+								@tap="previewDraftImages(index)"
+							>
+								<image class="upload-gallery__thumb" :src="image" mode="aspectFill"></image>
+								<view class="upload-gallery__badge">
+									<text class="upload-gallery__badge-text">{{ index === 0 ? '封面' : index + 1 }}</text>
 								</view>
-							</template>
-							<template v-else>
-								<view class="upload-card__empty">
-									<view class="upload-card__plus">
-										<up-icon name="plus" size="20" color="#8c8074"></up-icon>
-									</view>
-									<text class="upload-card__empty-title">上传成品图</text>
+								<view class="upload-gallery__remove" @tap.stop="removeDraftImage(index)">
+									<up-icon name="close" size="14" color="#ffffff"></up-icon>
 								</view>
-							</template>
+							</view>
+							<view
+								v-if="draft.images.length < maxRecipeImages"
+								class="upload-gallery__add"
+								@tap="chooseDraftImages"
+							>
+								<view class="upload-gallery__plus">
+									<up-icon name="plus" size="20" color="#8c8074"></up-icon>
+								</view>
+								<text class="upload-gallery__add-text">上传成品图</text>
+							</view>
 						</view>
+						<text class="form-field__hint">
+							{{ draft.images.length ? `已添加 ${draft.images.length} 张，首张会作为封面展示。` : `最多上传 ${maxRecipeImages} 张，首张会作为封面展示。` }}
+						</text>
 					</view>
 
 					<view class="form-field">
@@ -633,6 +633,7 @@ import { appConfig } from '../../utils/app-config'
 import { getBilibiliSessionSetting } from '../../utils/app-settings-api'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import {
+	MAX_RECIPE_IMAGES,
 	createRecipeFromDraft,
 	getCachedRecipes,
 	getRecipeSecondaryText,
@@ -663,7 +664,7 @@ const statusMap = {
 const createEmptyDraft = (overrides = {}) => ({
 	title: '',
 	link: '',
-	image: '',
+	images: [],
 	mealType: 'breakfast',
 	status: 'wishlist',
 	note: '',
@@ -690,6 +691,7 @@ export default {
 				{ label: '吃过', value: 'done' }
 			],
 			draftStatusOptions: statusOptions,
+			maxRecipeImages: MAX_RECIPE_IMAGES,
 			draft: createEmptyDraft(),
 			recipes: [],
 			kitchenOptions: [],
@@ -1173,19 +1175,43 @@ export default {
 			this.showAddSheet = false
 			this.draft = this.createDraftFromContext()
 		},
-		chooseDraftImage() {
+		chooseDraftImages() {
+			const remaining = Math.max(this.maxRecipeImages - this.draft.images.length, 0)
+			if (!remaining) {
+				uni.showToast({
+					title: `最多上传 ${this.maxRecipeImages} 张`,
+					icon: 'none'
+				})
+				return
+			}
+
 			uni.chooseImage({
-				count: 1,
+				count: remaining,
 				sizeType: ['compressed'],
 				sourceType: ['album', 'camera'],
 				success: ({ tempFilePaths }) => {
 					if (!tempFilePaths || !tempFilePaths.length) return
-					this.draft.image = tempFilePaths[0]
+					const nextImages = [...this.draft.images]
+					tempFilePaths.forEach((path) => {
+						if (path && !nextImages.includes(path) && nextImages.length < this.maxRecipeImages) {
+							nextImages.push(path)
+						}
+					})
+					this.draft.images = nextImages
 				}
 			})
 		},
-		removeDraftImage() {
-			this.draft.image = ''
+		removeDraftImage(index) {
+			if (typeof index !== 'number') return
+			this.draft.images = this.draft.images.filter((_, currentIndex) => currentIndex !== index)
+		},
+		previewDraftImages(index = 0) {
+			const urls = Array.isArray(this.draft.images) ? this.draft.images.filter(Boolean) : []
+			if (!urls.length) return
+			uni.previewImage({
+				current: urls[index] || urls[0],
+				urls
+			})
 		},
 		async submitDraft() {
 			if (!this.canSubmitDraft || this.isSubmittingDraft) return
@@ -2868,6 +2894,12 @@ export default {
 		color: #9b9186;
 	}
 
+	.form-field__hint {
+		font-size: 22rpx;
+		line-height: 1.6;
+		color: #9b9186;
+	}
+
 	.sheet-input,
 	.sheet-textarea {
 		width: 100%;
@@ -2904,34 +2936,73 @@ export default {
 		line-height: 1.6;
 	}
 
-	.upload-card {
-		min-height: 168rpx;
-		padding: 20rpx;
-		box-sizing: border-box;
+	.upload-gallery {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16rpx;
+	}
+
+	.upload-gallery__item,
+	.upload-gallery__add {
+		position: relative;
+		width: calc((100% - 32rpx) / 3);
+		height: 176rpx;
 		border-radius: 24rpx;
+		overflow: hidden;
+	}
+
+	.upload-gallery__item {
+		background: #ebe4db;
+	}
+
+	.upload-gallery__thumb {
+		width: 100%;
+		height: 100%;
+		display: block;
+	}
+
+	.upload-gallery__badge {
+		position: absolute;
+		left: 12rpx;
+		bottom: 12rpx;
+		padding: 8rpx 14rpx;
+		border-radius: 999rpx;
+		background: rgba(47, 41, 35, 0.58);
+		backdrop-filter: blur(10rpx);
+	}
+
+	.upload-gallery__badge-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.upload-gallery__remove {
+		position: absolute;
+		top: 12rpx;
+		right: 12rpx;
+		width: 40rpx;
+		height: 40rpx;
+		border-radius: 999rpx;
+		background: rgba(47, 41, 35, 0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.upload-gallery__add {
 		border: 1px dashed #d8cec3;
 		background: #faf7f3;
 		display: flex;
-		align-items: center;
-	}
-
-	.upload-card--filled {
-		border-style: solid;
-		background: #ffffff;
-	}
-
-	.upload-card__empty {
-		width: 100%;
-		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 14rpx;
+		gap: 12rpx;
 	}
 
-	.upload-card__plus {
-		width: 68rpx;
-		height: 68rpx;
+	.upload-gallery__plus {
+		width: 64rpx;
+		height: 64rpx;
 		border-radius: 20rpx;
 		background: #f1ebe4;
 		display: flex;
@@ -2939,65 +3010,10 @@ export default {
 		justify-content: center;
 	}
 
-	.upload-card__empty-title {
-		font-size: 25rpx;
+	.upload-gallery__add-text {
+		font-size: 24rpx;
 		font-weight: 600;
 		color: #75685c;
-	}
-
-	.upload-card__thumb {
-		width: 148rpx;
-		height: 148rpx;
-		border-radius: 20rpx;
-		background: #f1ebe4;
-		flex-shrink: 0;
-	}
-
-	.upload-card__content {
-		flex: 1;
-		min-width: 0;
-		margin-left: 20rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 8rpx;
-	}
-
-	.upload-card__title {
-		font-size: 28rpx;
-		font-weight: 600;
-		color: #2f2923;
-	}
-
-	.upload-card__desc {
-		font-size: 22rpx;
-		line-height: 1.5;
-		color: #95897e;
-	}
-
-	.upload-card__actions {
-		display: flex;
-		gap: 12rpx;
-		margin-top: 4rpx;
-	}
-
-	.upload-card__action {
-		padding: 10rpx 18rpx;
-		border-radius: 999rpx;
-		background: #f1ebe4;
-	}
-
-	.upload-card__action--danger {
-		background: #f8eeea;
-	}
-
-	.upload-card__action-text {
-		font-size: 22rpx;
-		font-weight: 600;
-		color: #6c6156;
-	}
-
-	.upload-card__action-text--danger {
-		color: #b4664c;
 	}
 
 	.segment {

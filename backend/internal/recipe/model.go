@@ -20,6 +20,7 @@ type Recipe struct {
 	Ingredient       string        `json:"ingredient"`
 	Link             string        `json:"link"`
 	ImageURL         string        `json:"imageUrl"`
+	ImageURLs        []string      `json:"imageUrls"`
 	MealType         string        `json:"mealType"`
 	Status           string        `json:"status"`
 	Note             string        `json:"note"`
@@ -46,6 +47,7 @@ type createRecipeRequest struct {
 	Ingredient    string        `json:"ingredient"`
 	Link          string        `json:"link"`
 	ImageURL      string        `json:"imageUrl"`
+	ImageURLs     []string      `json:"imageUrls"`
 	MealType      string        `json:"mealType"`
 	Status        string        `json:"status"`
 	Note          string        `json:"note"`
@@ -57,6 +59,7 @@ type updateRecipeRequest struct {
 	Ingredient    string        `json:"ingredient"`
 	Link          string        `json:"link"`
 	ImageURL      string        `json:"imageUrl"`
+	ImageURLs     []string      `json:"imageUrls"`
 	MealType      string        `json:"mealType"`
 	Status        string        `json:"status"`
 	Note          string        `json:"note"`

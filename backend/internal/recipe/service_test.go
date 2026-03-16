@@ -2,6 +2,45 @@ package recipe
 
 import "testing"
 
+func TestNormalizeRecipeInputSupportsMultipleImages(t *testing.T) {
+	t.Parallel()
+
+	item, err := normalizeRecipeInput(
+		"番茄牛腩",
+		"牛腩",
+		"",
+		"",
+		[]string{"https://img.example.com/1.jpg", "https://img.example.com/2.jpg"},
+		"main",
+		"wishlist",
+		"",
+		ParsedContent{},
+	)
+	if err != nil {
+		t.Fatalf("normalizeRecipeInput returned error: %v", err)
+	}
+
+	if got, want := len(item.ImageURLs), 2; got != want {
+		t.Fatalf("len(ImageURLs) = %d, want %d", got, want)
+	}
+	if got, want := item.ImageURL, "https://img.example.com/1.jpg"; got != want {
+		t.Fatalf("ImageURL = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeRecipeInputRejectsTooManyImages(t *testing.T) {
+	t.Parallel()
+
+	imageURLs := make([]string, 0, maxRecipeImages+1)
+	for index := 0; index < maxRecipeImages+1; index += 1 {
+		imageURLs = append(imageURLs, "https://img.example.com/test-"+string(rune('a'+index))+".jpg")
+	}
+
+	if _, err := normalizeRecipeInput("番茄牛腩", "", "", "", imageURLs, "main", "wishlist", "", ParsedContent{}); err == nil {
+		t.Fatal("normalizeRecipeInput should reject too many images")
+	}
+}
+
 func TestHasUserProvidedParsedContentTreatsFallbackAsEmpty(t *testing.T) {
 	t.Parallel()
 

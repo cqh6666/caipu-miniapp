@@ -19,7 +19,7 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filter ListFilter) ([]Recipe, error) {
 	query := `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -72,7 +72,7 @@ WHERE kitchen_id = ? AND deleted_at IS NULL
 
 func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -123,6 +123,12 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		return Recipe{}, fmt.Errorf("begin update recipe tx: %w", err)
 	}
 
+	imageURLsJSON, err := marshalImageURLs(item.ImageURLs)
+	if err != nil {
+		_ = tx.Rollback()
+		return Recipe{}, err
+	}
+
 	ingredientsJSON, stepsJSON, err := marshalParsedContent(item.ParsedContent)
 	if err != nil {
 		_ = tx.Rollback()
@@ -132,7 +138,7 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET title = ?, ingredient = ?, link = ?, image_url = ?, meal_type = ?, status = ?, note = ?,
+SET title = ?, ingredient = ?, link = ?, image_url = ?, image_urls_json = ?, meal_type = ?, status = ?, note = ?,
     ingredients_json = ?, steps_json = ?, parse_status = ?, parse_source = ?, parse_error = ?,
     parse_requested_at = ?, parse_finished_at = ?, updated_by = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
@@ -140,6 +146,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(item.Ingredient),
 		nullableString(item.Link),
 		nullableString(item.ImageURL),
+		imageURLsJSON,
 		item.MealType,
 		item.Status,
 		nullableString(item.Note),
@@ -267,7 +274,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 
 func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -301,7 +308,7 @@ LIMIT ?`
 
 func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -530,6 +537,7 @@ type scanner interface {
 func scanRecipe(s scanner) (Recipe, error) {
 	var (
 		item            Recipe
+		imageURLsJSON   string
 		ingredientsJSON string
 		stepsJSON       string
 	)
@@ -541,6 +549,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.Ingredient,
 		&item.Link,
 		&item.ImageURL,
+		&imageURLsJSON,
 		&item.MealType,
 		&item.Status,
 		&item.Note,
@@ -560,16 +569,32 @@ func scanRecipe(s scanner) (Recipe, error) {
 		return Recipe{}, err
 	}
 
+	imageURLs, err := unmarshalImageURLs(imageURLsJSON)
+	if err != nil {
+		return Recipe{}, err
+	}
 	parsedContent, err := unmarshalParsedContent(ingredientsJSON, stepsJSON)
 	if err != nil {
 		return Recipe{}, err
 	}
 
+	item.ImageURLs = imageURLs
+	if len(item.ImageURLs) == 0 && strings.TrimSpace(item.ImageURL) != "" {
+		item.ImageURLs = []string{strings.TrimSpace(item.ImageURL)}
+	}
+	if strings.TrimSpace(item.ImageURL) == "" {
+		item.ImageURL = firstImageURL(imageURLs)
+	}
 	item.ParsedContent = parsedContent
 	return item, nil
 }
 
 func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
+	imageURLsJSON, err := marshalImageURLs(item.ImageURLs)
+	if err != nil {
+		return err
+	}
+
 	ingredientsJSON, stepsJSON, err := marshalParsedContent(item.ParsedContent)
 	if err != nil {
 		return err
@@ -578,16 +603,17 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO recipes (
-id, kitchen_id, title, ingredient, link, image_url, meal_type, status, note,
+id, kitchen_id, title, ingredient, link, image_url, image_urls_json, meal_type, status, note,
 ingredients_json, steps_json, parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
 created_by, updated_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
 		nullableString(item.Ingredient),
 		nullableString(item.Link),
 		nullableString(item.ImageURL),
+		imageURLsJSON,
 		item.MealType,
 		item.Status,
 		nullableString(item.Note),
@@ -611,7 +637,7 @@ created_by, updated_by, created_at, updated_at
 
 func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -651,6 +677,32 @@ func marshalParsedContent(content ParsedContent) (string, string, error) {
 	}
 
 	return string(ingredients), string(steps), nil
+}
+
+func marshalImageURLs(imageURLs []string) (string, error) {
+	if len(imageURLs) == 0 {
+		return "[]", nil
+	}
+
+	encoded, err := json.Marshal(imageURLs)
+	if err != nil {
+		return "", fmt.Errorf("marshal image urls: %w", err)
+	}
+
+	return string(encoded), nil
+}
+
+func unmarshalImageURLs(imageURLsJSON string) ([]string, error) {
+	if strings.TrimSpace(imageURLsJSON) == "" {
+		return []string{}, nil
+	}
+
+	var imageURLs []string
+	if err := json.Unmarshal([]byte(imageURLsJSON), &imageURLs); err != nil {
+		return nil, fmt.Errorf("unmarshal image urls: %w", err)
+	}
+
+	return imageURLs, nil
 }
 
 func unmarshalParsedContent(ingredientsJSON, stepsJSON string) (ParsedContent, error) {

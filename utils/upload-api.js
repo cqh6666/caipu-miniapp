@@ -17,3 +17,17 @@ export async function ensureUploadedImage(imagePath = '') {
 
 	return payload?.url || ''
 }
+
+export async function ensureUploadedImages(imagePaths = []) {
+	const sources = Array.isArray(imagePaths) ? imagePaths : [imagePaths]
+	const uploaded = []
+
+	for (const item of sources) {
+		const url = await ensureUploadedImage(item)
+		if (url) {
+			uploaded.push(url)
+		}
+	}
+
+	return uploaded
+}

@@ -8,9 +8,10 @@ import {
 	updateRecipe,
 	updateRecipeStatus
 } from './recipe-api'
-import { ensureUploadedImage } from './upload-api'
+import { ensureUploadedImages } from './upload-api'
 
 const RECIPE_STORAGE_PREFIX = 'caipu-miniapp-recipes'
+export const MAX_RECIPE_IMAGES = 9
 
 export const mealTypeOptions = [
 	{ label: '早餐', value: 'breakfast', icon: 'clock-fill', activeColor: '#a06a3f' },
@@ -43,6 +44,21 @@ function cloneParsedContent(parsedContent = {}) {
 		ingredients,
 		steps
 	}
+}
+
+function normalizeImageList(images = []) {
+	const source = Array.isArray(images) ? images : [images]
+	const normalized = []
+	const seen = new Set()
+
+	source.forEach((item) => {
+		const value = String(item || '').trim()
+		if (!value || seen.has(value)) return
+		seen.add(value)
+		normalized.push(value)
+	})
+
+	return normalized.slice(0, MAX_RECIPE_IMAGES)
 }
 
 export function buildFallbackParsedContent(recipe = {}) {
@@ -78,7 +94,14 @@ function isFallbackParsedContent(recipe = {}, parsedContent = {}) {
 }
 
 export function normalizeRecipe(recipe = {}) {
-	const image = recipe.image || recipe.imageUrl || ''
+	const imageUrls = normalizeImageList(
+		Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
+			? recipe.imageUrls
+			: Array.isArray(recipe.images) && recipe.images.length
+				? recipe.images
+				: [recipe.image, recipe.imageUrl]
+	)
+	const image = imageUrls[0] || ''
 	const normalized = {
 		id: recipe.id || '',
 		kitchenId: Number(recipe.kitchenId) || 0,
@@ -87,6 +110,8 @@ export function normalizeRecipe(recipe = {}) {
 		link: (recipe.link || '').trim(),
 		image,
 		imageUrl: image,
+		images: imageUrls,
+		imageUrls,
 		mealType: recipe.mealType || 'breakfast',
 		status: recipe.status || 'wishlist',
 		note: (recipe.note || '').trim(),
@@ -119,6 +144,7 @@ function buildRecipePayload(recipe = {}) {
 		ingredient: normalized.ingredient,
 		link: normalized.link,
 		imageUrl: normalized.imageUrl,
+		imageUrls: normalized.imageUrls,
 		mealType: normalized.mealType,
 		status: normalized.status,
 		note: normalized.note,
@@ -179,8 +205,15 @@ function removeRecipeFromCache(recipeId, kitchenId = getCurrentKitchenId()) {
 	return nextRecipes
 }
 
-async function resolveRecipeImage(recipe = {}) {
-	return ensureUploadedImage(recipe.image || recipe.imageUrl || '')
+async function resolveRecipeImages(recipe = {}) {
+	const imageSources =
+		Array.isArray(recipe.images) && recipe.images.length
+			? recipe.images
+			: Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
+				? recipe.imageUrls
+				: [recipe.image || recipe.imageUrl || '']
+
+	return ensureUploadedImages(normalizeImageList(imageSources))
 }
 
 export function getCachedRecipes(kitchenId = getCurrentKitchenId()) {
@@ -230,10 +263,10 @@ export async function getRecipeById(recipeId, options = {}) {
 export async function createRecipeFromDraft(draft = {}) {
 	const session = await ensureSession()
 	const kitchenId = Number(session?.currentKitchenId) || 0
-	const imageUrl = await resolveRecipeImage(draft)
+	const imageUrls = await resolveRecipeImages(draft)
 	const payload = buildRecipePayload({
 		...draft,
-		image: imageUrl
+		images: imageUrls
 	})
 	const item = await createRecipe(kitchenId, payload)
 	return upsertRecipeInCache(item)
@@ -241,12 +274,22 @@ export async function createRecipeFromDraft(draft = {}) {
 
 export async function updateRecipeById(recipeId, updates = {}) {
 	const current = await getRecipeById(recipeId)
-	const image = Object.prototype.hasOwnProperty.call(updates, 'image') ? updates.image : current.image
-	const imageUrl = await ensureUploadedImage(image)
+	const hasImageArray =
+		Object.prototype.hasOwnProperty.call(updates, 'images') ||
+		Object.prototype.hasOwnProperty.call(updates, 'imageUrls')
+	const hasSingleImage =
+		Object.prototype.hasOwnProperty.call(updates, 'image') ||
+		Object.prototype.hasOwnProperty.call(updates, 'imageUrl')
+	const imageSources = hasImageArray
+		? updates.images || updates.imageUrls || []
+		: hasSingleImage
+			? [updates.image || updates.imageUrl || '']
+			: current.imageUrls
+	const imageUrls = await ensureUploadedImages(normalizeImageList(imageSources))
 	const payload = buildRecipePayload({
 		...current,
 		...updates,
-		image: imageUrl
+		images: imageUrls
 	})
 	const item = await updateRecipe(recipeId, payload)
 	return upsertRecipeInCache(item)

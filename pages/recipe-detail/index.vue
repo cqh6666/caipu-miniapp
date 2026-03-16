@@ -4,13 +4,28 @@
 			<scroll-view class="detail-scroll" scroll-y>
 				<view
 					class="hero-card"
-					:class="{ 'hero-card--empty': !recipe.image }"
+					:class="{ 'hero-card--empty': !recipeImages.length }"
 					@tap="handleHeroCardTap"
 				>
-					<image v-if="recipe.image" class="hero-card__image" :src="recipe.image" mode="aspectFill"></image>
-					<view v-if="recipe.image" class="hero-card__preview-tip">
+					<swiper
+						v-if="recipeImages.length"
+						class="hero-card__swiper"
+						:circular="recipeImages.length > 1"
+						:autoplay="recipeImages.length > 1"
+						:interval="3600"
+						:duration="320"
+						@change="handleHeroSwiperChange"
+					>
+						<swiper-item v-for="(image, index) in recipeImages" :key="`hero-image-${index}`">
+							<image class="hero-card__image" :src="image" mode="aspectFill"></image>
+						</swiper-item>
+					</swiper>
+					<view v-if="recipeImages.length" class="hero-card__preview-tip">
 						<up-icon name="photo" size="14" color="#ffffff"></up-icon>
 						<text class="hero-card__preview-tip-text">查看大图</text>
+					</view>
+					<view v-if="recipeImages.length > 1" class="hero-card__counter">
+						<text class="hero-card__counter-text">{{ heroImageIndex + 1 }} / {{ recipeImages.length }}</text>
 					</view>
 					<view v-else class="hero-card__placeholder">
 						<view class="hero-card__placeholder-mask"></view>
@@ -183,34 +198,35 @@
 
 					<view class="editor-field">
 						<text class="editor-field__label">成品图</text>
-						<view
-							class="editor-upload"
-							:class="{ 'editor-upload--filled': !!editDraft.image }"
-							@tap="chooseEditImage"
-						>
-							<template v-if="editDraft.image">
-								<image class="editor-upload__thumb" :src="editDraft.image" mode="aspectFill"></image>
-								<view class="editor-upload__content">
-									<text class="editor-upload__title">已上传成品图</text>
-									<view class="editor-upload__actions">
-										<view class="editor-upload__action" @tap.stop="chooseEditImage">
-											<text class="editor-upload__action-text">替换</text>
-										</view>
-										<view class="editor-upload__action editor-upload__action--danger" @tap.stop="removeEditImage">
-											<text class="editor-upload__action-text editor-upload__action-text--danger">删除</text>
-										</view>
-									</view>
+						<view class="editor-gallery">
+							<view
+								v-for="(image, index) in editDraft.images"
+								:key="`edit-image-${index}`"
+								class="editor-gallery__item"
+								@tap="previewEditImages(index)"
+							>
+								<image class="editor-gallery__thumb" :src="image" mode="aspectFill"></image>
+								<view class="editor-gallery__badge">
+									<text class="editor-gallery__badge-text">{{ index === 0 ? '封面' : index + 1 }}</text>
 								</view>
-							</template>
-							<template v-else>
-								<view class="editor-upload__empty">
-									<view class="editor-upload__plus">
-										<up-icon name="plus" size="20" color="#8c8074"></up-icon>
-									</view>
-									<text class="editor-upload__empty-text">上传成品图</text>
+								<view class="editor-gallery__remove" @tap.stop="removeEditImage(index)">
+									<up-icon name="close" size="14" color="#ffffff"></up-icon>
 								</view>
-							</template>
+							</view>
+							<view
+								v-if="editDraft.images.length < maxRecipeImages"
+								class="editor-gallery__add"
+								@tap="chooseEditImages"
+							>
+								<view class="editor-gallery__plus">
+									<up-icon name="plus" size="20" color="#8c8074"></up-icon>
+								</view>
+								<text class="editor-gallery__add-text">上传成品图</text>
+							</view>
 						</view>
+						<text class="editor-field__hint">
+							{{ editDraft.images.length ? `已添加 ${editDraft.images.length} 张，首张会作为封面。` : `最多上传 ${maxRecipeImages} 张，首张会作为封面。` }}
+						</text>
 					</view>
 
 					<view class="editor-field">
@@ -300,6 +316,7 @@
 
 <script>
 import {
+	MAX_RECIPE_IMAGES,
 	deleteRecipeById,
 	getCachedRecipeById,
 	getRecipeById,
@@ -315,7 +332,7 @@ const createEmptyDraft = (overrides = {}) => ({
 	title: '',
 	ingredient: '',
 	link: '',
-	image: '',
+	images: [],
 	mealType: 'breakfast',
 	status: 'wishlist',
 	ingredientsText: '',
@@ -378,6 +395,7 @@ export default {
 			recipe: null,
 			showEditSheet: false,
 			editDraft: createEmptyDraft(),
+			maxRecipeImages: MAX_RECIPE_IMAGES,
 			mealTabs: mealTypeOptions,
 			statusTabs: statusOptions,
 			isLoadingRecipe: false,
@@ -385,6 +403,7 @@ export default {
 			isSavingRecipe: false,
 			isDeletingRecipe: false,
 			isReparseSubmitting: false,
+			heroImageIndex: 0,
 			parsePollingTimer: null
 		}
 	},
@@ -400,6 +419,13 @@ export default {
 		},
 		parsedSteps() {
 			return this.recipe?.parsedContent?.steps || []
+		},
+		recipeImages() {
+			if (Array.isArray(this.recipe?.imageUrls) && this.recipe.imageUrls.length) {
+				return this.recipe.imageUrls.filter(Boolean)
+			}
+			const fallbackImage = String(this.recipe?.image || this.recipe?.imageUrl || '').trim()
+			return fallbackImage ? [fallbackImage] : []
 		},
 		parseStatusMeta() {
 			const status = String(this.recipe?.parseStatus || '').trim()
@@ -474,6 +500,9 @@ export default {
 		},
 		applyRecipe(recipe) {
 			this.recipe = recipe
+			if (this.heroImageIndex >= this.recipeImages.length) {
+				this.heroImageIndex = 0
+			}
 			if (this.recipe?.title) {
 				uni.setNavigationBarTitle({
 					title: this.recipe.title
@@ -516,7 +545,12 @@ export default {
 				title: recipe.title || '',
 				ingredient: recipe.ingredient || '',
 				link: recipe.link || '',
-				image: recipe.image || '',
+				images:
+					Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
+						? [...recipe.imageUrls]
+						: recipe.image
+							? [recipe.image]
+							: [],
 				mealType: recipe.mealType || 'breakfast',
 				status: recipe.status || 'wishlist',
 				ingredientsText: listToText(recipe.parsedContent?.ingredients || []),
@@ -531,31 +565,37 @@ export default {
 		},
 		handleHeroCardTap() {
 			if (!this.recipe) return
-			if (this.recipe.image) {
+			if (this.recipeImages.length) {
 				this.previewRecipeImage()
 				return
 			}
-			this.chooseHeroImage()
+			this.chooseHeroImages()
+		},
+		handleHeroSwiperChange(event) {
+			this.heroImageIndex = Number(event?.detail?.current) || 0
 		},
 		closeEditSheet() {
 			this.showEditSheet = false
 			this.editDraft = createEmptyDraft()
 		},
-		chooseHeroImage() {
+		chooseHeroImages() {
 			if (!this.recipe || this.isUploadingHeroImage) return
+			const remaining = Math.max(this.maxRecipeImages - this.recipeImages.length, 0)
+			if (!remaining) return
 
 			uni.chooseImage({
-				count: 1,
+				count: remaining,
 				sizeType: ['compressed'],
 				sourceType: ['album', 'camera'],
 				success: ({ tempFilePaths }) => {
 					if (!tempFilePaths || !tempFilePaths.length) return
-					this.saveHeroImage(tempFilePaths[0])
+					this.saveHeroImages(tempFilePaths)
 				}
 			})
 		},
-		async saveHeroImage(imagePath = '') {
-			if (!imagePath || !this.recipeId || this.isUploadingHeroImage) return
+		async saveHeroImages(imagePaths = []) {
+			const incoming = Array.isArray(imagePaths) ? imagePaths.filter(Boolean) : [imagePaths].filter(Boolean)
+			if (!incoming.length || !this.recipeId || this.isUploadingHeroImage) return
 
 			this.isUploadingHeroImage = true
 			uni.showLoading({
@@ -564,12 +604,18 @@ export default {
 			})
 
 			try {
+				const nextImages = [...this.recipeImages]
+				incoming.forEach((path) => {
+					if (path && !nextImages.includes(path) && nextImages.length < this.maxRecipeImages) {
+						nextImages.push(path)
+					}
+				})
 				const recipe = await updateRecipeById(this.recipeId, {
-					image: imagePath
+					images: nextImages
 				})
 				this.applyRecipe(recipe)
 				uni.showToast({
-					title: '已添加成品图',
+					title: `已添加 ${incoming.length} 张`,
 					icon: 'none'
 				})
 			} catch (error) {
@@ -582,19 +628,43 @@ export default {
 				uni.hideLoading()
 			}
 		},
-		chooseEditImage() {
+		chooseEditImages() {
+			const remaining = Math.max(this.maxRecipeImages - this.editDraft.images.length, 0)
+			if (!remaining) {
+				uni.showToast({
+					title: `最多上传 ${this.maxRecipeImages} 张`,
+					icon: 'none'
+				})
+				return
+			}
+
 			uni.chooseImage({
-				count: 1,
+				count: remaining,
 				sizeType: ['compressed'],
 				sourceType: ['album', 'camera'],
 				success: ({ tempFilePaths }) => {
 					if (!tempFilePaths || !tempFilePaths.length) return
-					this.editDraft.image = tempFilePaths[0]
+					const nextImages = [...this.editDraft.images]
+					tempFilePaths.forEach((path) => {
+						if (path && !nextImages.includes(path) && nextImages.length < this.maxRecipeImages) {
+							nextImages.push(path)
+						}
+					})
+					this.editDraft.images = nextImages
 				}
 			})
 		},
-		removeEditImage() {
-			this.editDraft.image = ''
+		removeEditImage(index) {
+			if (typeof index !== 'number') return
+			this.editDraft.images = this.editDraft.images.filter((_, currentIndex) => currentIndex !== index)
+		},
+		previewEditImages(index = 0) {
+			const urls = Array.isArray(this.editDraft.images) ? this.editDraft.images.filter(Boolean) : []
+			if (!urls.length) return
+			uni.previewImage({
+				current: urls[index] || urls[0],
+				urls
+			})
 		},
 		async saveEditDraft() {
 			if (!this.canSaveEditDraft || this.isSavingRecipe) return
@@ -610,7 +680,7 @@ export default {
 					title: this.editDraft.title.trim(),
 					ingredient: this.editDraft.ingredient.trim(),
 					link: this.editDraft.link.trim(),
-					image: this.editDraft.image,
+					images: this.editDraft.images,
 					mealType: this.editDraft.mealType,
 					status: this.editDraft.status,
 					parsedContent: {
@@ -720,12 +790,12 @@ export default {
 			})
 		},
 		previewRecipeImage() {
-			const imageUrl = String(this.recipe?.image || '').trim()
-			if (!imageUrl) return
+			const urls = this.recipeImages
+			if (!urls.length) return
 
 			uni.previewImage({
-				current: imageUrl,
-				urls: [imageUrl]
+				current: urls[this.heroImageIndex] || urls[0],
+				urls
 			})
 		},
 		goBack() {
@@ -771,6 +841,11 @@ export default {
 		min-height: 380rpx;
 	}
 
+	.hero-card__swiper {
+		width: 100%;
+		height: 380rpx;
+	}
+
 	.hero-card__image {
 		width: 100%;
 		height: 380rpx;
@@ -790,6 +865,21 @@ export default {
 	}
 
 	.hero-card__preview-tip-text {
+		font-size: 21rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.hero-card__counter {
+		position: absolute;
+		left: 22rpx;
+		bottom: 22rpx;
+		padding: 10rpx 16rpx;
+		border-radius: 999rpx;
+		background: rgba(47, 41, 35, 0.46);
+	}
+
+	.hero-card__counter-text {
 		font-size: 21rpx;
 		font-weight: 600;
 		color: #ffffff;
@@ -1207,6 +1297,12 @@ export default {
 		color: #9b9186;
 	}
 
+	.editor-field__hint {
+		font-size: 22rpx;
+		line-height: 1.6;
+		color: #9b9186;
+	}
+
 	.editor-input,
 	.editor-textarea {
 		width: 100%;
@@ -1247,93 +1343,84 @@ export default {
 		min-height: 220rpx;
 	}
 
-	.editor-upload {
-		min-height: 168rpx;
-		padding: 20rpx;
-		box-sizing: border-box;
+	.editor-gallery {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16rpx;
+	}
+
+	.editor-gallery__item,
+	.editor-gallery__add {
+		position: relative;
+		width: calc((100% - 32rpx) / 3);
+		height: 176rpx;
 		border-radius: 24rpx;
+		overflow: hidden;
+	}
+
+	.editor-gallery__item {
+		background: #ebe4db;
+	}
+
+	.editor-gallery__thumb {
+		width: 100%;
+		height: 100%;
+		display: block;
+	}
+
+	.editor-gallery__badge {
+		position: absolute;
+		left: 12rpx;
+		bottom: 12rpx;
+		padding: 8rpx 14rpx;
+		border-radius: 999rpx;
+		background: rgba(47, 41, 35, 0.58);
+		backdrop-filter: blur(10rpx);
+	}
+
+	.editor-gallery__badge-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.editor-gallery__remove {
+		position: absolute;
+		top: 12rpx;
+		right: 12rpx;
+		width: 40rpx;
+		height: 40rpx;
+		border-radius: 999rpx;
+		background: rgba(47, 41, 35, 0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.editor-gallery__add {
 		border: 1px dashed #d8cec3;
 		background: #faf7f3;
 		display: flex;
-		align-items: center;
-	}
-
-	.editor-upload--filled {
-		border-style: solid;
-		background: #ffffff;
-	}
-
-	.editor-upload__empty {
-		width: 100%;
-		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 14rpx;
-	}
-
-	.editor-upload__plus {
-		width: 68rpx;
-		height: 68rpx;
-		border-radius: 20rpx;
-		background: #f1ebe4;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.editor-upload__empty-text {
-		font-size: 25rpx;
-		font-weight: 600;
-		color: #75685c;
-	}
-
-	.editor-upload__thumb {
-		width: 148rpx;
-		height: 148rpx;
-		border-radius: 20rpx;
-		background: #f1ebe4;
-		flex-shrink: 0;
-	}
-
-	.editor-upload__content {
-		flex: 1;
-		min-width: 0;
-		margin-left: 20rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 10rpx;
-	}
-
-	.editor-upload__title {
-		font-size: 28rpx;
-		font-weight: 600;
-		color: #2f2923;
-	}
-
-	.editor-upload__actions {
-		display: flex;
 		gap: 12rpx;
 	}
 
-	.editor-upload__action {
-		padding: 10rpx 18rpx;
-		border-radius: 999rpx;
+	.editor-gallery__plus {
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 20rpx;
 		background: #f1ebe4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
-	.editor-upload__action--danger {
-		background: #f8eeea;
-	}
-
-	.editor-upload__action-text {
-		font-size: 22rpx;
+	.editor-gallery__add-text {
+		font-size: 24rpx;
 		font-weight: 600;
-		color: #6c6156;
-	}
-
-	.editor-upload__action-text--danger {
-		color: #b4664c;
+		color: #75685c;
 	}
 
 	.segment {
