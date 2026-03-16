@@ -157,9 +157,9 @@ func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (Xiaoho
 		ProviderUsed:      strings.TrimSpace(parsed.ProviderUsed),
 		Title:             strings.TrimSpace(parsed.Note.Title),
 		Content:           strings.TrimSpace(parsed.Note.Content),
-		CoverURL:          strings.TrimSpace(parsed.Note.CoverURL),
-		Images:            dedupeStrings(cleanLines(parsed.Note.Images), 12),
-		Videos:            dedupeStrings(cleanLines(parsed.Note.Videos), 4),
+		CoverURL:          normalizeXiaohongshuMediaURL(parsed.Note.CoverURL),
+		Images:            normalizeXiaohongshuMediaURLs(parsed.Note.Images, 12),
+		Videos:            normalizeXiaohongshuMediaURLs(parsed.Note.Videos, 4),
 		Tags:              dedupeStrings(cleanLines(parsed.Note.Tags), 12),
 		Author:            strings.TrimSpace(parsed.Note.Author.Name),
 		NoteType:          strings.TrimSpace(parsed.Note.NoteType),
@@ -364,4 +364,28 @@ func firstImage(images []string) string {
 		return ""
 	}
 	return strings.TrimSpace(images[0])
+}
+
+func normalizeXiaohongshuMediaURLs(values []string, limit int) []string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := normalizeXiaohongshuMediaURL(value)
+		if normalized == "" {
+			continue
+		}
+		items = append(items, normalized)
+	}
+	return dedupeStrings(items, limit)
+}
+
+func normalizeXiaohongshuMediaURL(value string) string {
+	raw := strings.TrimSpace(value)
+	switch {
+	case strings.HasPrefix(raw, "//"):
+		return "https:" + raw
+	case strings.HasPrefix(raw, "http://"):
+		return "https://" + strings.TrimPrefix(raw, "http://")
+	default:
+		return raw
+	}
 }

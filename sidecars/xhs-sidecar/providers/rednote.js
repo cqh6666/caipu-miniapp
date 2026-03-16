@@ -20,6 +20,9 @@ function normalizeMediaUrl(value) {
   if (raw.startsWith("//")) {
     return `https:${raw}`;
   }
+  if (raw.startsWith("http://")) {
+    return `https://${raw.slice("http://".length)}`;
+  }
   return raw;
 }
 

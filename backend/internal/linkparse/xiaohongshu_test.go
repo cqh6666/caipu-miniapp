@@ -59,9 +59,9 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 				"title": "番茄牛腩",
 				"content": "牛腩 500克\n番茄 3个\n牛腩焯水后和番茄一起炖煮。",
 				"tags": ["家常菜", "番茄牛腩"],
-				"images": ["https://ci.xiaohongshu.com/1.jpg"],
+				"images": ["http://ci.xiaohongshu.com/1.jpg"],
 				"videos": [],
-				"coverUrl": "https://ci.xiaohongshu.com/cover.jpg",
+				"coverUrl": "http://ci.xiaohongshu.com/cover.jpg",
 				"author": {"name": "测试厨房"},
 				"noteType": "image"
 			},
@@ -105,6 +105,9 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 	}
 	if got, want := len(result.RecipeDraft.ImageURLs), 1; got != want {
 		t.Fatalf("len(RecipeDraft.ImageURLs) = %d, want %d", got, want)
+	}
+	if got, want := result.Images[0], "https://ci.xiaohongshu.com/1.jpg"; got != want {
+		t.Fatalf("Images[0] = %q, want %q", got, want)
 	}
 	if got, want := result.RecipeDraft.ImageURLs[0], "https://ci.xiaohongshu.com/1.jpg"; got != want {
 		t.Fatalf("RecipeDraft.ImageURLs[0] = %q, want %q", got, want)

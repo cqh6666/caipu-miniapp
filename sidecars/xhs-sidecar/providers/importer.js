@@ -18,6 +18,20 @@ function cleanContent(value) {
     .trim();
 }
 
+function normalizeMediaUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (raw.startsWith("//")) {
+    return `https:${raw}`;
+  }
+  if (raw.startsWith("http://")) {
+    return `https://${raw.slice("http://".length)}`;
+  }
+  return raw;
+}
+
 function buildEchoNote(input, normalized, reason) {
   const rawText = stripUrlFromInput(input);
   if (!rawText) {
@@ -130,7 +144,7 @@ function extractImages(note) {
   const imageList = Array.isArray(note?.imageList) ? note.imageList : [];
   return unique(
     imageList
-      .map((img) => img?.urlDefault || img?.urlPre || img?.url || "")
+      .map((img) => normalizeMediaUrl(img?.urlDefault || img?.urlPre || img?.url || ""))
       .filter((url) => /^https?:\/\//i.test(url))
   );
 }
@@ -143,10 +157,10 @@ function extractVideo(note) {
 
   const candidates = [];
   for (const item of Array.isArray(stream.h264) ? stream.h264 : []) {
-    candidates.push(item?.masterUrl || item?.backupUrl || "");
+    candidates.push(normalizeMediaUrl(item?.masterUrl || item?.backupUrl || ""));
   }
   for (const item of Array.isArray(stream.h265) ? stream.h265 : []) {
-    candidates.push(item?.masterUrl || item?.backupUrl || "");
+    candidates.push(normalizeMediaUrl(item?.masterUrl || item?.backupUrl || ""));
   }
 
   return unique(candidates.filter((url) => /^https?:\/\//i.test(url)));
@@ -325,5 +339,6 @@ function createImporterProvider(config) {
 }
 
 module.exports = {
-  createImporterProvider
+  createImporterProvider,
+  normalizeMediaUrl
 };
