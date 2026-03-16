@@ -27,7 +27,7 @@
 					<view v-if="recipeImages.length > 1" class="hero-card__counter">
 						<text class="hero-card__counter-text">{{ heroImageIndex + 1 }} / {{ recipeImages.length }}</text>
 					</view>
-					<view v-else class="hero-card__placeholder">
+					<view v-if="!recipeImages.length" class="hero-card__placeholder">
 						<view class="hero-card__placeholder-mask"></view>
 						<view class="hero-card__upload-action" :class="{ 'hero-card__upload-action--loading': isUploadingHeroImage }">
 							<up-icon :name="isUploadingHeroImage ? 'reload' : 'plus'" size="18" color="#5b4a3b"></up-icon>
