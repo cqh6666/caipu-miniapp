@@ -158,7 +158,7 @@ func TestPreviewXiaohongshuUsesSidecar(t *testing.T) {
 	if got, want := result.Platform, "xiaohongshu"; got != want {
 		t.Fatalf("Platform = %q, want %q", got, want)
 	}
-	if got, want := result.Title, "番茄土豆炖牛腩教程来咯"; got != want {
+	if got, want := result.Title, "番茄土豆炖牛腩"; got != want {
 		t.Fatalf("Title = %q, want %q", got, want)
 	}
 	if got, want := result.CoverURL, "https://ci.xiaohongshu.com/cover.jpg"; got != want {

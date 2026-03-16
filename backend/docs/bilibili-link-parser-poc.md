@@ -58,6 +58,9 @@ AI_BASE_URL=https://api.openai.com/v1
 AI_API_KEY=
 AI_MODEL=
 AI_TIMEOUT_SECONDS=30
+AI_TITLE_ENABLED=false
+AI_TITLE_MODEL=
+AI_TITLE_TIMEOUT_SECONDS=3
 ```
 
 说明：
@@ -69,6 +72,7 @@ AI_TIMEOUT_SECONDS=30
 - `APP_ADMIN_OPENIDS` 用来声明管理员账号
 - `APP_SETTINGS_ALLOWED_OPENIDS` 在 `whitelist` 模式下额外放行指定用户
 - `AI_MODEL` 为空时，解析仍然会执行，但只走规则总结
+- `AI_TITLE_ENABLED=true` 且 `AI_TITLE_MODEL` 非空时，新增菜品里的链接预解析会在标题低置信度时调用小模型精修菜名
 - `CREDENTIALS_SECRET` 用来加密存储全局 `SESSDATA`；为空时会回退到 `JWT_SECRET`
 
 ## 全局 B 站登录态

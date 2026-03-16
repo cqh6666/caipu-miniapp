@@ -43,6 +43,9 @@ go run ./cmd/server
 - `AI_API_KEY`
 - `AI_MODEL`
 - `AI_TIMEOUT_SECONDS`
+- `AI_TITLE_ENABLED`
+- `AI_TITLE_MODEL`
+- `AI_TITLE_TIMEOUT_SECONDS`
 - `XHS_SIDECAR_ENABLED`
 - `XHS_SIDECAR_BASE_URL`
 - `XHS_SIDECAR_TIMEOUT_SECONDS`
@@ -100,6 +103,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/invites/{token}/accept`
 - `POST /api/link-parsers/bilibili`
 - `POST /api/link-parsers/xiaohongshu`
+- `POST /api/link-parsers/preview`
 - `GET /api/kitchens/{kitchenID}/recipes`
 - `POST /api/kitchens/{kitchenID}/recipes`
 - `GET /api/recipes/{recipeID}`

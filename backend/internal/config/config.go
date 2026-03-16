@@ -26,6 +26,9 @@ type Config struct {
 	AIAPIKey                   string
 	AIModel                    string
 	AITimeoutSeconds           int
+	AITitleEnabled             bool
+	AITitleModel               string
+	AITitleTimeoutSeconds      int
 	XHSSidecarEnabled          bool
 	XHSSidecarBaseURL          string
 	XHSSidecarTimeoutSeconds   int
@@ -68,6 +71,9 @@ func Load() (Config, error) {
 		AIAPIKey:                   strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIModel:                    strings.TrimSpace(os.Getenv("AI_MODEL")),
 		AITimeoutSeconds:           getInt("AI_TIMEOUT_SECONDS", 30),
+		AITitleEnabled:             getBool("AI_TITLE_ENABLED", false),
+		AITitleModel:               strings.TrimSpace(os.Getenv("AI_TITLE_MODEL")),
+		AITitleTimeoutSeconds:      getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
 		XHSSidecarEnabled:          getBool("XHS_SIDECAR_ENABLED", false),
 		XHSSidecarBaseURL:          strings.TrimSpace(os.Getenv("XHS_SIDECAR_BASE_URL")),
 		XHSSidecarTimeoutSeconds:   getInt("XHS_SIDECAR_TIMEOUT_SECONDS", 25),
@@ -101,6 +107,10 @@ func Load() (Config, error) {
 
 	if cfg.AITimeoutSeconds <= 0 {
 		return Config{}, errors.New("AI_TIMEOUT_SECONDS must be positive")
+	}
+
+	if cfg.AITitleTimeoutSeconds <= 0 {
+		return Config{}, errors.New("AI_TITLE_TIMEOUT_SECONDS must be positive")
 	}
 
 	if cfg.XHSSidecarTimeoutSeconds <= 0 {
