@@ -91,10 +91,22 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 	if result.CanonicalURL != "https://www.xiaohongshu.com/explore/68abcd1234" {
 		t.Fatalf("CanonicalURL = %q", result.CanonicalURL)
 	}
+	if got, want := len(result.Images), 1; got != want {
+		t.Fatalf("len(Images) = %d, want %d", got, want)
+	}
+	if got, want := result.CoverURL, "https://ci.xiaohongshu.com/cover.jpg"; got != want {
+		t.Fatalf("CoverURL = %q, want %q", got, want)
+	}
 	if !strings.Contains(result.RecipeDraft.Ingredient, "番茄") {
 		t.Fatalf("RecipeDraft.Ingredient = %q", result.RecipeDraft.Ingredient)
 	}
 	if len(result.RecipeDraft.ParsedContent.Steps) == 0 {
 		t.Fatalf("RecipeDraft steps are empty: %#v", result.RecipeDraft)
+	}
+	if got, want := len(result.RecipeDraft.ImageURLs), 1; got != want {
+		t.Fatalf("len(RecipeDraft.ImageURLs) = %d, want %d", got, want)
+	}
+	if got, want := result.RecipeDraft.ImageURLs[0], "https://ci.xiaohongshu.com/1.jpg"; got != want {
+		t.Fatalf("RecipeDraft.ImageURLs[0] = %q, want %q", got, want)
 	}
 }

@@ -24,11 +24,12 @@ import (
 )
 
 type App struct {
-	Config           config.Config
-	Logger           *slog.Logger
-	DB               *sql.DB
-	Server           *http.Server
-	RecipeAutoParser *recipe.AutoParseWorker
+	Config            config.Config
+	Logger            *slog.Logger
+	DB                *sql.DB
+	Server            *http.Server
+	RecipeAutoParser  *recipe.AutoParseWorker
+	RecipeImageMirror *recipe.ImageMirrorWorker
 }
 
 func New(cfg config.Config) (*App, error) {
@@ -110,6 +111,14 @@ func New(cfg config.Config) (*App, error) {
 		time.Duration(cfg.RecipeAutoParseInterval)*time.Second,
 		cfg.RecipeAutoParseBatchSize,
 	)
+	recipeImageMirror := recipe.NewImageMirrorWorker(
+		logger,
+		recipeRepo,
+		uploadService,
+		cfg.RecipeImageMirrorEnabled,
+		time.Duration(cfg.RecipeImageMirrorInterval)*time.Second,
+		cfg.RecipeImageMirrorBatchSize,
+	)
 
 	router := NewRouter(cfg, logger, appSettingsHandler, authHandler, kitchenHandler, inviteHandler, recipeHandler, linkParseHandler, uploadHandler, authMiddleware)
 
@@ -121,17 +130,21 @@ func New(cfg config.Config) (*App, error) {
 	}
 
 	return &App{
-		Config:           cfg,
-		Logger:           logger,
-		DB:               dbConn,
-		Server:           server,
-		RecipeAutoParser: recipeAutoParser,
+		Config:            cfg,
+		Logger:            logger,
+		DB:                dbConn,
+		Server:            server,
+		RecipeAutoParser:  recipeAutoParser,
+		RecipeImageMirror: recipeImageMirror,
 	}, nil
 }
 
 func (a *App) Start() error {
 	if a.RecipeAutoParser != nil {
 		a.RecipeAutoParser.Start(context.Background())
+	}
+	if a.RecipeImageMirror != nil {
+		a.RecipeImageMirror.Start(context.Background())
 	}
 
 	a.Logger.Info("http server starting", "addr", a.Config.AppAddr, "env", a.Config.AppEnv)
@@ -143,6 +156,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	if a.RecipeAutoParser != nil {
 		a.RecipeAutoParser.Stop()
+	}
+	if a.RecipeImageMirror != nil {
+		a.RecipeImageMirror.Stop()
 	}
 
 	if a.Server != nil {

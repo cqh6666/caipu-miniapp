@@ -32,6 +32,9 @@ go run ./cmd/server
 - `RECIPE_AUTO_PARSE_ENABLED`
 - `RECIPE_AUTO_PARSE_INTERVAL_SECONDS`
 - `RECIPE_AUTO_PARSE_BATCH_SIZE`
+- `RECIPE_IMAGE_MIRROR_ENABLED`
+- `RECIPE_IMAGE_MIRROR_INTERVAL_SECONDS`
+- `RECIPE_IMAGE_MIRROR_BATCH_SIZE`
 - `CREDENTIALS_SECRET`
 - `APP_SETTINGS_ACCESS_MODE`
 - `APP_ADMIN_OPENIDS`
@@ -161,6 +164,8 @@ go run ./cmd/server -migrate-only
 - 默认支持 `jpg`、`png`、`webp`、`gif`
 - `UPLOAD_PUBLIC_BASE_URL` 为空时，会按当前请求域名自动拼接图片地址
 - 上传后的静态资源通过 `/uploads/*` 提供访问
+- 小红书/B 站自动解析拿到的第三方图片会先以外链形式写入，随后由后台低频任务异步转存到本地 uploads
+- 图片转存频率由 `RECIPE_IMAGE_MIRROR_INTERVAL_SECONDS` 和 `RECIPE_IMAGE_MIRROR_BATCH_SIZE` 控制
 
 当前 B 站自动解析策略：
 

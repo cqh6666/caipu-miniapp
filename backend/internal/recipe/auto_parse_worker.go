@@ -166,6 +166,8 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	if err := w.repo.ApplyAutoParseResult(ctx, item.ID, parseSource, finishedAt, Recipe{
 		Ingredient: result.RecipeDraft.Ingredient,
+		ImageURL:   strings.TrimSpace(result.RecipeDraft.ImageURL),
+		ImageURLs:  cleanAutoParseImages(append(result.RecipeDraft.ImageURLs, strings.TrimSpace(result.RecipeDraft.ImageURL))),
 		ParsedContent: ParsedContent{
 			Ingredients: result.RecipeDraft.ParsedContent.Ingredients,
 			Steps:       result.RecipeDraft.ParsedContent.Steps,
@@ -179,4 +181,21 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	w.logger.Info("recipe auto-parse completed", "recipeID", item.ID, "source", parseSource)
 	return nil
+}
+
+func cleanAutoParseImages(imageURLs []string) []string {
+	items := make([]string, 0, len(imageURLs))
+	seen := make(map[string]struct{}, len(imageURLs))
+	for _, item := range imageURLs {
+		value := strings.TrimSpace(item)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		items = append(items, value)
+	}
+	return items
 }

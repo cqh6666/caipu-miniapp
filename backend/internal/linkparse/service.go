@@ -625,6 +625,8 @@ func summarizeHeuristically(meta BilibiliParseResult, transcript string) RecipeD
 		Title:      firstNonEmpty(meta.Title, meta.Part, "B站视频菜谱草稿"),
 		Ingredient: buildIngredientSummary(ingredients, meta.Title),
 		Link:       meta.Link,
+		ImageURL:   strings.TrimSpace(meta.CoverURL),
+		ImageURLs:  draftImageURLs(strings.TrimSpace(meta.CoverURL)),
 		Note:       buildHeuristicNote(meta),
 		ParsedContent: ParsedContent{
 			Ingredients: ingredients,
@@ -898,6 +900,10 @@ func normalizeDraft(meta BilibiliParseResult, draft RecipeDraft) RecipeDraft {
 	draft.Title = firstNonEmpty(strings.TrimSpace(draft.Title), meta.Title, "B站视频菜谱草稿")
 	draft.Ingredient = firstNonEmpty(strings.TrimSpace(draft.Ingredient), strings.TrimSpace(meta.Title))
 	draft.Link = meta.Link
+	draft.ImageURL = firstNonEmpty(strings.TrimSpace(draft.ImageURL), strings.TrimSpace(meta.CoverURL))
+	if len(draft.ImageURLs) == 0 {
+		draft.ImageURLs = draftImageURLs(draft.ImageURL)
+	}
 	draft.Note = firstNonEmpty(strings.TrimSpace(draft.Note), "基于 B 站字幕生成的 AI 草稿，建议回看原视频补齐克数和火候。")
 	draft.ParsedContent.Ingredients = dedupeStrings(cleanLines(draft.ParsedContent.Ingredients), 10)
 	draft.ParsedContent.Steps = dedupeStrings(cleanLines(draft.ParsedContent.Steps), 8)
@@ -916,6 +922,23 @@ func normalizeDraft(meta BilibiliParseResult, draft RecipeDraft) RecipeDraft {
 	}
 
 	return draft
+}
+
+func draftImageURLs(values ...string) []string {
+	items := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		items = append(items, value)
+	}
+	return items
 }
 
 func cleanLines(lines []string) []string {

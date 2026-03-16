@@ -203,6 +203,8 @@ func summarizeXiaohongshuHeuristically(meta XiaohongshuParseResult) RecipeDraft 
 		Title:      firstNonEmpty(meta.Title, "小红书图文菜谱草稿"),
 		Ingredient: buildIngredientSummary(ingredients, meta.Title),
 		Link:       firstNonEmpty(meta.CanonicalURL, meta.Link),
+		ImageURL:   firstNonEmpty(strings.TrimSpace(meta.CoverURL), firstImage(meta.Images)),
+		ImageURLs:  preferredXiaohongshuImages(meta),
 		Note:       buildXiaohongshuHeuristicNote(meta),
 		ParsedContent: ParsedContent{
 			Ingredients: ingredients,
@@ -325,6 +327,10 @@ func normalizeXiaohongshuDraft(meta XiaohongshuParseResult, draft RecipeDraft) R
 	draft.Title = firstNonEmpty(strings.TrimSpace(draft.Title), meta.Title, "小红书图文菜谱草稿")
 	draft.Ingredient = firstNonEmpty(strings.TrimSpace(draft.Ingredient), strings.TrimSpace(meta.Title))
 	draft.Link = firstNonEmpty(meta.CanonicalURL, meta.Link)
+	draft.ImageURL = firstNonEmpty(strings.TrimSpace(draft.ImageURL), strings.TrimSpace(meta.CoverURL), firstImage(meta.Images))
+	if len(draft.ImageURLs) == 0 {
+		draft.ImageURLs = preferredXiaohongshuImages(meta)
+	}
 	draft.Note = firstNonEmpty(strings.TrimSpace(draft.Note), "基于小红书图文内容生成的 AI 草稿，建议回看原笔记和配图补齐克数、火候和时间。")
 	draft.ParsedContent.Ingredients = dedupeStrings(cleanLines(draft.ParsedContent.Ingredients), 10)
 	draft.ParsedContent.Steps = dedupeStrings(cleanLines(draft.ParsedContent.Steps), 8)
@@ -343,4 +349,19 @@ func normalizeXiaohongshuDraft(meta XiaohongshuParseResult, draft RecipeDraft) R
 	}
 
 	return draft
+}
+
+func preferredXiaohongshuImages(meta XiaohongshuParseResult) []string {
+	images := draftImageURLs(meta.Images...)
+	if len(images) > 0 {
+		return images
+	}
+	return draftImageURLs(strings.TrimSpace(meta.CoverURL))
+}
+
+func firstImage(images []string) string {
+	if len(images) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(images[0])
 }

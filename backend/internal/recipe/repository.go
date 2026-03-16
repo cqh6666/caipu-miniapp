@@ -348,6 +348,44 @@ LIMIT ?`
 	return items, nil
 }
 
+func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) ([]Recipe, error) {
+	const query = `
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
+       created_by, updated_by, created_at, updated_at
+FROM recipes
+WHERE deleted_at IS NULL
+  AND (
+    COALESCE(image_urls_json, '[]') <> '[]'
+    OR COALESCE(TRIM(image_url), '') <> ''
+  )
+ORDER BY updated_at ASC, id ASC
+LIMIT ?`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list image mirror candidates: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Recipe, 0, limit)
+	for rows.Next() {
+		item, err := scanRecipe(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate image mirror candidates: %w", err)
+	}
+
+	return items, nil
+}
+
 func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource string) (bool, error) {
 	result, err := r.db.ExecContext(
 		ctx,
@@ -430,6 +468,13 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 		_ = tx.Rollback()
 		return err
 	}
+	imageURLValue, imageURLsValue := resolveAutoParseImages(current, draft)
+
+	imageURLsJSON, err := marshalImageURLs(imageURLsValue)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 
 	ingredientValue := current.Ingredient
 	if strings.TrimSpace(ingredientValue) == "" {
@@ -439,10 +484,12 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET ingredient = ?, ingredients_json = ?, steps_json = ?,
+SET ingredient = ?, image_url = ?, image_urls_json = ?, ingredients_json = ?, steps_json = ?,
     parse_status = ?, parse_source = ?, parse_error = '', parse_finished_at = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(ingredientValue),
+		nullableString(imageURLValue),
+		imageURLsJSON,
 		ingredientsJSON,
 		stepsJSON,
 		ParseStatusDone,
@@ -528,6 +575,73 @@ WHERE id = ? AND deleted_at IS NULL`,
 	}
 
 	return nil
+}
+
+func (r *Repository) ApplyMirroredImages(ctx context.Context, recipeID string, oldImages, newImages []string, updatedAt string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin apply mirrored images tx: %w", err)
+	}
+
+	current, err := findRecipeByIDTx(ctx, tx, recipeID)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+
+	expectedOld := cleanRecipeImageURLs(oldImages)
+	currentImages := cleanRecipeImageURLs(current.ImageURLs)
+	if len(currentImages) == 0 && strings.TrimSpace(current.ImageURL) != "" {
+		currentImages = []string{strings.TrimSpace(current.ImageURL)}
+	}
+	if !imageSlicesEqual(currentImages, expectedOld) {
+		_ = tx.Rollback()
+		return false, nil
+	}
+
+	nextImages := cleanRecipeImageURLs(newImages)
+	nextImageURL := firstImageURL(nextImages)
+	imageURLsJSON, err := marshalImageURLs(nextImages)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET image_url = ?, image_urls_json = ?, updated_at = ?
+WHERE id = ? AND deleted_at IS NULL`,
+		nullableString(nextImageURL),
+		imageURLsJSON,
+		updatedAt,
+		recipeID,
+	)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("apply mirrored recipe images: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("read mirrored image rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		_ = tx.Rollback()
+		return false, sql.ErrNoRows
+	}
+
+	if err := bumpKitchenUpdatedAt(ctx, tx, current.KitchenID, updatedAt); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit mirrored recipe images: %w", err)
+	}
+
+	return true, nil
 }
 
 type scanner interface {
@@ -745,4 +859,47 @@ func truncateString(value string, maxRunes int) string {
 	}
 
 	return string(runes[:maxRunes])
+}
+
+func resolveAutoParseImages(current Recipe, draft Recipe) (string, []string) {
+	currentImageURL := strings.TrimSpace(current.ImageURL)
+	currentImageURLs := current.ImageURLs
+	if len(currentImageURLs) > 0 || currentImageURL != "" {
+		if len(currentImageURLs) == 0 && currentImageURL != "" {
+			return currentImageURL, []string{currentImageURL}
+		}
+		return currentImageURL, currentImageURLs
+	}
+
+	draftImageURLs := cleanRecipeImageURLs(append(draft.ImageURLs, strings.TrimSpace(draft.ImageURL)))
+	return firstImageURL(draftImageURLs), draftImageURLs
+}
+
+func cleanRecipeImageURLs(values []string) []string {
+	items := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		items = append(items, value)
+	}
+	return items
+}
+
+func imageSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

@@ -68,6 +68,7 @@ func TestSummarizeHeuristically(t *testing.T) {
 	result := summarizeHeuristically(BilibiliParseResult{
 		Title:             "土豆烧牛肉",
 		Link:              "https://www.bilibili.com/video/BV1xx411c7mD",
+		CoverURL:          "https://i0.hdslb.com/demo.jpg",
 		SubtitleAvailable: true,
 	}, "准备牛肉 300克\n土豆 2个\n先把牛肉切块\n锅里加油下锅翻炒\n再加入土豆焖煮二十分钟\n最后撒葱花出锅")
 
@@ -82,5 +83,11 @@ func TestSummarizeHeuristically(t *testing.T) {
 	}
 	if result.Link == "" {
 		t.Fatal("link should be preserved")
+	}
+	if got, want := result.ImageURL, "https://i0.hdslb.com/demo.jpg"; got != want {
+		t.Fatalf("ImageURL = %q, want %q", got, want)
+	}
+	if got, want := len(result.ImageURLs), 1; got != want {
+		t.Fatalf("len(ImageURLs) = %d, want %d", got, want)
 	}
 }

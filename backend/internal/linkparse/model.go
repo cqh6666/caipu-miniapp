@@ -9,6 +9,8 @@ type RecipeDraft struct {
 	Title         string        `json:"title"`
 	Ingredient    string        `json:"ingredient"`
 	Link          string        `json:"link"`
+	ImageURL      string        `json:"imageUrl"`
+	ImageURLs     []string      `json:"imageUrls"`
 	Note          string        `json:"note"`
 	ParsedContent ParsedContent `json:"parsedContent"`
 }
