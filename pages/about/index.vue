@@ -151,7 +151,7 @@ export default {
 <style scoped>
 	.about-page {
 		min-height: 100vh;
-		padding: 24rpx;
+		padding: 24rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
 		box-sizing: border-box;
 		background: linear-gradient(180deg, #f6f1ea 0%, #efe7dd 100%);
 		display: flex;
@@ -258,6 +258,7 @@ export default {
 
 	.filing-action {
 		padding: 16rpx 20rpx;
+		min-height: 76rpx;
 		border-radius: 18rpx;
 		background: rgba(91, 74, 59, 0.08);
 		display: inline-flex;
