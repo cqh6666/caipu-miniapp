@@ -17,7 +17,10 @@ export const appConfig = {
 	devLoginIdentity: 'alice',
 	devLoginIdentityMode: 'fixed',
 	requestTimeout: 15000,
-	inviteShareEnabled: true
+	inviteShareEnabled: true,
+	// 例如：京ICP备2024000000号A
+	miniProgramFilingNumber: '粤ICP备2026023717号-2X',
+	miniProgramFilingSystemURL: 'https://beian.miit.gov.cn/'
 }
 
 export function resolveAPIURL(path = '') {
