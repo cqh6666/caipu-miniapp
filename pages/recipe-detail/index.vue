@@ -67,21 +67,21 @@
 							<text class="detail-parse__desc">{{ parseStatusDescription }}</text>
 							<text v-if="parseStatusSourceLabel" class="detail-parse__meta">{{ parseStatusSourceLabel }}</text>
 						</view>
-						<view
-							v-if="canRetryParse"
-							class="detail-parse__action"
-							:class="{ 'detail-parse__action--disabled': isReparseSubmitting }"
-							@tap="retryAutoParse"
-						>
-							<text class="detail-parse__action-text">{{ isReparseSubmitting ? '重新加入中...' : '重新解析' }}</text>
-						</view>
 					</view>
 					<text v-else class="detail-empty">暂无链接。</text>
 				</view>
 
 				<view class="detail-card">
-					<view class="detail-card__header detail-card__header--stack">
+					<view class="detail-card__header">
 						<text class="detail-card__title">做法整理</text>
+						<view
+							v-if="canRequestParse"
+							class="detail-card__action detail-card__action--accent"
+							:class="{ 'detail-card__action--disabled': isReparseSubmitting }"
+							@tap="handleParseAction"
+						>
+							<text class="detail-card__action-text detail-card__action-text--accent">{{ parseActionText }}</text>
+						</view>
 					</view>
 
 					<view class="parsed-section">
@@ -317,6 +317,7 @@
 <script>
 import {
 	MAX_RECIPE_IMAGES,
+	buildFallbackParsedContent,
 	deleteRecipeById,
 	getCachedRecipeById,
 	getRecipeById,
@@ -347,33 +348,61 @@ const textToList = (text = '') =>
 		.split('\n')
 		.map((item) => item.trim())
 		.filter(Boolean)
+const stringSlicesEqual = (left = [], right = []) => {
+	if (left.length !== right.length) return false
+	return left.every((item, index) => item === right[index])
+}
 
 const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
 const parseStatusMetaMap = {
+	idle: {
+		label: '可自动整理',
+		tone: 'pending',
+		description: '支持链接自动整理，可手动开始整理当前做法。'
+	},
 	pending: {
 		label: '等待解析',
 		tone: 'pending',
-		description: '已加入后台队列，稍后会自动整理食材和步骤。'
+		description: '已加入后台整理队列，稍后会自动补齐食材和步骤。'
 	},
 	processing: {
 		label: '解析中',
 		tone: 'processing',
-		description: '后台正在解析链接内容，结果会自动更新。'
+		description: '后台正在整理链接内容，结果会自动更新。'
 	},
 	done: {
 		label: '已自动整理',
 		tone: 'done',
-		description: '食材和步骤已由后台自动补齐。'
+		description: '食材和步骤已自动整理完成。'
 	},
 	failed: {
 		label: '解析失败',
 		tone: 'failed',
-		description: '这次自动整理没成功，可以重新发起一次解析。'
+		description: '这次自动整理没成功，可以再试一次。'
 	}
 }
 
 function isAutoParseSupportedLink(link = '') {
 	return /(bilibili\.com|b23\.tv|bili2233\.cn|xiaohongshu\.com|xhslink\.com)/i.test(String(link).trim())
+}
+
+function extractCopyableLink(value = '') {
+	const source = String(value || '').trim()
+	if (!source) return ''
+	const matched = source.match(/https?:\/\/[^\s]+/i)
+	const link = String(matched?.[0] || source).trim()
+	return link.replace(/[)\]】》」'",，。；;!?！？]+$/g, '').trim()
+}
+
+function isFallbackLikeParsedContent(recipe = {}, parsedContent = {}) {
+	const currentIngredients = Array.isArray(parsedContent.ingredients) ? parsedContent.ingredients.filter(Boolean) : []
+	const currentSteps = Array.isArray(parsedContent.steps) ? parsedContent.steps.filter(Boolean) : []
+	if (!currentIngredients.length && !currentSteps.length) return true
+	const fallback = buildFallbackParsedContent(recipe)
+	return (
+		stringSlicesEqual(currentIngredients, fallback.ingredients || []) &&
+		stringSlicesEqual(currentSteps, fallback.steps || [])
+	)
 }
 
 function formatParseSourceLabel(source = '') {
@@ -420,6 +449,12 @@ export default {
 		parsedSteps() {
 			return this.recipe?.parsedContent?.steps || []
 		},
+		hasMeaningfulParsedContent() {
+			return !isFallbackLikeParsedContent(this.recipe || {}, {
+				ingredients: this.parsedIngredients,
+				steps: this.parsedSteps
+			})
+		},
 		recipeImages() {
 			if (Array.isArray(this.recipe?.imageUrls) && this.recipe.imageUrls.length) {
 				return this.recipe.imageUrls.filter(Boolean)
@@ -427,20 +462,23 @@ export default {
 			const fallbackImage = String(this.recipe?.image || this.recipe?.imageUrl || '').trim()
 			return fallbackImage ? [fallbackImage] : []
 		},
+		parseStatusValue() {
+			return String(this.recipe?.parseStatus || '').trim()
+		},
 		parseStatusMeta() {
-			const status = String(this.recipe?.parseStatus || '').trim()
+			const status = this.parseStatusValue
 			if (status && parseStatusMetaMap[status]) {
 				return parseStatusMetaMap[status]
 			}
 			if (this.isAutoParseRecipe) {
-				return parseStatusMetaMap.pending
+				return parseStatusMetaMap.idle
 			}
 			return null
 		},
 		parseStatusDescription() {
 			if (!this.parseStatusMeta) return ''
 			const errorMessage = String(this.recipe?.parseError || '').trim()
-			if ((this.recipe?.parseStatus || '') === 'failed' && errorMessage) {
+			if (this.parseStatusValue === 'failed' && errorMessage) {
 				return errorMessage
 			}
 			return this.parseStatusMeta.description
@@ -451,8 +489,17 @@ export default {
 		isAutoParseRecipe() {
 			return isAutoParseSupportedLink(this.recipe?.link || '')
 		},
-		canRetryParse() {
-			return this.isAutoParseRecipe && this.recipe?.parseStatus === 'failed'
+		canRequestParse() {
+			return this.isAutoParseRecipe && !ACTIVE_PARSE_STATUSES.includes(this.parseStatusValue)
+		},
+		needsParseOverwriteConfirm() {
+			return this.parseStatusValue === 'done' || this.parseStatusValue === 'failed' || this.hasMeaningfulParsedContent
+		},
+		parseActionText() {
+			if (this.isReparseSubmitting) return '整理中...'
+			if (!this.parseStatusValue) return '开始整理'
+			if (this.parseStatusValue === 'failed') return '再试一次'
+			return '重新整理'
 		},
 		canSaveEditDraft() {
 			return !!this.editDraft.title.trim()
@@ -705,12 +752,30 @@ export default {
 				uni.hideLoading()
 			}
 		},
-		async retryAutoParse() {
-			if (!this.canRetryParse || this.isReparseSubmitting) return
+		handleParseAction() {
+			if (!this.canRequestParse || this.isReparseSubmitting) return
+			if (!this.needsParseOverwriteConfirm) {
+				this.requestAutoParse()
+				return
+			}
+
+			uni.showModal({
+				title: '更新做法整理',
+				content: '将根据来源链接更新当前食材和步骤。',
+				confirmText: '继续整理',
+				confirmColor: '#b4664c',
+				success: ({ confirm }) => {
+					if (!confirm) return
+					this.requestAutoParse()
+				}
+			})
+		},
+		async requestAutoParse() {
+			if (!this.canRequestParse || this.isReparseSubmitting) return
 
 			this.isReparseSubmitting = true
 			uni.showLoading({
-				title: '重新加入中',
+				title: '整理中',
 				mask: true
 			})
 
@@ -718,12 +783,12 @@ export default {
 				const recipe = await reparseRecipeById(this.recipeId)
 				this.applyRecipe(recipe)
 				uni.showToast({
-					title: '已重新加入解析队列',
+					title: '已加入整理队列',
 					icon: 'none'
 				})
 			} catch (error) {
 				uni.showToast({
-					title: error?.message || '重新解析失败',
+					title: error?.message || '发起整理失败',
 					icon: 'none'
 				})
 			} finally {
@@ -772,7 +837,8 @@ export default {
 			}
 		},
 		copyLink() {
-			if (!this.recipe?.link) {
+			const link = extractCopyableLink(this.recipe?.link)
+			if (!link) {
 				uni.showToast({
 					title: '暂无链接',
 					icon: 'none'
@@ -780,7 +846,7 @@ export default {
 				return
 			}
 			uni.setClipboardData({
-				data: this.recipe.link,
+				data: link,
 				success: () => {
 					uni.showToast({
 						title: '已复制链接',
@@ -986,10 +1052,23 @@ export default {
 		background: #f2ece5;
 	}
 
+	.detail-card__action--accent {
+		background: #fff2ea;
+		border: 1px solid rgba(180, 102, 76, 0.12);
+	}
+
+	.detail-card__action--disabled {
+		opacity: 0.6;
+	}
+
 	.detail-card__action-text {
 		font-size: 22rpx;
 		font-weight: 600;
 		color: #6d6155;
+	}
+
+	.detail-card__action-text--accent {
+		color: #b4664c;
 	}
 
 	.link-panel {
@@ -1090,24 +1169,6 @@ export default {
 		margin-top: 6rpx;
 		font-size: 21rpx;
 		color: #978b80;
-	}
-
-	.detail-parse__action {
-		flex-shrink: 0;
-		padding: 14rpx 18rpx;
-		border-radius: 999rpx;
-		background: #ffffff;
-		box-shadow: 0 8rpx 16rpx rgba(91, 74, 59, 0.06);
-	}
-
-	.detail-parse__action--disabled {
-		opacity: 0.6;
-	}
-
-	.detail-parse__action-text {
-		font-size: 22rpx;
-		font-weight: 700;
-		color: #b4664c;
 	}
 
 	.parsed-section {
