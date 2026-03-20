@@ -144,7 +144,7 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
 		nullableString(item.Ingredient),
-		nullableString(item.Summary),
+		nonNullableTrimmedString(item.Summary),
 		nullableString(item.Link),
 		nullableString(item.ImageURL),
 		imageURLsJSON,
@@ -536,7 +536,7 @@ SET ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, ingredients
     parse_status = ?, parse_source = ?, parse_error = '', parse_finished_at = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(ingredientValue),
-		nullableString(summaryValue),
+		nonNullableTrimmedString(summaryValue),
 		nullableString(imageURLValue),
 		imageURLsJSON,
 		ingredientsJSON,
@@ -776,7 +776,7 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 		item.KitchenID,
 		item.Title,
 		nullableString(item.Ingredient),
-		nullableString(item.Summary),
+		nonNullableTrimmedString(item.Summary),
 		nullableString(item.Link),
 		nullableString(item.ImageURL),
 		imageURLsJSON,
@@ -899,6 +899,10 @@ func nullableString(value string) any {
 		return nil
 	}
 	return trimmed
+}
+
+func nonNullableTrimmedString(value string) string {
+	return strings.TrimSpace(value)
 }
 
 func truncateString(value string, maxRunes int) string {

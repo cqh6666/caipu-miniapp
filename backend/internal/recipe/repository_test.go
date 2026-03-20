@@ -38,3 +38,19 @@ func TestResolveAutoParseImagesBackfillsWhenRecipeHasNoImages(t *testing.T) {
 		t.Fatalf("len(imageURLs) = %d, want %d", got, want)
 	}
 }
+
+func TestNonNullableTrimmedStringPreservesEmptyString(t *testing.T) {
+	t.Parallel()
+
+	if got := nonNullableTrimmedString("   "); got != "" {
+		t.Fatalf("nonNullableTrimmedString returned %q, want empty string", got)
+	}
+}
+
+func TestNonNullableTrimmedStringTrimsWhitespace(t *testing.T) {
+	t.Parallel()
+
+	if got, want := nonNullableTrimmedString("  酸甜浓汤  "), "酸甜浓汤"; got != want {
+		t.Fatalf("nonNullableTrimmedString = %q, want %q", got, want)
+	}
+}
