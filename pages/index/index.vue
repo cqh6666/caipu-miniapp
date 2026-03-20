@@ -637,6 +637,7 @@
 <script>
 import { appConfig } from '../../utils/app-config'
 import { previewRecipeLink } from '../../utils/recipe-api'
+import { buildImageCacheKey, getCachedImagePath, warmImageCache } from '../../utils/image-cache'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import {
 	MAX_RECIPE_IMAGES,
@@ -897,11 +898,16 @@ function buildRecipeListSummary(recipe = {}) {
 	return truncateTextByRune(String(recipe.summary || '').trim(), 15)
 }
 
-function buildRecipeCard(recipe = {}) {
+function buildRecipeCoverVersion(recipe = {}) {
+	return String(recipe.updatedAt || recipe.parseFinishedAt || '').trim()
+}
+
+function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	const images = extractRecipeImages(recipe)
+	const remoteCover = images[0] || ''
 	return {
 		...recipe,
-		cover: images[0] || '',
+		cover: cachedCoverMap[recipe.id] || remoteCover,
 		imageCount: images.length,
 		sourceBadge: detectRecipeSource(recipe),
 		placeholderIcon: pickRecipePlaceholderIcon(recipe),
@@ -954,6 +960,8 @@ export default {
 			draftLinkPreviewRequestID: 0,
 			isDraftLinkPreviewing: false,
 			hasDismissedProfilePrompt: false,
+			cachedRecipeCoverMap: {},
+			recipeCoverCacheRequestID: 0,
 			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
@@ -973,9 +981,11 @@ export default {
 	},
 	onHide() {
 		this.clearDraftLinkPreviewState()
+		this.recipeCoverCacheRequestID += 1
 	},
 	onUnload() {
 		this.clearDraftLinkPreviewState()
+		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
 		if (res?.from === 'button' && this.activeInvite?.sharePath) {
@@ -1074,7 +1084,7 @@ export default {
 			})
 		},
 		recipeCards() {
-			return this.filteredRecipes.map((recipe) => buildRecipeCard(recipe))
+			return this.filteredRecipes.map((recipe) => buildRecipeCard(recipe, this.cachedRecipeCoverMap))
 		},
 		inviteSheetSubtitle() {
 			if (!this.currentKitchenName) {
@@ -1152,6 +1162,81 @@ export default {
 		}
 	},
 	methods: {
+		applyRecipes(recipes = []) {
+			this.recipes = Array.isArray(recipes) ? recipes : []
+			this.syncRecipeCoverCache(this.recipes)
+		},
+		buildRecipeCoverCacheEntries(recipes = []) {
+			return (Array.isArray(recipes) ? recipes : [])
+				.map((recipe) => {
+					const images = extractRecipeImages(recipe)
+					const cover = images[0] || ''
+					const version = buildRecipeCoverVersion(recipe)
+					if (!cover || !recipe.id) return null
+					return {
+						recipeId: recipe.id,
+						url: cover,
+						version,
+						cacheKey: buildImageCacheKey(cover, version)
+					}
+				})
+				.filter(Boolean)
+		},
+		async syncRecipeCoverCache(recipes = []) {
+			const entries = this.buildRecipeCoverCacheEntries(recipes)
+			const requestID = this.recipeCoverCacheRequestID + 1
+			this.recipeCoverCacheRequestID = requestID
+
+			if (!entries.length) {
+				this.cachedRecipeCoverMap = {}
+				return
+			}
+
+			const cachedEntries = await Promise.all(
+				entries.map(async (entry) => ({
+					recipeId: entry.recipeId,
+					localPath: await getCachedImagePath(entry.url, entry.version)
+				}))
+			)
+
+			if (requestID !== this.recipeCoverCacheRequestID) return
+
+			const nextCoverMap = {}
+			cachedEntries.forEach((entry) => {
+				if (!entry.localPath) return
+				nextCoverMap[entry.recipeId] = entry.localPath
+			})
+			this.cachedRecipeCoverMap = nextCoverMap
+
+			const recipeIdsByCacheKey = entries.reduce((result, entry) => {
+				if (!result[entry.cacheKey]) {
+					result[entry.cacheKey] = []
+				}
+				result[entry.cacheKey].push(entry.recipeId)
+				return result
+			}, {})
+
+			warmImageCache(entries, {
+				concurrency: 2,
+				onResolved: ({ cacheKey, localPath }) => {
+					if (requestID !== this.recipeCoverCacheRequestID || !localPath) return
+					const recipeIds = recipeIdsByCacheKey[cacheKey] || []
+					if (!recipeIds.length) return
+
+					let changed = false
+					const updatedCoverMap = { ...this.cachedRecipeCoverMap }
+					recipeIds.forEach((recipeId) => {
+						if (updatedCoverMap[recipeId] === localPath) return
+						updatedCoverMap[recipeId] = localPath
+						changed = true
+					})
+
+					if (changed) {
+						this.cachedRecipeCoverMap = updatedCoverMap
+					}
+				}
+			})
+		},
 		applySession(session = getSessionSnapshot()) {
 			const snapshot = session || getSessionSnapshot()
 			this.currentUser = snapshot?.user || null
@@ -1169,9 +1254,7 @@ export default {
 		async refreshRecipes(options = {}) {
 			const { silent = true } = options
 			const cachedRecipes = getCachedRecipes()
-			if (cachedRecipes.length) {
-				this.recipes = cachedRecipes
-			}
+			this.applyRecipes(cachedRecipes)
 
 			try {
 				this.isSyncing = true
@@ -1183,11 +1266,11 @@ export default {
 					loadRecipes({ forceRefresh: true }),
 					this.refreshKitchenMembers({ kitchenId, silent: true })
 				])
-				this.recipes = recipes
+				this.applyRecipes(recipes)
 			} catch (error) {
 				this.syncErrorMessage = getFriendlySessionErrorMessage(error)
 				this.applySession()
-				this.recipes = getCachedRecipes()
+				this.applyRecipes(getCachedRecipes())
 				this.kitchenMembers = []
 				this.kitchenMembersKitchenId = 0
 				if (!silent) {
@@ -1455,7 +1538,7 @@ export default {
 		async toggleRecipeStatusAsync(recipeId) {
 			try {
 				await toggleRecipeStatusById(recipeId)
-				this.recipes = getCachedRecipes()
+				this.applyRecipes(getCachedRecipes())
 			} catch (error) {
 				uni.showToast({
 					title: error?.message || '更新状态失败',
@@ -1538,7 +1621,7 @@ export default {
 
 			try {
 				const newRecipe = await createRecipeFromDraft(this.draft)
-				this.recipes = getCachedRecipes()
+				this.applyRecipes(getCachedRecipes())
 				this.selectedRecipeId = newRecipe.id
 				this.activeSection = 'library'
 				this.activeMealType = newRecipe.mealType

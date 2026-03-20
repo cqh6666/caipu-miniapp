@@ -2,7 +2,7 @@
 	<view class="about-page">
 		<view class="about-card">
 			<view class="about-card__header">
-				<text class="about-card__title">关于我们</text>
+				<text class="about-card__title" @longpress="openHiddenDebugActions">关于我们</text>
 				<text class="about-card__desc">一份给家庭和小团队共用的数字厨房。</text>
 			</view>
 
@@ -66,6 +66,7 @@
 import { appConfig } from '../../utils/app-config'
 import { getBilibiliSessionSetting } from '../../utils/app-settings-api'
 import { ensureSession, getSessionSnapshot } from '../../utils/auth'
+import { clearImageCache } from '../../utils/image-cache'
 
 export default {
 	data() {
@@ -127,8 +128,8 @@ export default {
 				}
 			})
 		},
-		async openAppSettings() {
-			if (!this.canOpenAppSettings) return
+			async openAppSettings() {
+				if (!this.canOpenAppSettings) return
 
 			try {
 				await getBilibiliSessionSetting()
@@ -140,12 +141,47 @@ export default {
 				return
 			}
 
-			uni.navigateTo({
-				url: '/pages/app-settings/index'
-			})
-		},
+				uni.navigateTo({
+					url: '/pages/app-settings/index'
+				})
+			},
+			openHiddenDebugActions() {
+				uni.showActionSheet({
+					itemList: ['清空首页图片缓存'],
+					success: ({ tapIndex }) => {
+						if (tapIndex !== 0) return
+						this.confirmClearImageCache()
+					}
+				})
+			},
+			confirmClearImageCache() {
+				uni.showModal({
+					title: '清空图片缓存',
+					content: '会删除首页已缓存的封面图，下次进入首页会重新下载，是否继续？',
+					confirmText: '清空',
+					success: async ({ confirm }) => {
+						if (!confirm) return
+						await this.clearRecipeImageCache()
+					}
+				})
+			},
+			async clearRecipeImageCache() {
+				try {
+					const result = await clearImageCache()
+					const removedCount = Number(result?.removedCount) || 0
+					uni.showToast({
+						title: removedCount ? `已清空 ${removedCount} 张` : '缓存已清空',
+						icon: 'none'
+					})
+				} catch (error) {
+					uni.showToast({
+						title: error?.message || '清空缓存失败',
+						icon: 'none'
+					})
+				}
+			}
+		}
 	}
-}
 </script>
 
 <style scoped>
