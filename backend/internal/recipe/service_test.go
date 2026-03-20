@@ -8,6 +8,7 @@ func TestNormalizeRecipeInputSupportsMultipleImages(t *testing.T) {
 	item, err := normalizeRecipeInput(
 		"番茄牛腩",
 		"牛腩",
+		"酸甜浓汤，适合一锅炖",
 		"",
 		"",
 		[]string{"https://img.example.com/1.jpg", "https://img.example.com/2.jpg"},
@@ -36,8 +37,27 @@ func TestNormalizeRecipeInputRejectsTooManyImages(t *testing.T) {
 		imageURLs = append(imageURLs, "https://img.example.com/test-"+string(rune('a'+index))+".jpg")
 	}
 
-	if _, err := normalizeRecipeInput("番茄牛腩", "", "", "", imageURLs, "main", "wishlist", "", ParsedContent{}); err == nil {
+	if _, err := normalizeRecipeInput("番茄牛腩", "", "", "", "", imageURLs, "main", "wishlist", "", ParsedContent{}); err == nil {
 		t.Fatal("normalizeRecipeInput should reject too many images")
+	}
+}
+
+func TestNormalizeRecipeInputRejectsSummaryLongerThanFifteenRunes(t *testing.T) {
+	t.Parallel()
+
+	if _, err := normalizeRecipeInput(
+		"番茄牛腩",
+		"牛腩",
+		"酸甜浓汤，适合一锅炖也适合周末慢慢做",
+		"",
+		"",
+		nil,
+		"main",
+		"wishlist",
+		"",
+		ParsedContent{},
+	); err == nil {
+		t.Fatal("normalizeRecipeInput should reject long summary")
 	}
 }
 

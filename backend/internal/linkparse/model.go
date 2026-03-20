@@ -8,6 +8,7 @@ type ParsedContent struct {
 type RecipeDraft struct {
 	Title         string        `json:"title"`
 	Ingredient    string        `json:"ingredient"`
+	Summary       string        `json:"summary"`
 	Link          string        `json:"link"`
 	ImageURL      string        `json:"imageUrl"`
 	ImageURLs     []string      `json:"imageUrls"`

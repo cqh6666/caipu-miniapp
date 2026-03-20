@@ -14,7 +14,7 @@
 							<input
 								v-model="searchKeyword"
 								class="search-box__input"
-								placeholder="搜菜名、备注或链接"
+								placeholder="搜菜名、摘要、备注或链接"
 								placeholder-class="search-box__placeholder"
 							/>
 						</view>
@@ -74,26 +74,36 @@
 
 				<view v-if="filteredRecipes.length" class="recipe-list">
 					<view
-						v-for="recipe in filteredRecipes"
-						:key="recipe.id"
-						class="recipe-item"
-						:class="{ 'recipe-item--active': selectedRecipeId === recipe.id }"
-						@tap="openRecipeDetail(recipe.id)"
+						v-for="card in recipeCards"
+						:key="card.id"
+						class="recipe-card"
+						:class="{ 'recipe-card--active': selectedRecipeId === card.id }"
+						@tap="openRecipeDetail(card.id)"
 					>
-						<view
-							class="recipe-item__marker"
-							:class="'recipe-item__marker--' + recipe.status"
-						></view>
-						<view class="recipe-item__main">
-							<view class="recipe-item__top">
-								<view class="recipe-item__text">
-									<text class="recipe-item__title">{{ recipe.title }}</text>
-									<text class="recipe-item__meta">{{ recipeSecondaryText(recipe) }}</text>
+						<view class="recipe-card__media" :class="{ 'recipe-card__media--empty': !card.cover }">
+							<image v-if="card.cover" class="recipe-card__image" :src="card.cover" mode="aspectFill"></image>
+							<view v-else class="recipe-card__placeholder">
+								<view class="recipe-card__placeholder-icon">
+									<up-icon :name="card.placeholderIcon" size="26" color="#866d58"></up-icon>
+								</view>
+								<text class="recipe-card__placeholder-text">待补图</text>
+							</view>
+							<view v-if="card.sourceBadge" class="recipe-card__source-badge">
+								<text class="recipe-card__source-badge-text">{{ card.sourceBadge }}</text>
+							</view>
+							<view v-if="card.imageCount > 1" class="recipe-card__count">
+								<text class="recipe-card__count-text">{{ card.imageCount }}</text>
+							</view>
+						</view>
+						<view class="recipe-card__body">
+							<view class="recipe-card__top">
+								<view class="recipe-card__title-wrap">
+									<text class="recipe-card__title">{{ card.title }}</text>
 								</view>
 								<view
 									class="recipe-switch"
-									:class="'recipe-switch--' + recipe.status"
-									@tap.stop="toggleRecipeStatus(recipe.id)"
+									:class="'recipe-switch--' + card.status"
+									@tap.stop="toggleRecipeStatus(card.id)"
 								>
 									<view class="recipe-switch__track">
 										<view class="recipe-switch__slot">
@@ -113,13 +123,15 @@
 									</view>
 									<view class="recipe-switch__thumb">
 										<up-icon
-											:name="statusMap[recipe.status].icon"
+											:name="statusMap[card.status].icon"
 											size="12"
-											:color="recipe.status === 'done' ? '#6f826d' : '#9a7b65'"
+											:color="card.status === 'done' ? '#6f826d' : '#9a7b65'"
 										></up-icon>
 									</view>
 								</view>
 							</view>
+							<text class="recipe-card__info">{{ card.infoLine }}</text>
+							<text class="recipe-card__summary">{{ card.listSummary }}</text>
 						</view>
 					</view>
 				</view>
@@ -252,8 +264,10 @@
 
 			</template>
 
-			<view class="app-footer-link" @tap="openAboutPage">
-				<text class="app-footer-link__label">关于我们</text>
+			<view class="app-footer-links">
+				<view class="app-footer-link" @tap="openAboutPage">
+					<text class="app-footer-link__label">关于我们</text>
+				</view>
 			</view>
 		</view>
 
@@ -628,8 +642,8 @@ import {
 	MAX_RECIPE_IMAGES,
 	createRecipeFromDraft,
 	getCachedRecipes,
-	getRecipeSecondaryText,
 	loadRecipes,
+	mealTypeLabelMap,
 	mealTypeOptions,
 	statusOptions,
 	toggleRecipeStatusById
@@ -676,7 +690,6 @@ const draftNoisePatterns = [
 	/(.+?)(?:最好吃的做法|家常做法|详细做法|做法分享|做法教程|做法来了|做法来咯|做法来啦|教程来咯|教程来啦|教程来了|教程分享|教程|做法).*$/i,
 	/(.+?)(?:就是这个味|超级软烂|超软烂|入口即化|香迷糊了?|巨好吃|好吃到哭|一学就会|零失败|保姆级|超下饭|真的绝了?|超级入味).*$/i
 ]
-
 function detectDraftLinkPlatform(input = '') {
 	const value = String(input || '').toLowerCase()
 	if (!value) return ''
@@ -827,6 +840,74 @@ function guessDraftTitleFromShareText(input = '') {
 
 	const line = text.split(/[。\n]/).map((item) => item.trim()).filter(Boolean)[0] || ''
 	return normalizeDraftAutoTitle(line)
+}
+
+function buildRecipeInfoLine(recipe = {}) {
+	const mealLabel = mealTypeLabelMap[recipe.mealType] || '早餐'
+	const parseStatus = String(recipe.parseStatus || '').trim()
+
+	let parseLabel = '手动整理'
+	if (parseStatus === 'done') {
+		parseLabel = '已整理'
+	} else if (parseStatus === 'pending' || parseStatus === 'processing') {
+		parseLabel = '整理中'
+	} else if (parseStatus === 'failed') {
+		parseLabel = '待重试'
+	} else if (String(recipe.link || '').trim()) {
+		parseLabel = '可整理'
+	}
+
+	return `${mealLabel} · ${parseLabel}`
+}
+
+function detectRecipeSource(recipe = {}) {
+	const parseSource = String(recipe.parseSource || '').trim().toLowerCase()
+	const link = String(recipe.link || '').trim().toLowerCase()
+	if (parseSource.includes('bilibili') || link.includes('bilibili.com') || link.includes('b23.tv') || link.includes('bili2233.cn')) {
+		return 'B站'
+	}
+	if (parseSource.includes('xiaohongshu') || link.includes('xiaohongshu.com') || link.includes('xhslink.com')) {
+		return '小红书'
+	}
+	if (link) return '链接'
+	return ''
+}
+
+function pickRecipePlaceholderIcon(recipe = {}) {
+	return recipe.mealType === 'main' ? 'grid-fill' : 'clock-fill'
+}
+
+function extractRecipeImages(recipe = {}) {
+	if (Array.isArray(recipe.imageUrls) && recipe.imageUrls.length) {
+		return recipe.imageUrls.filter(Boolean)
+	}
+	if (Array.isArray(recipe.images) && recipe.images.length) {
+		return recipe.images.filter(Boolean)
+	}
+	return [recipe.image, recipe.imageUrl].filter(Boolean)
+}
+
+function truncateTextByRune(value = '', maxLength = 15) {
+	const items = Array.from(String(value || '').trim())
+	if (items.length <= maxLength) return items.join('')
+	return items.slice(0, maxLength).join('')
+}
+
+function buildRecipeListSummary(recipe = {}) {
+	return truncateTextByRune(String(recipe.summary || '').trim(), 15)
+}
+
+function buildRecipeCard(recipe = {}) {
+	const images = extractRecipeImages(recipe)
+	return {
+		...recipe,
+		cover: images[0] || '',
+		imageCount: images.length,
+		sourceBadge: detectRecipeSource(recipe),
+		placeholderIcon: pickRecipePlaceholderIcon(recipe),
+		infoLine: buildRecipeInfoLine(recipe),
+		listSummary: buildRecipeListSummary(recipe)
+	}
 }
 
 export default {
@@ -986,10 +1067,14 @@ export default {
 					!keyword ||
 					recipe.title.toLowerCase().includes(keyword) ||
 					(recipe.ingredient || '').toLowerCase().includes(keyword) ||
+					(recipe.summary || '').toLowerCase().includes(keyword) ||
 					(recipe.link || '').toLowerCase().includes(keyword) ||
 					(recipe.note || '').toLowerCase().includes(keyword)
 				return matchedMealType && matchedStatus && matchedKeyword
 			})
+		},
+		recipeCards() {
+			return this.filteredRecipes.map((recipe) => buildRecipeCard(recipe))
 		},
 		inviteSheetSubtitle() {
 			if (!this.currentKitchenName) {
@@ -1114,9 +1199,6 @@ export default {
 			} finally {
 				this.isSyncing = false
 			}
-		},
-		recipeSecondaryText(recipe) {
-			return getRecipeSecondaryText(recipe)
 		},
 		memberRoleLabel(role) {
 			if (role === 'owner') return '创建者'
@@ -2056,12 +2138,16 @@ export default {
 		color: #6e5f50;
 	}
 
-	.app-footer-link {
+	.app-footer-links {
 		margin-top: 18rpx;
-		padding: 10rpx 0 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		gap: 18rpx;
+	}
+
+	.app-footer-link {
+		padding: 10rpx 18rpx 0;
 		opacity: 0.82;
 	}
 
@@ -2664,77 +2750,169 @@ export default {
 		gap: 12rpx;
 	}
 
-	.recipe-item {
+	.recipe-card {
 		display: flex;
 		align-items: stretch;
-		gap: 14rpx;
-		padding: 16rpx;
-		border-radius: 20rpx;
-		background: rgba(255, 255, 255, 0.9);
-		border: 1px solid rgba(0, 0, 0, 0.03);
-		box-shadow: 0 8rpx 18rpx rgba(56, 44, 30, 0.04);
+		gap: 16rpx;
+		padding: 14rpx;
+		border-radius: 24rpx;
+		background: rgba(255, 253, 249, 0.96);
+		border: 1px solid rgba(100, 78, 58, 0.05);
+		box-shadow: 0 8rpx 18rpx rgba(70, 54, 40, 0.04);
 		transform: scale(1);
 		transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 	}
 
-	.recipe-item:active {
+	.recipe-card:active {
 		transform: scale(0.992);
 	}
 
-	.recipe-item--active {
+	.recipe-card--active {
 		border-color: rgba(91, 74, 59, 0.16);
 		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.06);
 	}
 
-	.recipe-item__marker {
-		width: 8rpx;
-		border-radius: 999rpx;
-		background: #d8d0c7;
+	.recipe-card__media {
+		position: relative;
+		width: 126rpx;
+		height: 126rpx;
+		border-radius: 20rpx;
+		overflow: hidden;
 		flex-shrink: 0;
+		background: #e9ddd1;
+		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
 	}
 
-	.recipe-item__marker--wishlist {
-		background: #b59d87;
+	.recipe-card__media--empty {
+		background: linear-gradient(135deg, #efe4d7 0%, #e3d3c0 100%);
 	}
 
-	.recipe-item__marker--done {
-		background: #879884;
+	.recipe-card__image {
+		width: 100%;
+		height: 100%;
+		display: block;
 	}
 
-	.recipe-item__main {
+	.recipe-card__placeholder {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 8rpx;
+	}
+
+	.recipe-card__placeholder-icon {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 18rpx;
+		background: rgba(255, 255, 255, 0.42);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.recipe-card__placeholder-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #866d58;
+	}
+
+	.recipe-card__source-badge {
+		position: absolute;
+		top: 10rpx;
+		left: 10rpx;
+		padding: 8rpx 12rpx;
+		border-radius: 999rpx;
+		background: rgba(39, 31, 25, 0.52);
+		backdrop-filter: blur(10rpx);
+	}
+
+	.recipe-card__source-badge-text {
+		display: block;
+		font-size: 18rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #fffdf8;
+	}
+
+	.recipe-card__count {
+		position: absolute;
+		right: 6rpx;
+		bottom: 6rpx;
+		padding: 4rpx 6rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.recipe-card__count::before {
+		content: '';
+		position: absolute;
+		inset: -8rpx -10rpx -6rpx;
+		border-radius: 999rpx;
+		background: radial-gradient(circle at center, rgba(24, 18, 14, 0.34), rgba(24, 18, 14, 0.14) 58%, rgba(24, 18, 14, 0) 82%);
+		filter: blur(6rpx);
+	}
+
+	.recipe-card__count-text {
+		position: relative;
+		z-index: 1;
+		font-size: 18rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #ffffff;
+	}
+
+	.recipe-card__body {
 		flex: 1;
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 10rpx;
+		justify-content: center;
+		gap: 8rpx;
 	}
 
-	.recipe-item__top {
+	.recipe-card__top {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: space-between;
 		gap: 12rpx;
 	}
 
-	.recipe-item__text {
+	.recipe-card__title-wrap {
 		flex: 1;
 		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 6rpx;
 	}
 
-	.recipe-item__title {
-		font-size: 28rpx;
+	.recipe-card__title {
+		display: -webkit-box;
+		font-size: 30rpx;
 		font-weight: 700;
 		line-height: 1.34;
 		color: #2f2923;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
 	}
 
-	.recipe-item__meta {
-		font-size: 23rpx;
-		line-height: 1.55;
-		color: #8d847a;
+	.recipe-card__info {
+		display: block;
+		font-size: 21rpx;
+		font-weight: 700;
+		line-height: 1.5;
+		color: #a08773;
+	}
+
+	.recipe-card__summary {
+		display: -webkit-box;
+		font-size: 24rpx;
+		line-height: 1.56;
+		color: #5f544a;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 1;
 	}
 
 	.recipe-switch {

@@ -143,7 +143,7 @@ export default {
 			uni.navigateTo({
 				url: '/pages/app-settings/index'
 			})
-		}
+		},
 	}
 }
 </script>

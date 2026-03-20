@@ -81,6 +81,9 @@ func TestSummarizeHeuristically(t *testing.T) {
 	if result.Ingredient == "" {
 		t.Fatal("ingredient summary is empty")
 	}
+	if result.Summary != "" {
+		t.Fatalf("recipe summary = %q, want empty in heuristic mode", result.Summary)
+	}
 	if result.Link == "" {
 		t.Fatal("link should be preserved")
 	}

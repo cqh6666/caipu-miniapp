@@ -1,0 +1,1 @@
+ALTER TABLE recipes ADD COLUMN summary TEXT NOT NULL DEFAULT '';

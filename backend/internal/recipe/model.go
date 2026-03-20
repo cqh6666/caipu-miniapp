@@ -18,6 +18,7 @@ type Recipe struct {
 	KitchenID        int64         `json:"kitchenId"`
 	Title            string        `json:"title"`
 	Ingredient       string        `json:"ingredient"`
+	Summary          string        `json:"summary"`
 	Link             string        `json:"link"`
 	ImageURL         string        `json:"imageUrl"`
 	ImageURLs        []string      `json:"imageUrls"`
@@ -45,6 +46,7 @@ type ListFilter struct {
 type createRecipeRequest struct {
 	Title         string        `json:"title"`
 	Ingredient    string        `json:"ingredient"`
+	Summary       string        `json:"summary"`
 	Link          string        `json:"link"`
 	ImageURL      string        `json:"imageUrl"`
 	ImageURLs     []string      `json:"imageUrls"`
@@ -57,6 +59,7 @@ type createRecipeRequest struct {
 type updateRecipeRequest struct {
 	Title         string        `json:"title"`
 	Ingredient    string        `json:"ingredient"`
+	Summary       string        `json:"summary"`
 	Link          string        `json:"link"`
 	ImageURL      string        `json:"imageUrl"`
 	ImageURLs     []string      `json:"imageUrls"`

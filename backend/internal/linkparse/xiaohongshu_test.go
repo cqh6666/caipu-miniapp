@@ -100,6 +100,9 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 	if !strings.Contains(result.RecipeDraft.Ingredient, "番茄") {
 		t.Fatalf("RecipeDraft.Ingredient = %q", result.RecipeDraft.Ingredient)
 	}
+	if result.RecipeDraft.Summary != "" {
+		t.Fatalf("RecipeDraft.Summary = %q, want empty without AI summary", result.RecipeDraft.Summary)
+	}
 	if len(result.RecipeDraft.ParsedContent.Steps) == 0 {
 		t.Fatalf("RecipeDraft steps are empty: %#v", result.RecipeDraft)
 	}

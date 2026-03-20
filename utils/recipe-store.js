@@ -109,6 +109,7 @@ export function normalizeRecipe(recipe = {}) {
 		kitchenId: Number(recipe.kitchenId) || 0,
 		title: (recipe.title || '').trim(),
 		ingredient: (recipe.ingredient || '').trim(),
+		summary: (recipe.summary || '').trim(),
 		link: (recipe.link || '').trim(),
 		image,
 		imageUrl: image,
@@ -144,6 +145,7 @@ function buildRecipePayload(recipe = {}) {
 	return {
 		title: normalized.title,
 		ingredient: normalized.ingredient,
+		summary: normalized.summary,
 		link: normalized.link,
 		imageUrl: normalized.imageUrl,
 		imageUrls: normalized.imageUrls,

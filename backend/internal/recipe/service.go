@@ -64,7 +64,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 		return Recipe{}, err
 	}
 
-	item, err := normalizeRecipeInput(req.Title, req.Ingredient, req.Link, req.ImageURL, req.ImageURLs, req.MealType, req.Status, req.Note, req.ParsedContent)
+	item, err := normalizeRecipeInput(req.Title, req.Ingredient, req.Summary, req.Link, req.ImageURL, req.ImageURLs, req.MealType, req.Status, req.Note, req.ParsedContent)
 	if err != nil {
 		return Recipe{}, err
 	}
@@ -108,7 +108,12 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 		return Recipe{}, err
 	}
 
-	next, err := normalizeRecipeInput(req.Title, req.Ingredient, req.Link, req.ImageURL, req.ImageURLs, req.MealType, req.Status, req.Note, req.ParsedContent)
+	summary := req.Summary
+	if strings.TrimSpace(summary) == "" {
+		summary = current.Summary
+	}
+
+	next, err := normalizeRecipeInput(req.Title, req.Ingredient, summary, req.Link, req.ImageURL, req.ImageURLs, req.MealType, req.Status, req.Note, req.ParsedContent)
 	if err != nil {
 		return Recipe{}, err
 	}
@@ -258,6 +263,7 @@ func (s *Service) Delete(ctx context.Context, userID int64, recipeID string) err
 func normalizeRecipeInput(
 	title string,
 	ingredient string,
+	summary string,
 	link string,
 	imageURL string,
 	imageURLs []string,
@@ -268,6 +274,7 @@ func normalizeRecipeInput(
 ) (Recipe, error) {
 	title = strings.TrimSpace(title)
 	ingredient = strings.TrimSpace(ingredient)
+	summary = strings.TrimSpace(summary)
 	link = strings.TrimSpace(link)
 	imageURL = strings.TrimSpace(imageURL)
 	mealType = strings.TrimSpace(mealType)
@@ -282,6 +289,9 @@ func normalizeRecipeInput(
 	}
 	if len([]rune(ingredient)) > 60 {
 		return Recipe{}, common.NewAppError(common.CodeBadRequest, "ingredient must be 60 characters or fewer", http.StatusBadRequest)
+	}
+	if len([]rune(summary)) > 15 {
+		return Recipe{}, common.NewAppError(common.CodeBadRequest, "summary must be 15 characters or fewer", http.StatusBadRequest)
 	}
 	if len([]rune(link)) > 300 {
 		return Recipe{}, common.NewAppError(common.CodeBadRequest, "link must be 300 characters or fewer", http.StatusBadRequest)
@@ -316,6 +326,7 @@ func normalizeRecipeInput(
 	return Recipe{
 		Title:         title,
 		Ingredient:    ingredient,
+		Summary:       summary,
 		Link:          link,
 		ImageURL:      firstImageURL(normalizedImages),
 		ImageURLs:     normalizedImages,

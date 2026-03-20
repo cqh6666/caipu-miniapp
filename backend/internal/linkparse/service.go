@@ -32,6 +32,7 @@ var (
 	ingredientLoosePattern   = regexp.MustCompile(`[\p{Han}A-Za-z][\p{Han}A-Za-z0-9()（）-]{0,14}\s*(?:适量|少许)`)
 	ingredientSpacingPattern = regexp.MustCompile(`([\p{Han}A-Za-z])(\d)`)
 	codeFencePattern         = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
+	summaryWhitespacePattern = regexp.MustCompile(`\s+`)
 	previewBracketPattern    = regexp.MustCompile(`[【\[]([^】\]]+)[】\]]`)
 	previewPlatformPattern   = regexp.MustCompile(`\s*-\s*(哔哩哔哩|小红书)\s*$`)
 	previewShareSuffix       = regexp.MustCompile(`复制后打开【小红书】查看笔记!?`)
@@ -145,6 +146,7 @@ type bilibiliSubtitleFile struct {
 type aiSummaryResponse struct {
 	Title       string   `json:"title"`
 	Ingredient  string   `json:"ingredient"`
+	Summary     string   `json:"summary"`
 	Ingredients []string `json:"ingredients"`
 	Steps       []string `json:"steps"`
 	Note        string   `json:"note"`
@@ -367,7 +369,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 			result.RecipeDraft = normalizeDraft(result, draft)
 			return result, nil
 		}
-		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则总结。")
+		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理，摘要将留空。")
 	}
 
 	result.SummaryMode = "heuristic"
@@ -703,6 +705,7 @@ func summarizeHeuristically(meta BilibiliParseResult, transcript string) RecipeD
 	return RecipeDraft{
 		Title:      firstNonEmpty(meta.Title, meta.Part, "B站视频菜谱草稿"),
 		Ingredient: buildIngredientSummary(ingredients, meta.Title),
+		Summary:    "",
 		Link:       meta.Link,
 		ImageURL:   strings.TrimSpace(meta.CoverURL),
 		ImageURLs:  draftImageURLs(strings.TrimSpace(meta.CoverURL)),
@@ -867,6 +870,32 @@ func buildHeuristicNote(meta BilibiliParseResult) string {
 	return base
 }
 
+func buildSummaryPromptRuleText() string {
+	return "summary 字段用于美食库列表摘要，必须写成“口味 + 核心亮点”的一句中文短句，限制在 15 个汉字以内；不要重复标题里的菜名，不要写平台、图片数量、食材数量、营销词或不确定信息。示例：番茄牛腩 -> 酸甜浓汤，适合一锅炖；鸡蛋炸酱面 -> 酱香浓郁，快手拌面一碗；港式干炒牛河 -> 镬气快炒，牛肉河粉更香。"
+}
+
+func normalizeRecipeSummary(value string) string {
+	summary := strings.TrimSpace(value)
+	summary = strings.Trim(summary, "。；;、!！?？\"'")
+	summary = summaryWhitespacePattern.ReplaceAllString(summary, "")
+	if summary == "" {
+		return ""
+	}
+	return truncateRunes(summary, 15)
+}
+
+func truncateRunes(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+
+	items := []rune(value)
+	if len(items) <= maxRunes {
+		return value
+	}
+	return string(items[:maxRunes])
+}
+
 func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (RecipeDraft, error) {
 	payload := openAIChatRequest{
 		Model:       c.model,
@@ -874,7 +903,7 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"ingredients\":[],\"steps\":[],\"note\":\"\"}。ingredients 和 steps 各返回 2 到 8 条，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。",
+				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"ingredients\":[],\"steps\":[],\"note\":\"\"}。ingredients 和 steps 各返回 2 到 8 条，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildSummaryPromptRuleText(),
 			},
 			{
 				Role:    "user",
@@ -937,6 +966,7 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 	return RecipeDraft{
 		Title:      summary.Title,
 		Ingredient: summary.Ingredient,
+		Summary:    summary.Summary,
 		Note:       summary.Note,
 		ParsedContent: ParsedContent{
 			Ingredients: summary.Ingredients,
@@ -965,6 +995,7 @@ func buildAISummaryPrompt(result BilibiliParseResult) string {
 	if result.Description != "" {
 		builder.WriteString("简介: " + result.Description + "\n")
 	}
+	builder.WriteString("摘要规则: " + buildSummaryPromptRuleText() + "\n")
 	builder.WriteString("链接: " + result.Link + "\n")
 	builder.WriteString("字幕语言: " + firstNonEmpty(result.SubtitleLanguage, "未知") + "\n")
 	if truncated {
@@ -986,6 +1017,7 @@ func normalizeDraft(meta BilibiliParseResult, draft RecipeDraft) RecipeDraft {
 	draft.Note = firstNonEmpty(strings.TrimSpace(draft.Note), "基于 B 站字幕生成的 AI 草稿，建议回看原视频补齐克数和火候。")
 	draft.ParsedContent.Ingredients = dedupeStrings(cleanLines(draft.ParsedContent.Ingredients), 10)
 	draft.ParsedContent.Steps = dedupeStrings(cleanLines(draft.ParsedContent.Steps), 8)
+	draft.Summary = normalizeRecipeSummary(draft.Summary)
 
 	if len(draft.ParsedContent.Ingredients) == 0 || len(draft.ParsedContent.Steps) == 0 {
 		fallback := summarizeHeuristically(meta, meta.SubtitleText)

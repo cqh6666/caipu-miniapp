@@ -19,7 +19,7 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filter ListFilter) ([]Recipe, error) {
 	query := `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -72,7 +72,7 @@ WHERE kitchen_id = ? AND deleted_at IS NULL
 
 func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -138,12 +138,13 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET title = ?, ingredient = ?, link = ?, image_url = ?, image_urls_json = ?, meal_type = ?, status = ?, note = ?,
+SET title = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, meal_type = ?, status = ?, note = ?,
     ingredients_json = ?, steps_json = ?, parse_status = ?, parse_source = ?, parse_error = ?,
     parse_requested_at = ?, parse_finished_at = ?, updated_by = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
 		nullableString(item.Ingredient),
+		nullableString(item.Summary),
 		nullableString(item.Link),
 		nullableString(item.ImageURL),
 		imageURLsJSON,
@@ -274,7 +275,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 
 func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -308,7 +309,7 @@ LIMIT ?`
 
 func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -350,7 +351,7 @@ LIMIT ?`
 
 func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
@@ -480,14 +481,16 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 	if strings.TrimSpace(ingredientValue) == "" {
 		ingredientValue = draft.Ingredient
 	}
+	summaryValue := strings.TrimSpace(draft.Summary)
 
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET ingredient = ?, image_url = ?, image_urls_json = ?, ingredients_json = ?, steps_json = ?,
+SET ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, ingredients_json = ?, steps_json = ?,
     parse_status = ?, parse_source = ?, parse_error = '', parse_finished_at = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(ingredientValue),
+		nullableString(summaryValue),
 		nullableString(imageURLValue),
 		imageURLsJSON,
 		ingredientsJSON,
@@ -661,6 +664,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.KitchenID,
 		&item.Title,
 		&item.Ingredient,
+		&item.Summary,
 		&item.Link,
 		&item.ImageURL,
 		&imageURLsJSON,
@@ -717,14 +721,15 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO recipes (
-id, kitchen_id, title, ingredient, link, image_url, image_urls_json, meal_type, status, note,
+id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, meal_type, status, note,
 ingredients_json, steps_json, parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
 created_by, updated_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
 		nullableString(item.Ingredient),
+		nullableString(item.Summary),
 		nullableString(item.Link),
 		nullableString(item.ImageURL),
 		imageURLsJSON,
@@ -751,7 +756,7 @@ created_by, updated_by, created_at, updated_at
 
 func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
        meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
        COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
        COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),

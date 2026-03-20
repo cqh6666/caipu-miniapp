@@ -166,6 +166,7 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	if err := w.repo.ApplyAutoParseResult(ctx, item.ID, parseSource, finishedAt, Recipe{
 		Ingredient: result.RecipeDraft.Ingredient,
+		Summary:    result.RecipeDraft.Summary,
 		ImageURL:   strings.TrimSpace(result.RecipeDraft.ImageURL),
 		ImageURLs:  cleanAutoParseImages(append(result.RecipeDraft.ImageURLs, strings.TrimSpace(result.RecipeDraft.ImageURL))),
 		ParsedContent: ParsedContent{
