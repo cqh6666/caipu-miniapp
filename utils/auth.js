@@ -1,4 +1,4 @@
-import { appConfig } from './app-config'
+import { appConfig, resolveAssetURL } from './app-config'
 import { request } from './http'
 import { clearSessionState, getAccessToken, getSessionState, setAccessToken, setSessionState } from './session-storage'
 
@@ -12,6 +12,17 @@ function normalizeKitchen(kitchen = {}) {
 		id: Number(kitchen.id) || 0,
 		name: kitchen.name || '我们的厨房',
 		role: kitchen.role || 'member'
+	}
+}
+
+function normalizeUser(user = null) {
+	if (!user || typeof user !== 'object') {
+		return null
+	}
+
+	return {
+		...user,
+		avatarUrl: resolveAssetURL(user.avatarUrl || '')
 	}
 }
 
@@ -33,7 +44,7 @@ function normalizeSessionPayload(payload = {}, tokenOverride = '') {
 
 	const session = {
 		token,
-		user: payload.user || previous?.user || null,
+		user: normalizeUser(payload.user || previous?.user || null),
 		kitchens,
 		currentKitchenId,
 		currentKitchen,
@@ -189,7 +200,7 @@ function isLegacyProfileRequestError(error) {
 async function updateSessionUserProfile(profile = {}) {
 	try {
 		const payload = await request({
-			url: '/api/auth/profile',
+			url: '/caipu-api/auth/profile',
 			method: 'PATCH',
 			data: {
 				nickname: profile.nickname || '',
@@ -216,7 +227,7 @@ export async function saveCurrentUserProfile(profile = {}) {
 async function createSession() {
 	if (shouldUseDevLogin()) {
 		const payload = await request({
-			url: '/api/auth/dev-login',
+			url: '/caipu-api/auth/dev-login',
 			method: 'POST',
 			data: {
 				identity: getDevLoginIdentity()
@@ -232,7 +243,7 @@ async function createSession() {
 	let payload
 	try {
 		payload = await request({
-			url: '/api/auth/wechat/login',
+			url: '/caipu-api/auth/wechat/login',
 			method: 'POST',
 			data: {
 				code,
@@ -248,7 +259,7 @@ async function createSession() {
 		}
 
 		payload = await request({
-			url: '/api/auth/wechat/login',
+			url: '/caipu-api/auth/wechat/login',
 			method: 'POST',
 			data: {
 				code,
@@ -273,7 +284,7 @@ export async function ensureSession(options = {}) {
 			if (storedToken) {
 				try {
 					const payload = await request({
-						url: '/api/auth/me',
+						url: '/caipu-api/auth/me',
 						method: 'GET'
 					})
 					const profile = await getOptionalWeChatProfile()
@@ -321,6 +332,7 @@ export function getSessionSnapshot() {
 
 	return {
 		...session,
+		user: normalizeUser(session.user),
 		kitchens,
 		currentKitchenId,
 		currentKitchen,
@@ -417,10 +429,10 @@ export function updateSessionUser(user = {}) {
 	const session = getSessionSnapshot()
 	const nextSession = {
 		...(session || {}),
-		user: {
+		user: normalizeUser({
 			...(session?.user || {}),
 			...(user || {})
-		},
+		}),
 		syncedAt: new Date().toISOString()
 	}
 

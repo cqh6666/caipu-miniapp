@@ -1,3 +1,4 @@
+import { isServerAssetPath, resolveAssetURL } from './app-config'
 import { uploadFile } from './http'
 
 function isRemoteImage(url = '') {
@@ -7,15 +8,15 @@ function isRemoteImage(url = '') {
 export async function ensureUploadedImage(imagePath = '') {
 	const source = (imagePath || '').trim()
 	if (!source) return ''
-	if (isRemoteImage(source)) return source
+	if (isRemoteImage(source) || isServerAssetPath(source)) return resolveAssetURL(source)
 
 	const payload = await uploadFile({
-		url: '/api/uploads/images',
+		url: '/caipu-api/uploads/images',
 		filePath: source,
 		name: 'file'
 	})
 
-	return payload?.url || ''
+	return resolveAssetURL(payload?.url || '')
 }
 
 export async function ensureUploadedImages(imagePaths = []) {

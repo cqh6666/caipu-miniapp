@@ -1,3 +1,4 @@
+import { resolveAssetURL } from './app-config'
 import { ensureSession, getCurrentKitchenId } from './auth'
 import {
 	createRecipe,
@@ -95,11 +96,12 @@ function isFallbackParsedContent(recipe = {}, parsedContent = {}) {
 
 export function normalizeRecipe(recipe = {}) {
 	const imageUrls = normalizeImageList(
-		Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
+		(Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
 			? recipe.imageUrls
 			: Array.isArray(recipe.images) && recipe.images.length
 				? recipe.images
 				: [recipe.image, recipe.imageUrl]
+		).map((item) => resolveAssetURL(item || ''))
 	)
 	const image = imageUrls[0] || ''
 	const normalized = {

@@ -1,4 +1,12 @@
+import { resolveAssetURL } from './app-config'
 import { request } from './http'
+
+function normalizeKitchenMember(member = {}) {
+	return {
+		...member,
+		avatarUrl: resolveAssetURL(member?.avatarUrl || '')
+	}
+}
 
 export function normalizeInviteCode(code = '') {
 	return String(code).trim().toUpperCase().replace(/[\s-]+/g, '')
@@ -12,14 +20,14 @@ export function formatInviteCode(code = '') {
 
 export function listKitchenMembers(kitchenId) {
 	return request({
-		url: `/api/kitchens/${kitchenId}/members`,
+		url: `/caipu-api/kitchens/${kitchenId}/members`,
 		method: 'GET'
-	}).then((data) => data?.items || [])
+	}).then((data) => (Array.isArray(data?.items) ? data.items.map((item) => normalizeKitchenMember(item)) : []))
 }
 
 export function createKitchenInvite(kitchenId, payload = {}) {
 	return request({
-		url: `/api/kitchens/${kitchenId}/invites`,
+		url: `/caipu-api/kitchens/${kitchenId}/invites`,
 		method: 'POST',
 		data: payload
 	}).then((data) => data?.invite || null)
@@ -27,7 +35,7 @@ export function createKitchenInvite(kitchenId, payload = {}) {
 
 export function updateKitchen(kitchenId, payload = {}) {
 	return request({
-		url: `/api/kitchens/${kitchenId}`,
+		url: `/caipu-api/kitchens/${kitchenId}`,
 		method: 'PATCH',
 		data: payload
 	}).then((data) => data?.kitchen || null)
@@ -35,7 +43,7 @@ export function updateKitchen(kitchenId, payload = {}) {
 
 export function previewInvite(token) {
 	return request({
-		url: `/api/invites/${token}`,
+		url: `/caipu-api/invites/${token}`,
 		method: 'GET',
 		auth: false
 	}).then((data) => data?.invite || null)
@@ -44,7 +52,7 @@ export function previewInvite(token) {
 export function previewInviteByCode(code) {
 	const normalized = normalizeInviteCode(code)
 	return request({
-		url: `/api/invite-codes/${encodeURIComponent(normalized)}`,
+		url: `/caipu-api/invite-codes/${encodeURIComponent(normalized)}`,
 		method: 'GET',
 		auth: false
 	}).then((data) => data?.invite || null)
@@ -52,7 +60,7 @@ export function previewInviteByCode(code) {
 
 export function acceptInvite(token) {
 	return request({
-		url: `/api/invites/${token}/accept`,
+		url: `/caipu-api/invites/${token}/accept`,
 		method: 'POST',
 		data: {}
 	})
@@ -61,7 +69,7 @@ export function acceptInvite(token) {
 export function acceptInviteByCode(code) {
 	const normalized = normalizeInviteCode(code)
 	return request({
-		url: `/api/invite-codes/${encodeURIComponent(normalized)}/accept`,
+		url: `/caipu-api/invite-codes/${encodeURIComponent(normalized)}/accept`,
 		method: 'POST',
 		data: {}
 	})
