@@ -8,14 +8,62 @@
 - 推荐在本地先编译 Linux 二进制，再上传到服务器
 - 真实 `WECHAT_APP_SECRET` 不要写进 Git，只在服务器 `.env` 中填写
 - 如果你担心密钥已经暴露，建议后续去微信公众平台重置一次
-- 仓库里已经提供了两个脚本：
+- 仓库里已经提供了几份部署相关脚本：
   - `backend/scripts/bootstrap-server.sh` 用于首次初始化服务器
   - `backend/scripts/deploy.sh` 用于后续每次发版
-- 两个脚本都支持按环境变量覆盖默认值，最常用的是 `SERVER_HOST`、`DOMAIN`、`APP_DIR`、`APP_PORT`、`ENV_FILE`
+- 如果你当前线上环境是“服务器拉源码并本机编译”，还可以使用：
+  - `backend/scripts/deploy-server-build.sh`
+- 这些脚本都支持按环境变量覆盖默认值；最常用的是 `SERVER_HOST`，其余变量按脚本场景分别使用
 
 ## 0.5 更快的脚本方式
 
 如果你想少敲命令，可以直接用仓库里的脚本。
+
+## 0.6 当前线上实际部署方式
+
+如果当前云服务器还是按源码拉取再本机编译的方式部署，实际命令如下：
+
+```bash
+cd /srv/caipu-miniapp
+git pull
+
+cd /srv/caipu-miniapp/backend
+go build -o bin/server ./cmd/server
+systemctl restart caipu-backend
+```
+
+说明：
+
+- 这是当前线上环境的“实际生效流程”，和下面那套本地交叉编译 + 上传二进制的方案不同
+- 如果下次要快速重发版，优先先按这组命令检查
+- 现在仓库里已经补了一份同逻辑脚本：`backend/scripts/deploy-server-build.sh`
+
+可以直接在本地执行：
+
+```bash
+cd /path/to/caipu-miniapp/backend
+SERVER_HOST=root@你的服务器IP \
+./scripts/deploy-server-build.sh
+```
+
+默认值对应当前线上约定：
+
+- `REPO_DIR=/srv/caipu-miniapp`
+- `BACKEND_DIR=/srv/caipu-miniapp/backend`
+- `BINARY_PATH=/srv/caipu-miniapp/backend/bin/server`
+- `SERVICE_NAME=caipu-backend`
+- `APP_PORT=8080`
+
+如果以后线上目录或服务名改了，可以通过环境变量覆盖：
+
+```bash
+cd /path/to/caipu-miniapp/backend
+SERVER_HOST=root@你的服务器IP \
+REPO_DIR=/srv/caipu-miniapp \
+SERVICE_NAME=caipu-backend \
+APP_PORT=8080 \
+./scripts/deploy-server-build.sh
+```
 
 首次初始化服务器：
 
