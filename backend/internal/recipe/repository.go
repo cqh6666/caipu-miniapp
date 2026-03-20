@@ -19,14 +19,14 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filter ListFilter) ([]Recipe, error) {
 	query := `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
-       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
-       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
-       created_by, updated_by, created_at, updated_at
-FROM recipes
-WHERE kitchen_id = ? AND deleted_at IS NULL
-`
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
+	WHERE kitchen_id = ? AND deleted_at IS NULL
+	`
 
 	args := []any{kitchenID}
 
@@ -46,7 +46,7 @@ WHERE kitchen_id = ? AND deleted_at IS NULL
 		args = append(args, keyword, keyword, keyword, keyword)
 	}
 
-	query += " ORDER BY updated_at DESC, id DESC"
+	query += " ORDER BY CASE WHEN COALESCE(pinned_at, '') = '' THEN 1 ELSE 0 END ASC, pinned_at DESC, updated_at DESC, id DESC"
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -72,15 +72,15 @@ WHERE kitchen_id = ? AND deleted_at IS NULL
 
 func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
-       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
-       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
-       created_by, updated_by, created_at, updated_at
-FROM recipes
-WHERE id = ? AND deleted_at IS NULL
-LIMIT 1
-`
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
+	WHERE id = ? AND deleted_at IS NULL
+	LIMIT 1
+	`
 
 	row := r.db.QueryRowContext(ctx, query, recipeID)
 	item, err := scanRecipe(row)
@@ -138,10 +138,10 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET title = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, meal_type = ?, status = ?, note = ?,
-    ingredients_json = ?, steps_json = ?, parse_status = ?, parse_source = ?, parse_error = ?,
-    parse_requested_at = ?, parse_finished_at = ?, updated_by = ?, updated_at = ?
-WHERE id = ? AND deleted_at IS NULL`,
+	SET title = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, meal_type = ?, status = ?, note = ?,
+	    ingredients_json = ?, steps_json = ?, parse_status = ?, parse_source = ?, parse_error = ?,
+	    parse_requested_at = ?, parse_finished_at = ?, pinned_at = ?, updated_by = ?, updated_at = ?
+	WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
 		nullableString(item.Ingredient),
 		nullableString(item.Summary),
@@ -158,6 +158,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 		strings.TrimSpace(item.ParseError),
 		nullableString(item.ParseRequestedAt),
 		nullableString(item.ParseFinishedAt),
+		nullableString(item.PinnedAt),
 		item.UpdatedBy,
 		item.UpdatedAt,
 		item.ID,
@@ -230,6 +231,51 @@ func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenI
 	return nil
 }
 
+func (r *Repository) UpdatePinned(ctx context.Context, recipeID string, kitchenID int64, pinned bool, updatedBy int64, touchedAt string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update pinned tx: %w", err)
+	}
+
+	var pinnedAtValue any
+	if pinned {
+		pinnedAtValue = touchedAt
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		`UPDATE recipes SET pinned_at = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL`,
+		pinnedAtValue,
+		updatedBy,
+		recipeID,
+	)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("update recipe pinned state: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("read pinned rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		_ = tx.Rollback()
+		return sql.ErrNoRows
+	}
+
+	if err := bumpKitchenUpdatedAt(ctx, tx, kitchenID, touchedAt); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update pinned state: %w", err)
+	}
+
+	return nil
+}
+
 func (r *Repository) SoftDelete(ctx context.Context, recipeID string, kitchenID int64, deletedBy int64, deletedAt string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -275,13 +321,13 @@ WHERE id = ? AND deleted_at IS NULL`,
 
 func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
-       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
-       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
-       created_by, updated_by, created_at, updated_at
-FROM recipes
-WHERE deleted_at IS NULL AND parse_status = ?
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
+	WHERE deleted_at IS NULL AND parse_status = ?
 ORDER BY COALESCE(parse_requested_at, created_at) ASC, id ASC
 LIMIT ?`
 
@@ -309,12 +355,12 @@ LIMIT ?`
 
 func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
-       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
-       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
-       created_by, updated_by, created_at, updated_at
-FROM recipes
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
 WHERE deleted_at IS NULL
   AND COALESCE(parse_status, '') = ''
   AND (
@@ -351,12 +397,12 @@ LIMIT ?`
 
 func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
-       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
-       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
-       created_by, updated_by, created_at, updated_at
-FROM recipes
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
 WHERE deleted_at IS NULL
   AND (
     COALESCE(image_urls_json, '[]') <> '[]'
@@ -678,6 +724,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.ParseError,
 		&item.ParseRequestedAt,
 		&item.ParseFinishedAt,
+		&item.PinnedAt,
 		&item.CreatedBy,
 		&item.UpdatedBy,
 		&item.CreatedAt,
@@ -721,10 +768,10 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO recipes (
-id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, meal_type, status, note,
-ingredients_json, steps_json, parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
-created_by, updated_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, meal_type, status, note,
+	ingredients_json, steps_json, parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
+	pinned_at, created_by, updated_by, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
@@ -743,6 +790,7 @@ created_by, updated_by, created_at, updated_at
 		strings.TrimSpace(item.ParseError),
 		nullableString(item.ParseRequestedAt),
 		nullableString(item.ParseFinishedAt),
+		nullableString(item.PinnedAt),
 		item.CreatedBy,
 		item.UpdatedBy,
 		item.CreatedAt,
@@ -756,12 +804,12 @@ created_by, updated_by, created_at, updated_at
 
 func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe, error) {
 	const query = `
-SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
-       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
-       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''),
-       created_by, updated_by, created_at, updated_at
-FROM recipes
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
 WHERE id = ? AND deleted_at IS NULL
 LIMIT 1`
 

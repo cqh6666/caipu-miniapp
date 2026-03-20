@@ -7,6 +7,7 @@ import {
 	listRecipes,
 	reparseRecipe,
 	updateRecipe,
+	updateRecipePinned,
 	updateRecipeStatus
 } from './recipe-api'
 import { ensureUploadedImages } from './upload-api'
@@ -60,6 +61,24 @@ function normalizeImageList(images = []) {
 	})
 
 	return normalized.slice(0, MAX_RECIPE_IMAGES)
+}
+
+function compareRecipesForDisplay(left = {}, right = {}) {
+	const leftPinnedAt = String(left.pinnedAt || '').trim()
+	const rightPinnedAt = String(right.pinnedAt || '').trim()
+	const leftPinned = !!leftPinnedAt
+	const rightPinned = !!rightPinnedAt
+
+	if (leftPinned !== rightPinned) {
+		return leftPinned ? -1 : 1
+	}
+
+	if (leftPinned && rightPinned) {
+		const byPinnedAt = rightPinnedAt.localeCompare(leftPinnedAt)
+		if (byPinnedAt) return byPinnedAt
+	}
+
+	return (right.updatedAt || '').localeCompare(left.updatedAt || '') || right.id.localeCompare(left.id)
 }
 
 export function buildFallbackParsedContent(recipe = {}) {
@@ -123,6 +142,7 @@ export function normalizeRecipe(recipe = {}) {
 		parseError: (recipe.parseError || '').trim(),
 		parseRequestedAt: recipe.parseRequestedAt || '',
 		parseFinishedAt: recipe.parseFinishedAt || '',
+		pinnedAt: recipe.pinnedAt || '',
 		createdAt: recipe.createdAt || '',
 		updatedAt: recipe.updatedAt || ''
 	}
@@ -180,12 +200,12 @@ function loadRecipesForKitchen(kitchenId) {
 	if (!kitchenId) return []
 	const storedRecipes = uni.getStorageSync(getRecipeStorageKey(kitchenId))
 	if (!Array.isArray(storedRecipes)) return []
-	return storedRecipes.map((recipe) => normalizeRecipe(recipe))
+	return storedRecipes.map((recipe) => normalizeRecipe(recipe)).sort(compareRecipesForDisplay)
 }
 
 function saveRecipesForKitchen(kitchenId, recipes = []) {
 	if (!kitchenId) return []
-	const normalizedRecipes = recipes.map((recipe) => normalizeRecipe(recipe))
+	const normalizedRecipes = recipes.map((recipe) => normalizeRecipe(recipe)).sort(compareRecipesForDisplay)
 	uni.setStorageSync(getRecipeStorageKey(kitchenId), normalizedRecipes)
 	return normalizedRecipes
 }
@@ -195,9 +215,7 @@ function upsertRecipeInCache(recipe = {}) {
 	const kitchenId = normalized.kitchenId || getCurrentKitchenId()
 	const current = loadRecipesForKitchen(kitchenId)
 	const filtered = current.filter((item) => item.id !== normalized.id)
-	const nextRecipes = [normalized, ...filtered].sort((left, right) => {
-		return (right.updatedAt || '').localeCompare(left.updatedAt || '') || right.id.localeCompare(left.id)
-	})
+	const nextRecipes = [normalized, ...filtered].sort(compareRecipesForDisplay)
 	saveRecipesForKitchen(kitchenId, nextRecipes)
 	return normalized
 }
@@ -303,6 +321,11 @@ export async function toggleRecipeStatusById(recipeId) {
 	const current = await getRecipeById(recipeId)
 	const nextStatus = current.status === 'done' ? 'wishlist' : 'done'
 	const item = await updateRecipeStatus(recipeId, nextStatus)
+	return upsertRecipeInCache(item)
+}
+
+export async function setRecipePinnedById(recipeId, pinned) {
+	const item = await updateRecipePinned(recipeId, pinned)
 	return upsertRecipeInCache(item)
 }
 

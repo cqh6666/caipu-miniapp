@@ -31,6 +31,7 @@ type Recipe struct {
 	ParseError       string        `json:"parseError"`
 	ParseRequestedAt string        `json:"parseRequestedAt"`
 	ParseFinishedAt  string        `json:"parseFinishedAt"`
+	PinnedAt         string        `json:"pinnedAt"`
 	CreatedBy        int64         `json:"createdBy"`
 	UpdatedBy        int64         `json:"updatedBy"`
 	CreatedAt        string        `json:"createdAt"`
@@ -71,4 +72,8 @@ type updateRecipeRequest struct {
 
 type updateStatusRequest struct {
 	Status string `json:"status"`
+}
+
+type updatePinnedRequest struct {
+	Pinned bool `json:"pinned"`
 }

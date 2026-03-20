@@ -55,6 +55,14 @@ export function updateRecipeStatus(recipeId, status) {
 	}).then((data) => data?.recipe || null)
 }
 
+export function updateRecipePinned(recipeId, pinned) {
+	return request({
+		url: `/caipu-api/recipes/${recipeId}/pin`,
+		method: 'PATCH',
+		data: { pinned: !!pinned }
+	}).then((data) => data?.recipe || null)
+}
+
 export function deleteRecipe(recipeId) {
 	return request({
 		url: `/caipu-api/recipes/${recipeId}`,

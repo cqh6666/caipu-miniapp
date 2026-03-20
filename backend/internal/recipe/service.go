@@ -120,6 +120,7 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 
 	next.ID = current.ID
 	next.KitchenID = current.KitchenID
+	next.PinnedAt = current.PinnedAt
 	next.CreatedBy = current.CreatedBy
 	next.CreatedAt = current.CreatedAt
 	next.UpdatedBy = userID
@@ -209,6 +210,33 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID strin
 	current.Status = status
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
+	return current, nil
+}
+
+func (s *Service) UpdatePinned(ctx context.Context, userID int64, recipeID string, pinned bool) (Recipe, error) {
+	current, err := s.GetByID(ctx, userID, recipeID)
+	if err != nil {
+		return Recipe{}, err
+	}
+
+	currentPinned := strings.TrimSpace(current.PinnedAt) != ""
+	if currentPinned == pinned {
+		return current, nil
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	if err := s.repo.UpdatePinned(ctx, recipeID, current.KitchenID, pinned, userID, now); errors.Is(err, sql.ErrNoRows) {
+		return Recipe{}, common.ErrNotFound
+	} else if err != nil {
+		return Recipe{}, err
+	}
+
+	if pinned {
+		current.PinnedAt = now
+	} else {
+		current.PinnedAt = ""
+	}
+	current.UpdatedBy = userID
 	return current, nil
 }
 

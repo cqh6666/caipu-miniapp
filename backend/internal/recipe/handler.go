@@ -160,6 +160,36 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) UpdatePinned(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	recipeID := strings.TrimSpace(chi.URLParam(r, "recipeID"))
+	if recipeID == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "recipeID is required", http.StatusBadRequest))
+		return
+	}
+
+	var req updatePinnedRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	item, err := h.service.UpdatePinned(r.Context(), userID, recipeID, req.Pinned)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"recipe": item,
+	})
+}
+
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID, ok := common.CurrentUserID(r.Context())
 	if !ok {

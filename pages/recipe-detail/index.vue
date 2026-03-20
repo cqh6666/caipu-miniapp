@@ -37,7 +37,7 @@
 				</view>
 
 				<view class="detail-head">
-					<text class="detail-meta">{{ mealLabel }} · {{ statusLabel }}</text>
+					<text class="detail-meta">{{ detailMetaLine }}</text>
 					<text class="detail-title">{{ recipe.title }}</text>
 				</view>
 
@@ -125,6 +125,19 @@
 			<view class="detail-footer">
 				<view class="detail-footer__action detail-footer__action--ghost" @tap="confirmDeleteRecipe">
 					<text class="detail-footer__text detail-footer__text--danger">删除</text>
+				</view>
+				<view
+					class="detail-footer__action detail-footer__action--soft"
+					:class="{
+						'detail-footer__action--soft-active': isPinned,
+						'detail-footer__action--disabled': isPinSubmitting
+					}"
+					@tap="togglePinned"
+				>
+					<text
+						class="detail-footer__text"
+						:class="{ 'detail-footer__text--accent': isPinned }"
+					>{{ pinActionText }}</text>
 				</view>
 				<view class="detail-footer__action detail-footer__action--primary" @tap="openEditSheet">
 					<text class="detail-footer__text detail-footer__text--primary">编辑</text>
@@ -324,6 +337,7 @@ import {
 	mealTypeLabelMap,
 	mealTypeOptions,
 	reparseRecipeById,
+	setRecipePinnedById,
 	statusLabelMap,
 	statusOptions,
 	updateRecipeById
@@ -432,6 +446,7 @@ export default {
 			isSavingRecipe: false,
 			isDeletingRecipe: false,
 			isReparseSubmitting: false,
+			isPinSubmitting: false,
 			heroImageIndex: 0,
 			parsePollingTimer: null
 		}
@@ -442,6 +457,12 @@ export default {
 		},
 		statusLabel() {
 			return statusLabelMap[this.recipe?.status] || '想吃'
+		},
+		isPinned() {
+			return !!String(this.recipe?.pinnedAt || '').trim()
+		},
+		detailMetaLine() {
+			return this.isPinned ? `${this.mealLabel} · ${this.statusLabel} · 已置顶` : `${this.mealLabel} · ${this.statusLabel}`
 		},
 		parsedIngredients() {
 			return this.recipe?.parsedContent?.ingredients || []
@@ -500,6 +521,10 @@ export default {
 			if (!this.parseStatusValue) return '开始整理'
 			if (this.parseStatusValue === 'failed') return '再试一次'
 			return '重新整理'
+		},
+		pinActionText() {
+			if (this.isPinSubmitting) return '处理中...'
+			return this.isPinned ? '取消置顶' : '置顶'
 		},
 		canSaveEditDraft() {
 			return !!this.editDraft.title.trim()
@@ -576,7 +601,7 @@ export default {
 			this.parsePollingTimer = null
 		},
 		async refreshParseStatus() {
-			if (!this.recipeId || this.isLoadingRecipe || this.isSavingRecipe || this.isDeletingRecipe || this.isReparseSubmitting) {
+			if (!this.recipeId || this.isLoadingRecipe || this.isSavingRecipe || this.isDeletingRecipe || this.isReparseSubmitting || this.isPinSubmitting) {
 				return
 			}
 
@@ -793,6 +818,33 @@ export default {
 				})
 			} finally {
 				this.isReparseSubmitting = false
+				uni.hideLoading()
+			}
+		},
+		async togglePinned() {
+			if (!this.recipeId || !this.recipe || this.isPinSubmitting) return
+
+			const nextPinned = !this.isPinned
+			this.isPinSubmitting = true
+			uni.showLoading({
+				title: nextPinned ? '置顶中' : '更新中',
+				mask: true
+			})
+
+			try {
+				const recipe = await setRecipePinnedById(this.recipeId, nextPinned)
+				this.applyRecipe(recipe)
+				uni.showToast({
+					title: nextPinned ? '已置顶' : '已取消置顶',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '更新置顶失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isPinSubmitting = false
 				uni.hideLoading()
 			}
 		},
@@ -1275,6 +1327,20 @@ export default {
 		box-shadow: 0 12rpx 20rpx rgba(91, 74, 59, 0.16);
 	}
 
+	.detail-footer__action--soft {
+		background: #f3ede5;
+	}
+
+	.detail-footer__action--soft-active {
+		background: #f7efe2;
+		box-shadow: inset 0 0 0 1px rgba(186, 145, 81, 0.16);
+	}
+
+	.detail-footer__action--disabled {
+		opacity: 0.62;
+		pointer-events: none;
+	}
+
 	.detail-footer__text {
 		font-size: 28rpx;
 		font-weight: 600;
@@ -1287,6 +1353,10 @@ export default {
 
 	.detail-footer__text--primary {
 		color: #ffffff;
+	}
+
+	.detail-footer__text--accent {
+		color: #9a7343;
 	}
 
 	.editor-sheet {

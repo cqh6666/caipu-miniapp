@@ -77,7 +77,10 @@
 						v-for="card in recipeCards"
 						:key="card.id"
 						class="recipe-card"
-						:class="{ 'recipe-card--active': selectedRecipeId === card.id }"
+						:class="{
+							'recipe-card--active': selectedRecipeId === card.id,
+							'recipe-card--pinned': card.isPinned
+						}"
 						@tap="openRecipeDetail(card.id)"
 					>
 						<view class="recipe-card__media" :class="{ 'recipe-card__media--empty': !card.cover }">
@@ -98,7 +101,12 @@
 						<view class="recipe-card__body">
 							<view class="recipe-card__top">
 								<view class="recipe-card__title-wrap">
-									<text class="recipe-card__title">{{ card.title }}</text>
+									<view class="recipe-card__title-row">
+										<view v-if="card.isPinned" class="recipe-card__pin-badge">
+											<text class="recipe-card__pin-badge-text">置顶</text>
+										</view>
+										<text class="recipe-card__title">{{ card.title }}</text>
+									</view>
 								</view>
 								<view
 									class="recipe-switch"
@@ -908,6 +916,7 @@ function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	return {
 		...recipe,
 		cover: cachedCoverMap[recipe.id] || remoteCover,
+		isPinned: !!String(recipe.pinnedAt || '').trim(),
 		imageCount: images.length,
 		sourceBadge: detectRecipeSource(recipe),
 		placeholderIcon: pickRecipePlaceholderIcon(recipe),
@@ -2855,6 +2864,11 @@ export default {
 		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.06);
 	}
 
+	.recipe-card--pinned {
+		border-color: rgba(186, 145, 81, 0.16);
+		box-shadow: 0 10rpx 24rpx rgba(111, 85, 45, 0.08);
+	}
+
 	.recipe-card__media {
 		position: relative;
 		width: 126rpx;
@@ -2969,7 +2983,33 @@ export default {
 		min-width: 0;
 	}
 
+	.recipe-card__title-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 10rpx;
+		min-width: 0;
+	}
+
+	.recipe-card__pin-badge {
+		flex-shrink: 0;
+		margin-top: 4rpx;
+		padding: 5rpx 10rpx;
+		border-radius: 999rpx;
+		background: rgba(201, 157, 91, 0.13);
+		border: 1px solid rgba(201, 157, 91, 0.18);
+	}
+
+	.recipe-card__pin-badge-text {
+		display: block;
+		font-size: 18rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #9a7343;
+	}
+
 	.recipe-card__title {
+		flex: 1;
+		min-width: 0;
 		display: -webkit-box;
 		font-size: 30rpx;
 		font-weight: 700;
