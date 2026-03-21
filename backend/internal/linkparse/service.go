@@ -1030,6 +1030,10 @@ func buildSummaryPromptRuleText() string {
 	return "summary 字段用于详情页和美食库列表，必须写成“关键动作 + 结果”的一句中文短句，限制在 24 个汉字以内；不要重复标题里的菜名，不要写平台、图片数量、营销词或不确定信息。示例：番茄牛腩 -> 先焯水去腥，再慢炖至软烂；鸡蛋炸酱面 -> 先炒酱提香，再快速拌面出锅；港式干炒牛河 -> 猛火快炒，牛河更香更入味。"
 }
 
+func buildIngredientPromptRuleText() string {
+	return "ingredient 只写 2 到 4 个最核心主料，用顿号连接；mainIngredients 只放主菜体或主食材及数量，不要把盐、生抽、料酒这类调味放进去；secondaryIngredients 统一承载配菜、香料和调味，顺序上先写配菜，再写调味，不要把土豆、洋葱、胡萝卜、青椒、香菇和盐、生抽、蚝油、料酒交错混排。"
+}
+
 func normalizeRecipeSummary(value string) string {
 	summary := strings.TrimSpace(value)
 	summary = strings.Trim(summary, "。；;、!！?？\"'")
@@ -1059,7 +1063,7 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。ingredient 只写 2 到 4 个主料，用顿号连接；mainIngredients 写主料及数量；secondaryIngredients 写辅料、香料和调味料；steps 返回 3 到 6 步，每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildSummaryPromptRuleText(),
+				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。steps 返回 3 到 6 步，每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildIngredientPromptRuleText() + " " + buildSummaryPromptRuleText(),
 			},
 			{
 				Role:    "user",
@@ -1154,6 +1158,7 @@ func buildAISummaryPrompt(result BilibiliParseResult) string {
 		builder.WriteString("简介: " + result.Description + "\n")
 	}
 	builder.WriteString("摘要规则: " + buildSummaryPromptRuleText() + "\n")
+	builder.WriteString("食材分组规则: " + buildIngredientPromptRuleText() + "\n")
 	builder.WriteString("链接: " + result.Link + "\n")
 	builder.WriteString("字幕语言: " + firstNonEmpty(result.SubtitleLanguage, "未知") + "\n")
 	if truncated {

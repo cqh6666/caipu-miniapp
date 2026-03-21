@@ -2,6 +2,7 @@ package linkparse
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -119,6 +120,18 @@ func TestSplitIngredientLinesKeepsMultiplePrimaryIngredients(t *testing.T) {
 	}
 	if got, want := len(secondaryIngredients), 2; got != want {
 		t.Fatalf("len(secondaryIngredients) = %d, want %d (%#v)", got, want, secondaryIngredients)
+	}
+}
+
+func TestBuildIngredientPromptRuleTextMentionsSupportingThenSeasoning(t *testing.T) {
+	t.Parallel()
+
+	rule := buildIngredientPromptRuleText()
+	if !strings.Contains(rule, "先写配菜，再写调味") {
+		t.Fatalf("ingredient rule should mention ordering, got %q", rule)
+	}
+	if !strings.Contains(rule, "mainIngredients 只放主菜体或主食材") {
+		t.Fatalf("ingredient rule should constrain main ingredients, got %q", rule)
 	}
 }
 

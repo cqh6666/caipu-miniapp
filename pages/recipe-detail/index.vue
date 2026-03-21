@@ -83,11 +83,25 @@
 						</view>
 					</view>
 
-					<view v-if="parsedSecondaryIngredients.length" class="parsed-section">
-						<text class="parsed-section__title">辅料</text>
+					<view v-if="parsedSupportingIngredients.length" class="parsed-section">
+						<text class="parsed-section__title">配菜</text>
 						<view
-							v-for="(ingredient, index) in parsedSecondaryIngredients"
-							:key="`secondary-ingredient-${index}`"
+							v-for="(ingredient, index) in parsedSupportingIngredients"
+							:key="`supporting-ingredient-${index}`"
+							class="parsed-item"
+						>
+							<view class="parsed-item__index">
+								<text class="parsed-item__index-text">{{ index + 1 }}</text>
+							</view>
+							<text class="parsed-item__text">{{ ingredient }}</text>
+						</view>
+					</view>
+
+					<view v-if="parsedSeasonings.length" class="parsed-section">
+						<text class="parsed-section__title">调味</text>
+						<view
+							v-for="(ingredient, index) in parsedSeasonings"
+							:key="`seasoning-ingredient-${index}`"
 							class="parsed-item"
 						>
 							<view class="parsed-item__index">
@@ -486,6 +500,25 @@ const splitIngredientLines = (lines = []) => {
 		secondaryIngredients
 	}
 }
+const splitSecondaryIngredientLines = (lines = []) => {
+	const cleaned = normalizeTextList(lines)
+	const supportingIngredients = []
+	const seasonings = []
+
+	cleaned.forEach((line) => {
+		const label = ingredientLabelFromLine(line)
+		if (secondaryIngredientPattern.test(label) && !secondaryIngredientExceptionPattern.test(label)) {
+			seasonings.push(line)
+			return
+		}
+		supportingIngredients.push(line)
+	})
+
+	return {
+		supportingIngredients,
+		seasonings
+	}
+}
 const normalizeParsedContentView = (parsedContent = {}) => {
 	const mainIngredients = normalizeTextList(parsedContent.mainIngredients)
 	const secondaryIngredients = normalizeTextList(parsedContent.secondaryIngredients)
@@ -494,10 +527,13 @@ const normalizeParsedContentView = (parsedContent = {}) => {
 		mainIngredients.length || secondaryIngredients.length
 			? { mainIngredients, secondaryIngredients }
 			: splitIngredientLines(legacyIngredients)
+	const secondaryGroups = splitSecondaryIngredientLines(groupedIngredients.secondaryIngredients)
 
 	return {
 		mainIngredients: groupedIngredients.mainIngredients,
 		secondaryIngredients: groupedIngredients.secondaryIngredients,
+		supportingIngredients: secondaryGroups.supportingIngredients,
+		seasonings: secondaryGroups.seasonings,
 		ingredients: [...groupedIngredients.mainIngredients, ...groupedIngredients.secondaryIngredients],
 		steps: normalizeParsedSteps(parsedContent.steps)
 	}
@@ -601,15 +637,21 @@ export default {
 		detailMetaLine() {
 			return this.isPinned ? `${this.mealLabel} · ${this.statusLabel} · 已置顶` : `${this.mealLabel} · ${this.statusLabel}`
 		},
-		parsedContentView() {
-			return normalizeParsedContentView(this.recipe?.parsedContent || {})
-		},
-		parsedMainIngredients() {
-			return this.parsedContentView.mainIngredients
-		},
-		parsedSecondaryIngredients() {
-			return this.parsedContentView.secondaryIngredients
-		},
+			parsedContentView() {
+				return normalizeParsedContentView(this.recipe?.parsedContent || {})
+			},
+			parsedMainIngredients() {
+				return this.parsedContentView.mainIngredients
+			},
+			parsedSupportingIngredients() {
+				return this.parsedContentView.supportingIngredients
+			},
+			parsedSeasonings() {
+				return this.parsedContentView.seasonings
+			},
+			parsedSecondaryIngredients() {
+				return this.parsedContentView.secondaryIngredients
+			},
 		parsedSteps() {
 			return this.parsedContentView.steps
 		},
