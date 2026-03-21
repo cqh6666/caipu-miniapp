@@ -105,6 +105,7 @@
 - 后端 `WECHAT_APP_ID` 必须和 `manifest.json` 里的 `mp-weixin.appid` 一致
 - 后端补齐 `WECHAT_APP_SECRET`
 - 更完整的项目专用清单见 `docs/wechat-login-checklist.md`
+- 菜名和步骤生成 `nano-banana-pro` 手绘流程图的调用说明见 `docs/nano-banana-recipe-flowchart.md`
 
 ## 交互说明
 
