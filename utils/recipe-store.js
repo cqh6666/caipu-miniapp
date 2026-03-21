@@ -39,11 +39,159 @@ function getRecipeStorageKey(kitchenId) {
 	return `${RECIPE_STORAGE_PREFIX}:${kitchenId}`
 }
 
-function cloneParsedContent(parsedContent = {}) {
-	const ingredients = Array.isArray(parsedContent.ingredients) ? parsedContent.ingredients.filter(Boolean) : []
-	const steps = Array.isArray(parsedContent.steps) ? parsedContent.steps.filter(Boolean) : []
+const secondaryIngredientPattern = /(常用配菜|基础调味|常用调味料|调味|葱|姜|蒜|香叶|桂皮|八角|花椒|胡椒|盐|糖|冰糖|白糖|红糖|生抽|老抽|蚝油|料酒|鸡精|味精|醋|陈醋|米醋|香醋|豆瓣酱|辣椒|小米椒|淀粉|清水|热水|食用油|香油|芝麻油|花椒粉|辣椒粉|五香粉|十三香|孜然|芝麻|香菜|葱花)/
+const secondaryIngredientExceptionPattern = /^(洋葱|红葱头|葱头)/
+const ingredientSuffixPattern = /\s*(?:\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)|半个|半颗|半根|半头|适量|少许)$/
+
+function normalizeTextList(items = []) {
+	const source = Array.isArray(items) ? items : [items]
+	const normalized = []
+	const seen = new Set()
+
+	source.forEach((item) => {
+		const value = String(item || '').trim()
+		if (!value || seen.has(value)) return
+		seen.add(value)
+		normalized.push(value)
+	})
+
+	return normalized
+}
+
+function inferStepTitle(detail = '', index = 0) {
+	const text = String(detail || '').trim()
+	if (!text) return ''
+	if (text.includes('焯水') || text.includes('汆水')) {
+		return text.includes('腥') || text.includes('浮沫') ? '焯水去腥' : '焯水备用'
+	}
+	if (text.includes('腌')) return '腌制入味'
+	if (text.includes('糖色') || text.includes('冰糖')) return '炒糖上色'
+	if (text.includes('爆香') || text.includes('炒香')) return '炒香底料'
+	if (text.includes('切') || text.includes('改刀')) return '切配备料'
+	if (text.includes('收汁')) return '收汁出锅'
+	if (text.includes('炖') || text.includes('焖')) return '小火慢炖'
+	if (text.includes('蒸')) return '上锅蒸熟'
+	if (text.includes('炸')) return '炸至金黄'
+	if (text.includes('煎')) return '煎香上色'
+	if (text.includes('烤')) return '烤至上色'
+	if (text.includes('煮')) return '煮至入味'
+	if (text.includes('拌')) return '拌匀调味'
+	if (text.includes('炒') || text.includes('翻炒')) return '翻炒入味'
+	if (text.includes('出锅')) return '调味出锅'
+	return index === 0 ? '处理食材' : '继续烹饪'
+}
+
+function normalizeParsedSteps(steps = []) {
+	const source = Array.isArray(steps) ? steps : []
+	const normalized = []
+	const seen = new Set()
+
+	source.forEach((step) => {
+		const title = typeof step === 'object' && step !== null ? String(step.title || '').trim() : ''
+		const detail =
+			typeof step === 'string'
+				? step.trim()
+				: String(step?.detail || step?.text || '').trim()
+		const nextDetail = detail || title
+		const nextTitle = title || inferStepTitle(nextDetail, normalized.length)
+		if (!nextDetail) return
+		const key = `${nextTitle}\u0000${nextDetail}`
+		if (seen.has(key)) return
+		seen.add(key)
+		normalized.push({
+			title: nextTitle,
+			detail: nextDetail
+		})
+	})
+
+	return normalized
+}
+
+function ingredientLabelFromLine(line = '') {
+	return String(line || '').trim().replace(ingredientSuffixPattern, '').trim()
+}
+
+function splitIngredientLines(lines = []) {
+	const cleaned = normalizeTextList(lines)
+	if (!cleaned.length) {
+		return {
+			mainIngredients: [],
+			secondaryIngredients: []
+		}
+	}
+
+	const mainIngredients = []
+	const secondaryIngredients = []
+	cleaned.forEach((line) => {
+		const label = ingredientLabelFromLine(line)
+		if (secondaryIngredientPattern.test(label) && !secondaryIngredientExceptionPattern.test(label)) {
+			secondaryIngredients.push(line)
+			return
+		}
+		mainIngredients.push(line)
+	})
+
+	if (!mainIngredients.length) {
+		return {
+			mainIngredients: cleaned.slice(0, 3),
+			secondaryIngredients: cleaned.slice(3)
+		}
+	}
+
 	return {
-		ingredients,
+		mainIngredients,
+		secondaryIngredients
+	}
+}
+
+function stepDetailsToList(steps = []) {
+	return normalizeParsedSteps(steps).map((step) => step.detail)
+}
+
+function hasParsedIngredientOverride(parsedContent = {}) {
+	return ['mainIngredients', 'secondaryIngredients', 'ingredients'].some((key) =>
+		Object.prototype.hasOwnProperty.call(parsedContent || {}, key)
+	)
+}
+
+function hasParsedStepOverride(parsedContent = {}) {
+	return Object.prototype.hasOwnProperty.call(parsedContent || {}, 'steps')
+}
+
+function mergeUpdatedParsedContent(currentParsedContent = {}, nextParsedContent = {}) {
+	const current = cloneParsedContent(currentParsedContent)
+	const next = cloneParsedContent(nextParsedContent)
+	const preserveIngredients =
+		!hasParsedIngredientOverride(nextParsedContent) ||
+		stringSlicesEqual(next.ingredients, current.ingredients)
+	const preserveSteps =
+		!hasParsedStepOverride(nextParsedContent) ||
+		stringSlicesEqual(stepDetailsToList(next.steps), stepDetailsToList(current.steps))
+	const mainIngredients = preserveIngredients ? current.mainIngredients : next.mainIngredients
+	const secondaryIngredients = preserveIngredients ? current.secondaryIngredients : next.secondaryIngredients
+	const steps = preserveSteps ? current.steps : next.steps
+
+	return {
+		mainIngredients,
+		secondaryIngredients,
+		ingredients: [...mainIngredients, ...secondaryIngredients],
+		steps
+	}
+}
+
+function cloneParsedContent(parsedContent = {}) {
+	const mainIngredients = normalizeTextList(parsedContent.mainIngredients)
+	const secondaryIngredients = normalizeTextList(parsedContent.secondaryIngredients)
+	const legacyIngredients = normalizeTextList(parsedContent.ingredients)
+	const groupedIngredients =
+		mainIngredients.length || secondaryIngredients.length
+			? { mainIngredients, secondaryIngredients }
+			: splitIngredientLines(legacyIngredients)
+	const steps = normalizeParsedSteps(parsedContent.steps)
+	return {
+		mainIngredients: groupedIngredients.mainIngredients,
+		secondaryIngredients: groupedIngredients.secondaryIngredients,
+		ingredients: [...groupedIngredients.mainIngredients, ...groupedIngredients.secondaryIngredients],
 		steps
 	}
 }
@@ -86,15 +234,22 @@ export function buildFallbackParsedContent(recipe = {}) {
 	const mainIngredient = (recipe.ingredient || recipe.title || '主食材').trim()
 
 	return {
+		mainIngredients: [
+			`${mainIngredient} 1份`,
+		],
+		secondaryIngredients: [
+			`${mealLabel}常用配菜 适量`,
+			'基础调味 适量'
+		],
 		ingredients: [
 			`${mainIngredient} 1份`,
 			`${mealLabel}常用配菜 适量`,
 			'基础调味 适量'
 		],
 		steps: [
-			'先整理这道菜的核心做法。',
-			'按自己的口味调整成容易复刻的版本。',
-			'做完以后补充口感和火候记录。'
+			{ title: '整理做法', detail: '先整理这道菜的核心做法。' },
+			{ title: '调整口味', detail: '按自己的口味调整成容易复刻的版本。' },
+			{ title: '补充记录', detail: '做完以后补充口感和火候记录。' }
 		]
 	}
 }
@@ -104,12 +259,18 @@ function stringSlicesEqual(left = [], right = []) {
 	return left.every((item, index) => item === right[index])
 }
 
+function stepSlicesEqual(left = [], right = []) {
+	if (left.length !== right.length) return false
+	return left.every((item, index) => item.title === right[index]?.title && item.detail === right[index]?.detail)
+}
+
 function isFallbackParsedContent(recipe = {}, parsedContent = {}) {
 	const current = cloneParsedContent(parsedContent)
 	const fallback = buildFallbackParsedContent(recipe)
 	return (
-		stringSlicesEqual(current.ingredients, fallback.ingredients) &&
-		stringSlicesEqual(current.steps, fallback.steps)
+		stringSlicesEqual(current.mainIngredients, fallback.mainIngredients) &&
+		stringSlicesEqual(current.secondaryIngredients, fallback.secondaryIngredients) &&
+		stepSlicesEqual(current.steps, fallback.steps)
 	)
 }
 
@@ -159,8 +320,12 @@ export function normalizeRecipe(recipe = {}) {
 function buildRecipePayload(recipe = {}) {
 	const normalized = normalizeRecipe(recipe)
 	const parsedContent = isFallbackParsedContent(normalized, normalized.parsedContent)
-		? { ingredients: [], steps: [] }
-		: normalized.parsedContent
+		? { mainIngredients: [], secondaryIngredients: [], steps: [] }
+		: {
+			mainIngredients: normalized.parsedContent.mainIngredients,
+			secondaryIngredients: normalized.parsedContent.secondaryIngredients,
+			steps: normalized.parsedContent.steps
+		}
 
 	return {
 		title: normalized.title,
@@ -308,9 +473,13 @@ export async function updateRecipeById(recipeId, updates = {}) {
 			? [updates.image || updates.imageUrl || '']
 			: current.imageUrls
 	const imageUrls = await ensureUploadedImages(normalizeImageList(imageSources))
+	const parsedContent = Object.prototype.hasOwnProperty.call(updates, 'parsedContent')
+		? mergeUpdatedParsedContent(current.parsedContent, updates.parsedContent || {})
+		: current.parsedContent
 	const payload = buildRecipePayload({
 		...current,
 		...updates,
+		parsedContent,
 		images: imageUrls
 	})
 	const item = await updateRecipe(recipeId, payload)

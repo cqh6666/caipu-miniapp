@@ -750,7 +750,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 	if strings.TrimSpace(item.ImageURL) == "" {
 		item.ImageURL = firstImageURL(imageURLs)
 	}
-	item.ParsedContent = parsedContent
+	item.ParsedContent = normalizeParsedContent(parsedContent, item.MealType, item.Title, item.Ingredient)
 	return item, nil
 }
 
@@ -833,12 +833,29 @@ func bumpKitchenUpdatedAt(ctx context.Context, tx *sql.Tx, kitchenID int64, upda
 }
 
 func marshalParsedContent(content ParsedContent) (string, string, error) {
-	ingredients, err := json.Marshal(content.Ingredients)
+	mainIngredients := cleanLines(content.MainIngredients)
+	secondaryIngredients := cleanLines(content.SecondaryIngredients)
+	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
+		mainIngredients, secondaryIngredients = splitIngredientLines(cleanLines(content.legacyIngredients))
+	}
+
+	ingredients, err := json.Marshal(struct {
+		MainIngredients      []string `json:"mainIngredients,omitempty"`
+		SecondaryIngredients []string `json:"secondaryIngredients,omitempty"`
+	}{
+		MainIngredients:      mainIngredients,
+		SecondaryIngredients: secondaryIngredients,
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("marshal ingredients: %w", err)
 	}
 
-	steps, err := json.Marshal(content.Steps)
+	stepsValue := cleanParsedSteps(content.Steps)
+	if len(stepsValue) == 0 {
+		stepsValue = buildParsedSteps(cleanLines(content.legacySteps))
+	}
+
+	steps, err := json.Marshal(stepsValue)
 	if err != nil {
 		return "", "", fmt.Errorf("marshal steps: %w", err)
 	}
@@ -873,20 +890,27 @@ func unmarshalImageURLs(imageURLsJSON string) ([]string, error) {
 }
 
 func unmarshalParsedContent(ingredientsJSON, stepsJSON string) (ParsedContent, error) {
-	content := ParsedContent{
-		Ingredients: []string{},
-		Steps:       []string{},
-	}
-
+	content := ParsedContent{}
 	if strings.TrimSpace(ingredientsJSON) != "" {
-		if err := json.Unmarshal([]byte(ingredientsJSON), &content.Ingredients); err != nil {
-			return ParsedContent{}, fmt.Errorf("unmarshal ingredients: %w", err)
+		var grouped struct {
+			MainIngredients      []string `json:"mainIngredients"`
+			SecondaryIngredients []string `json:"secondaryIngredients"`
+		}
+		if err := json.Unmarshal([]byte(ingredientsJSON), &grouped); err == nil {
+			content.MainIngredients = grouped.MainIngredients
+			content.SecondaryIngredients = grouped.SecondaryIngredients
+		} else {
+			if err := json.Unmarshal([]byte(ingredientsJSON), &content.legacyIngredients); err != nil {
+				return ParsedContent{}, fmt.Errorf("unmarshal ingredients: %w", err)
+			}
 		}
 	}
 
 	if strings.TrimSpace(stepsJSON) != "" {
 		if err := json.Unmarshal([]byte(stepsJSON), &content.Steps); err != nil {
-			return ParsedContent{}, fmt.Errorf("unmarshal steps: %w", err)
+			if err := json.Unmarshal([]byte(stepsJSON), &content.legacySteps); err != nil {
+				return ParsedContent{}, fmt.Errorf("unmarshal steps: %w", err)
+			}
 		}
 	}
 

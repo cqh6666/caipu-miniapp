@@ -1,8 +1,93 @@
 package recipe
 
+import (
+	"encoding/json"
+	"strings"
+)
+
+type ParsedStep struct {
+	Title  string `json:"title,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
 type ParsedContent struct {
-	Ingredients []string `json:"ingredients"`
-	Steps       []string `json:"steps"`
+	MainIngredients      []string     `json:"mainIngredients,omitempty"`
+	SecondaryIngredients []string     `json:"secondaryIngredients,omitempty"`
+	Steps                []ParsedStep `json:"steps,omitempty"`
+
+	legacyIngredients []string
+	legacySteps       []string
+}
+
+func (c ParsedContent) MarshalJSON() ([]byte, error) {
+	type payload struct {
+		MainIngredients      []string     `json:"mainIngredients,omitempty"`
+		SecondaryIngredients []string     `json:"secondaryIngredients,omitempty"`
+		Steps                []ParsedStep `json:"steps,omitempty"`
+	}
+
+	return json.Marshal(payload{
+		MainIngredients:      c.MainIngredients,
+		SecondaryIngredients: c.SecondaryIngredients,
+		Steps:                c.Steps,
+	})
+}
+
+func (c *ParsedContent) UnmarshalJSON(data []byte) error {
+	type payload struct {
+		MainIngredients      []string          `json:"mainIngredients"`
+		SecondaryIngredients []string          `json:"secondaryIngredients"`
+		Ingredients          []string          `json:"ingredients"`
+		Steps                json.RawMessage   `json:"steps"`
+	}
+
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		*c = ParsedContent{}
+		return nil
+	}
+
+	var raw payload
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	structuredSteps, legacySteps, err := parseParsedContentSteps(raw.Steps)
+	if err != nil {
+		return err
+	}
+
+	*c = ParsedContent{
+		MainIngredients:      raw.MainIngredients,
+		SecondaryIngredients: raw.SecondaryIngredients,
+		Steps:                structuredSteps,
+		legacyIngredients:    raw.Ingredients,
+		legacySteps:          legacySteps,
+	}
+	return nil
+}
+
+func parseParsedContentSteps(data json.RawMessage) ([]ParsedStep, []string, error) {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		return nil, nil, nil
+	}
+
+	var structured []ParsedStep
+	if err := json.Unmarshal(data, &structured); err == nil {
+		return structured, nil, nil
+	}
+
+	var legacy []string
+	if err := json.Unmarshal(data, &legacy); err == nil {
+		return nil, legacy, nil
+	}
+
+	var structuredErr error
+	if err := json.Unmarshal(data, &structured); err != nil {
+		structuredErr = err
+	}
+	return nil, nil, structuredErr
 }
 
 const (

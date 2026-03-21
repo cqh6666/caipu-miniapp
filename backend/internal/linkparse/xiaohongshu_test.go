@@ -100,11 +100,17 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 	if !strings.Contains(result.RecipeDraft.Ingredient, "番茄") {
 		t.Fatalf("RecipeDraft.Ingredient = %q", result.RecipeDraft.Ingredient)
 	}
-	if result.RecipeDraft.Summary != "" {
-		t.Fatalf("RecipeDraft.Summary = %q, want empty without AI summary", result.RecipeDraft.Summary)
+	if result.RecipeDraft.Summary == "" {
+		t.Fatal("RecipeDraft.Summary should not be empty without AI summary")
 	}
 	if len(result.RecipeDraft.ParsedContent.Steps) == 0 {
 		t.Fatalf("RecipeDraft steps are empty: %#v", result.RecipeDraft)
+	}
+	if len(result.RecipeDraft.ParsedContent.MainIngredients) == 0 {
+		t.Fatalf("RecipeDraft main ingredients are empty: %#v", result.RecipeDraft)
+	}
+	if result.RecipeDraft.ParsedContent.Steps[0].Title == "" || result.RecipeDraft.ParsedContent.Steps[0].Detail == "" {
+		t.Fatalf("RecipeDraft first step should contain title and detail: %#v", result.RecipeDraft.ParsedContent.Steps[0])
 	}
 	if got, want := len(result.RecipeDraft.ImageURLs), 1; got != want {
 		t.Fatalf("len(RecipeDraft.ImageURLs) = %d, want %d", got, want)

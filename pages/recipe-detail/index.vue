@@ -39,36 +39,7 @@
 				<view class="detail-head">
 					<text class="detail-meta">{{ detailMetaLine }}</text>
 					<text class="detail-title">{{ recipe.title }}</text>
-				</view>
-
-				<view class="detail-card">
-					<view class="detail-card__header">
-						<view class="detail-card__heading">
-							<text class="detail-card__title">来源链接</text>
-						</view>
-						<view v-if="recipe.link" class="detail-card__action" @tap="copyLink">
-							<text class="detail-card__action-text">复制</text>
-						</view>
-					</view>
-					<view v-if="recipe.link" class="link-panel">
-						<view class="detail-link-box">
-							<text class="detail-link-text" selectable>{{ recipe.link }}</text>
-						</view>
-					</view>
-					<view
-						v-if="parseStatusMeta"
-						class="detail-parse"
-						:class="`detail-parse--${parseStatusMeta.tone}`"
-					>
-						<view class="detail-parse__body">
-							<view class="detail-parse__badge">
-								<text class="detail-parse__badge-text">{{ parseStatusMeta.label }}</text>
-							</view>
-							<text class="detail-parse__desc">{{ parseStatusDescription }}</text>
-							<text v-if="parseStatusSourceLabel" class="detail-parse__meta">{{ parseStatusSourceLabel }}</text>
-						</view>
-					</view>
-					<text v-else class="detail-empty">暂无链接。</text>
+					<text v-if="recipe.summary" class="detail-summary">{{ recipe.summary }}</text>
 				</view>
 
 				<view class="detail-card">
@@ -84,11 +55,39 @@
 						</view>
 					</view>
 
+					<view
+						v-if="parseStatusMeta"
+						class="detail-parse"
+						:class="`detail-parse--${parseStatusMeta.tone}`"
+					>
+						<view class="detail-parse__body">
+							<view class="detail-parse__badge">
+								<text class="detail-parse__badge-text">{{ parseStatusMeta.label }}</text>
+							</view>
+							<text class="detail-parse__desc">{{ parseStatusDescription }}</text>
+							<text v-if="parseStatusSourceLabel" class="detail-parse__meta">{{ parseStatusSourceLabel }}</text>
+						</view>
+					</view>
+
 					<view class="parsed-section">
-						<text class="parsed-section__title">需要的食材</text>
+						<text class="parsed-section__title">主料</text>
 						<view
-							v-for="(ingredient, index) in parsedIngredients"
-							:key="`ingredient-${index}`"
+							v-for="(ingredient, index) in parsedMainIngredients"
+							:key="`main-ingredient-${index}`"
+							class="parsed-item"
+						>
+							<view class="parsed-item__index">
+								<text class="parsed-item__index-text">{{ index + 1 }}</text>
+							</view>
+							<text class="parsed-item__text">{{ ingredient }}</text>
+						</view>
+					</view>
+
+					<view v-if="parsedSecondaryIngredients.length" class="parsed-section">
+						<text class="parsed-section__title">辅料</text>
+						<view
+							v-for="(ingredient, index) in parsedSecondaryIngredients"
+							:key="`secondary-ingredient-${index}`"
 							class="parsed-item"
 						>
 							<view class="parsed-item__index">
@@ -108,9 +107,29 @@
 							<view class="step-item__index">
 								<text class="step-item__index-text">Step {{ index + 1 }}</text>
 							</view>
-							<text class="step-item__text">{{ step }}</text>
+							<view class="step-item__body">
+								<text class="step-item__title">{{ step.title }}</text>
+								<text class="step-item__text">{{ step.detail }}</text>
+							</view>
 						</view>
 					</view>
+				</view>
+
+				<view class="detail-card">
+					<view class="detail-card__header">
+						<view class="detail-card__heading">
+							<text class="detail-card__title">来源链接</text>
+						</view>
+						<view v-if="recipe.link" class="detail-card__action" @tap="copyLink">
+							<text class="detail-card__action-text">复制</text>
+						</view>
+					</view>
+					<view v-if="recipe.link" class="link-panel">
+						<view class="detail-link-box">
+							<text class="detail-link-text" selectable>{{ recipe.link }}</text>
+						</view>
+					</view>
+					<text v-else class="detail-empty">暂无链接。</text>
 				</view>
 
 				<view class="detail-card detail-card--note">
@@ -362,10 +381,128 @@ const textToList = (text = '') =>
 		.split('\n')
 		.map((item) => item.trim())
 		.filter(Boolean)
+const secondaryIngredientPattern = /(常用配菜|基础调味|常用调味料|调味|葱|姜|蒜|香叶|桂皮|八角|花椒|胡椒|盐|糖|冰糖|白糖|红糖|生抽|老抽|蚝油|料酒|鸡精|味精|醋|陈醋|米醋|香醋|豆瓣酱|辣椒|小米椒|淀粉|清水|热水|食用油|香油|芝麻油|花椒粉|辣椒粉|五香粉|十三香|孜然|芝麻|香菜|葱花)/
+const secondaryIngredientExceptionPattern = /^(洋葱|红葱头|葱头)/
+const ingredientSuffixPattern = /\s*(?:\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)|半个|半颗|半根|半头|适量|少许)$/
 const stringSlicesEqual = (left = [], right = []) => {
 	if (left.length !== right.length) return false
 	return left.every((item, index) => item === right[index])
 }
+const stepSlicesEqual = (left = [], right = []) => {
+	if (left.length !== right.length) return false
+	return left.every((item, index) => item.title === right[index]?.title && item.detail === right[index]?.detail)
+}
+const normalizeTextList = (items = []) => {
+	const source = Array.isArray(items) ? items : [items]
+	const normalized = []
+	const seen = new Set()
+
+	source.forEach((item) => {
+		const value = String(item || '').trim()
+		if (!value || seen.has(value)) return
+		seen.add(value)
+		normalized.push(value)
+	})
+
+	return normalized
+}
+const inferStepTitle = (detail = '', index = 0) => {
+	const text = String(detail || '').trim()
+	if (!text) return ''
+	if (text.includes('焯水') || text.includes('汆水')) {
+		return text.includes('腥') || text.includes('浮沫') ? '焯水去腥' : '焯水备用'
+	}
+	if (text.includes('腌')) return '腌制入味'
+	if (text.includes('糖色') || text.includes('冰糖')) return '炒糖上色'
+	if (text.includes('爆香') || text.includes('炒香')) return '炒香底料'
+	if (text.includes('切') || text.includes('改刀')) return '切配备料'
+	if (text.includes('收汁')) return '收汁出锅'
+	if (text.includes('炖') || text.includes('焖')) return '小火慢炖'
+	if (text.includes('蒸')) return '上锅蒸熟'
+	if (text.includes('炸')) return '炸至金黄'
+	if (text.includes('煎')) return '煎香上色'
+	if (text.includes('烤')) return '烤至上色'
+	if (text.includes('煮')) return '煮至入味'
+	if (text.includes('拌')) return '拌匀调味'
+	if (text.includes('炒') || text.includes('翻炒')) return '翻炒入味'
+	if (text.includes('出锅')) return '调味出锅'
+	return index === 0 ? '处理食材' : '继续烹饪'
+}
+const normalizeParsedSteps = (steps = []) => {
+	const source = Array.isArray(steps) ? steps : []
+	const normalized = []
+	const seen = new Set()
+
+	source.forEach((step) => {
+		const title = typeof step === 'object' && step !== null ? String(step.title || '').trim() : ''
+		const detail =
+			typeof step === 'string'
+				? step.trim()
+				: String(step?.detail || step?.text || '').trim()
+		const nextDetail = detail || title
+		const nextTitle = title || inferStepTitle(nextDetail, normalized.length)
+		if (!nextDetail) return
+		const key = `${nextTitle}\u0000${nextDetail}`
+		if (seen.has(key)) return
+		seen.add(key)
+		normalized.push({
+			title: nextTitle,
+			detail: nextDetail
+		})
+	})
+
+	return normalized
+}
+const ingredientLabelFromLine = (line = '') => String(line || '').trim().replace(ingredientSuffixPattern, '').trim()
+const splitIngredientLines = (lines = []) => {
+	const cleaned = normalizeTextList(lines)
+	if (!cleaned.length) {
+		return {
+			mainIngredients: [],
+			secondaryIngredients: []
+		}
+	}
+
+	const mainIngredients = []
+	const secondaryIngredients = []
+	cleaned.forEach((line) => {
+		const label = ingredientLabelFromLine(line)
+		if (secondaryIngredientPattern.test(label) && !secondaryIngredientExceptionPattern.test(label)) {
+			secondaryIngredients.push(line)
+			return
+		}
+		mainIngredients.push(line)
+	})
+
+	if (!mainIngredients.length) {
+		return {
+			mainIngredients: cleaned.slice(0, 3),
+			secondaryIngredients: cleaned.slice(3)
+		}
+	}
+
+	return {
+		mainIngredients,
+		secondaryIngredients
+	}
+}
+const normalizeParsedContentView = (parsedContent = {}) => {
+	const mainIngredients = normalizeTextList(parsedContent.mainIngredients)
+	const secondaryIngredients = normalizeTextList(parsedContent.secondaryIngredients)
+	const legacyIngredients = normalizeTextList(parsedContent.ingredients)
+	const groupedIngredients =
+		mainIngredients.length || secondaryIngredients.length
+			? { mainIngredients, secondaryIngredients }
+			: splitIngredientLines(legacyIngredients)
+
+	return {
+		mainIngredients: groupedIngredients.mainIngredients,
+		secondaryIngredients: groupedIngredients.secondaryIngredients,
+		ingredients: [...groupedIngredients.mainIngredients, ...groupedIngredients.secondaryIngredients],
+		steps: normalizeParsedSteps(parsedContent.steps)
+	}
+}
+const stepListToText = (steps = []) => normalizeParsedSteps(steps).map((item) => item.detail).join('\n')
 
 const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
 const parseStatusMetaMap = {
@@ -409,13 +546,13 @@ function extractCopyableLink(value = '') {
 }
 
 function isFallbackLikeParsedContent(recipe = {}, parsedContent = {}) {
-	const currentIngredients = Array.isArray(parsedContent.ingredients) ? parsedContent.ingredients.filter(Boolean) : []
-	const currentSteps = Array.isArray(parsedContent.steps) ? parsedContent.steps.filter(Boolean) : []
-	if (!currentIngredients.length && !currentSteps.length) return true
+	const current = normalizeParsedContentView(parsedContent)
+	if (!current.ingredients.length && !current.steps.length) return true
 	const fallback = buildFallbackParsedContent(recipe)
 	return (
-		stringSlicesEqual(currentIngredients, fallback.ingredients || []) &&
-		stringSlicesEqual(currentSteps, fallback.steps || [])
+		stringSlicesEqual(current.mainIngredients, fallback.mainIngredients || []) &&
+		stringSlicesEqual(current.secondaryIngredients, fallback.secondaryIngredients || []) &&
+		stepSlicesEqual(current.steps, fallback.steps || [])
 	)
 }
 
@@ -464,15 +601,22 @@ export default {
 		detailMetaLine() {
 			return this.isPinned ? `${this.mealLabel} · ${this.statusLabel} · 已置顶` : `${this.mealLabel} · ${this.statusLabel}`
 		},
-		parsedIngredients() {
-			return this.recipe?.parsedContent?.ingredients || []
+		parsedContentView() {
+			return normalizeParsedContentView(this.recipe?.parsedContent || {})
+		},
+		parsedMainIngredients() {
+			return this.parsedContentView.mainIngredients
+		},
+		parsedSecondaryIngredients() {
+			return this.parsedContentView.secondaryIngredients
 		},
 		parsedSteps() {
-			return this.recipe?.parsedContent?.steps || []
+			return this.parsedContentView.steps
 		},
 		hasMeaningfulParsedContent() {
 			return !isFallbackLikeParsedContent(this.recipe || {}, {
-				ingredients: this.parsedIngredients,
+				mainIngredients: this.parsedMainIngredients,
+				secondaryIngredients: this.parsedSecondaryIngredients,
 				steps: this.parsedSteps
 			})
 		},
@@ -613,6 +757,7 @@ export default {
 			}
 		},
 		createDraftFromRecipe(recipe = {}) {
+			const parsedContentView = normalizeParsedContentView(recipe.parsedContent || {})
 			return createEmptyDraft({
 				title: recipe.title || '',
 				ingredient: recipe.ingredient || '',
@@ -625,8 +770,8 @@ export default {
 							: [],
 				mealType: recipe.mealType || 'breakfast',
 				status: recipe.status || 'wishlist',
-				ingredientsText: listToText(recipe.parsedContent?.ingredients || []),
-				stepsText: listToText(recipe.parsedContent?.steps || []),
+				ingredientsText: listToText(parsedContentView.ingredients || []),
+				stepsText: stepListToText(parsedContentView.steps || []),
 				note: recipe.note || ''
 			})
 		},
@@ -1069,6 +1214,14 @@ export default {
 		color: #2f2923;
 	}
 
+	.detail-summary {
+		display: block;
+		margin-top: 16rpx;
+		font-size: 26rpx;
+		line-height: 1.7;
+		color: #5e544b;
+	}
+
 	.detail-card {
 		margin-top: 18rpx;
 		padding: 26rpx;
@@ -1270,6 +1423,24 @@ export default {
 		font-size: 25rpx;
 		line-height: 1.7;
 		color: #4d433a;
+	}
+
+	.step-item__body {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.step-item__title {
+		display: block;
+		font-size: 26rpx;
+		font-weight: 700;
+		line-height: 1.4;
+		color: #2f2923;
+	}
+
+	.step-item__text {
+		display: block;
+		margin-top: 8rpx;
 	}
 
 	.step-item__index {

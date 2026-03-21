@@ -903,7 +903,7 @@ function truncateTextByRune(value = '', maxLength = 15) {
 }
 
 function buildRecipeListSummary(recipe = {}) {
-	return truncateTextByRune(String(recipe.summary || '').trim(), 15)
+	return truncateTextByRune(String(recipe.summary || '').trim(), 24)
 }
 
 function buildRecipeCoverVersion(recipe = {}) {

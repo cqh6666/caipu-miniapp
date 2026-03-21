@@ -23,26 +23,29 @@ const (
 )
 
 var (
-	bvidPattern              = regexp.MustCompile(`(?i)(BV[0-9A-Za-z]{10})`)
-	avidPattern              = regexp.MustCompile(`(?i)(?:^|/|[?&])av([0-9]+)`)
-	firstURLPattern          = regexp.MustCompile(`https?://[^\s]+`)
-	stepVerbPattern          = regexp.MustCompile(`(切|洗|腌|拌|加|放|倒|下锅|翻炒|炒|煎|炸|蒸|煮|炖|焖|焯|烤|淋|撒|搅|收汁|出锅|开吃|冷藏|静置)`)
-	stepOrderPattern         = regexp.MustCompile(`^(先|再|然后|接着|最后|随后|第一步|第二步|第三步|第四步)`)
-	ingredientUnitPattern    = regexp.MustCompile(`[\p{Han}A-Za-z][\p{Han}A-Za-z0-9()（）-]{0,14}\s*\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)`)
-	ingredientLoosePattern   = regexp.MustCompile(`[\p{Han}A-Za-z][\p{Han}A-Za-z0-9()（）-]{0,14}\s*(?:适量|少许)`)
-	ingredientSpacingPattern = regexp.MustCompile(`([\p{Han}A-Za-z])(\d)`)
-	codeFencePattern         = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
-	summaryWhitespacePattern = regexp.MustCompile(`\s+`)
-	previewBracketPattern    = regexp.MustCompile(`[【\[]([^】\]]+)[】\]]`)
-	previewPlatformPattern   = regexp.MustCompile(`\s*-\s*(哔哩哔哩|小红书)\s*$`)
-	previewShareSuffix       = regexp.MustCompile(`复制后打开【小红书】查看笔记!?`)
-	previewWhitespacePattern = regexp.MustCompile(`\s+`)
-	previewSplitPattern      = regexp.MustCompile(`[!！?？~～|｜/·•,:，。；;、\s]+`)
-	previewLowConfidence     = regexp.MustCompile(`(?i)(教程|做法|分享|来咯|来啦|来了|最好吃|就是这个味|超级软烂|超软烂|入口即化|香迷糊|巨好吃|真的绝了|一学就会|零失败|保姆级|超下饭|超级入味)`)
-	previewNarrativePattern  = regexp.MustCompile(`(?i)(我做了|我家|我们家|拿手菜|私房菜|祖传|开店|饭店|餐馆|摆摊|多年|[0-9一二三四五六七八九十两]+年)`)
-	previewDishPattern       = regexp.MustCompile(`(?i)(炖|炒|烧|煮|蒸|焖|拌|炸|卤|煎|烤|焗|煲|炝|凉拌|清蒸|红烧|糖醋|牛腩|牛肉|排骨|鸡翅|鸡腿|五花肉|里脊|番茄|西红柿|土豆|茄子|豆腐|虾|鱼|面|饭|粥|汤|蛋)`)
-	previewDescriptorPattern = regexp.MustCompile(`(?i)(鲜香|入味|浓稠|软烂|下饭|香辣|酸甜|麻辣|清爽|酥脆|嫩滑|家常|科学)`)
-	verifySubtitleProbes     = []subtitleProbe{
+	bvidPattern                         = regexp.MustCompile(`(?i)(BV[0-9A-Za-z]{10})`)
+	avidPattern                         = regexp.MustCompile(`(?i)(?:^|/|[?&])av([0-9]+)`)
+	firstURLPattern                     = regexp.MustCompile(`https?://[^\s]+`)
+	stepVerbPattern                     = regexp.MustCompile(`(切|洗|腌|拌|加|放|倒|下锅|翻炒|炒|煎|炸|蒸|煮|炖|焖|焯|烤|淋|撒|搅|收汁|出锅|开吃|冷藏|静置)`)
+	stepOrderPattern                    = regexp.MustCompile(`^(先|再|然后|接着|最后|随后|第一步|第二步|第三步|第四步)`)
+	ingredientUnitPattern               = regexp.MustCompile(`[\p{Han}A-Za-z][\p{Han}A-Za-z0-9()（）-]{0,14}\s*\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)`)
+	ingredientLoosePattern              = regexp.MustCompile(`[\p{Han}A-Za-z][\p{Han}A-Za-z0-9()（）-]{0,14}\s*(?:适量|少许)`)
+	ingredientSpacingPattern            = regexp.MustCompile(`([\p{Han}A-Za-z])(\d)`)
+	secondaryIngredientPattern          = regexp.MustCompile(`(?i)(常用调味料|调味|葱|姜|蒜|香叶|桂皮|八角|花椒|胡椒|盐|糖|冰糖|白糖|红糖|生抽|老抽|蚝油|料酒|鸡精|味精|醋|陈醋|米醋|香醋|豆瓣酱|辣椒|小米椒|淀粉|清水|热水|食用油|香油|芝麻油|花椒粉|辣椒粉|五香粉|十三香|孜然|芝麻|香菜|葱花)`)
+	secondaryIngredientExceptionPattern = regexp.MustCompile(`(?i)^(洋葱|红葱头|葱头)`)
+	ingredientSuffixPattern             = regexp.MustCompile(`\s*(?:\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)|半个|半颗|半根|半头|适量|少许)$`)
+	codeFencePattern                    = regexp.MustCompile("(?s)^```(?:json)?\\s*(.*?)\\s*```$")
+	summaryWhitespacePattern            = regexp.MustCompile(`\s+`)
+	previewBracketPattern               = regexp.MustCompile(`[【\[]([^】\]]+)[】\]]`)
+	previewPlatformPattern              = regexp.MustCompile(`\s*-\s*(哔哩哔哩|小红书)\s*$`)
+	previewShareSuffix                  = regexp.MustCompile(`复制后打开【小红书】查看笔记!?`)
+	previewWhitespacePattern            = regexp.MustCompile(`\s+`)
+	previewSplitPattern                 = regexp.MustCompile(`[!！?？~～|｜/·•,:，。；;、\s]+`)
+	previewLowConfidence                = regexp.MustCompile(`(?i)(教程|做法|分享|来咯|来啦|来了|最好吃|就是这个味|超级软烂|超软烂|入口即化|香迷糊|巨好吃|真的绝了|一学就会|零失败|保姆级|超下饭|超级入味)`)
+	previewNarrativePattern             = regexp.MustCompile(`(?i)(我做了|我家|我们家|拿手菜|私房菜|祖传|开店|饭店|餐馆|摆摊|多年|[0-9一二三四五六七八九十两]+年)`)
+	previewDishPattern                  = regexp.MustCompile(`(?i)(炖|炒|烧|煮|蒸|焖|拌|炸|卤|煎|烤|焗|煲|炝|凉拌|清蒸|红烧|糖醋|牛腩|牛肉|排骨|鸡翅|鸡腿|五花肉|里脊|番茄|西红柿|土豆|茄子|豆腐|虾|鱼|面|饭|粥|汤|蛋)`)
+	previewDescriptorPattern            = regexp.MustCompile(`(?i)(鲜香|入味|浓稠|软烂|下饭|香辣|酸甜|麻辣|清爽|酥脆|嫩滑|家常|科学)`)
+	verifySubtitleProbes                = []subtitleProbe{
 		{BVID: "BV1frwnepEE7", CID: 27914735061},
 		{BVID: "BV1gY411C7BY", CID: 1026481904},
 		{BVID: "BV1Pw4m1k7pU", CID: 1621665057},
@@ -144,12 +147,29 @@ type bilibiliSubtitleFile struct {
 }
 
 type aiSummaryResponse struct {
-	Title       string   `json:"title"`
-	Ingredient  string   `json:"ingredient"`
-	Summary     string   `json:"summary"`
-	Ingredients []string `json:"ingredients"`
-	Steps       []string `json:"steps"`
-	Note        string   `json:"note"`
+	Title                string          `json:"title"`
+	Ingredient           string          `json:"ingredient"`
+	Summary              string          `json:"summary"`
+	MainIngredients      []string        `json:"mainIngredients"`
+	SecondaryIngredients []string        `json:"secondaryIngredients"`
+	Ingredients          []string        `json:"ingredients"`
+	Steps                json.RawMessage `json:"steps"`
+	Note                 string          `json:"note"`
+}
+
+func (r aiSummaryResponse) toParsedContent() (ParsedContent, error) {
+	steps, legacySteps, err := parseParsedContentSteps(r.Steps)
+	if err != nil {
+		return ParsedContent{}, err
+	}
+
+	return ParsedContent{
+		MainIngredients:      r.MainIngredients,
+		SecondaryIngredients: r.SecondaryIngredients,
+		Steps:                steps,
+		legacyIngredients:    r.Ingredients,
+		legacySteps:          legacySteps,
+	}, nil
 }
 
 type openAIChatRequest struct {
@@ -369,7 +389,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 			result.RecipeDraft = normalizeDraft(result, draft)
 			return result, nil
 		}
-		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理，摘要将留空。")
+		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
 	}
 
 	result.SummaryMode = "heuristic"
@@ -692,11 +712,11 @@ func buildSubtitleText(file bilibiliSubtitleFile) (string, int) {
 
 func summarizeHeuristically(meta BilibiliParseResult, transcript string) RecipeDraft {
 	lines := collectCandidateLines(transcript, meta.Description)
-	ingredients := extractIngredientLines(lines)
-	steps := extractStepLines(lines)
+	mainIngredients, secondaryIngredients := splitIngredientLines(extractIngredientLines(lines))
+	steps := buildParsedSteps(extractStepLines(lines))
 
-	if len(ingredients) == 0 {
-		ingredients = fallbackIngredients(meta.Title)
+	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
+		mainIngredients, secondaryIngredients = splitIngredientLines(fallbackIngredients(meta.Title))
 	}
 	if len(steps) == 0 {
 		steps = fallbackSteps(meta.Title)
@@ -704,15 +724,16 @@ func summarizeHeuristically(meta BilibiliParseResult, transcript string) RecipeD
 
 	return RecipeDraft{
 		Title:      firstNonEmpty(meta.Title, meta.Part, "B站视频菜谱草稿"),
-		Ingredient: buildIngredientSummary(ingredients, meta.Title),
-		Summary:    "",
+		Ingredient: buildIngredientSummary(mainIngredients, meta.Title),
+		Summary:    buildHeuristicSummary(steps),
 		Link:       meta.Link,
 		ImageURL:   strings.TrimSpace(meta.CoverURL),
 		ImageURLs:  draftImageURLs(strings.TrimSpace(meta.CoverURL)),
 		Note:       buildHeuristicNote(meta),
 		ParsedContent: ParsedContent{
-			Ingredients: ingredients,
-			Steps:       steps,
+			MainIngredients:      mainIngredients,
+			SecondaryIngredients: secondaryIngredients,
+			Steps:                steps,
 		},
 	}
 }
@@ -817,15 +838,15 @@ func fallbackIngredients(title string) []string {
 	}
 }
 
-func fallbackSteps(title string) []string {
+func fallbackSteps(title string) []ParsedStep {
 	label := strings.TrimSpace(title)
 	if label == "" {
 		label = "这道菜"
 	}
-	return []string{
-		"先结合原视频确认 " + label + " 的主食材和用量。",
-		"根据字幕里提到的顺序整理预处理、下锅和调味步骤。",
-		"做完以后回看原视频，补齐火候和时间等细节。",
+	return []ParsedStep{
+		{Title: "确认食材", Detail: "先结合原视频确认 " + label + " 的主食材和用量。"},
+		{Title: "整理步骤", Detail: "根据字幕里提到的顺序整理预处理、下锅和调味步骤。"},
+		{Title: "补齐细节", Detail: "做完以后回看原视频，补齐火候和时间等细节。"},
 	}
 }
 
@@ -849,10 +870,145 @@ func buildIngredientSummary(ingredients []string, fallback string) string {
 
 func ingredientName(value string) string {
 	value = strings.TrimSpace(value)
-	value = regexp.MustCompile(`\s*\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)$`).ReplaceAllString(value, "")
-	value = regexp.MustCompile(`\s*(?:适量|少许)$`).ReplaceAllString(value, "")
+	value = ingredientSuffixPattern.ReplaceAllString(value, "")
 	value = strings.TrimSpace(value)
 	return strings.Trim(value, " ,，。")
+}
+
+func splitIngredientLines(lines []string) ([]string, []string) {
+	cleaned := dedupeStrings(cleanLines(lines), 12)
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+
+	mainIngredients := make([]string, 0, 4)
+	secondaryIngredients := make([]string, 0, len(cleaned))
+	for _, line := range cleaned {
+		label := ingredientName(line)
+		if secondaryIngredientPattern.MatchString(label) && !secondaryIngredientExceptionPattern.MatchString(label) {
+			secondaryIngredients = append(secondaryIngredients, line)
+			continue
+		}
+		mainIngredients = append(mainIngredients, line)
+	}
+
+	if len(mainIngredients) == 0 {
+		limit := 3
+		if len(cleaned) < limit {
+			limit = len(cleaned)
+		}
+		mainIngredients = append(mainIngredients, cleaned[:limit]...)
+		secondaryIngredients = append([]string{}, cleaned[limit:]...)
+	}
+
+	return mainIngredients, secondaryIngredients
+}
+
+func buildParsedSteps(lines []string) []ParsedStep {
+	items := make([]ParsedStep, 0, len(lines))
+	for index, line := range dedupeStrings(cleanLines(lines), 8) {
+		items = append(items, ParsedStep{
+			Title:  inferParsedStepTitle(line, index),
+			Detail: line,
+		})
+	}
+	return items
+}
+
+func cleanParsedSteps(steps []ParsedStep) []ParsedStep {
+	items := make([]ParsedStep, 0, len(steps))
+	seen := make(map[string]struct{}, len(steps))
+	for index, step := range steps {
+		title := strings.TrimSpace(step.Title)
+		detail := cleanCandidateLine(step.Detail)
+		if detail == "" {
+			detail = title
+		}
+		if detail == "" {
+			continue
+		}
+		if title == "" {
+			title = inferParsedStepTitle(detail, index)
+		}
+		key := title + "\x00" + detail
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, ParsedStep{
+			Title:  title,
+			Detail: detail,
+		})
+	}
+	return items
+}
+
+func inferParsedStepTitle(detail string, index int) string {
+	switch {
+	case strings.Contains(detail, "焯水") || strings.Contains(detail, "汆水"):
+		if strings.Contains(detail, "腥") || strings.Contains(detail, "浮沫") {
+			return "焯水去腥"
+		}
+		return "焯水备用"
+	case strings.Contains(detail, "腌"):
+		return "腌制入味"
+	case strings.Contains(detail, "糖色") || strings.Contains(detail, "冰糖"):
+		return "炒糖上色"
+	case strings.Contains(detail, "爆香") || strings.Contains(detail, "炒香"):
+		return "炒香底料"
+	case strings.Contains(detail, "切") || strings.Contains(detail, "改刀"):
+		return "切配备料"
+	case strings.Contains(detail, "收汁"):
+		return "收汁出锅"
+	case strings.Contains(detail, "炖") || strings.Contains(detail, "焖"):
+		return "小火慢炖"
+	case strings.Contains(detail, "蒸"):
+		return "上锅蒸熟"
+	case strings.Contains(detail, "炸"):
+		return "炸至金黄"
+	case strings.Contains(detail, "煎"):
+		return "煎香上色"
+	case strings.Contains(detail, "烤"):
+		return "烤至上色"
+	case strings.Contains(detail, "煮"):
+		return "煮至入味"
+	case strings.Contains(detail, "拌"):
+		return "拌匀调味"
+	case strings.Contains(detail, "炒") || strings.Contains(detail, "翻炒"):
+		return "翻炒入味"
+	case strings.Contains(detail, "出锅"):
+		return "调味出锅"
+	case index == 0:
+		return "处理食材"
+	default:
+		return "继续烹饪"
+	}
+}
+
+func buildHeuristicSummary(steps []ParsedStep) string {
+	normalized := cleanParsedSteps(steps)
+	if len(normalized) == 0 {
+		return ""
+	}
+
+	first := normalized[0].Title
+	second := ""
+	for _, step := range normalized[1:] {
+		if strings.TrimSpace(step.Title) == "" || step.Title == first {
+			continue
+		}
+		second = step.Title
+		break
+	}
+
+	switch {
+	case first != "" && second != "":
+		return normalizeRecipeSummary("先" + first + "，再" + second)
+	case first != "":
+		return normalizeRecipeSummary(first)
+	default:
+		return ""
+	}
 }
 
 func buildHeuristicNote(meta BilibiliParseResult) string {
@@ -871,7 +1027,7 @@ func buildHeuristicNote(meta BilibiliParseResult) string {
 }
 
 func buildSummaryPromptRuleText() string {
-	return "summary 字段用于美食库列表摘要，必须写成“口味 + 核心亮点”的一句中文短句，限制在 15 个汉字以内；不要重复标题里的菜名，不要写平台、图片数量、食材数量、营销词或不确定信息。示例：番茄牛腩 -> 酸甜浓汤，适合一锅炖；鸡蛋炸酱面 -> 酱香浓郁，快手拌面一碗；港式干炒牛河 -> 镬气快炒，牛肉河粉更香。"
+	return "summary 字段用于详情页和美食库列表，必须写成“关键动作 + 结果”的一句中文短句，限制在 24 个汉字以内；不要重复标题里的菜名，不要写平台、图片数量、营销词或不确定信息。示例：番茄牛腩 -> 先焯水去腥，再慢炖至软烂；鸡蛋炸酱面 -> 先炒酱提香，再快速拌面出锅；港式干炒牛河 -> 猛火快炒，牛河更香更入味。"
 }
 
 func normalizeRecipeSummary(value string) string {
@@ -881,7 +1037,7 @@ func normalizeRecipeSummary(value string) string {
 	if summary == "" {
 		return ""
 	}
-	return truncateRunes(summary, 15)
+	return truncateRunes(summary, 24)
 }
 
 func truncateRunes(value string, maxRunes int) string {
@@ -903,7 +1059,7 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"ingredients\":[],\"steps\":[],\"note\":\"\"}。ingredients 和 steps 各返回 2 到 8 条，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildSummaryPromptRuleText(),
+				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。ingredient 只写 2 到 4 个主料，用顿号连接；mainIngredients 写主料及数量；secondaryIngredients 写辅料、香料和调味料；steps 返回 3 到 6 步，每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildSummaryPromptRuleText(),
 			},
 			{
 				Role:    "user",
@@ -963,15 +1119,17 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 		return RecipeDraft{}, err
 	}
 
+	parsedContent, err := summary.toParsedContent()
+	if err != nil {
+		return RecipeDraft{}, err
+	}
+
 	return RecipeDraft{
-		Title:      summary.Title,
-		Ingredient: summary.Ingredient,
-		Summary:    summary.Summary,
-		Note:       summary.Note,
-		ParsedContent: ParsedContent{
-			Ingredients: summary.Ingredients,
-			Steps:       summary.Steps,
-		},
+		Title:         summary.Title,
+		Ingredient:    summary.Ingredient,
+		Summary:       summary.Summary,
+		Note:          summary.Note,
+		ParsedContent: parsedContent,
 	}, nil
 }
 
@@ -1015,14 +1173,14 @@ func normalizeDraft(meta BilibiliParseResult, draft RecipeDraft) RecipeDraft {
 		draft.ImageURLs = draftImageURLs(draft.ImageURL)
 	}
 	draft.Note = firstNonEmpty(strings.TrimSpace(draft.Note), "基于 B 站字幕生成的 AI 草稿，建议回看原视频补齐克数和火候。")
-	draft.ParsedContent.Ingredients = dedupeStrings(cleanLines(draft.ParsedContent.Ingredients), 10)
-	draft.ParsedContent.Steps = dedupeStrings(cleanLines(draft.ParsedContent.Steps), 8)
+	draft.ParsedContent = normalizeParsedContentDraft(draft.ParsedContent)
 	draft.Summary = normalizeRecipeSummary(draft.Summary)
 
-	if len(draft.ParsedContent.Ingredients) == 0 || len(draft.ParsedContent.Steps) == 0 {
+	if (len(draft.ParsedContent.MainIngredients) == 0 && len(draft.ParsedContent.SecondaryIngredients) == 0) || len(draft.ParsedContent.Steps) == 0 {
 		fallback := summarizeHeuristically(meta, meta.SubtitleText)
-		if len(draft.ParsedContent.Ingredients) == 0 {
-			draft.ParsedContent.Ingredients = fallback.ParsedContent.Ingredients
+		if len(draft.ParsedContent.MainIngredients) == 0 && len(draft.ParsedContent.SecondaryIngredients) == 0 {
+			draft.ParsedContent.MainIngredients = fallback.ParsedContent.MainIngredients
+			draft.ParsedContent.SecondaryIngredients = fallback.ParsedContent.SecondaryIngredients
 		}
 		if len(draft.ParsedContent.Steps) == 0 {
 			draft.ParsedContent.Steps = fallback.ParsedContent.Steps
@@ -1030,9 +1188,38 @@ func normalizeDraft(meta BilibiliParseResult, draft RecipeDraft) RecipeDraft {
 		if strings.TrimSpace(draft.Ingredient) == "" {
 			draft.Ingredient = fallback.Ingredient
 		}
+		if strings.TrimSpace(draft.Summary) == "" {
+			draft.Summary = fallback.Summary
+		}
+	}
+
+	if strings.TrimSpace(draft.Ingredient) == "" {
+		draft.Ingredient = buildIngredientSummary(draft.ParsedContent.MainIngredients, meta.Title)
+	}
+	if strings.TrimSpace(draft.Summary) == "" {
+		draft.Summary = buildHeuristicSummary(draft.ParsedContent.Steps)
 	}
 
 	return draft
+}
+
+func normalizeParsedContentDraft(content ParsedContent) ParsedContent {
+	mainIngredients := dedupeStrings(cleanLines(content.MainIngredients), 10)
+	secondaryIngredients := dedupeStrings(cleanLines(content.SecondaryIngredients), 10)
+	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
+		mainIngredients, secondaryIngredients = splitIngredientLines(cleanLines(content.legacyIngredients))
+	}
+
+	steps := cleanParsedSteps(content.Steps)
+	if len(steps) == 0 {
+		steps = buildParsedSteps(cleanLines(content.legacySteps))
+	}
+
+	return ParsedContent{
+		MainIngredients:      mainIngredients,
+		SecondaryIngredients: secondaryIngredients,
+		Steps:                steps,
+	}
 }
 
 func draftImageURLs(values ...string) []string {

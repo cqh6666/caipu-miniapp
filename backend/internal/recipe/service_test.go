@@ -42,13 +42,13 @@ func TestNormalizeRecipeInputRejectsTooManyImages(t *testing.T) {
 	}
 }
 
-func TestNormalizeRecipeInputRejectsSummaryLongerThanFifteenRunes(t *testing.T) {
+func TestNormalizeRecipeInputRejectsSummaryLongerThanTwentyFourRunes(t *testing.T) {
 	t.Parallel()
 
 	if _, err := normalizeRecipeInput(
 		"番茄牛腩",
 		"牛腩",
-		"酸甜浓汤，适合一锅炖也适合周末慢慢做",
+		"先焯水去腥，再小火慢炖至软烂，周末一锅更省事也更适合反复做",
 		"",
 		"",
 		nil,
@@ -83,12 +83,41 @@ func TestHasUserProvidedParsedContentRecognizesManualContent(t *testing.T) {
 	t.Parallel()
 
 	content := ParsedContent{
-		Ingredients: []string{"牛腩 500克", "番茄 3个"},
-		Steps:       []string{"牛腩焯水备用", "番茄炒软后和牛腩一起炖煮"},
+		MainIngredients: []string{"牛腩 500克", "番茄 3个"},
+		Steps: []ParsedStep{
+			{Title: "焯水去腥", Detail: "牛腩焯水备用"},
+			{Title: "小火慢炖", Detail: "番茄炒软后和牛腩一起炖煮"},
+		},
 	}
 
 	if !hasUserProvidedParsedContent(content, "main", "番茄牛腩", "牛腩") {
 		t.Fatal("manual parsed content should be treated as user-provided content")
+	}
+}
+
+func TestNormalizeParsedContentKeepsMultiplePrimaryIngredients(t *testing.T) {
+	t.Parallel()
+
+	content := normalizeParsedContent(ParsedContent{
+		legacyIngredients: []string{
+			"牛腩 500克",
+			"番茄 3个",
+			"土豆 2个",
+			"胡萝卜 1根",
+			"洋葱 半个",
+			"盐 3克",
+			"生抽 1勺",
+		},
+	}, "main", "番茄牛腩", "牛腩")
+
+	if got, want := len(content.MainIngredients), 5; got != want {
+		t.Fatalf("len(MainIngredients) = %d, want %d (%#v)", got, want, content.MainIngredients)
+	}
+	if got, want := content.MainIngredients[4], "洋葱 半个"; got != want {
+		t.Fatalf("MainIngredients[4] = %q, want %q", got, want)
+	}
+	if got, want := len(content.SecondaryIngredients), 2; got != want {
+		t.Fatalf("len(SecondaryIngredients) = %d, want %d (%#v)", got, want, content.SecondaryIngredients)
 	}
 }
 

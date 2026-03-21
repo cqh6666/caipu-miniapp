@@ -170,8 +170,9 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 		ImageURL:   strings.TrimSpace(result.RecipeDraft.ImageURL),
 		ImageURLs:  cleanAutoParseImages(append(result.RecipeDraft.ImageURLs, strings.TrimSpace(result.RecipeDraft.ImageURL))),
 		ParsedContent: ParsedContent{
-			Ingredients: result.RecipeDraft.ParsedContent.Ingredients,
-			Steps:       result.RecipeDraft.ParsedContent.Steps,
+			MainIngredients:      append([]string{}, result.RecipeDraft.ParsedContent.MainIngredients...),
+			SecondaryIngredients: append([]string{}, result.RecipeDraft.ParsedContent.SecondaryIngredients...),
+			Steps:                mapParsedSteps(result.RecipeDraft.ParsedContent.Steps),
 		},
 	}); err != nil {
 		if markErr := w.repo.MarkAutoParseFailed(ctx, item.ID, parseSource, err.Error(), finishedAt); markErr != nil {
@@ -182,6 +183,17 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	w.logger.Info("recipe auto-parse completed", "recipeID", item.ID, "source", parseSource)
 	return nil
+}
+
+func mapParsedSteps(steps []linkparse.ParsedStep) []ParsedStep {
+	items := make([]ParsedStep, 0, len(steps))
+	for _, step := range steps {
+		items = append(items, ParsedStep{
+			Title:  strings.TrimSpace(step.Title),
+			Detail: strings.TrimSpace(step.Detail),
+		})
+	}
+	return items
 }
 
 func cleanAutoParseImages(imageURLs []string) []string {

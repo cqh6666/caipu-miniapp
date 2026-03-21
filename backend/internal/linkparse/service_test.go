@@ -72,8 +72,8 @@ func TestSummarizeHeuristically(t *testing.T) {
 		SubtitleAvailable: true,
 	}, "准备牛肉 300克\n土豆 2个\n先把牛肉切块\n锅里加油下锅翻炒\n再加入土豆焖煮二十分钟\n最后撒葱花出锅")
 
-	if len(result.ParsedContent.Ingredients) < 2 {
-		t.Fatalf("ingredients too short: %#v", result.ParsedContent.Ingredients)
+	if len(result.ParsedContent.MainIngredients) < 2 {
+		t.Fatalf("main ingredients too short: %#v", result.ParsedContent.MainIngredients)
 	}
 	if len(result.ParsedContent.Steps) < 3 {
 		t.Fatalf("steps too short: %#v", result.ParsedContent.Steps)
@@ -81,8 +81,11 @@ func TestSummarizeHeuristically(t *testing.T) {
 	if result.Ingredient == "" {
 		t.Fatal("ingredient summary is empty")
 	}
-	if result.Summary != "" {
-		t.Fatalf("recipe summary = %q, want empty in heuristic mode", result.Summary)
+	if result.Summary == "" {
+		t.Fatal("recipe summary should not be empty in heuristic mode")
+	}
+	if result.ParsedContent.Steps[0].Title == "" || result.ParsedContent.Steps[0].Detail == "" {
+		t.Fatalf("structured step missing title/detail: %#v", result.ParsedContent.Steps[0])
 	}
 	if result.Link == "" {
 		t.Fatal("link should be preserved")
@@ -92,6 +95,30 @@ func TestSummarizeHeuristically(t *testing.T) {
 	}
 	if got, want := len(result.ImageURLs), 1; got != want {
 		t.Fatalf("len(ImageURLs) = %d, want %d", got, want)
+	}
+}
+
+func TestSplitIngredientLinesKeepsMultiplePrimaryIngredients(t *testing.T) {
+	t.Parallel()
+
+	mainIngredients, secondaryIngredients := splitIngredientLines([]string{
+		"牛腩 500克",
+		"番茄 3个",
+		"土豆 2个",
+		"胡萝卜 1根",
+		"洋葱 半个",
+		"盐 3克",
+		"生抽 1勺",
+	})
+
+	if got, want := len(mainIngredients), 5; got != want {
+		t.Fatalf("len(mainIngredients) = %d, want %d (%#v)", got, want, mainIngredients)
+	}
+	if got, want := mainIngredients[4], "洋葱 半个"; got != want {
+		t.Fatalf("mainIngredients[4] = %q, want %q", got, want)
+	}
+	if got, want := len(secondaryIngredients), 2; got != want {
+		t.Fatalf("len(secondaryIngredients) = %d, want %d (%#v)", got, want, secondaryIngredients)
 	}
 }
 

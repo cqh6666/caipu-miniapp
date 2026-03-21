@@ -119,7 +119,7 @@ func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (Xiaoho
 			result.RecipeDraft = normalizeXiaohongshuDraft(result, draft)
 			return result, nil
 		}
-		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理，摘要将留空。")
+		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
 	}
 
 	result.SummaryMode = "heuristic"
@@ -211,31 +211,32 @@ func (s *Service) fetchXiaohongshuPreview(ctx context.Context, rawInput string) 
 
 func summarizeXiaohongshuHeuristically(meta XiaohongshuParseResult) RecipeDraft {
 	lines := collectCandidateLines(meta.Content, strings.Join(meta.Tags, "\n"))
-	ingredients := extractIngredientLines(lines)
-	steps := extractStepLines(lines)
+	mainIngredients, secondaryIngredients := splitIngredientLines(extractIngredientLines(lines))
+	steps := buildParsedSteps(extractStepLines(lines))
 
-	if len(ingredients) == 0 {
-		ingredients = fallbackIngredients(meta.Title)
+	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
+		mainIngredients, secondaryIngredients = splitIngredientLines(fallbackIngredients(meta.Title))
 	}
 	if len(steps) == 0 {
-		steps = []string{
-			"先结合小红书原文确认这道菜的主食材和用量。",
-			"按原文提到的顺序整理预处理、调味和烹饪步骤。",
-			"做之前建议回看原链接，补齐克数、火候和时间等细节。",
+		steps = []ParsedStep{
+			{Title: "确认食材", Detail: "先结合小红书原文确认这道菜的主食材和用量。"},
+			{Title: "整理步骤", Detail: "按原文提到的顺序整理预处理、调味和烹饪步骤。"},
+			{Title: "补齐细节", Detail: "做之前建议回看原链接，补齐克数、火候和时间等细节。"},
 		}
 	}
 
 	return RecipeDraft{
 		Title:      firstNonEmpty(meta.Title, "小红书图文菜谱草稿"),
-		Ingredient: buildIngredientSummary(ingredients, meta.Title),
-		Summary:    "",
+		Ingredient: buildIngredientSummary(mainIngredients, meta.Title),
+		Summary:    buildHeuristicSummary(steps),
 		Link:       firstNonEmpty(meta.CanonicalURL, meta.Link),
 		ImageURL:   firstNonEmpty(strings.TrimSpace(meta.CoverURL), firstImage(meta.Images)),
 		ImageURLs:  preferredXiaohongshuImages(meta),
 		Note:       buildXiaohongshuHeuristicNote(meta),
 		ParsedContent: ParsedContent{
-			Ingredients: ingredients,
-			Steps:       steps,
+			MainIngredients:      mainIngredients,
+			SecondaryIngredients: secondaryIngredients,
+			Steps:                steps,
 		},
 	}
 }
@@ -255,7 +256,7 @@ func (c *aiClient) summarizeXiaohongshu(ctx context.Context, result XiaohongshuP
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: "你是一个菜谱整理助手。请根据小红书图文笔记正文、标签和图片描述线索，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"ingredients\":[],\"steps\":[],\"note\":\"\"}。ingredients 和 steps 各返回 2 到 8 条，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原笔记和配图确认。 " + buildSummaryPromptRuleText(),
+				Content: "你是一个菜谱整理助手。请根据小红书图文笔记正文、标签和图片描述线索，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。ingredient 只写 2 到 4 个主料，用顿号连接；mainIngredients 写主料及数量；secondaryIngredients 写辅料、香料和调味料；steps 返回 3 到 6 步，每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原笔记和配图确认。 " + buildSummaryPromptRuleText(),
 			},
 			{
 				Role:    "user",
@@ -315,15 +316,17 @@ func (c *aiClient) summarizeXiaohongshu(ctx context.Context, result XiaohongshuP
 		return RecipeDraft{}, err
 	}
 
+	parsedContent, err := summary.toParsedContent()
+	if err != nil {
+		return RecipeDraft{}, err
+	}
+
 	return RecipeDraft{
-		Title:      summary.Title,
-		Ingredient: summary.Ingredient,
-		Summary:    summary.Summary,
-		Note:       summary.Note,
-		ParsedContent: ParsedContent{
-			Ingredients: summary.Ingredients,
-			Steps:       summary.Steps,
-		},
+		Title:         summary.Title,
+		Ingredient:    summary.Ingredient,
+		Summary:       summary.Summary,
+		Note:          summary.Note,
+		ParsedContent: parsedContent,
 	}, nil
 }
 
@@ -361,14 +364,14 @@ func normalizeXiaohongshuDraft(meta XiaohongshuParseResult, draft RecipeDraft) R
 		draft.ImageURLs = preferredXiaohongshuImages(meta)
 	}
 	draft.Note = firstNonEmpty(strings.TrimSpace(draft.Note), "基于小红书图文内容生成的 AI 草稿，建议回看原笔记和配图补齐克数、火候和时间。")
-	draft.ParsedContent.Ingredients = dedupeStrings(cleanLines(draft.ParsedContent.Ingredients), 10)
-	draft.ParsedContent.Steps = dedupeStrings(cleanLines(draft.ParsedContent.Steps), 8)
+	draft.ParsedContent = normalizeParsedContentDraft(draft.ParsedContent)
 	draft.Summary = normalizeRecipeSummary(draft.Summary)
 
-	if len(draft.ParsedContent.Ingredients) == 0 || len(draft.ParsedContent.Steps) == 0 {
+	if (len(draft.ParsedContent.MainIngredients) == 0 && len(draft.ParsedContent.SecondaryIngredients) == 0) || len(draft.ParsedContent.Steps) == 0 {
 		fallback := summarizeXiaohongshuHeuristically(meta)
-		if len(draft.ParsedContent.Ingredients) == 0 {
-			draft.ParsedContent.Ingredients = fallback.ParsedContent.Ingredients
+		if len(draft.ParsedContent.MainIngredients) == 0 && len(draft.ParsedContent.SecondaryIngredients) == 0 {
+			draft.ParsedContent.MainIngredients = fallback.ParsedContent.MainIngredients
+			draft.ParsedContent.SecondaryIngredients = fallback.ParsedContent.SecondaryIngredients
 		}
 		if len(draft.ParsedContent.Steps) == 0 {
 			draft.ParsedContent.Steps = fallback.ParsedContent.Steps
@@ -376,6 +379,16 @@ func normalizeXiaohongshuDraft(meta XiaohongshuParseResult, draft RecipeDraft) R
 		if strings.TrimSpace(draft.Ingredient) == "" {
 			draft.Ingredient = fallback.Ingredient
 		}
+		if strings.TrimSpace(draft.Summary) == "" {
+			draft.Summary = fallback.Summary
+		}
+	}
+
+	if strings.TrimSpace(draft.Ingredient) == "" {
+		draft.Ingredient = buildIngredientSummary(draft.ParsedContent.MainIngredients, meta.Title)
+	}
+	if strings.TrimSpace(draft.Summary) == "" {
+		draft.Summary = buildHeuristicSummary(draft.ParsedContent.Steps)
 	}
 
 	return draft
