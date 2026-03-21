@@ -3,6 +3,7 @@ import { ensureSession, getCurrentKitchenId } from './auth'
 import {
 	createRecipe,
 	deleteRecipe,
+	generateRecipeFlowchart,
 	getRecipeDetail,
 	listRecipes,
 	reparseRecipe,
@@ -284,6 +285,7 @@ export function normalizeRecipe(recipe = {}) {
 		).map((item) => resolveAssetURL(item || ''))
 	)
 	const image = imageUrls[0] || ''
+	const flowchartImageUrl = resolveAssetURL(recipe.flowchartImageUrl || '')
 	const normalized = {
 		id: recipe.id || '',
 		kitchenId: Number(recipe.kitchenId) || 0,
@@ -295,6 +297,13 @@ export function normalizeRecipe(recipe = {}) {
 		imageUrl: image,
 		images: imageUrls,
 		imageUrls,
+		flowchartImageUrl,
+		flowchartStatus: (recipe.flowchartStatus || '').trim(),
+		flowchartError: (recipe.flowchartError || '').trim(),
+		flowchartRequestedAt: recipe.flowchartRequestedAt || '',
+		flowchartFinishedAt: recipe.flowchartFinishedAt || '',
+		flowchartUpdatedAt: recipe.flowchartUpdatedAt || '',
+		flowchartStale: !!recipe.flowchartStale,
 		mealType: recipe.mealType || 'breakfast',
 		status: recipe.status || 'wishlist',
 		note: (recipe.note || '').trim(),
@@ -500,6 +509,11 @@ export async function setRecipePinnedById(recipeId, pinned) {
 
 export async function reparseRecipeById(recipeId) {
 	const item = await reparseRecipe(recipeId)
+	return upsertRecipeInCache(item)
+}
+
+export async function generateRecipeFlowchartById(recipeId) {
+	const item = await generateRecipeFlowchart(recipeId)
 	return upsertRecipeInCache(item)
 }
 

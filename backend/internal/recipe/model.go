@@ -35,10 +35,10 @@ func (c ParsedContent) MarshalJSON() ([]byte, error) {
 
 func (c *ParsedContent) UnmarshalJSON(data []byte) error {
 	type payload struct {
-		MainIngredients      []string          `json:"mainIngredients"`
-		SecondaryIngredients []string          `json:"secondaryIngredients"`
-		Ingredients          []string          `json:"ingredients"`
-		Steps                json.RawMessage   `json:"steps"`
+		MainIngredients      []string        `json:"mainIngredients"`
+		SecondaryIngredients []string        `json:"secondaryIngredients"`
+		Ingredients          []string        `json:"ingredients"`
+		Steps                json.RawMessage `json:"steps"`
 	}
 
 	trimmed := strings.TrimSpace(string(data))
@@ -96,31 +96,46 @@ const (
 	ParseStatusProcessing = "processing"
 	ParseStatusDone       = "done"
 	ParseStatusFailed     = "failed"
+
+	FlowchartStatusIdle       = ""
+	FlowchartStatusPending    = "pending"
+	FlowchartStatusProcessing = "processing"
+	FlowchartStatusDone       = "done"
+	FlowchartStatusFailed     = "failed"
 )
 
 type Recipe struct {
-	ID               string        `json:"id"`
-	KitchenID        int64         `json:"kitchenId"`
-	Title            string        `json:"title"`
-	Ingredient       string        `json:"ingredient"`
-	Summary          string        `json:"summary"`
-	Link             string        `json:"link"`
-	ImageURL         string        `json:"imageUrl"`
-	ImageURLs        []string      `json:"imageUrls"`
-	MealType         string        `json:"mealType"`
-	Status           string        `json:"status"`
-	Note             string        `json:"note"`
-	ParsedContent    ParsedContent `json:"parsedContent"`
-	ParseStatus      string        `json:"parseStatus"`
-	ParseSource      string        `json:"parseSource"`
-	ParseError       string        `json:"parseError"`
-	ParseRequestedAt string        `json:"parseRequestedAt"`
-	ParseFinishedAt  string        `json:"parseFinishedAt"`
-	PinnedAt         string        `json:"pinnedAt"`
-	CreatedBy        int64         `json:"createdBy"`
-	UpdatedBy        int64         `json:"updatedBy"`
-	CreatedAt        string        `json:"createdAt"`
-	UpdatedAt        string        `json:"updatedAt"`
+	ID                   string        `json:"id"`
+	KitchenID            int64         `json:"kitchenId"`
+	Title                string        `json:"title"`
+	Ingredient           string        `json:"ingredient"`
+	Summary              string        `json:"summary"`
+	Link                 string        `json:"link"`
+	ImageURL             string        `json:"imageUrl"`
+	ImageURLs            []string      `json:"imageUrls"`
+	FlowchartImageURL    string        `json:"flowchartImageUrl"`
+	FlowchartStatus      string        `json:"flowchartStatus"`
+	FlowchartError       string        `json:"flowchartError"`
+	FlowchartRequestedAt string        `json:"flowchartRequestedAt"`
+	FlowchartFinishedAt  string        `json:"flowchartFinishedAt"`
+	FlowchartUpdatedAt   string        `json:"flowchartUpdatedAt"`
+	FlowchartStale       bool          `json:"flowchartStale"`
+	MealType             string        `json:"mealType"`
+	Status               string        `json:"status"`
+	Note                 string        `json:"note"`
+	ParsedContent        ParsedContent `json:"parsedContent"`
+	ParseStatus          string        `json:"parseStatus"`
+	ParseSource          string        `json:"parseSource"`
+	ParseError           string        `json:"parseError"`
+	ParseRequestedAt     string        `json:"parseRequestedAt"`
+	ParseFinishedAt      string        `json:"parseFinishedAt"`
+	PinnedAt             string        `json:"pinnedAt"`
+	CreatedBy            int64         `json:"createdBy"`
+	UpdatedBy            int64         `json:"updatedBy"`
+	CreatedAt            string        `json:"createdAt"`
+	UpdatedAt            string        `json:"updatedAt"`
+
+	FlowchartSourceHash string `json:"-"`
 }
 
 type ListFilter struct {

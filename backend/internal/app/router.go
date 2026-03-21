@@ -91,6 +91,7 @@ func NewRouter(
 			protected.Get("/recipes/{recipeID}", recipeHandler.Detail)
 			protected.Put("/recipes/{recipeID}", recipeHandler.Update)
 			protected.Post("/recipes/{recipeID}/reparse", recipeHandler.RequeueAutoParse)
+			protected.Post("/recipes/{recipeID}/flowchart", recipeHandler.GenerateFlowchart)
 			protected.Patch("/recipes/{recipeID}/pin", recipeHandler.UpdatePinned)
 			protected.Patch("/recipes/{recipeID}/status", recipeHandler.UpdateStatus)
 			protected.Delete("/recipes/{recipeID}", recipeHandler.Delete)

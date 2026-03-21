@@ -47,6 +47,14 @@ export function reparseRecipe(recipeId) {
 	}).then((data) => data?.recipe || null)
 }
 
+export function generateRecipeFlowchart(recipeId) {
+	return request({
+		url: `/caipu-api/recipes/${recipeId}/flowchart`,
+		method: 'POST',
+		data: {}
+	}).then((data) => data?.recipe || null)
+}
+
 export function updateRecipeStatus(recipeId, status) {
 	return request({
 		url: `/caipu-api/recipes/${recipeId}/status`,

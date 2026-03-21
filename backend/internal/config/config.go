@@ -26,6 +26,10 @@ type Config struct {
 	AIAPIKey                   string
 	AIModel                    string
 	AITimeoutSeconds           int
+	AIFlowchartBaseURL         string
+	AIFlowchartAPIKey          string
+	AIFlowchartModel           string
+	AIFlowchartTimeoutSeconds  int
 	AITitleEnabled             bool
 	AITitleModel               string
 	AITitleTimeoutSeconds      int
@@ -47,6 +51,9 @@ type Config struct {
 	RecipeAutoParseEnabled     bool
 	RecipeAutoParseInterval    int
 	RecipeAutoParseBatchSize   int
+	RecipeFlowchartEnabled     bool
+	RecipeFlowchartInterval    int
+	RecipeFlowchartBatchSize   int
 	RecipeImageMirrorEnabled   bool
 	RecipeImageMirrorInterval  int
 	RecipeImageMirrorBatchSize int
@@ -71,6 +78,10 @@ func Load() (Config, error) {
 		AIAPIKey:                   strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIModel:                    strings.TrimSpace(os.Getenv("AI_MODEL")),
 		AITimeoutSeconds:           getInt("AI_TIMEOUT_SECONDS", 30),
+		AIFlowchartBaseURL:         strings.TrimSpace(os.Getenv("AI_FLOWCHART_BASE_URL")),
+		AIFlowchartAPIKey:          strings.TrimSpace(os.Getenv("AI_FLOWCHART_API_KEY")),
+		AIFlowchartModel:           strings.TrimSpace(os.Getenv("AI_FLOWCHART_MODEL")),
+		AIFlowchartTimeoutSeconds:  getInt("AI_FLOWCHART_TIMEOUT_SECONDS", 45),
 		AITitleEnabled:             getBool("AI_TITLE_ENABLED", false),
 		AITitleModel:               strings.TrimSpace(os.Getenv("AI_TITLE_MODEL")),
 		AITitleTimeoutSeconds:      getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
@@ -92,6 +103,9 @@ func Load() (Config, error) {
 		RecipeAutoParseEnabled:     getBool("RECIPE_AUTO_PARSE_ENABLED", true),
 		RecipeAutoParseInterval:    getInt("RECIPE_AUTO_PARSE_INTERVAL_SECONDS", 30),
 		RecipeAutoParseBatchSize:   getInt("RECIPE_AUTO_PARSE_BATCH_SIZE", 3),
+		RecipeFlowchartEnabled:     getBool("RECIPE_FLOWCHART_ENABLED", true),
+		RecipeFlowchartInterval:    getInt("RECIPE_FLOWCHART_INTERVAL_SECONDS", 5),
+		RecipeFlowchartBatchSize:   getInt("RECIPE_FLOWCHART_BATCH_SIZE", 1),
 		RecipeImageMirrorEnabled:   getBool("RECIPE_IMAGE_MIRROR_ENABLED", true),
 		RecipeImageMirrorInterval:  getInt("RECIPE_IMAGE_MIRROR_INTERVAL_SECONDS", 180),
 		RecipeImageMirrorBatchSize: getInt("RECIPE_IMAGE_MIRROR_BATCH_SIZE", 2),
@@ -107,6 +121,10 @@ func Load() (Config, error) {
 
 	if cfg.AITimeoutSeconds <= 0 {
 		return Config{}, errors.New("AI_TIMEOUT_SECONDS must be positive")
+	}
+
+	if cfg.AIFlowchartTimeoutSeconds <= 0 {
+		return Config{}, errors.New("AI_FLOWCHART_TIMEOUT_SECONDS must be positive")
 	}
 
 	if cfg.AITitleTimeoutSeconds <= 0 {
@@ -131,6 +149,14 @@ func Load() (Config, error) {
 
 	if cfg.RecipeAutoParseBatchSize <= 0 {
 		return Config{}, errors.New("RECIPE_AUTO_PARSE_BATCH_SIZE must be positive")
+	}
+
+	if cfg.RecipeFlowchartInterval <= 0 {
+		return Config{}, errors.New("RECIPE_FLOWCHART_INTERVAL_SECONDS must be positive")
+	}
+
+	if cfg.RecipeFlowchartBatchSize <= 0 {
+		return Config{}, errors.New("RECIPE_FLOWCHART_BATCH_SIZE must be positive")
 	}
 
 	if cfg.RecipeImageMirrorInterval <= 0 {
@@ -159,6 +185,13 @@ func Load() (Config, error) {
 
 	if cfg.CredentialsSecret == "" {
 		cfg.CredentialsSecret = cfg.JWTSecret
+	}
+
+	if cfg.AIFlowchartBaseURL == "" {
+		cfg.AIFlowchartBaseURL = cfg.AIBaseURL
+	}
+	if cfg.AIFlowchartAPIKey == "" {
+		cfg.AIFlowchartAPIKey = cfg.AIAPIKey
 	}
 
 	return cfg, nil

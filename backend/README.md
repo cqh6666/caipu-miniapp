@@ -43,6 +43,13 @@ go run ./cmd/server
 - `AI_API_KEY`
 - `AI_MODEL`
 - `AI_TIMEOUT_SECONDS`
+- `AI_FLOWCHART_BASE_URL`
+- `AI_FLOWCHART_API_KEY`
+- `AI_FLOWCHART_MODEL`
+- `AI_FLOWCHART_TIMEOUT_SECONDS`
+- `RECIPE_FLOWCHART_ENABLED`
+- `RECIPE_FLOWCHART_INTERVAL_SECONDS`
+- `RECIPE_FLOWCHART_BATCH_SIZE`
 - `AI_TITLE_ENABLED`
 - `AI_TITLE_MODEL`
 - `AI_TITLE_TIMEOUT_SECONDS`
@@ -109,6 +116,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `GET /api/recipes/{recipeID}`
 - `PUT /api/recipes/{recipeID}`
 - `POST /api/recipes/{recipeID}/reparse`
+- `POST /api/recipes/{recipeID}/flowchart`
 - `PATCH /api/recipes/{recipeID}/status`
 - `DELETE /api/recipes/{recipeID}`
 - `POST /api/uploads/images`

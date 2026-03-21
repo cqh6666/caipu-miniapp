@@ -42,6 +42,56 @@
 					<text v-if="recipe.summary" class="detail-summary">{{ recipe.summary }}</text>
 				</view>
 
+				<view class="detail-card detail-card--flowchart">
+					<view class="detail-card__header">
+						<view class="detail-card__heading">
+							<text class="detail-card__title">AI 流程图</text>
+							<text class="detail-card__subtitle">把关键步骤整理成一张图，进来就能先看懂顺序。</text>
+						</view>
+						<view
+							class="detail-card__action detail-card__action--accent"
+							:class="{ 'detail-card__action--disabled': !canRequestFlowchart || isGeneratingFlowchart }"
+							@tap="handleGenerateFlowchart"
+						>
+							<text class="detail-card__action-text detail-card__action-text--accent">{{ flowchartActionText }}</text>
+						</view>
+					</view>
+
+					<view
+						v-if="flowchartStatusMeta"
+						class="detail-parse"
+						:class="`detail-parse--${flowchartStatusMeta.tone}`"
+					>
+						<view class="detail-parse__body">
+							<view class="detail-parse__badge">
+								<text class="detail-parse__badge-text">{{ flowchartStatusMeta.label }}</text>
+							</view>
+							<text class="detail-parse__desc">{{ flowchartStatusDescription }}</text>
+						</view>
+					</view>
+
+					<view v-if="showFlowchartStaleHint" class="flowchart-hint">
+						<up-icon name="info-circle" size="14" color="#b4664c"></up-icon>
+						<text class="flowchart-hint__text">做法已更新，建议重新生成</text>
+					</view>
+
+					<view v-if="hasFlowchart" class="flowchart-panel" @tap="previewFlowchartImage">
+						<image class="flowchart-panel__image" :src="flowchartImageUrl" mode="widthFix"></image>
+						<view class="flowchart-panel__footer">
+							<text v-if="flowchartUpdatedAtText" class="flowchart-panel__meta">{{ flowchartUpdatedAtText }}</text>
+							<text class="flowchart-panel__preview">点击查看大图</text>
+						</view>
+					</view>
+
+					<view v-else class="flowchart-empty" :class="{ 'flowchart-empty--disabled': !canGenerateFlowchart }">
+						<view class="flowchart-empty__icon">
+							<up-icon name="photo" size="24" color="#b08c72"></up-icon>
+						</view>
+						<text class="flowchart-empty__title">还没有流程图</text>
+						<text class="flowchart-empty__desc">{{ flowchartEmptyText }}</text>
+					</view>
+				</view>
+
 				<view class="detail-card">
 					<view class="detail-card__header">
 						<text class="detail-card__title">做法整理</text>
@@ -365,6 +415,7 @@ import {
 	MAX_RECIPE_IMAGES,
 	buildFallbackParsedContent,
 	deleteRecipeById,
+	generateRecipeFlowchartById,
 	getCachedRecipeById,
 	getRecipeById,
 	mealTypeLabelMap,
@@ -541,6 +592,7 @@ const normalizeParsedContentView = (parsedContent = {}) => {
 const stepListToText = (steps = []) => normalizeParsedSteps(steps).map((item) => item.detail).join('\n')
 
 const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
+const ACTIVE_FLOWCHART_STATUSES = ['pending', 'processing']
 const parseStatusMetaMap = {
 	idle: {
 		label: '可自动整理',
@@ -566,6 +618,24 @@ const parseStatusMetaMap = {
 		label: '解析失败',
 		tone: 'failed',
 		description: '这次自动整理没成功，可以再试一次。'
+	}
+}
+
+const flowchartStatusMetaMap = {
+	pending: {
+		label: '等待生成',
+		tone: 'pending',
+		description: '已加入流程图生成队列，稍后会自动更新。'
+	},
+	processing: {
+		label: '生成中',
+		tone: 'processing',
+		description: '后台正在生成流程图，完成后会自动刷新。'
+	},
+	failed: {
+		label: '生成失败',
+		tone: 'failed',
+		description: '这次流程图生成没成功，可以再试一次。'
 	}
 }
 
@@ -604,6 +674,17 @@ function formatParseSourceLabel(source = '') {
 	return `来源：${value}`
 }
 
+function formatDateTime(value = '') {
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return ''
+	const year = date.getFullYear()
+	const month = `${date.getMonth() + 1}`.padStart(2, '0')
+	const day = `${date.getDate()}`.padStart(2, '0')
+	const hours = `${date.getHours()}`.padStart(2, '0')
+	const minutes = `${date.getMinutes()}`.padStart(2, '0')
+	return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
 export default {
 	data() {
 		return {
@@ -619,6 +700,7 @@ export default {
 			isSavingRecipe: false,
 			isDeletingRecipe: false,
 			isReparseSubmitting: false,
+			isGeneratingFlowchart: false,
 			isPinSubmitting: false,
 			heroImageIndex: 0,
 			parsePollingTimer: null
@@ -637,21 +719,21 @@ export default {
 		detailMetaLine() {
 			return this.isPinned ? `${this.mealLabel} · ${this.statusLabel} · 已置顶` : `${this.mealLabel} · ${this.statusLabel}`
 		},
-			parsedContentView() {
-				return normalizeParsedContentView(this.recipe?.parsedContent || {})
-			},
-			parsedMainIngredients() {
-				return this.parsedContentView.mainIngredients
-			},
-			parsedSupportingIngredients() {
-				return this.parsedContentView.supportingIngredients
-			},
-			parsedSeasonings() {
-				return this.parsedContentView.seasonings
-			},
-			parsedSecondaryIngredients() {
-				return this.parsedContentView.secondaryIngredients
-			},
+		parsedContentView() {
+			return normalizeParsedContentView(this.recipe?.parsedContent || {})
+		},
+		parsedMainIngredients() {
+			return this.parsedContentView.mainIngredients
+		},
+		parsedSupportingIngredients() {
+			return this.parsedContentView.supportingIngredients
+		},
+		parsedSeasonings() {
+			return this.parsedContentView.seasonings
+		},
+		parsedSecondaryIngredients() {
+			return this.parsedContentView.secondaryIngredients
+		},
 		parsedSteps() {
 			return this.parsedContentView.steps
 		},
@@ -668,6 +750,52 @@ export default {
 			}
 			const fallbackImage = String(this.recipe?.image || this.recipe?.imageUrl || '').trim()
 			return fallbackImage ? [fallbackImage] : []
+		},
+		flowchartImageUrl() {
+			return String(this.recipe?.flowchartImageUrl || '').trim()
+		},
+		flowchartStatusValue() {
+			return String(this.recipe?.flowchartStatus || '').trim()
+		},
+		hasFlowchart() {
+			return !!this.flowchartImageUrl
+		},
+		canGenerateFlowchart() {
+			return this.hasMeaningfulParsedContent && this.parsedSteps.length >= 3
+		},
+		canRequestFlowchart() {
+			return this.canGenerateFlowchart && !ACTIVE_FLOWCHART_STATUSES.includes(this.flowchartStatusValue)
+		},
+		flowchartActionText() {
+			if (this.isGeneratingFlowchart) return '提交中...'
+			if (ACTIVE_FLOWCHART_STATUSES.includes(this.flowchartStatusValue)) return '生成中...'
+			return this.hasFlowchart ? '重新生成' : '生成流程图'
+		},
+		flowchartEmptyText() {
+			if (this.canGenerateFlowchart) {
+				return '生成后会把主流程整理成一张更直观的步骤图。'
+			}
+			return '先补充至少 3 个关键步骤，再生成流程图。'
+		},
+		flowchartStatusMeta() {
+			const status = this.flowchartStatusValue
+			if (!status || status === 'done') return null
+			return flowchartStatusMetaMap[status] || null
+		},
+		flowchartStatusDescription() {
+			if (!this.flowchartStatusMeta) return ''
+			const errorMessage = String(this.recipe?.flowchartError || '').trim()
+			if (this.flowchartStatusValue === 'failed' && errorMessage) {
+				return errorMessage
+			}
+			return this.flowchartStatusMeta.description
+		},
+		showFlowchartStaleHint() {
+			return this.hasFlowchart && !!this.recipe?.flowchartStale
+		},
+		flowchartUpdatedAtText() {
+			const value = formatDateTime(this.recipe?.flowchartUpdatedAt || '')
+			return value ? `上次生成：${value}` : ''
 		},
 		parseStatusValue() {
 			return String(this.recipe?.parseStatus || '').trim()
@@ -769,8 +897,9 @@ export default {
 			this.syncParsePolling()
 		},
 		syncParsePolling() {
-			const status = String(this.recipe?.parseStatus || '').trim()
-			if (!ACTIVE_PARSE_STATUSES.includes(status)) {
+			const parseStatus = String(this.recipe?.parseStatus || '').trim()
+			const flowchartStatus = String(this.recipe?.flowchartStatus || '').trim()
+			if (!ACTIVE_PARSE_STATUSES.includes(parseStatus) && !ACTIVE_FLOWCHART_STATUSES.includes(flowchartStatus)) {
 				this.stopParsePolling()
 				return
 			}
@@ -787,7 +916,7 @@ export default {
 			this.parsePollingTimer = null
 		},
 		async refreshParseStatus() {
-			if (!this.recipeId || this.isLoadingRecipe || this.isSavingRecipe || this.isDeletingRecipe || this.isReparseSubmitting || this.isPinSubmitting) {
+			if (!this.recipeId || this.isLoadingRecipe || this.isSavingRecipe || this.isDeletingRecipe || this.isReparseSubmitting || this.isGeneratingFlowchart || this.isPinSubmitting) {
 				return
 			}
 
@@ -1008,6 +1137,39 @@ export default {
 				uni.hideLoading()
 			}
 		},
+		async handleGenerateFlowchart() {
+			if (!this.recipeId || this.isGeneratingFlowchart || !this.canRequestFlowchart) return
+			if (!this.canGenerateFlowchart) {
+				uni.showToast({
+					title: '先补充至少 3 个关键步骤',
+					icon: 'none'
+				})
+				return
+			}
+
+			this.isGeneratingFlowchart = true
+			uni.showLoading({
+				title: '提交中',
+				mask: true
+			})
+
+			try {
+				const recipe = await generateRecipeFlowchartById(this.recipeId)
+				this.applyRecipe(recipe)
+				uni.showToast({
+					title: '已加入生成队列',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '生成流程图失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isGeneratingFlowchart = false
+				uni.hideLoading()
+			}
+		},
 		async togglePinned() {
 			if (!this.recipeId || !this.recipe || this.isPinSubmitting) return
 
@@ -1101,6 +1263,13 @@ export default {
 			uni.previewImage({
 				current: urls[this.heroImageIndex] || urls[0],
 				urls
+			})
+		},
+		previewFlowchartImage() {
+			if (!this.flowchartImageUrl) return
+			uni.previewImage({
+				current: this.flowchartImageUrl,
+				urls: [this.flowchartImageUrl]
 			})
 		},
 		goBack() {
@@ -1293,6 +1462,14 @@ export default {
 		color: #2f2923;
 	}
 
+	.detail-card__subtitle {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 22rpx;
+		line-height: 1.6;
+		color: #9b9186;
+	}
+
 	.detail-card__action {
 		padding: 12rpx 20rpx;
 		border-radius: 999rpx;
@@ -1306,6 +1483,7 @@ export default {
 
 	.detail-card__action--disabled {
 		opacity: 0.6;
+		pointer-events: none;
 	}
 
 	.detail-card__action-text {
@@ -1351,6 +1529,100 @@ export default {
 
 	.detail-empty {
 		color: #9e9387;
+	}
+
+	.detail-card--flowchart {
+		overflow: hidden;
+	}
+
+	.flowchart-hint {
+		margin-top: 18rpx;
+		padding: 14rpx 18rpx;
+		border-radius: 18rpx;
+		background: #fff2ea;
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+	}
+
+	.flowchart-hint__text {
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: #b4664c;
+	}
+
+	.flowchart-panel {
+		margin-top: 18rpx;
+		border-radius: 24rpx;
+		overflow: hidden;
+		background: #f6f2ed;
+		border: 1px solid rgba(91, 74, 59, 0.08);
+	}
+
+	.flowchart-panel__image {
+		width: 100%;
+		display: block;
+		background: #f6f2ed;
+	}
+
+	.flowchart-panel__footer {
+		padding: 16rpx 18rpx 18rpx;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.flowchart-panel__meta,
+	.flowchart-panel__preview {
+		font-size: 21rpx;
+		line-height: 1.5;
+		color: #8f8275;
+	}
+
+	.flowchart-panel__preview {
+		font-weight: 600;
+		color: #6d6155;
+	}
+
+	.flowchart-empty {
+		margin-top: 18rpx;
+		padding: 34rpx 28rpx;
+		border-radius: 24rpx;
+		background: linear-gradient(135deg, #f9f4ee, #f4ede4);
+		border: 1px dashed rgba(180, 102, 76, 0.2);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+	}
+
+	.flowchart-empty--disabled {
+		opacity: 0.72;
+	}
+
+	.flowchart-empty__icon {
+		width: 78rpx;
+		height: 78rpx;
+		border-radius: 22rpx;
+		background: rgba(255, 255, 255, 0.72);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.flowchart-empty__title {
+		margin-top: 18rpx;
+		font-size: 27rpx;
+		font-weight: 700;
+		color: #4e4339;
+	}
+
+	.flowchart-empty__desc {
+		margin-top: 10rpx;
+		font-size: 23rpx;
+		line-height: 1.6;
+		color: #8f8275;
 	}
 
 	.detail-parse {

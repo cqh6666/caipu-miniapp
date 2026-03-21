@@ -237,6 +237,30 @@ func (h *Handler) RequeueAutoParse(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) GenerateFlowchart(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	recipeID := strings.TrimSpace(chi.URLParam(r, "recipeID"))
+	if recipeID == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "recipeID is required", http.StatusBadRequest))
+		return
+	}
+
+	item, err := h.service.GenerateFlowchart(r.Context(), userID, recipeID)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"recipe": item,
+	})
+}
+
 func parseKitchenID(r *http.Request) (int64, error) {
 	kitchenID := strings.TrimSpace(chi.URLParam(r, "kitchenID"))
 	if kitchenID == "" {

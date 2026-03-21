@@ -29,6 +29,7 @@ type App struct {
 	DB                *sql.DB
 	Server            *http.Server
 	RecipeAutoParser  *recipe.AutoParseWorker
+	RecipeFlowchart   *recipe.FlowchartWorker
 	RecipeImageMirror *recipe.ImageMirrorWorker
 }
 
@@ -57,9 +58,6 @@ func New(cfg config.Config) (*App, error) {
 	inviteHandler := invite.NewHandler(inviteService)
 
 	recipeRepo := recipe.NewRepository(dbConn)
-	recipeService := recipe.NewService(recipeRepo, kitchenService)
-	recipeHandler := recipe.NewHandler(recipeService)
-
 	linkParseService := linkparse.NewService(linkparse.Options{
 		AIBaseURL:          cfg.AIBaseURL,
 		AIAPIKey:           cfg.AIAPIKey,
@@ -88,6 +86,14 @@ func New(cfg config.Config) (*App, error) {
 	linkParseHandler := linkparse.NewHandler(linkParseService)
 	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
 	uploadHandler := upload.NewHandler(uploadService)
+	recipeFlowchart := recipe.NewFlowchartGenerator(recipe.FlowchartOptions{
+		BaseURL: cfg.AIFlowchartBaseURL,
+		APIKey:  cfg.AIFlowchartAPIKey,
+		Model:   cfg.AIFlowchartModel,
+		Timeout: time.Duration(cfg.AIFlowchartTimeoutSeconds) * time.Second,
+	}, uploadService)
+	recipeService := recipe.NewService(recipeRepo, kitchenService, recipeFlowchart, cfg.RecipeFlowchartEnabled)
+	recipeHandler := recipe.NewHandler(recipeService)
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpireHours)
 	authRepo := auth.NewRepository(dbConn)
@@ -114,6 +120,14 @@ func New(cfg config.Config) (*App, error) {
 		time.Duration(cfg.RecipeAutoParseInterval)*time.Second,
 		cfg.RecipeAutoParseBatchSize,
 	)
+	recipeFlowchartWorker := recipe.NewFlowchartWorker(
+		logger,
+		recipeRepo,
+		recipeFlowchart,
+		cfg.RecipeFlowchartEnabled,
+		time.Duration(cfg.RecipeFlowchartInterval)*time.Second,
+		cfg.RecipeFlowchartBatchSize,
+	)
 	recipeImageMirror := recipe.NewImageMirrorWorker(
 		logger,
 		recipeRepo,
@@ -138,6 +152,7 @@ func New(cfg config.Config) (*App, error) {
 		DB:                dbConn,
 		Server:            server,
 		RecipeAutoParser:  recipeAutoParser,
+		RecipeFlowchart:   recipeFlowchartWorker,
 		RecipeImageMirror: recipeImageMirror,
 	}, nil
 }
@@ -145,6 +160,9 @@ func New(cfg config.Config) (*App, error) {
 func (a *App) Start() error {
 	if a.RecipeAutoParser != nil {
 		a.RecipeAutoParser.Start(context.Background())
+	}
+	if a.RecipeFlowchart != nil {
+		a.RecipeFlowchart.Start(context.Background())
 	}
 	if a.RecipeImageMirror != nil {
 		a.RecipeImageMirror.Start(context.Background())
@@ -159,6 +177,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	if a.RecipeAutoParser != nil {
 		a.RecipeAutoParser.Stop()
+	}
+	if a.RecipeFlowchart != nil {
+		a.RecipeFlowchart.Stop()
 	}
 	if a.RecipeImageMirror != nil {
 		a.RecipeImageMirror.Stop()

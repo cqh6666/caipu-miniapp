@@ -32,14 +32,18 @@ const (
 )
 
 type Service struct {
-	repo    *Repository
-	kitchen *kitchen.Service
+	repo             *Repository
+	kitchen          *kitchen.Service
+	flowchart        *FlowchartGenerator
+	flowchartEnabled bool
 }
 
-func NewService(repo *Repository, kitchenService *kitchen.Service) *Service {
+func NewService(repo *Repository, kitchenService *kitchen.Service, flowchart *FlowchartGenerator, flowchartEnabled bool) *Service {
 	return &Service{
-		repo:    repo,
-		kitchen: kitchenService,
+		repo:             repo,
+		kitchen:          kitchenService,
+		flowchart:        flowchart,
+		flowchartEnabled: flowchartEnabled,
 	}
 }
 
@@ -125,6 +129,13 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	next.ID = current.ID
 	next.KitchenID = current.KitchenID
 	next.PinnedAt = current.PinnedAt
+	next.FlowchartImageURL = current.FlowchartImageURL
+	next.FlowchartStatus = current.FlowchartStatus
+	next.FlowchartError = current.FlowchartError
+	next.FlowchartRequestedAt = current.FlowchartRequestedAt
+	next.FlowchartFinishedAt = current.FlowchartFinishedAt
+	next.FlowchartUpdatedAt = current.FlowchartUpdatedAt
+	next.FlowchartSourceHash = current.FlowchartSourceHash
 	next.CreatedBy = current.CreatedBy
 	next.CreatedAt = current.CreatedAt
 	next.UpdatedBy = userID
@@ -212,6 +223,41 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID strin
 	}
 
 	current.Status = status
+	current.UpdatedBy = userID
+	current.UpdatedAt = now
+	return current, nil
+}
+
+func (s *Service) GenerateFlowchart(ctx context.Context, userID int64, recipeID string) (Recipe, error) {
+	if !s.flowchartEnabled || s.flowchart == nil || !s.flowchart.IsConfigured() {
+		return Recipe{}, common.NewAppError(common.CodeInternalServer, "flowchart generation is not configured", http.StatusServiceUnavailable)
+	}
+
+	current, err := s.GetByID(ctx, userID, recipeID)
+	if err != nil {
+		return Recipe{}, err
+	}
+
+	if !canGenerateFlowchartForRecipe(current) {
+		return Recipe{}, common.NewAppError(common.CodeBadRequest, "please complete key recipe steps before generating a flowchart", http.StatusBadRequest)
+	}
+
+	switch current.FlowchartStatus {
+	case FlowchartStatusPending, FlowchartStatusProcessing:
+		return current, nil
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	if err := s.repo.QueueFlowchart(ctx, current.ID, current.KitchenID, userID, now); errors.Is(err, sql.ErrNoRows) {
+		return Recipe{}, common.ErrNotFound
+	} else if err != nil {
+		return Recipe{}, err
+	}
+
+	current.FlowchartStatus = FlowchartStatusPending
+	current.FlowchartError = ""
+	current.FlowchartRequestedAt = now
+	current.FlowchartFinishedAt = ""
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
 	return current, nil
@@ -505,6 +551,16 @@ func shouldQueueAutoParse(link string, content ParsedContent, mealType, title, i
 	}
 
 	return !hasUserProvidedParsedContent(content, mealType, title, ingredient)
+}
+
+func canGenerateFlowchartForRecipe(item Recipe) bool {
+	if strings.TrimSpace(item.Title) == "" {
+		return false
+	}
+	if !hasUserProvidedParsedContent(item.ParsedContent, item.MealType, item.Title, item.Ingredient) {
+		return false
+	}
+	return len(cleanParsedSteps(item.ParsedContent.Steps)) >= 3
 }
 
 func hasMeaningfulParsedContent(content ParsedContent) bool {

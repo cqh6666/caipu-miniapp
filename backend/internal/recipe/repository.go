@@ -20,6 +20,8 @@ func NewRepository(db *sql.DB) *Repository {
 func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filter ListFilter) ([]Recipe, error) {
 	query := `
 	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
@@ -73,6 +75,8 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, error) {
 	const query = `
 	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
@@ -139,7 +143,9 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		ctx,
 		`UPDATE recipes
 	SET title = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, meal_type = ?, status = ?, note = ?,
-	    ingredients_json = ?, steps_json = ?, parse_status = ?, parse_source = ?, parse_error = ?,
+	    ingredients_json = ?, steps_json = ?, flowchart_image_url = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
+	    flowchart_status = ?, flowchart_error = ?, flowchart_requested_at = ?, flowchart_finished_at = ?,
+	    parse_status = ?, parse_source = ?, parse_error = ?,
 	    parse_requested_at = ?, parse_finished_at = ?, pinned_at = ?, updated_by = ?, updated_at = ?
 	WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
@@ -153,6 +159,13 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		nullableString(item.Note),
 		ingredientsJSON,
 		stepsJSON,
+		nonNullableTrimmedString(item.FlowchartImageURL),
+		nullableString(item.FlowchartUpdatedAt),
+		strings.TrimSpace(item.FlowchartSourceHash),
+		item.FlowchartStatus,
+		strings.TrimSpace(item.FlowchartError),
+		nullableString(item.FlowchartRequestedAt),
+		nullableString(item.FlowchartFinishedAt),
 		item.ParseStatus,
 		item.ParseSource,
 		strings.TrimSpace(item.ParseError),
@@ -188,6 +201,51 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	}
 
 	return item, nil
+}
+
+func (r *Repository) QueueFlowchart(ctx context.Context, recipeID string, kitchenID int64, updatedBy int64, requestedAt string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin queue flowchart tx: %w", err)
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL,
+    updated_by = ?, updated_at = ?
+WHERE id = ? AND deleted_at IS NULL`,
+		FlowchartStatusPending,
+		nullableString(requestedAt),
+		updatedBy,
+		requestedAt,
+		recipeID,
+	)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("queue recipe flowchart: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("read queue flowchart rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		_ = tx.Rollback()
+		return sql.ErrNoRows
+	}
+
+	if err := bumpKitchenUpdatedAt(ctx, tx, kitchenID, requestedAt); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit queue flowchart: %w", err)
+	}
+
+	return nil
 }
 
 func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenID int64, status string, updatedBy int64, updatedAt string) error {
@@ -322,6 +380,8 @@ WHERE id = ? AND deleted_at IS NULL`,
 func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
 	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
@@ -356,6 +416,8 @@ LIMIT ?`
 func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
 	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
@@ -398,6 +460,8 @@ LIMIT ?`
 func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
 	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
@@ -428,6 +492,42 @@ LIMIT ?`
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate image mirror candidates: %w", err)
+	}
+
+	return items, nil
+}
+
+func (r *Repository) ListPendingFlowcharts(ctx context.Context, limit int) ([]Recipe, error) {
+	const query = `
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
+	WHERE deleted_at IS NULL AND flowchart_status = ?
+ORDER BY COALESCE(flowchart_requested_at, updated_at, created_at) ASC, id ASC
+LIMIT ?`
+
+	rows, err := r.db.QueryContext(ctx, query, FlowchartStatusPending, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pending flowchart jobs: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Recipe, 0, limit)
+	for rows.Next() {
+		item, err := scanRecipe(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pending flowchart jobs: %w", err)
 	}
 
 	return items, nil
@@ -480,6 +580,28 @@ WHERE id = ? AND deleted_at IS NULL AND COALESCE(parse_status, '') = ''`,
 	return rowsAffected > 0, nil
 }
 
+func (r *Repository) MarkFlowchartProcessing(ctx context.Context, recipeID string) (bool, error) {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET flowchart_status = ?, flowchart_error = ''
+WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ?`,
+		FlowchartStatusProcessing,
+		recipeID,
+		FlowchartStatusPending,
+	)
+	if err != nil {
+		return false, fmt.Errorf("mark recipe flowchart processing: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read flowchart processing rows: %w", err)
+	}
+
+	return rowsAffected > 0, nil
+}
+
 func (r *Repository) MarkAutoParseFailed(ctx context.Context, recipeID, parseSource, parseError, finishedAt string) error {
 	if _, err := r.db.ExecContext(
 		ctx,
@@ -493,6 +615,24 @@ WHERE id = ? AND deleted_at IS NULL`,
 		recipeID,
 	); err != nil {
 		return fmt.Errorf("mark recipe auto parse failed: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Repository) MarkFlowchartFailed(ctx context.Context, recipeID, flowchartError, finishedAt string) error {
+	if _, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET flowchart_status = ?, flowchart_error = ?, flowchart_finished_at = ?, updated_at = ?
+WHERE id = ? AND deleted_at IS NULL`,
+		FlowchartStatusFailed,
+		truncateString(strings.TrimSpace(flowchartError), 300),
+		finishedAt,
+		finishedAt,
+		recipeID,
+	); err != nil {
+		return fmt.Errorf("mark recipe flowchart failed: %w", err)
 	}
 
 	return nil
@@ -626,6 +766,59 @@ WHERE id = ? AND deleted_at IS NULL`,
 	return nil
 }
 
+func (r *Repository) ApplyFlowchartResult(ctx context.Context, recipeID, imageURL, sourceHash, finishedAt string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin apply flowchart tx: %w", err)
+	}
+
+	current, err := findRecipeByIDTx(ctx, tx, recipeID)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET flowchart_image_url = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
+    flowchart_status = ?, flowchart_error = '', flowchart_finished_at = ?, updated_at = ?
+WHERE id = ? AND deleted_at IS NULL`,
+		nullableString(imageURL),
+		nullableString(finishedAt),
+		strings.TrimSpace(sourceHash),
+		FlowchartStatusDone,
+		finishedAt,
+		finishedAt,
+		recipeID,
+	)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("apply recipe flowchart result: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("read flowchart result rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		_ = tx.Rollback()
+		return sql.ErrNoRows
+	}
+
+	if err := bumpKitchenUpdatedAt(ctx, tx, current.KitchenID, finishedAt); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit apply flowchart result: %w", err)
+	}
+
+	return nil
+}
+
 func (r *Repository) ApplyMirroredImages(ctx context.Context, recipeID string, oldImages, newImages []string, updatedAt string) (bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -714,6 +907,13 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.Link,
 		&item.ImageURL,
 		&imageURLsJSON,
+		&item.FlowchartImageURL,
+		&item.FlowchartUpdatedAt,
+		&item.FlowchartSourceHash,
+		&item.FlowchartStatus,
+		&item.FlowchartError,
+		&item.FlowchartRequestedAt,
+		&item.FlowchartFinishedAt,
 		&item.MealType,
 		&item.Status,
 		&item.Note,
@@ -751,6 +951,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		item.ImageURL = firstImageURL(imageURLs)
 	}
 	item.ParsedContent = normalizeParsedContent(parsedContent, item.MealType, item.Title, item.Ingredient)
+	item.FlowchartStale = strings.TrimSpace(item.FlowchartImageURL) != "" && strings.TrimSpace(item.FlowchartSourceHash) != buildFlowchartSourceHash(item)
 	return item, nil
 }
 
@@ -769,9 +970,11 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 		ctx,
 		`INSERT INTO recipes (
 	id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, meal_type, status, note,
-	ingredients_json, steps_json, parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
+	ingredients_json, steps_json, flowchart_image_url, flowchart_updated_at, flowchart_source_hash,
+	flowchart_status, flowchart_error, flowchart_requested_at, flowchart_finished_at,
+	parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
 	pinned_at, created_by, updated_by, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
@@ -785,6 +988,13 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 		nullableString(item.Note),
 		ingredientsJSON,
 		stepsJSON,
+		nonNullableTrimmedString(item.FlowchartImageURL),
+		nullableString(item.FlowchartUpdatedAt),
+		strings.TrimSpace(item.FlowchartSourceHash),
+		item.FlowchartStatus,
+		strings.TrimSpace(item.FlowchartError),
+		nullableString(item.FlowchartRequestedAt),
+		nullableString(item.FlowchartFinishedAt),
 		item.ParseStatus,
 		item.ParseSource,
 		strings.TrimSpace(item.ParseError),
@@ -805,6 +1015,8 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe, error) {
 	const query = `
 	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
