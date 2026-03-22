@@ -133,31 +133,15 @@
 						</view>
 					</view>
 
-					<view v-if="parsedSupportingIngredients.length" class="parsed-section">
-						<text class="parsed-section__title">配菜</text>
+					<view v-if="parsedSecondaryGroups.length" class="parsed-section">
+						<text class="parsed-section__title">辅料</text>
 						<view
-							v-for="(ingredient, index) in parsedSupportingIngredients"
-							:key="`supporting-ingredient-${index}`"
-							class="parsed-item"
+							v-for="group in parsedSecondaryGroups"
+							:key="group.key"
+							class="parsed-group"
 						>
-							<view class="parsed-item__index">
-								<text class="parsed-item__index-text">{{ index + 1 }}</text>
-							</view>
-							<text class="parsed-item__text">{{ ingredient }}</text>
-						</view>
-					</view>
-
-					<view v-if="parsedSeasonings.length" class="parsed-section">
-						<text class="parsed-section__title">调味</text>
-						<view
-							v-for="(ingredient, index) in parsedSeasonings"
-							:key="`seasoning-ingredient-${index}`"
-							class="parsed-item"
-						>
-							<view class="parsed-item__index">
-								<text class="parsed-item__index-text">{{ index + 1 }}</text>
-							</view>
-							<text class="parsed-item__text">{{ ingredient }}</text>
+							<text class="parsed-group__label">{{ group.label }}</text>
+							<text class="parsed-group__text">{{ group.text }}</text>
 						</view>
 					</view>
 
@@ -725,14 +709,31 @@ export default {
 		parsedMainIngredients() {
 			return this.parsedContentView.mainIngredients
 		},
-		parsedSupportingIngredients() {
-			return this.parsedContentView.supportingIngredients
-		},
-		parsedSeasonings() {
-			return this.parsedContentView.seasonings
-		},
 		parsedSecondaryIngredients() {
 			return this.parsedContentView.secondaryIngredients
+		},
+		parsedSecondaryGroups() {
+			const groups = []
+			const supportingIngredients = this.parsedContentView.supportingIngredients || []
+			const seasonings = this.parsedContentView.seasonings || []
+
+			if (supportingIngredients.length) {
+				groups.push({
+					key: 'supporting',
+					label: '配菜',
+					text: supportingIngredients.join('、')
+				})
+			}
+
+			if (seasonings.length) {
+				groups.push({
+					key: 'seasonings',
+					label: '调味',
+					text: seasonings.join('、')
+				})
+			}
+
+			return groups
 		},
 		parsedSteps() {
 			return this.parsedContentView.steps
@@ -1711,6 +1712,33 @@ export default {
 		display: flex;
 		align-items: flex-start;
 		gap: 14rpx;
+	}
+
+	.parsed-group {
+		margin-top: 14rpx;
+		padding: 18rpx 20rpx;
+		border-radius: 20rpx;
+		background: #f8f5f1;
+		border: 1px solid rgba(91, 74, 59, 0.08);
+	}
+
+	.parsed-group__label {
+		display: inline-flex;
+		padding: 6rpx 14rpx;
+		border-radius: 999rpx;
+		background: #efe8df;
+		font-size: 20rpx;
+		font-weight: 700;
+		line-height: 1.2;
+		color: #7a6c60;
+	}
+
+	.parsed-group__text {
+		display: block;
+		margin-top: 12rpx;
+		font-size: 25rpx;
+		line-height: 1.7;
+		color: #4d433a;
 	}
 
 	.parsed-item__index {
