@@ -45,8 +45,7 @@
 				<view class="detail-card detail-card--flowchart">
 					<view class="detail-card__header">
 						<view class="detail-card__heading">
-							<text class="detail-card__title">AI 流程图</text>
-							<text class="detail-card__subtitle">把关键步骤整理成一张图，进来就能先看懂顺序。</text>
+							<text class="detail-card__title">一图看懂</text>
 						</view>
 						<view
 							class="detail-card__action detail-card__action--accent"
@@ -72,14 +71,14 @@
 
 					<view v-if="showFlowchartStaleHint" class="flowchart-hint">
 						<up-icon name="info-circle" size="14" color="#b4664c"></up-icon>
-						<text class="flowchart-hint__text">做法已更新，建议重新生成</text>
+						<text class="flowchart-hint__text">做法已更新，建议重新生成步骤图</text>
 					</view>
 
 					<view v-if="hasFlowchart" class="flowchart-panel" @tap="previewFlowchartImage">
 						<image class="flowchart-panel__image" :src="flowchartImageUrl" mode="widthFix"></image>
 						<view class="flowchart-panel__footer">
 							<text v-if="flowchartUpdatedAtText" class="flowchart-panel__meta">{{ flowchartUpdatedAtText }}</text>
-							<text class="flowchart-panel__preview">点击查看大图</text>
+							<text class="flowchart-panel__preview">放大看</text>
 						</view>
 					</view>
 
@@ -87,7 +86,7 @@
 						<view class="flowchart-empty__icon">
 							<up-icon name="photo" size="24" color="#b08c72"></up-icon>
 						</view>
-						<text class="flowchart-empty__title">还没有流程图</text>
+						<text class="flowchart-empty__title">还没生成步骤图</text>
 						<text class="flowchart-empty__desc">{{ flowchartEmptyText }}</text>
 					</view>
 				</view>
@@ -607,19 +606,19 @@ const parseStatusMetaMap = {
 
 const flowchartStatusMetaMap = {
 	pending: {
-		label: '等待生成',
+		label: '等待出图',
 		tone: 'pending',
-		description: '已加入流程图生成队列，稍后会自动更新。'
+		description: '已加入生成队列，稍后会自动补上步骤图。'
 	},
 	processing: {
-		label: '生成中',
+		label: '正在出图',
 		tone: 'processing',
-		description: '后台正在生成流程图，完成后会自动刷新。'
+		description: '后台正在整理步骤图，完成后会自动刷新。'
 	},
 	failed: {
 		label: '生成失败',
 		tone: 'failed',
-		description: '这次流程图生成没成功，可以再试一次。'
+		description: '这次步骤图生成没成功，可以重新再试。'
 	}
 }
 
@@ -770,13 +769,13 @@ export default {
 		flowchartActionText() {
 			if (this.isGeneratingFlowchart) return '提交中...'
 			if (ACTIVE_FLOWCHART_STATUSES.includes(this.flowchartStatusValue)) return '生成中...'
-			return this.hasFlowchart ? '重新生成' : '生成流程图'
+			return this.hasFlowchart ? '重新生成' : '生成步骤图'
 		},
 		flowchartEmptyText() {
 			if (this.canGenerateFlowchart) {
-				return '生成后会把主流程整理成一张更直观的步骤图。'
+				return '生成后会把关键步骤整理成一张图，先看懂再下厨。'
 			}
-			return '先补充至少 3 个关键步骤，再生成流程图。'
+			return '先补充至少 3 个关键步骤，再生成步骤图。'
 		},
 		flowchartStatusMeta() {
 			const status = this.flowchartStatusValue
@@ -796,7 +795,7 @@ export default {
 		},
 		flowchartUpdatedAtText() {
 			const value = formatDateTime(this.recipe?.flowchartUpdatedAt || '')
-			return value ? `上次生成：${value}` : ''
+			return value ? `已生成：${value}` : ''
 		},
 		parseStatusValue() {
 			return String(this.recipe?.parseStatus || '').trim()
@@ -1463,18 +1462,16 @@ export default {
 		color: #2f2923;
 	}
 
-	.detail-card__subtitle {
-		display: block;
-		margin-top: 10rpx;
-		font-size: 22rpx;
-		line-height: 1.6;
-		color: #9b9186;
-	}
-
 	.detail-card__action {
-		padding: 12rpx 20rpx;
+		min-height: 56rpx;
+		padding: 0 20rpx;
+		box-sizing: border-box;
 		border-radius: 999rpx;
 		background: #f2ece5;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
 	}
 
 	.detail-card__action--accent {
@@ -1488,9 +1485,12 @@ export default {
 	}
 
 	.detail-card__action-text {
+		display: block;
 		font-size: 22rpx;
 		font-weight: 600;
+		line-height: 1;
 		color: #6d6155;
+		text-align: center;
 	}
 
 	.detail-card__action-text--accent {
