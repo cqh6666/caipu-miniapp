@@ -10,8 +10,6 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/profile"
 )
 
-const defaultKitchenName = "我们的厨房"
-
 type Service struct {
 	repo *Repository
 }
@@ -41,7 +39,7 @@ func (s *Service) ListMembers(ctx context.Context, userID, kitchenID int64) ([]M
 	return items, nil
 }
 
-func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64) (Summary, error) {
+func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64, nickname, openID string) (Summary, error) {
 	items, err := s.repo.ListByUserID(ctx, userID)
 	if err != nil {
 		return Summary{}, err
@@ -51,7 +49,11 @@ func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64) (Summa
 		return items[0], nil
 	}
 
-	return s.repo.CreateWithOwner(ctx, userID, defaultKitchenName)
+	return s.repo.CreateWithOwner(ctx, userID, buildAutoKitchenName(nickname, userID, openID), nameSourceAuto)
+}
+
+func (s *Service) SyncOwnedAutoKitchenNames(ctx context.Context, userID int64, nickname, openID string) error {
+	return s.repo.UpdateOwnedAutoNames(ctx, userID, buildAutoKitchenName(nickname, userID, openID))
 }
 
 func (s *Service) CreateKitchen(ctx context.Context, userID int64, name string) (Summary, error) {
@@ -60,7 +62,7 @@ func (s *Service) CreateKitchen(ctx context.Context, userID int64, name string) 
 		return Summary{}, err
 	}
 
-	return s.repo.CreateWithOwner(ctx, userID, name)
+	return s.repo.CreateWithOwner(ctx, userID, name, nameSourceCustom)
 }
 
 func (s *Service) UpdateKitchen(ctx context.Context, userID, kitchenID int64, name string) (Summary, error) {

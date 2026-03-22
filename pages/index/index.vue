@@ -999,7 +999,7 @@ export default {
 	onShareAppMessage(res) {
 		if (res?.from === 'button' && this.activeInvite?.sharePath) {
 			return {
-				title: `${this.currentKitchenName || '我们的厨房'} 邀请你一起维护菜单`,
+				title: `${this.currentKitchenName || '这间厨房'} 邀请你一起维护菜单`,
 				path: this.activeInvite.sharePath
 			}
 		}
@@ -1364,10 +1364,16 @@ export default {
 				if (!user) {
 					throw new Error('当前后端暂不支持保存资料')
 				}
+				let nextSession = null
+				try {
+					nextSession = await ensureSession()
+				} catch (error) {
+					// Keep the saved profile result even if the follow-up session refresh fails.
+				}
 				this.showProfileSheet = false
 				this.hasDismissedProfilePrompt = true
 				this.resetProfileDraft()
-				this.applySession()
+				this.applySession(nextSession || getSessionSnapshot())
 				await this.refreshKitchenMembers({ silent: true })
 				uni.showToast({
 					title: '资料已更新',

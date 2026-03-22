@@ -10,7 +10,7 @@ const PLACEHOLDER_NICKNAMES = new Set(['微信用户', 'wechat user'])
 function normalizeKitchen(kitchen = {}) {
 	return {
 		id: Number(kitchen.id) || 0,
-		name: kitchen.name || '我们的厨房',
+		name: kitchen.name || '我的厨房',
 		role: kitchen.role || 'member'
 	}
 }
@@ -283,21 +283,33 @@ export async function ensureSession(options = {}) {
 			const storedToken = getAccessToken()
 			if (storedToken) {
 				try {
-					const payload = await request({
+					let payload = await request({
 						url: '/caipu-api/auth/me',
 						method: 'GET'
 					})
+					let profileSynced = false
 					const profile = await getOptionalWeChatProfile()
 					try {
 						if (shouldSyncUserProfile(payload?.user, profile)) {
 							const user = await updateSessionUserProfile(profile)
 							if (user) {
 								payload.user = user
+								profileSynced = true
 							}
 						}
 					} catch (error) {
 						if (!isLegacyProfileRequestError(error)) {
 							throw error
+						}
+					}
+					if (profileSynced) {
+						try {
+							payload = await request({
+								url: '/caipu-api/auth/me',
+								method: 'GET'
+							})
+						} catch (error) {
+							// Keep the refreshed user payload even if this follow-up session sync fails.
 						}
 					}
 					if (shouldRefreshDevSession(payload)) {

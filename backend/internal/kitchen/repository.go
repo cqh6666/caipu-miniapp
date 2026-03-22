@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -100,7 +101,7 @@ ORDER BY
 	return items, nil
 }
 
-func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, name string) (Summary, error) {
+func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, name string, nameSource string) (Summary, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Summary{}, fmt.Errorf("begin create kitchen tx: %w", err)
@@ -109,11 +110,12 @@ func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, nam
 	now := time.Now().Format(time.RFC3339)
 	result, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO kitchens (name, owner_user_id, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO kitchens (name, owner_user_id, created_at, updated_at, name_source) VALUES (?, ?, ?, ?, ?)`,
 		name,
 		ownerUserID,
 		now,
 		now,
+		normalizeNameSource(nameSource),
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -152,12 +154,38 @@ func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, nam
 func (r *Repository) UpdateName(ctx context.Context, kitchenID int64, name string) error {
 	if _, err := r.db.ExecContext(
 		ctx,
-		`UPDATE kitchens SET name = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE kitchens SET name = ?, name_source = ?, updated_at = ? WHERE id = ?`,
 		name,
+		nameSourceCustom,
 		time.Now().Format(time.RFC3339),
 		kitchenID,
 	); err != nil {
 		return fmt.Errorf("update kitchen name: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Repository) UpdateOwnedAutoNames(ctx context.Context, ownerUserID int64, name string) error {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return nil
+	}
+
+	if _, err := r.db.ExecContext(
+		ctx,
+		`UPDATE kitchens
+SET name = ?, updated_at = ?
+WHERE owner_user_id = ?
+  AND name_source = ?
+  AND COALESCE(TRIM(name), '') <> ?`,
+		trimmedName,
+		time.Now().Format(time.RFC3339),
+		ownerUserID,
+		nameSourceAuto,
+		trimmedName,
+	); err != nil {
+		return fmt.Errorf("update owned auto kitchen names: %w", err)
 	}
 
 	return nil

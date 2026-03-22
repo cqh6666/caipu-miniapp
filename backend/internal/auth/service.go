@@ -125,6 +125,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID int64, nickname, ava
 	if err != nil {
 		return User{}, fmt.Errorf("update user profile: %w", err)
 	}
+	if err := s.syncAutoKitchenNames(ctx, user); err != nil {
+		return User{}, fmt.Errorf("sync auto kitchen names: %w", err)
+	}
 	user = s.enrichUser(user)
 
 	return user, nil
@@ -143,8 +146,12 @@ func (s *Service) EnsureCanManageAppSettings(ctx context.Context, userID int64) 
 }
 
 func (s *Service) buildSession(ctx context.Context, user User, includeToken bool) (SessionResponse, error) {
-	if _, err := s.kitchen.EnsureDefaultKitchen(ctx, user.ID); err != nil {
-		return SessionResponse{}, fmt.Errorf("ensure default kitchen: %w", err)
+	if s.kitchen == nil {
+		return SessionResponse{}, common.ErrInternal.WithErr(fmt.Errorf("kitchen service is required"))
+	}
+
+	if err := s.ensureCurrentKitchen(ctx, user); err != nil {
+		return SessionResponse{}, err
 	}
 
 	kitchens, err := s.kitchen.ListByUserID(ctx, user.ID)
@@ -172,6 +179,29 @@ func (s *Service) buildSession(ctx context.Context, user User, includeToken bool
 	}
 
 	return response, nil
+}
+
+func (s *Service) ensureCurrentKitchen(ctx context.Context, user User) error {
+	if s.kitchen == nil {
+		return nil
+	}
+
+	if _, err := s.kitchen.EnsureDefaultKitchen(ctx, user.ID, user.Nickname, user.OpenID); err != nil {
+		return fmt.Errorf("ensure default kitchen: %w", err)
+	}
+	if err := s.syncAutoKitchenNames(ctx, user); err != nil {
+		return fmt.Errorf("sync auto kitchen names: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) syncAutoKitchenNames(ctx context.Context, user User) error {
+	if s.kitchen == nil {
+		return nil
+	}
+
+	return s.kitchen.SyncOwnedAutoKitchenNames(ctx, user.ID, user.Nickname, user.OpenID)
 }
 
 func normalizeIdentity(identity string) string {
