@@ -1325,6 +1325,7 @@ export default {
 		maybePromptProfile() {
 			if (appConfig.authMode !== 'wechat') return
 			if (this.hasDismissedProfilePrompt || this.showProfileSheet) return
+			if (!this.currentUser?.id) return
 			if (!isProfileIncomplete(this.currentUser)) return
 			this.profileDraft = {
 				nickname: !isPlaceholderNickname(this.currentUser?.nickname) ? this.currentUser.nickname : '',
@@ -1352,6 +1353,9 @@ export default {
 			this.isSubmittingProfile = true
 
 			try {
+				const session = await ensureSession()
+				this.applySession(session)
+
 				const avatarUrl = await ensureUploadedImage(this.profileDraft.avatarUrl)
 				const user = await saveCurrentUserProfile({
 					nickname: submittedNickname,
