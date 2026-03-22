@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -173,7 +175,7 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", common.NewAppError(common.CodeInternalServer, "flowchart request failed", http.StatusBadGateway).WithErr(err)
+		return "", newFlowchartRequestError(err, c.httpClient.Timeout)
 	}
 	defer resp.Body.Close()
 
@@ -188,7 +190,15 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 
 	var parsed flowchartChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", common.NewAppError(common.CodeInternalServer, "invalid flowchart response", http.StatusBadGateway).WithErr(err)
+		cause := truncateString(flowchartErrorCause(err), 160)
+		if cause == "" {
+			cause = "decode failed"
+		}
+		return "", common.NewAppError(
+			common.CodeInternalServer,
+			"invalid flowchart response: "+cause,
+			http.StatusBadGateway,
+		).WithErr(err)
 	}
 	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
 		return "", common.NewAppError(common.CodeInternalServer, strings.TrimSpace(parsed.Error.Message), http.StatusBadGateway)
@@ -203,6 +213,80 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 	}
 
 	return content, nil
+}
+
+func newFlowchartRequestError(err error, timeout time.Duration) error {
+	cause := flowchartErrorCause(err)
+	if isFlowchartTimeoutError(err) {
+		message := "流程图生成超时，上游生图响应较慢"
+		if timeout > 0 {
+			message = fmt.Sprintf("%s（已等待 %s）", message, timeout.Round(time.Second))
+		}
+		if cause != "" {
+			message += ": " + cause
+		}
+		return common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway).WithErr(err)
+	}
+
+	if cause == "" {
+		cause = "unknown error"
+	}
+
+	return common.NewAppError(
+		common.CodeInternalServer,
+		"flowchart request failed: "+truncateString(cause, 180),
+		http.StatusBadGateway,
+	).WithErr(err)
+}
+
+func isFlowchartTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func flowchartErrorCause(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var appErr *common.AppError
+	if errors.As(err, &appErr) {
+		parts := make([]string, 0, 2)
+		message := strings.TrimSpace(appErr.Message)
+		if message != "" {
+			parts = append(parts, message)
+		}
+		if appErr.Err != nil {
+			cause := deepestError(appErr.Err)
+			if cause != "" && (message == "" || !strings.Contains(message, cause)) {
+				parts = append(parts, cause)
+			}
+		}
+		return strings.Join(parts, ": ")
+	}
+
+	return deepestError(err)
+}
+
+func deepestError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	current := err
+	for {
+		next := errors.Unwrap(current)
+		if next == nil {
+			break
+		}
+		current = next
+	}
+
+	return strings.TrimSpace(current.Error())
 }
 
 func buildFlowchartPromptInput(item Recipe) (flowchartPromptInput, error) {

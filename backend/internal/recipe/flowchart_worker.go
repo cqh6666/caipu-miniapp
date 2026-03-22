@@ -95,6 +95,7 @@ func (w *FlowchartWorker) runBatch(parent context.Context) {
 func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) error {
 	ctx, cancel := context.WithTimeout(parent, defaultFlowchartJobTimeout)
 	defer cancel()
+	startedAt := time.Now()
 
 	marked, err := w.repo.MarkFlowchartProcessing(ctx, recipeID)
 	if err != nil {
@@ -104,12 +105,15 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		return nil
 	}
 
+	w.logger.Info("recipe flowchart job started", "recipeID", recipeID)
+
 	item, err := w.repo.FindByID(ctx, recipeID)
 	if err != nil {
 		finishedAt := time.Now().Format(time.RFC3339)
 		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
 			w.logger.Error("mark recipe flowchart failed after load error", "recipeID", recipeID, "error", markErr)
 		}
+		w.logFailure(recipeID, "load", startedAt, err)
 		return err
 	}
 
@@ -119,6 +123,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
 			w.logger.Error("mark recipe flowchart invalid-input failed", "recipeID", recipeID, "error", markErr)
 		}
+		w.logFailure(recipeID, "validate", startedAt, err)
 		return err
 	}
 
@@ -128,6 +133,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
 			w.logger.Error("mark recipe flowchart failed state failed", "recipeID", recipeID, "error", markErr)
 		}
+		w.logFailure(recipeID, "generate", startedAt, err)
 		return err
 	}
 
@@ -136,9 +142,38 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
 			w.logger.Error("mark recipe flowchart apply failure failed", "recipeID", recipeID, "error", markErr)
 		}
+		w.logFailure(recipeID, "persist", startedAt, err)
 		return err
 	}
 
-	w.logger.Info("recipe flowchart completed", "recipeID", recipeID)
+	w.logger.Info(
+		"recipe flowchart completed",
+		"recipeID",
+		recipeID,
+		"duration",
+		time.Since(startedAt).String(),
+		"imageURL",
+		result.ImageURL,
+	)
 	return nil
+}
+
+func (w *FlowchartWorker) logFailure(recipeID string, stage string, startedAt time.Time, err error) {
+	if w == nil || w.logger == nil {
+		return
+	}
+
+	w.logger.Error(
+		"recipe flowchart failed",
+		"recipeID",
+		recipeID,
+		"stage",
+		stage,
+		"duration",
+		time.Since(startedAt).String(),
+		"error",
+		err,
+		"cause",
+		flowchartErrorCause(err),
+	)
 }
