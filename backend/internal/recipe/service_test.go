@@ -6,6 +6,10 @@ import (
 	"testing"
 )
 
+func boolPointer(value bool) *bool {
+	return &value
+}
+
 func TestNormalizeRecipeInputSupportsMultipleImages(t *testing.T) {
 	t.Parallel()
 
@@ -215,5 +219,89 @@ func TestApplyCreateParseStateQueuesSupportedXiaohongshuLink(t *testing.T) {
 	}
 	if item.ParseSource != "xiaohongshu" {
 		t.Fatalf("ParseSource = %q, want %q", item.ParseSource, "xiaohongshu")
+	}
+}
+
+func TestResolveUpdateParsedContentEditedStateUsesExplicitFlagForStepTitleEdits(t *testing.T) {
+	t.Parallel()
+
+	current := Recipe{
+		Title:               "番茄牛腩",
+		Ingredient:          "牛腩",
+		MealType:            "main",
+		ParsedContentEdited: false,
+		ParsedContent: ParsedContent{
+			MainIngredients: []string{"牛腩 500克", "番茄 3个"},
+			Steps: []ParsedStep{
+				{Title: "处理食材", Detail: "牛腩切块，番茄切丁。"},
+				{Title: "小火慢炖", Detail: "番茄炒软后和牛腩一起炖煮。"},
+			},
+		},
+	}
+	next := current
+	next.ParsedContent = ParsedContent{
+		MainIngredients: []string{"牛腩 500克", "番茄 3个"},
+		Steps: []ParsedStep{
+			{Title: "提前切配", Detail: "牛腩切块，番茄切丁。"},
+			{Title: "小火慢炖", Detail: "番茄炒软后和牛腩一起炖煮。"},
+		},
+	}
+
+	got := resolveUpdateParsedContentEditedState(current, next, updateRecipeRequest{
+		ParsedContentEdited: boolPointer(true),
+	})
+	if !got {
+		t.Fatal("explicit parsedContentEdited flag should mark step title edits as manual changes")
+	}
+}
+
+func TestResolveUpdateParsedContentEditedStatePreservesCurrentFlagWhenParsedContentUnchanged(t *testing.T) {
+	t.Parallel()
+
+	current := Recipe{
+		Title:               "番茄牛腩",
+		Ingredient:          "牛腩",
+		MealType:            "main",
+		ParsedContentEdited: true,
+		ParsedContent: ParsedContent{
+			MainIngredients: []string{"牛腩 500克", "番茄 3个"},
+			Steps: []ParsedStep{
+				{Title: "处理食材", Detail: "牛腩切块，番茄切丁。"},
+			},
+		},
+	}
+
+	got := resolveUpdateParsedContentEditedState(current, current, updateRecipeRequest{
+		ParsedContentEdited: boolPointer(false),
+	})
+	if !got {
+		t.Fatal("unchanged parsed content should preserve the existing manual-edit flag")
+	}
+}
+
+func TestResolveUpdateParsedContentEditedStateClearsFlagWhenExplicitlyFalse(t *testing.T) {
+	t.Parallel()
+
+	current := Recipe{
+		Title:               "番茄牛腩",
+		Ingredient:          "牛腩",
+		MealType:            "main",
+		ParsedContentEdited: true,
+		ParsedContent: ParsedContent{
+			MainIngredients: []string{"牛腩 500克", "番茄 3个"},
+			Steps: []ParsedStep{
+				{Title: "处理食材", Detail: "牛腩切块，番茄切丁。"},
+				{Title: "小火慢炖", Detail: "番茄炒软后和牛腩一起炖煮。"},
+			},
+		},
+	}
+	next := current
+	next.ParsedContent = normalizeParsedContent(ParsedContent{}, "main", "番茄牛腩", "牛腩")
+
+	got := resolveUpdateParsedContentEditedState(current, next, updateRecipeRequest{
+		ParsedContentEdited: boolPointer(false),
+	})
+	if got {
+		t.Fatal("explicit false parsedContentEdited flag should clear the manual-edit marker")
 	}
 }

@@ -227,8 +227,9 @@
 			mode="bottom"
 			round="32"
 			overlayOpacity="0.22"
+			:closeOnClickOverlay="false"
 			:safeAreaInsetBottom="false"
-			@close="closeEditSheet"
+			@close="handleEditSheetPopupClose"
 		>
 			<view class="editor-sheet">
 				<view class="editor-sheet__header">
@@ -236,7 +237,7 @@
 						<text class="editor-sheet__title">编辑菜品</text>
 						<text class="editor-sheet__subtitle">把这道菜补充完整。</text>
 					</view>
-					<view class="editor-sheet__close" @tap="closeEditSheet">
+					<view class="editor-sheet__close" @tap="requestCloseEditSheet">
 						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
 					</view>
 				</view>
@@ -350,25 +351,173 @@
 					</view>
 
 					<view class="editor-field">
-						<text class="editor-field__label">食材清单</text>
-						<textarea
-							v-model="editDraft.ingredientsText"
-							class="editor-textarea"
-							placeholder="一行一个食材"
-							placeholder-class="editor-textarea__placeholder"
-							maxlength="500"
-						/>
+						<view class="editor-field__head">
+							<text class="editor-field__label">食材清单</text>
+							<text class="editor-field__meta">{{ editIngredientCount }} 项</text>
+						</view>
+						<view class="editor-structured">
+							<view class="editor-structured__section">
+								<view class="editor-structured__header">
+									<view class="editor-structured__heading">
+										<text class="editor-structured__title">主料</text>
+										<text class="editor-structured__desc">核心食材和份量</text>
+									</view>
+									<view class="editor-structured__action" @tap="addEditIngredient('main')">
+										<text class="editor-structured__action-text">添加</text>
+									</view>
+								</view>
+
+								<view v-if="editDraft.mainIngredients.length" class="editor-ingredient-list">
+									<view
+										v-for="(ingredient, index) in editDraft.mainIngredients"
+										:key="ingredient.id"
+										class="editor-ingredient-item"
+									>
+										<view class="editor-ingredient-item__index">
+											<text class="editor-ingredient-item__index-text">{{ index + 1 }}</text>
+										</view>
+										<input
+											:value="ingredient.value"
+											class="editor-ingredient-item__input"
+											placeholder="例如：牛肉 500g"
+											placeholder-class="editor-input__placeholder"
+											maxlength="60"
+											@input="handleEditIngredientInput('main', index, $event)"
+										/>
+										<view class="editor-ingredient-item__menu" @tap="openEditIngredientActions('main', index)">
+											<view class="editor-ingredient-item__menu-dots">
+												<view class="editor-ingredient-item__menu-dot"></view>
+												<view class="editor-ingredient-item__menu-dot"></view>
+												<view class="editor-ingredient-item__menu-dot"></view>
+											</view>
+										</view>
+									</view>
+								</view>
+								<view v-else class="editor-structured__empty">
+									<text class="editor-structured__empty-text">{{ ingredientGroupEmptyText('main') }}</text>
+								</view>
+							</view>
+
+							<view class="editor-structured__section">
+								<view class="editor-structured__header">
+									<view class="editor-structured__heading">
+										<text class="editor-structured__title">辅料 / 调味</text>
+										<text class="editor-structured__desc">配菜、调味和辅助食材</text>
+									</view>
+									<view class="editor-structured__action" @tap="addEditIngredient('secondary')">
+										<text class="editor-structured__action-text">添加</text>
+									</view>
+								</view>
+
+								<view v-if="editDraft.secondaryIngredients.length" class="editor-ingredient-list">
+									<view
+										v-for="(ingredient, index) in editDraft.secondaryIngredients"
+										:key="ingredient.id"
+										class="editor-ingredient-item"
+									>
+										<view class="editor-ingredient-item__index">
+											<text class="editor-ingredient-item__index-text">{{ index + 1 }}</text>
+										</view>
+										<input
+											:value="ingredient.value"
+											class="editor-ingredient-item__input"
+											placeholder="例如：葱姜蒜、盐、生抽"
+											placeholder-class="editor-input__placeholder"
+											maxlength="60"
+											@input="handleEditIngredientInput('secondary', index, $event)"
+										/>
+										<view class="editor-ingredient-item__menu" @tap="openEditIngredientActions('secondary', index)">
+											<view class="editor-ingredient-item__menu-dots">
+												<view class="editor-ingredient-item__menu-dot"></view>
+												<view class="editor-ingredient-item__menu-dot"></view>
+												<view class="editor-ingredient-item__menu-dot"></view>
+											</view>
+										</view>
+									</view>
+								</view>
+								<view v-else class="editor-structured__empty">
+									<text class="editor-structured__empty-text">{{ ingredientGroupEmptyText('secondary') }}</text>
+								</view>
+							</view>
+						</view>
+						<text class="editor-field__hint">
+							{{ editIsUsingFallbackContent ? '当前还没有真实食材，系统占位内容已隐藏，可直接手动添加。' : '食材会按主料、辅料/调味分开展示，可通过右侧菜单调整位置。' }}
+						</text>
 					</view>
 
 					<view class="editor-field">
-						<text class="editor-field__label">制作步骤</text>
-						<textarea
-							v-model="editDraft.stepsText"
-							class="editor-textarea editor-textarea--large"
-							placeholder="一行一步"
-							placeholder-class="editor-textarea__placeholder"
-							maxlength="800"
-						/>
+						<view class="editor-field__head">
+							<text class="editor-field__label">制作步骤</text>
+							<text class="editor-field__meta">{{ editStepCount }} 步</text>
+						</view>
+						<view class="editor-step-list">
+							<view
+								v-for="(step, index) in editDraft.steps"
+								:key="step.id"
+								class="editor-step-card"
+							>
+								<view class="editor-step-card__header">
+									<view class="editor-step-card__badge">
+										<text class="editor-step-card__badge-text">Step {{ index + 1 }}</text>
+									</view>
+									<view class="editor-step-card__actions">
+										<view
+											class="editor-step-card__action"
+											:class="{ 'editor-step-card__action--disabled': index === 0 }"
+											@tap="moveEditStep(index, index - 1)"
+										>
+											<text class="editor-step-card__action-text">上移</text>
+										</view>
+										<view
+											class="editor-step-card__action"
+											:class="{ 'editor-step-card__action--disabled': index === editDraft.steps.length - 1 }"
+											@tap="moveEditStep(index, index + 1)"
+										>
+											<text class="editor-step-card__action-text">下移</text>
+										</view>
+										<view class="editor-step-card__action editor-step-card__action--danger" @tap="removeEditStep(index)">
+											<text class="editor-step-card__action-text editor-step-card__action-text--danger">删除</text>
+										</view>
+									</view>
+								</view>
+
+								<view class="editor-step-card__field">
+									<text class="editor-step-card__label">步骤标题</text>
+									<input
+										:value="step.title"
+										class="editor-step-card__input"
+										placeholder="例如：腌制入味"
+										placeholder-class="editor-input__placeholder"
+										maxlength="30"
+										@input="handleEditStepFieldInput(index, 'title', $event)"
+									/>
+								</view>
+
+								<view class="editor-step-card__field">
+									<text class="editor-step-card__label">步骤内容</text>
+									<textarea
+										:value="step.detail"
+										auto-height
+										class="editor-step-card__textarea"
+										placeholder="写清楚这一小步的动作、时间或火候"
+										placeholder-class="editor-textarea__placeholder"
+										maxlength="220"
+										@input="handleEditStepFieldInput(index, 'detail', $event)"
+									/>
+								</view>
+							</view>
+
+							<view v-if="!editDraft.steps.length" class="editor-structured__empty editor-structured__empty--large">
+								<text class="editor-structured__empty-text">{{ stepEmptyText() }}</text>
+							</view>
+
+							<view class="editor-step-add" @tap="addEditStep">
+								<text class="editor-step-add__text">添加一步</text>
+							</view>
+						</view>
+						<text class="editor-field__hint">
+							{{ editIsUsingFallbackContent ? '当前还没有真实步骤，可手动添加；若有链接，也可以先关闭后从详情页重新整理。' : '步骤标题可手动修改；若留空，保存时会自动补一个简短标题。' }}
+						</text>
 					</view>
 
 					<view class="editor-field">
@@ -384,7 +533,7 @@
 				</scroll-view>
 
 				<view class="editor-sheet__footer">
-					<view class="editor-sheet__action" @tap="closeEditSheet">
+					<view class="editor-sheet__action" @tap="requestCloseEditSheet">
 						<text class="editor-sheet__action-text">取消</text>
 					</view>
 					<view
@@ -403,13 +552,16 @@
 <script>
 import {
 	MAX_RECIPE_IMAGES,
-	buildFallbackParsedContent,
 	deleteRecipeById,
 	generateRecipeFlowchartById,
 	getCachedRecipeById,
 	getRecipeById,
+	isFallbackParsedContent as isFallbackLikeParsedContent,
 	mealTypeLabelMap,
 	mealTypeOptions,
+	normalizeParsedContentView,
+	normalizeParsedSteps,
+	normalizeTextList,
 	reparseRecipeById,
 	setRecipePinnedById,
 	statusLabelMap,
@@ -424,162 +576,38 @@ const createEmptyDraft = (overrides = {}) => ({
 	images: [],
 	mealType: 'breakfast',
 	status: 'wishlist',
-	ingredientsText: '',
-	stepsText: '',
+	mainIngredients: [],
+	secondaryIngredients: [],
+	steps: [],
+	parsedContentMode: 'empty',
 	note: '',
 	...overrides
 })
-
-const listToText = (items = []) => items.join('\n')
-const textToList = (text = '') =>
-	text
-		.split('\n')
-		.map((item) => item.trim())
-		.filter(Boolean)
-const secondaryIngredientPattern = /(常用配菜|基础调味|常用调味料|调味|葱|姜|蒜|香叶|桂皮|八角|花椒|胡椒|盐|糖|冰糖|白糖|红糖|生抽|老抽|蚝油|料酒|鸡精|味精|醋|陈醋|米醋|香醋|豆瓣酱|辣椒|小米椒|淀粉|清水|热水|食用油|香油|芝麻油|花椒粉|辣椒粉|五香粉|十三香|孜然|芝麻|香菜|葱花)/
-const secondaryIngredientExceptionPattern = /^(洋葱|红葱头|葱头)/
-const ingredientSuffixPattern = /\s*(?:\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)|半个|半颗|半根|半头|适量|少许)$/
-const stringSlicesEqual = (left = [], right = []) => {
-	if (left.length !== right.length) return false
-	return left.every((item, index) => item === right[index])
-}
-const stepSlicesEqual = (left = [], right = []) => {
-	if (left.length !== right.length) return false
-	return left.every((item, index) => item.title === right[index]?.title && item.detail === right[index]?.detail)
-}
-const normalizeTextList = (items = []) => {
-	const source = Array.isArray(items) ? items : [items]
-	const normalized = []
-	const seen = new Set()
-
-	source.forEach((item) => {
-		const value = String(item || '').trim()
-		if (!value || seen.has(value)) return
-		seen.add(value)
-		normalized.push(value)
-	})
-
-	return normalized
-}
-const inferStepTitle = (detail = '', index = 0) => {
-	const text = String(detail || '').trim()
-	if (!text) return ''
-	if (text.includes('焯水') || text.includes('汆水')) {
-		return text.includes('腥') || text.includes('浮沫') ? '焯水去腥' : '焯水备用'
-	}
-	if (text.includes('腌')) return '腌制入味'
-	if (text.includes('糖色') || text.includes('冰糖')) return '炒糖上色'
-	if (text.includes('爆香') || text.includes('炒香')) return '炒香底料'
-	if (text.includes('切') || text.includes('改刀')) return '切配备料'
-	if (text.includes('收汁')) return '收汁出锅'
-	if (text.includes('炖') || text.includes('焖')) return '小火慢炖'
-	if (text.includes('蒸')) return '上锅蒸熟'
-	if (text.includes('炸')) return '炸至金黄'
-	if (text.includes('煎')) return '煎香上色'
-	if (text.includes('烤')) return '烤至上色'
-	if (text.includes('煮')) return '煮至入味'
-	if (text.includes('拌')) return '拌匀调味'
-	if (text.includes('炒') || text.includes('翻炒')) return '翻炒入味'
-	if (text.includes('出锅')) return '调味出锅'
-	return index === 0 ? '处理食材' : '继续烹饪'
-}
-const normalizeParsedSteps = (steps = []) => {
-	const source = Array.isArray(steps) ? steps : []
-	const normalized = []
-	const seen = new Set()
-
-	source.forEach((step) => {
-		const title = typeof step === 'object' && step !== null ? String(step.title || '').trim() : ''
-		const detail =
-			typeof step === 'string'
-				? step.trim()
-				: String(step?.detail || step?.text || '').trim()
-		const nextDetail = detail || title
-		const nextTitle = title || inferStepTitle(nextDetail, normalized.length)
-		if (!nextDetail) return
-		const key = `${nextTitle}\u0000${nextDetail}`
-		if (seen.has(key)) return
-		seen.add(key)
-		normalized.push({
-			title: nextTitle,
-			detail: nextDetail
-		})
-	})
-
-	return normalized
-}
-const ingredientLabelFromLine = (line = '') => String(line || '').trim().replace(ingredientSuffixPattern, '').trim()
-const splitIngredientLines = (lines = []) => {
-	const cleaned = normalizeTextList(lines)
-	if (!cleaned.length) {
+let editDraftItemSeed = 0
+const createEditDraftItemId = (prefix = 'draft') => `${prefix}-${Date.now()}-${editDraftItemSeed += 1}`
+const normalizeIngredientDraftItem = (item = '') => {
+	if (typeof item === 'object' && item !== null) {
 		return {
-			mainIngredients: [],
-			secondaryIngredients: []
+			id: String(item.id || createEditDraftItemId('ingredient')),
+			value: String(item.value || '')
 		}
 	}
-
-	const mainIngredients = []
-	const secondaryIngredients = []
-	cleaned.forEach((line) => {
-		const label = ingredientLabelFromLine(line)
-		if (secondaryIngredientPattern.test(label) && !secondaryIngredientExceptionPattern.test(label)) {
-			secondaryIngredients.push(line)
-			return
-		}
-		mainIngredients.push(line)
-	})
-
-	if (!mainIngredients.length) {
-		return {
-			mainIngredients: cleaned.slice(0, 3),
-			secondaryIngredients: cleaned.slice(3)
-		}
-	}
-
 	return {
-		mainIngredients,
-		secondaryIngredients
+		id: createEditDraftItemId('ingredient'),
+		value: String(item || '')
 	}
 }
-const splitSecondaryIngredientLines = (lines = []) => {
-	const cleaned = normalizeTextList(lines)
-	const supportingIngredients = []
-	const seasonings = []
-
-	cleaned.forEach((line) => {
-		const label = ingredientLabelFromLine(line)
-		if (secondaryIngredientPattern.test(label) && !secondaryIngredientExceptionPattern.test(label)) {
-			seasonings.push(line)
-			return
-		}
-		supportingIngredients.push(line)
-	})
-
+const createIngredientDraftList = (items = []) => (Array.isArray(items) ? items : []).map((item) => normalizeIngredientDraftItem(item))
+const getIngredientDraftValues = (items = []) =>
+	(Array.isArray(items) ? items : []).map((item) => (typeof item === 'object' && item !== null ? String(item.value || '') : String(item || '')))
+const createStepDraftItem = (step = {}) => {
+	const source = typeof step === 'object' && step !== null ? step : { detail: step }
 	return {
-		supportingIngredients,
-		seasonings
+		id: String(source.id || createEditDraftItemId('step')),
+		title: String(source.title || ''),
+		detail: String(source.detail || source.text || '')
 	}
 }
-const normalizeParsedContentView = (parsedContent = {}) => {
-	const mainIngredients = normalizeTextList(parsedContent.mainIngredients)
-	const secondaryIngredients = normalizeTextList(parsedContent.secondaryIngredients)
-	const legacyIngredients = normalizeTextList(parsedContent.ingredients)
-	const groupedIngredients =
-		mainIngredients.length || secondaryIngredients.length
-			? { mainIngredients, secondaryIngredients }
-			: splitIngredientLines(legacyIngredients)
-	const secondaryGroups = splitSecondaryIngredientLines(groupedIngredients.secondaryIngredients)
-
-	return {
-		mainIngredients: groupedIngredients.mainIngredients,
-		secondaryIngredients: groupedIngredients.secondaryIngredients,
-		supportingIngredients: secondaryGroups.supportingIngredients,
-		seasonings: secondaryGroups.seasonings,
-		ingredients: [...groupedIngredients.mainIngredients, ...groupedIngredients.secondaryIngredients],
-		steps: normalizeParsedSteps(parsedContent.steps)
-	}
-}
-const stepListToText = (steps = []) => normalizeParsedSteps(steps).map((item) => item.detail).join('\n')
 const moveListItem = (items = [], fromIndex = 0, toIndex = 0) => {
 	if (!Array.isArray(items) || !items.length) return Array.isArray(items) ? items : []
 	if (fromIndex < 0 || fromIndex >= items.length) return items
@@ -590,6 +618,34 @@ const moveListItem = (items = [], fromIndex = 0, toIndex = 0) => {
 	list.splice(toIndex, 0, item)
 	return list
 }
+const cloneStepDraftList = (steps = []) => normalizeParsedSteps(steps).map((step) => createStepDraftItem(step))
+const buildComparableDraftTextList = (items = []) =>
+	getIngredientDraftValues(items)
+		.map((item) => item.trim())
+		.filter(Boolean)
+const buildComparableDraftStepList = (steps = []) =>
+	(Array.isArray(steps) ? steps : [])
+		.map((step) => {
+			const normalized = createStepDraftItem(step)
+			return {
+				title: normalized.title.trim(),
+				detail: normalized.detail.trim()
+			}
+		})
+		.filter((step) => step.title || step.detail)
+const serializeComparableEditDraft = (draft = {}) =>
+	JSON.stringify({
+		title: String(draft.title || '').trim(),
+		ingredient: String(draft.ingredient || '').trim(),
+		link: String(draft.link || '').trim(),
+		images: (Array.isArray(draft.images) ? draft.images : []).map((item) => String(item || '').trim()).filter(Boolean),
+		mealType: String(draft.mealType || '').trim(),
+		status: String(draft.status || '').trim(),
+		mainIngredients: buildComparableDraftTextList(draft.mainIngredients),
+		secondaryIngredients: buildComparableDraftTextList(draft.secondaryIngredients),
+		steps: buildComparableDraftStepList(draft.steps),
+		note: String(draft.note || '').trim()
+	})
 
 const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
 const ACTIVE_FLOWCHART_STATUSES = ['pending', 'processing']
@@ -651,17 +707,6 @@ function extractCopyableLink(value = '') {
 	return link.replace(/[)\]】》」'",，。；;!?！？]+$/g, '').trim()
 }
 
-function isFallbackLikeParsedContent(recipe = {}, parsedContent = {}) {
-	const current = normalizeParsedContentView(parsedContent)
-	if (!current.ingredients.length && !current.steps.length) return true
-	const fallback = buildFallbackParsedContent(recipe)
-	return (
-		stringSlicesEqual(current.mainIngredients, fallback.mainIngredients || []) &&
-		stringSlicesEqual(current.secondaryIngredients, fallback.secondaryIngredients || []) &&
-		stepSlicesEqual(current.steps, fallback.steps || [])
-	)
-}
-
 function formatParseSourceLabel(source = '') {
 	const value = String(source).trim()
 	if (!value) return ''
@@ -703,6 +748,7 @@ export default {
 			isGeneratingFlowchart: false,
 			isPinSubmitting: false,
 			heroImageIndex: 0,
+			editDraftSnapshot: '',
 			parsePollingTimer: null
 		}
 	},
@@ -754,12 +800,30 @@ export default {
 		parsedSteps() {
 			return this.parsedContentView.steps
 		},
+		editIngredientCount() {
+			const mainCount = Array.isArray(this.editDraft.mainIngredients) ? this.editDraft.mainIngredients.length : 0
+			const secondaryCount = Array.isArray(this.editDraft.secondaryIngredients) ? this.editDraft.secondaryIngredients.length : 0
+			return mainCount + secondaryCount
+		},
+		editStepCount() {
+			return Array.isArray(this.editDraft.steps) ? this.editDraft.steps.length : 0
+		},
+		editIsUsingFallbackContent() {
+			return this.editDraft.parsedContentMode === 'fallback'
+		},
+		hasUnsavedEditChanges() {
+			if (!this.showEditSheet) return false
+			return this.editDraftSnapshot !== serializeComparableEditDraft(this.editDraft)
+		},
 		hasMeaningfulParsedContent() {
 			return !isFallbackLikeParsedContent(this.recipe || {}, {
 				mainIngredients: this.parsedMainIngredients,
 				secondaryIngredients: this.parsedSecondaryIngredients,
 				steps: this.parsedSteps
 			})
+		},
+		hasManualParsedContentEdits() {
+			return !!this.recipe?.parsedContentEdited
 		},
 		recipeImages() {
 			if (Array.isArray(this.recipe?.imageUrls) && this.recipe.imageUrls.length) {
@@ -847,6 +911,12 @@ export default {
 		needsParseOverwriteConfirm() {
 			return this.parseStatusValue === 'done' || this.parseStatusValue === 'failed' || this.hasMeaningfulParsedContent
 		},
+		parseOverwriteModalContent() {
+			if (this.hasManualParsedContentEdits) {
+				return '你手动修改过食材或制作步骤，重新整理后可能会覆盖这些内容。'
+			}
+			return '将根据来源链接更新当前食材和步骤。'
+		},
 		parseActionText() {
 			if (this.isReparseSubmitting) return '整理中...'
 			if (!this.parseStatusValue) return '开始整理'
@@ -872,6 +942,11 @@ export default {
 	},
 	onUnload() {
 		this.stopParsePolling()
+	},
+	onBackPress() {
+		if (!this.showEditSheet) return false
+		this.requestCloseEditSheet()
+		return true
 	},
 	methods: {
 		async loadRecipe() {
@@ -946,6 +1021,7 @@ export default {
 		},
 		createDraftFromRecipe(recipe = {}) {
 			const parsedContentView = normalizeParsedContentView(recipe.parsedContent || {})
+			const hasStructuredContent = !isFallbackLikeParsedContent(recipe, recipe.parsedContent || {})
 			return createEmptyDraft({
 				title: recipe.title || '',
 				ingredient: recipe.ingredient || '',
@@ -958,14 +1034,18 @@ export default {
 							: [],
 				mealType: recipe.mealType || 'breakfast',
 				status: recipe.status || 'wishlist',
-				ingredientsText: listToText(parsedContentView.ingredients || []),
-				stepsText: stepListToText(parsedContentView.steps || []),
+				mainIngredients: hasStructuredContent ? createIngredientDraftList(parsedContentView.mainIngredients) : [],
+				secondaryIngredients: hasStructuredContent ? createIngredientDraftList(parsedContentView.secondaryIngredients) : [],
+				steps: hasStructuredContent ? cloneStepDraftList(parsedContentView.steps) : [],
+				parsedContentMode: hasStructuredContent ? 'existing' : 'fallback',
 				note: recipe.note || ''
 			})
 		},
 		openEditSheet() {
 			if (!this.recipe) return
-			this.editDraft = this.createDraftFromRecipe(this.recipe)
+			const draft = this.createDraftFromRecipe(this.recipe)
+			this.editDraft = draft
+			this.editDraftSnapshot = serializeComparableEditDraft(draft)
 			this.showEditSheet = true
 		},
 		handleHeroCardTap() {
@@ -979,9 +1059,36 @@ export default {
 		handleHeroSwiperChange(event) {
 			this.heroImageIndex = Number(event?.detail?.current) || 0
 		},
+		handleEditSheetPopupClose() {
+			if (!this.showEditSheet) return
+			this.requestCloseEditSheet()
+		},
+		resetEditDraftState() {
+			this.editDraft = createEmptyDraft()
+			this.editDraftSnapshot = ''
+		},
 		closeEditSheet() {
 			this.showEditSheet = false
-			this.editDraft = createEmptyDraft()
+			this.resetEditDraftState()
+		},
+		requestCloseEditSheet() {
+			if (!this.showEditSheet || this.isSavingRecipe) return
+			if (!this.hasUnsavedEditChanges) {
+				this.closeEditSheet()
+				return
+			}
+
+			uni.showModal({
+				title: '放弃当前修改？',
+				content: '未保存的食材、步骤和备注改动会丢失。',
+				cancelText: '继续编辑',
+				confirmText: '放弃修改',
+				confirmColor: '#b4664c',
+				success: ({ confirm }) => {
+					if (!confirm) return
+					this.closeEditSheet()
+				}
+			})
 		},
 		chooseHeroImages() {
 			if (!this.recipe || this.isUploadingHeroImage) return
@@ -1104,6 +1211,147 @@ export default {
 			if (nextImages === this.editDraft.images) return
 			this.editDraft.images = nextImages
 		},
+		getEditIngredientFieldKey(group = 'main') {
+			return group === 'secondary' ? 'secondaryIngredients' : 'mainIngredients'
+		},
+		markEditParsedContentEdited() {
+			if (!this.editDraft || this.editDraft.parsedContentMode === 'manual') return
+			this.editDraft.parsedContentMode = 'manual'
+		},
+		ingredientGroupEmptyText(group = 'main') {
+			if (this.editIsUsingFallbackContent) {
+				return group === 'secondary'
+					? '当前还没有真实辅料或调味，系统占位内容已隐藏。'
+					: '当前还没有真实主料，系统占位内容已隐藏。'
+			}
+			return group === 'secondary'
+				? '还没添加辅料或调味，比如葱姜蒜、盐、生抽。'
+				: '还没添加主料，比如牛肉 500g。'
+		},
+		stepEmptyText() {
+			if (this.editIsUsingFallbackContent) {
+				return '当前还没有真实步骤，系统占位内容已隐藏。'
+			}
+			return '还没添加步骤，可先补 3 到 6 个关键步骤。'
+		},
+		addEditIngredient(group = 'main') {
+			const fieldKey = this.getEditIngredientFieldKey(group)
+			const nextIngredients = Array.isArray(this.editDraft[fieldKey]) ? [...this.editDraft[fieldKey]] : []
+			nextIngredients.push(normalizeIngredientDraftItem())
+			this.editDraft[fieldKey] = nextIngredients
+			this.markEditParsedContentEdited()
+		},
+		handleEditIngredientInput(group = 'main', index = 0, event) {
+			const fieldKey = this.getEditIngredientFieldKey(group)
+			const nextIngredients = Array.isArray(this.editDraft[fieldKey]) ? [...this.editDraft[fieldKey]] : []
+			if (index < 0 || index >= nextIngredients.length) return
+			nextIngredients[index] = {
+				...normalizeIngredientDraftItem(nextIngredients[index]),
+				value: String(event?.detail?.value || '')
+			}
+			this.editDraft[fieldKey] = nextIngredients
+			this.markEditParsedContentEdited()
+		},
+		removeEditIngredient(group = 'main', index = 0) {
+			const fieldKey = this.getEditIngredientFieldKey(group)
+			const nextIngredients = Array.isArray(this.editDraft[fieldKey])
+				? this.editDraft[fieldKey].filter((_, currentIndex) => currentIndex !== index)
+				: []
+			this.editDraft[fieldKey] = nextIngredients
+			this.markEditParsedContentEdited()
+		},
+		moveEditIngredient(group = 'main', fromIndex = 0, toIndex = 0) {
+			const fieldKey = this.getEditIngredientFieldKey(group)
+			const nextIngredients = moveListItem(this.editDraft[fieldKey], fromIndex, toIndex)
+			if (nextIngredients === this.editDraft[fieldKey]) return
+			this.editDraft[fieldKey] = nextIngredients
+			this.markEditParsedContentEdited()
+		},
+		moveEditIngredientToGroup(fromGroup = 'main', index = 0, toGroup = 'secondary') {
+			const fromFieldKey = this.getEditIngredientFieldKey(fromGroup)
+			const toFieldKey = this.getEditIngredientFieldKey(toGroup)
+			const currentIngredients = Array.isArray(this.editDraft[fromFieldKey]) ? [...this.editDraft[fromFieldKey]] : []
+			if (index < 0 || index >= currentIngredients.length) return
+
+			const [item] = currentIngredients.splice(index, 1)
+			const nextTargetIngredients = Array.isArray(this.editDraft[toFieldKey]) ? [...this.editDraft[toFieldKey]] : []
+			nextTargetIngredients.push(item)
+
+			this.editDraft[fromFieldKey] = currentIngredients
+			this.editDraft[toFieldKey] = nextTargetIngredients
+			this.markEditParsedContentEdited()
+		},
+		openEditIngredientActions(group = 'main', index = 0) {
+			const fieldKey = this.getEditIngredientFieldKey(group)
+			const ingredients = Array.isArray(this.editDraft[fieldKey]) ? this.editDraft[fieldKey] : []
+			if (index < 0 || index >= ingredients.length) return
+
+			const actions = []
+			if (index > 0) {
+				actions.push({
+					label: '上移一位',
+					handler: () => {
+						this.moveEditIngredient(group, index, index - 1)
+					}
+				})
+			}
+			if (index < ingredients.length - 1) {
+				actions.push({
+					label: '下移一位',
+					handler: () => {
+						this.moveEditIngredient(group, index, index + 1)
+					}
+				})
+			}
+			actions.push({
+				label: group === 'secondary' ? '移到主料' : '移到辅料 / 调味',
+				handler: () => {
+					this.moveEditIngredientToGroup(group, index, group === 'secondary' ? 'main' : 'secondary')
+				}
+			})
+			actions.push({
+				label: '删除',
+				handler: () => {
+					this.removeEditIngredient(group, index)
+				}
+			})
+
+			uni.showActionSheet({
+				itemList: actions.map((item) => item.label),
+				success: ({ tapIndex }) => {
+					actions[tapIndex]?.handler?.()
+				}
+			})
+		},
+		addEditStep() {
+			const nextSteps = Array.isArray(this.editDraft.steps) ? [...this.editDraft.steps] : []
+			nextSteps.push(createStepDraftItem())
+			this.editDraft.steps = nextSteps
+			this.markEditParsedContentEdited()
+		},
+		handleEditStepFieldInput(index = 0, field = 'title', event) {
+			const nextSteps = Array.isArray(this.editDraft.steps) ? [...this.editDraft.steps] : []
+			if (index < 0 || index >= nextSteps.length) return
+			nextSteps[index] = {
+				...createStepDraftItem(nextSteps[index]),
+				[field]: String(event?.detail?.value || '')
+			}
+			this.editDraft.steps = nextSteps
+			this.markEditParsedContentEdited()
+		},
+		moveEditStep(fromIndex = 0, toIndex = 0) {
+			const nextSteps = moveListItem(this.editDraft.steps, fromIndex, toIndex)
+			if (nextSteps === this.editDraft.steps) return
+			this.editDraft.steps = nextSteps
+			this.markEditParsedContentEdited()
+		},
+		removeEditStep(index = 0) {
+			const nextSteps = Array.isArray(this.editDraft.steps)
+				? this.editDraft.steps.filter((_, currentIndex) => currentIndex !== index)
+				: []
+			this.editDraft.steps = nextSteps
+			this.markEditParsedContentEdited()
+		},
 		previewEditImages(index = 0) {
 			const urls = Array.isArray(this.editDraft.images) ? this.editDraft.images.filter(Boolean) : []
 			if (!urls.length) return
@@ -1122,6 +1370,9 @@ export default {
 			})
 
 			try {
+				const mainIngredients = normalizeTextList(getIngredientDraftValues(this.editDraft.mainIngredients))
+				const secondaryIngredients = normalizeTextList(getIngredientDraftValues(this.editDraft.secondaryIngredients))
+				const steps = normalizeParsedSteps(this.editDraft.steps)
 				const recipe = await updateRecipeById(this.recipeId, {
 					title: this.editDraft.title.trim(),
 					ingredient: this.editDraft.ingredient.trim(),
@@ -1130,9 +1381,11 @@ export default {
 					mealType: this.editDraft.mealType,
 					status: this.editDraft.status,
 					parsedContent: {
-						ingredients: textToList(this.editDraft.ingredientsText),
-						steps: textToList(this.editDraft.stepsText)
+						mainIngredients,
+						secondaryIngredients,
+						steps
 					},
+					parsedContentEdited: this.editDraft.parsedContentMode === 'manual',
 					note: this.editDraft.note.trim()
 				})
 				this.closeEditSheet()
@@ -1160,7 +1413,7 @@ export default {
 
 			uni.showModal({
 				title: '更新做法整理',
-				content: '将根据来源链接更新当前食材和步骤。',
+				content: this.parseOverwriteModalContent,
 				confirmText: '继续整理',
 				confirmColor: '#b4664c',
 				success: ({ confirm }) => {
@@ -1993,10 +2246,24 @@ export default {
 		margin-top: 0;
 	}
 
+	.editor-field__head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
 	.editor-field__label {
 		font-size: 22rpx;
 		font-weight: 500;
 		color: #9b9186;
+	}
+
+	.editor-field__meta {
+		flex-shrink: 0;
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #8f8377;
 	}
 
 	.editor-field__hint {
@@ -2043,6 +2310,283 @@ export default {
 
 	.editor-textarea--large {
 		min-height: 220rpx;
+	}
+
+	.editor-structured {
+		display: flex;
+		flex-direction: column;
+		gap: 16rpx;
+	}
+
+	.editor-structured__section {
+		padding: 22rpx;
+		border-radius: 28rpx;
+		background: #f7f4f0;
+		border: 1px solid #ebe4db;
+	}
+
+	.editor-structured__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.editor-structured__heading {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.editor-structured__title {
+		display: block;
+		font-size: 26rpx;
+		font-weight: 700;
+		color: #312b24;
+	}
+
+	.editor-structured__desc {
+		display: block;
+		margin-top: 6rpx;
+		font-size: 21rpx;
+		line-height: 1.5;
+		color: #9b9186;
+	}
+
+	.editor-structured__action {
+		flex-shrink: 0;
+		height: 56rpx;
+		padding: 0 18rpx;
+		border-radius: 999rpx;
+		background: #ffffff;
+		border: 1px solid #e5ddd4;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.editor-structured__action-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #675b4f;
+	}
+
+	.editor-structured__empty {
+		margin-top: 16rpx;
+		padding: 24rpx 20rpx;
+		border-radius: 24rpx;
+		background: rgba(255, 255, 255, 0.74);
+		border: 1px dashed #ddd3c7;
+	}
+
+	.editor-structured__empty--large {
+		padding: 36rpx 24rpx;
+		text-align: center;
+	}
+
+	.editor-structured__empty-text {
+		font-size: 23rpx;
+		line-height: 1.6;
+		color: #8f8377;
+	}
+
+	.editor-ingredient-list {
+		margin-top: 16rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.editor-ingredient-item {
+		min-height: 84rpx;
+		padding: 0 16rpx;
+		border-radius: 24rpx;
+		background: #ffffff;
+		border: 1px solid #eae2d8;
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
+	.editor-ingredient-item__index {
+		width: 52rpx;
+		height: 52rpx;
+		border-radius: 16rpx;
+		background: #f3ece4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.editor-ingredient-item__index-text {
+		font-size: 21rpx;
+		font-weight: 700;
+		color: #6f6153;
+	}
+
+	.editor-ingredient-item__input {
+		flex: 1;
+		min-width: 0;
+		height: 100%;
+		font-size: 26rpx;
+		color: #2f2923;
+	}
+
+	.editor-ingredient-item__menu {
+		width: 52rpx;
+		height: 52rpx;
+		border-radius: 16rpx;
+		background: #f4eee8;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.editor-ingredient-item__menu-dots {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 5rpx;
+	}
+
+	.editor-ingredient-item__menu-dot {
+		width: 6rpx;
+		height: 6rpx;
+		border-radius: 999rpx;
+		background: #74685c;
+		flex-shrink: 0;
+	}
+
+	.editor-step-list {
+		display: flex;
+		flex-direction: column;
+		gap: 16rpx;
+	}
+
+	.editor-step-card {
+		padding: 22rpx;
+		border-radius: 28rpx;
+		background: #f7f4f0;
+		border: 1px solid #ebe4db;
+		display: flex;
+		flex-direction: column;
+		gap: 16rpx;
+	}
+
+	.editor-step-card__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.editor-step-card__badge {
+		height: 52rpx;
+		padding: 0 16rpx;
+		border-radius: 999rpx;
+		background: #ffffff;
+		border: 1px solid #e5ddd4;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.editor-step-card__badge-text {
+		font-size: 21rpx;
+		font-weight: 700;
+		color: #685c50;
+	}
+
+	.editor-step-card__actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		flex-wrap: wrap;
+		gap: 10rpx;
+	}
+
+	.editor-step-card__action {
+		height: 52rpx;
+		padding: 0 18rpx;
+		border-radius: 999rpx;
+		background: #ffffff;
+		border: 1px solid #e5ddd4;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.editor-step-card__action--disabled {
+		opacity: 0.42;
+		pointer-events: none;
+	}
+
+	.editor-step-card__action--danger {
+		background: #fbf1ed;
+		border-color: #f1d9ce;
+	}
+
+	.editor-step-card__action-text {
+		font-size: 21rpx;
+		font-weight: 600;
+		color: #6b5e52;
+	}
+
+	.editor-step-card__action-text--danger {
+		color: #b4664c;
+	}
+
+	.editor-step-card__field {
+		display: flex;
+		flex-direction: column;
+		gap: 10rpx;
+	}
+
+	.editor-step-card__label {
+		font-size: 21rpx;
+		font-weight: 500;
+		color: #988d81;
+	}
+
+	.editor-step-card__input,
+	.editor-step-card__textarea {
+		width: 100%;
+		box-sizing: border-box;
+		border-radius: 22rpx;
+		background: #ffffff;
+		border: 1px solid #eae2d8;
+		color: #2f2923;
+	}
+
+	.editor-step-card__input {
+		height: 82rpx;
+		padding: 0 22rpx;
+		font-size: 26rpx;
+	}
+
+	.editor-step-card__textarea {
+		min-height: 144rpx;
+		padding: 20rpx 22rpx;
+		font-size: 25rpx;
+		line-height: 1.65;
+	}
+
+	.editor-step-add {
+		height: 84rpx;
+		border-radius: 24rpx;
+		background: #faf7f3;
+		border: 1px dashed #d8cec3;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.editor-step-add__text {
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #75685c;
 	}
 
 	.editor-gallery {

@@ -24,7 +24,7 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE kitchen_id = ? AND deleted_at IS NULL
@@ -79,7 +79,7 @@ func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, err
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE id = ? AND deleted_at IS NULL
@@ -146,7 +146,7 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	    ingredients_json = ?, steps_json = ?, flowchart_image_url = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
 	    flowchart_status = ?, flowchart_error = ?, flowchart_requested_at = ?, flowchart_finished_at = ?,
 	    parse_status = ?, parse_source = ?, parse_error = ?,
-	    parse_requested_at = ?, parse_finished_at = ?, pinned_at = ?, updated_by = ?, updated_at = ?
+	    parse_requested_at = ?, parse_finished_at = ?, parsed_content_edited = ?, pinned_at = ?, updated_by = ?, updated_at = ?
 	WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
 		nullableString(item.Ingredient),
@@ -171,6 +171,7 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		strings.TrimSpace(item.ParseError),
 		nullableString(item.ParseRequestedAt),
 		nullableString(item.ParseFinishedAt),
+		item.ParsedContentEdited,
 		nullableString(item.PinnedAt),
 		item.UpdatedBy,
 		item.UpdatedAt,
@@ -384,7 +385,7 @@ func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Rec
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE deleted_at IS NULL AND parse_status = ?
@@ -420,7 +421,7 @@ func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit in
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE deleted_at IS NULL
@@ -464,7 +465,7 @@ func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) (
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE deleted_at IS NULL
@@ -504,7 +505,7 @@ func (r *Repository) ListPendingFlowcharts(ctx context.Context, limit int) ([]Re
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE deleted_at IS NULL AND flowchart_status = ?
@@ -673,7 +674,7 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 		ctx,
 		`UPDATE recipes
 SET ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, ingredients_json = ?, steps_json = ?,
-    parse_status = ?, parse_source = ?, parse_error = '', parse_finished_at = ?, updated_at = ?
+    parse_status = ?, parse_source = ?, parse_error = '', parse_finished_at = ?, parsed_content_edited = 0, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(ingredientValue),
 		nonNullableTrimmedString(summaryValue),
@@ -892,10 +893,11 @@ type scanner interface {
 
 func scanRecipe(s scanner) (Recipe, error) {
 	var (
-		item            Recipe
-		imageURLsJSON   string
-		ingredientsJSON string
-		stepsJSON       string
+		item                Recipe
+		imageURLsJSON       string
+		ingredientsJSON     string
+		stepsJSON           string
+		parsedContentEdited int
 	)
 
 	err := s.Scan(
@@ -924,6 +926,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.ParseError,
 		&item.ParseRequestedAt,
 		&item.ParseFinishedAt,
+		&parsedContentEdited,
 		&item.PinnedAt,
 		&item.CreatedBy,
 		&item.UpdatedBy,
@@ -950,6 +953,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 	if strings.TrimSpace(item.ImageURL) == "" {
 		item.ImageURL = firstImageURL(imageURLs)
 	}
+	item.ParsedContentEdited = parsedContentEdited != 0
 	item.ParsedContent = normalizeParsedContent(parsedContent, item.MealType, item.Title, item.Ingredient)
 	item.FlowchartStale = strings.TrimSpace(item.FlowchartImageURL) != "" && strings.TrimSpace(item.FlowchartSourceHash) != buildFlowchartSourceHash(item)
 	return item, nil
@@ -972,9 +976,9 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 	id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, meal_type, status, note,
 	ingredients_json, steps_json, flowchart_image_url, flowchart_updated_at, flowchart_source_hash,
 	flowchart_status, flowchart_error, flowchart_requested_at, flowchart_finished_at,
-	parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
+	parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at, parsed_content_edited,
 	pinned_at, created_by, updated_by, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
@@ -1000,6 +1004,7 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 		strings.TrimSpace(item.ParseError),
 		nullableString(item.ParseRequestedAt),
 		nullableString(item.ParseFinishedAt),
+		item.ParsedContentEdited,
 		nullableString(item.PinnedAt),
 		item.CreatedBy,
 		item.UpdatedBy,
@@ -1019,7 +1024,7 @@ func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe,
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(pinned_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE id = ? AND deleted_at IS NULL

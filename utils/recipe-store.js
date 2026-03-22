@@ -44,7 +44,7 @@ const secondaryIngredientPattern = /(常用配菜|基础调味|常用调味料|�
 const secondaryIngredientExceptionPattern = /^(洋葱|红葱头|葱头)/
 const ingredientSuffixPattern = /\s*(?:\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)|半个|半颗|半根|半头|适量|少许)$/
 
-function normalizeTextList(items = []) {
+export function normalizeTextList(items = []) {
 	const source = Array.isArray(items) ? items : [items]
 	const normalized = []
 	const seen = new Set()
@@ -82,7 +82,7 @@ function inferStepTitle(detail = '', index = 0) {
 	return index === 0 ? '处理食材' : '继续烹饪'
 }
 
-function normalizeParsedSteps(steps = []) {
+export function normalizeParsedSteps(steps = []) {
 	const source = Array.isArray(steps) ? steps : []
 	const normalized = []
 	const seen = new Set()
@@ -145,6 +145,26 @@ function splitIngredientLines(lines = []) {
 	}
 }
 
+function splitSecondaryIngredientLines(lines = []) {
+	const cleaned = normalizeTextList(lines)
+	const supportingIngredients = []
+	const seasonings = []
+
+	cleaned.forEach((line) => {
+		const label = ingredientLabelFromLine(line)
+		if (secondaryIngredientPattern.test(label) && !secondaryIngredientExceptionPattern.test(label)) {
+			seasonings.push(line)
+			return
+		}
+		supportingIngredients.push(line)
+	})
+
+	return {
+		supportingIngredients,
+		seasonings
+	}
+}
+
 function stepDetailsToList(steps = []) {
 	return normalizeParsedSteps(steps).map((step) => step.detail)
 }
@@ -180,7 +200,7 @@ function mergeUpdatedParsedContent(currentParsedContent = {}, nextParsedContent 
 	}
 }
 
-function cloneParsedContent(parsedContent = {}) {
+export function normalizeParsedContentView(parsedContent = {}) {
 	const mainIngredients = normalizeTextList(parsedContent.mainIngredients)
 	const secondaryIngredients = normalizeTextList(parsedContent.secondaryIngredients)
 	const legacyIngredients = normalizeTextList(parsedContent.ingredients)
@@ -188,12 +208,25 @@ function cloneParsedContent(parsedContent = {}) {
 		mainIngredients.length || secondaryIngredients.length
 			? { mainIngredients, secondaryIngredients }
 			: splitIngredientLines(legacyIngredients)
-	const steps = normalizeParsedSteps(parsedContent.steps)
+	const secondaryGroups = splitSecondaryIngredientLines(groupedIngredients.secondaryIngredients)
+
 	return {
 		mainIngredients: groupedIngredients.mainIngredients,
 		secondaryIngredients: groupedIngredients.secondaryIngredients,
+		supportingIngredients: secondaryGroups.supportingIngredients,
+		seasonings: secondaryGroups.seasonings,
 		ingredients: [...groupedIngredients.mainIngredients, ...groupedIngredients.secondaryIngredients],
-		steps
+		steps: normalizeParsedSteps(parsedContent.steps)
+	}
+}
+
+function cloneParsedContent(parsedContent = {}) {
+	const normalized = normalizeParsedContentView(parsedContent)
+	return {
+		mainIngredients: normalized.mainIngredients,
+		secondaryIngredients: normalized.secondaryIngredients,
+		ingredients: normalized.ingredients,
+		steps: normalized.steps
 	}
 }
 
@@ -265,7 +298,7 @@ function stepSlicesEqual(left = [], right = []) {
 	return left.every((item, index) => item.title === right[index]?.title && item.detail === right[index]?.detail)
 }
 
-function isFallbackParsedContent(recipe = {}, parsedContent = {}) {
+export function isFallbackParsedContent(recipe = {}, parsedContent = {}) {
 	const current = cloneParsedContent(parsedContent)
 	const fallback = buildFallbackParsedContent(recipe)
 	return (
@@ -307,6 +340,7 @@ export function normalizeRecipe(recipe = {}) {
 		mealType: recipe.mealType || 'breakfast',
 		status: recipe.status || 'wishlist',
 		note: (recipe.note || '').trim(),
+		parsedContentEdited: !!recipe.parsedContentEdited,
 		parseStatus: (recipe.parseStatus || '').trim(),
 		parseSource: (recipe.parseSource || '').trim(),
 		parseError: (recipe.parseError || '').trim(),
@@ -336,7 +370,7 @@ function buildRecipePayload(recipe = {}) {
 			steps: normalized.parsedContent.steps
 		}
 
-	return {
+	const payload = {
 		title: normalized.title,
 		ingredient: normalized.ingredient,
 		summary: normalized.summary,
@@ -348,6 +382,12 @@ function buildRecipePayload(recipe = {}) {
 		note: normalized.note,
 		parsedContent
 	}
+
+	if (Object.prototype.hasOwnProperty.call(recipe, 'parsedContentEdited')) {
+		payload.parsedContentEdited = !!recipe.parsedContentEdited
+	}
+
+	return payload
 }
 
 export function formatRecipeLink(link = '') {

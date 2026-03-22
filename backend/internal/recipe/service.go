@@ -91,6 +91,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 	item.CreatedAt = now
 	item.UpdatedAt = now
 	applyCreateParseState(&item, req, now)
+	item.ParsedContentEdited = resolveCreateParsedContentEditedState(item, req)
 
 	return s.repo.Create(ctx, item)
 }
@@ -142,6 +143,7 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	next.UpdatedBy = userID
 	next.UpdatedAt = time.Now().Format(time.RFC3339)
 	applyUpdateParseState(&next, current, req, next.UpdatedAt)
+	next.ParsedContentEdited = resolveUpdateParsedContentEditedState(current, next, req)
 
 	updated, err := s.repo.Update(ctx, next)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -203,6 +205,25 @@ func applyUpdateParseState(item *Recipe, current Recipe, req updateRecipeRequest
 		item.ParseRequestedAt = ""
 		item.ParseFinishedAt = ""
 	}
+}
+
+func resolveCreateParsedContentEditedState(item Recipe, req createRecipeRequest) bool {
+	if req.ParsedContentEdited != nil {
+		return *req.ParsedContentEdited
+	}
+
+	return hasUserProvidedParsedContent(item.ParsedContent, item.MealType, item.Title, item.Ingredient)
+}
+
+func resolveUpdateParsedContentEditedState(current, next Recipe, req updateRecipeRequest) bool {
+	if !parsedContentSlicesEqual(current.ParsedContent, next.ParsedContent) {
+		if req.ParsedContentEdited != nil {
+			return *req.ParsedContentEdited
+		}
+		return hasUserProvidedParsedContent(next.ParsedContent, next.MealType, next.Title, next.Ingredient)
+	}
+
+	return current.ParsedContentEdited
 }
 
 func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID string, status string) (Recipe, error) {
@@ -814,6 +835,26 @@ func stringSlicesEqual(left, right []string) bool {
 	}
 
 	return true
+}
+
+func parsedStepSlicesEqual(left, right []ParsedStep) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	for index := range left {
+		if left[index].Title != right[index].Title || left[index].Detail != right[index].Detail {
+			return false
+		}
+	}
+
+	return true
+}
+
+func parsedContentSlicesEqual(left, right ParsedContent) bool {
+	return stringSlicesEqual(cleanLines(left.MainIngredients), cleanLines(right.MainIngredients)) &&
+		stringSlicesEqual(cleanLines(left.SecondaryIngredients), cleanLines(right.SecondaryIngredients)) &&
+		parsedStepSlicesEqual(cleanParsedSteps(left.Steps), cleanParsedSteps(right.Steps))
 }
 
 func isAllowedMealType(value string) bool {

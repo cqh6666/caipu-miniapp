@@ -124,6 +124,7 @@ type Recipe struct {
 	Status               string        `json:"status"`
 	Note                 string        `json:"note"`
 	ParsedContent        ParsedContent `json:"parsedContent"`
+	ParsedContentEdited  bool          `json:"parsedContentEdited"`
 	ParseStatus          string        `json:"parseStatus"`
 	ParseSource          string        `json:"parseSource"`
 	ParseError           string        `json:"parseError"`
@@ -145,29 +146,31 @@ type ListFilter struct {
 }
 
 type createRecipeRequest struct {
-	Title         string        `json:"title"`
-	Ingredient    string        `json:"ingredient"`
-	Summary       string        `json:"summary"`
-	Link          string        `json:"link"`
-	ImageURL      string        `json:"imageUrl"`
-	ImageURLs     []string      `json:"imageUrls"`
-	MealType      string        `json:"mealType"`
-	Status        string        `json:"status"`
-	Note          string        `json:"note"`
-	ParsedContent ParsedContent `json:"parsedContent"`
+	Title               string        `json:"title"`
+	Ingredient          string        `json:"ingredient"`
+	Summary             string        `json:"summary"`
+	Link                string        `json:"link"`
+	ImageURL            string        `json:"imageUrl"`
+	ImageURLs           []string      `json:"imageUrls"`
+	MealType            string        `json:"mealType"`
+	Status              string        `json:"status"`
+	Note                string        `json:"note"`
+	ParsedContent       ParsedContent `json:"parsedContent"`
+	ParsedContentEdited *bool         `json:"parsedContentEdited"`
 }
 
 type updateRecipeRequest struct {
-	Title         string        `json:"title"`
-	Ingredient    string        `json:"ingredient"`
-	Summary       string        `json:"summary"`
-	Link          string        `json:"link"`
-	ImageURL      string        `json:"imageUrl"`
-	ImageURLs     []string      `json:"imageUrls"`
-	MealType      string        `json:"mealType"`
-	Status        string        `json:"status"`
-	Note          string        `json:"note"`
-	ParsedContent ParsedContent `json:"parsedContent"`
+	Title               string        `json:"title"`
+	Ingredient          string        `json:"ingredient"`
+	Summary             string        `json:"summary"`
+	Link                string        `json:"link"`
+	ImageURL            string        `json:"imageUrl"`
+	ImageURLs           []string      `json:"imageUrls"`
+	MealType            string        `json:"mealType"`
+	Status              string        `json:"status"`
+	Note                string        `json:"note"`
+	ParsedContent       ParsedContent `json:"parsedContent"`
+	ParsedContentEdited *bool         `json:"parsedContentEdited"`
 }
 
 type updateStatusRequest struct {

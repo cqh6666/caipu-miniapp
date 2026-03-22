@@ -1,0 +1,2 @@
+ALTER TABLE recipes
+ADD COLUMN parsed_content_edited INTEGER NOT NULL DEFAULT 0;
