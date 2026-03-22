@@ -1,6 +1,10 @@
 package recipe
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestNormalizeRecipeInputSupportsMultipleImages(t *testing.T) {
 	t.Parallel()
@@ -118,6 +122,29 @@ func TestNormalizeParsedContentKeepsMultiplePrimaryIngredients(t *testing.T) {
 	}
 	if got, want := len(content.SecondaryIngredients), 2; got != want {
 		t.Fatalf("len(SecondaryIngredients) = %d, want %d (%#v)", got, want, content.SecondaryIngredients)
+	}
+}
+
+func TestNormalizeParsedContentCompactsStepsToSix(t *testing.T) {
+	t.Parallel()
+
+	steps := make([]ParsedStep, 0, 8)
+	for index := 1; index <= 8; index++ {
+		steps = append(steps, ParsedStep{
+			Title:  fmt.Sprintf("第%d步", index),
+			Detail: fmt.Sprintf("第%d步处理", index),
+		})
+	}
+
+	content := normalizeParsedContent(ParsedContent{
+		Steps: steps,
+	}, "main", "番茄牛腩", "牛腩")
+
+	if got, want := len(content.Steps), 6; got != want {
+		t.Fatalf("len(Steps) = %d, want %d", got, want)
+	}
+	if !strings.Contains(content.Steps[5].Detail, "第7步处理") || !strings.Contains(content.Steps[5].Detail, "第8步处理") {
+		t.Fatalf("last compacted step should preserve trailing actions, got %#v", content.Steps[5])
 	}
 }
 

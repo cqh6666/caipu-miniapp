@@ -29,6 +29,7 @@ var (
 const (
 	maxRecipeImages       = 9
 	maxRecipeSummaryRunes = 24
+	maxParsedSteps        = 6
 )
 
 type Service struct {
@@ -699,7 +700,7 @@ func cleanParsedSteps(steps []ParsedStep) []ParsedStep {
 			Detail: detail,
 		})
 	}
-	return items
+	return compactParsedSteps(items)
 }
 
 func buildParsedSteps(lines []string) []ParsedStep {
@@ -710,6 +711,52 @@ func buildParsedSteps(lines []string) []ParsedStep {
 			Detail: line,
 		})
 	}
+	return compactParsedSteps(items)
+}
+
+func compactParsedSteps(steps []ParsedStep) []ParsedStep {
+	if len(steps) <= maxParsedSteps {
+		return append([]ParsedStep{}, steps...)
+	}
+
+	items := make([]ParsedStep, 0, maxParsedSteps)
+	for index := 0; index < maxParsedSteps; index++ {
+		start := index * len(steps) / maxParsedSteps
+		end := (index + 1) * len(steps) / maxParsedSteps
+		if start >= len(steps) {
+			break
+		}
+		if end <= start {
+			end = start + 1
+		}
+		if end > len(steps) {
+			end = len(steps)
+		}
+
+		group := steps[start:end]
+		title := strings.TrimSpace(group[0].Title)
+		if title == "" {
+			title = inferParsedStepTitle(group[0].Detail, index)
+		}
+
+		details := make([]string, 0, len(group))
+		for _, step := range group {
+			detail := strings.TrimSpace(step.Detail)
+			if detail == "" {
+				continue
+			}
+			details = append(details, detail)
+		}
+		if len(details) == 0 && title != "" {
+			details = append(details, title)
+		}
+
+		items = append(items, ParsedStep{
+			Title:  title,
+			Detail: strings.Join(details, "；"),
+		})
+	}
+
 	return items
 }
 

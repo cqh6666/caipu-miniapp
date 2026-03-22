@@ -20,6 +20,8 @@ import (
 const (
 	defaultHTTPTimeout     = 15 * time.Second
 	defaultPromptCharLimit = 12000
+	maxParsedSteps         = 6
+	maxRawParsedSteps      = 12
 )
 
 var (
@@ -906,13 +908,13 @@ func splitIngredientLines(lines []string) ([]string, []string) {
 
 func buildParsedSteps(lines []string) []ParsedStep {
 	items := make([]ParsedStep, 0, len(lines))
-	for index, line := range dedupeStrings(cleanLines(lines), 8) {
+	for index, line := range dedupeStrings(cleanLines(lines), maxRawParsedSteps) {
 		items = append(items, ParsedStep{
 			Title:  inferParsedStepTitle(line, index),
 			Detail: line,
 		})
 	}
-	return items
+	return compactParsedSteps(items)
 }
 
 func cleanParsedSteps(steps []ParsedStep) []ParsedStep {
@@ -940,6 +942,52 @@ func cleanParsedSteps(steps []ParsedStep) []ParsedStep {
 			Detail: detail,
 		})
 	}
+	return compactParsedSteps(items)
+}
+
+func compactParsedSteps(steps []ParsedStep) []ParsedStep {
+	if len(steps) <= maxParsedSteps {
+		return append([]ParsedStep{}, steps...)
+	}
+
+	items := make([]ParsedStep, 0, maxParsedSteps)
+	for index := 0; index < maxParsedSteps; index++ {
+		start := index * len(steps) / maxParsedSteps
+		end := (index + 1) * len(steps) / maxParsedSteps
+		if start >= len(steps) {
+			break
+		}
+		if end <= start {
+			end = start + 1
+		}
+		if end > len(steps) {
+			end = len(steps)
+		}
+
+		group := steps[start:end]
+		title := strings.TrimSpace(group[0].Title)
+		if title == "" {
+			title = inferParsedStepTitle(group[0].Detail, index)
+		}
+
+		details := make([]string, 0, len(group))
+		for _, step := range group {
+			detail := cleanCandidateLine(step.Detail)
+			if detail == "" {
+				continue
+			}
+			details = append(details, detail)
+		}
+		if len(details) == 0 && title != "" {
+			details = append(details, title)
+		}
+
+		items = append(items, ParsedStep{
+			Title:  title,
+			Detail: strings.Join(details, "；"),
+		})
+	}
+
 	return items
 }
 
@@ -1063,7 +1111,7 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 		Messages: []openAIChatMessage{
 			{
 				Role:    "system",
-				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。steps 返回 3 到 6 步，每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildIngredientPromptRuleText() + " " + buildSummaryPromptRuleText(),
+				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。steps 必须返回 3 到 6 步；如果原始做法更细，请合并相邻动作，不要拆得过碎，也不要超过 6 步。每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildIngredientPromptRuleText() + " " + buildSummaryPromptRuleText(),
 			},
 			{
 				Role:    "user",

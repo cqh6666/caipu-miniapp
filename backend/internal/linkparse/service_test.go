@@ -1,6 +1,7 @@
 package linkparse
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -96,6 +97,49 @@ func TestSummarizeHeuristically(t *testing.T) {
 	}
 	if got, want := len(result.ImageURLs), 1; got != want {
 		t.Fatalf("len(ImageURLs) = %d, want %d", got, want)
+	}
+}
+
+func TestCleanParsedStepsCompactsToSix(t *testing.T) {
+	t.Parallel()
+
+	steps := make([]ParsedStep, 0, 8)
+	for index := 1; index <= 8; index++ {
+		steps = append(steps, ParsedStep{
+			Title:  fmt.Sprintf("第%d步", index),
+			Detail: fmt.Sprintf("第%d步处理", index),
+		})
+	}
+
+	got := cleanParsedSteps(steps)
+	if len(got) != 6 {
+		t.Fatalf("len(cleanParsedSteps) = %d, want 6", len(got))
+	}
+	if !strings.Contains(got[5].Detail, "第7步处理") || !strings.Contains(got[5].Detail, "第8步处理") {
+		t.Fatalf("last compacted step should preserve trailing actions, got %#v", got[5])
+	}
+}
+
+func TestBuildParsedStepsCompactsToSix(t *testing.T) {
+	t.Parallel()
+
+	lines := []string{
+		"第1步处理",
+		"第2步处理",
+		"第3步处理",
+		"第4步处理",
+		"第5步处理",
+		"第6步处理",
+		"第7步处理",
+		"第8步处理",
+	}
+
+	got := buildParsedSteps(lines)
+	if len(got) != 6 {
+		t.Fatalf("len(buildParsedSteps) = %d, want 6", len(got))
+	}
+	if !strings.Contains(got[5].Detail, "第7步处理") || !strings.Contains(got[5].Detail, "第8步处理") {
+		t.Fatalf("last compacted step should preserve trailing actions, got %#v", got[5])
 	}
 }
 
