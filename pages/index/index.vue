@@ -3,50 +3,82 @@
 		<view class="page-content">
 			<template v-if="activeSection === 'library'">
 				<view class="page-header">
-					<text class="page-header__title">美食库</text>
-					<text class="page-header__summary">{{ librarySummary }}</text>
+					<view class="page-header__top">
+						<view class="page-header__heading">
+							<text class="page-header__title">美食库</text>
+							<text class="page-header__summary">{{ librarySummary }}</text>
+						</view>
+						<view class="page-header__action" @tap="drawTonight">
+							<view class="page-header__action-icon">
+								<up-icon name="gift-fill" size="13" color="#8c6544"></up-icon>
+							</view>
+							<text class="page-header__action-text">随机吃点</text>
+						</view>
+					</view>
 				</view>
 
 				<view class="toolbar">
-					<view class="toolbar__row">
-						<view class="search-box">
-							<up-icon name="search" size="15" color="#8f8377"></up-icon>
-							<input
-								v-model="searchKeyword"
-								class="search-box__input"
-								placeholder="搜菜名、摘要、备注或链接"
-								placeholder-class="search-box__placeholder"
-							/>
-						</view>
-						<view class="tool-button" @tap="drawTonight">
-							<up-icon name="reload" size="14" color="#4d433a"></up-icon>
-							<text class="tool-button__text">随机</text>
+					<view
+						class="search-box"
+						:class="{ 'search-box--active': isSearchFocused || trimmedSearchKeyword }"
+					>
+						<up-icon name="search" size="15" color="#8f8377"></up-icon>
+						<input
+							v-model="searchKeyword"
+							class="search-box__input"
+							placeholder="搜菜名、食材或做法"
+							placeholder-class="search-box__placeholder"
+							confirm-type="search"
+							@focus="handleSearchFocus"
+							@blur="handleSearchBlur"
+							@confirm="handleSearchConfirm"
+						/>
+						<view v-if="trimmedSearchKeyword" class="search-box__clear" @tap="clearSearchKeyword">
+							<up-icon name="close" size="14" color="#8f8377"></up-icon>
 						</view>
 					</view>
 
-					<view class="meal-tabs">
-						<view
-							v-for="tab in mealTabs"
-							:key="tab.value"
-							class="meal-tab"
-							:class="{ 'meal-tab--active': activeMealType === tab.value }"
-							@tap="activeMealType = tab.value"
-						>
-							<view class="meal-tab__left">
-								<view class="meal-tab__icon-shell">
-									<up-icon
-										:name="tab.icon"
-										size="12"
-										:color="activeMealType === tab.value ? tab.activeColor : '#8e8479'"
-									></up-icon>
-								</view>
-								<text class="meal-tab__text">{{ tab.label }}</text>
+					<view v-if="showSearchAssist" class="search-assist">
+						<text class="search-assist__label">{{ searchAssistLabel }}</text>
+						<view class="search-assist__chips">
+							<view
+								v-for="keyword in searchAssistKeywords"
+								:key="`search-assist-${keyword}`"
+								class="search-assist__chip"
+								@tap="applySearchKeyword(keyword)"
+							>
+								<text class="search-assist__chip-text">{{ keyword }}</text>
 							</view>
-							<text class="meal-tab__count">{{ mealTypeCount(tab.value) }}</text>
 						</view>
 					</view>
 
-					<scroll-view class="status-scroll" scroll-x>
+					<view class="filter-group">
+						<view class="meal-tabs">
+							<view
+								v-for="tab in mealTabs"
+								:key="tab.value"
+								class="meal-tab"
+								:class="{ 'meal-tab--active': activeMealType === tab.value }"
+								@tap="activeMealType = tab.value"
+							>
+								<view class="meal-tab__left">
+									<view class="meal-tab__icon-shell">
+										<up-icon
+											:name="tab.icon"
+											size="12"
+											:color="activeMealType === tab.value ? tab.activeColor : '#8e8479'"
+										></up-icon>
+									</view>
+									<text class="meal-tab__text">{{ tab.label }}</text>
+								</view>
+								<view class="meal-tab__count">
+									<text class="meal-tab__count-text">{{ mealTypeCount(tab.value) }}</text>
+								</view>
+							</view>
+						</view>
+					</view>
+
+					<view class="filter-group filter-group--compact">
 						<view class="status-track">
 							<view
 								v-for="tab in statusTabs"
@@ -59,17 +91,26 @@
 									<up-icon
 										:name="statusMap[tab.value].icon"
 										size="13"
-										:color="activeStatus === tab.value ? '#ffffff' : '#7a6d61'"
+										:color="activeStatus === tab.value ? '#fffaf3' : '#7a6d61'"
 									></up-icon>
 									<text class="status-pill__text">{{ tab.label }}</text>
 								</view>
 							</view>
 						</view>
-					</scroll-view>
+					</view>
 				</view>
 
 				<view class="list-caption">
-					<text class="list-caption__text">{{ currentMealLabel }} · {{ filteredRecipes.length }} 道记录</text>
+					<view class="list-caption__top">
+						<text class="list-caption__title">{{ currentFilterSummary }}</text>
+						<view
+							class="list-caption__clear"
+							:class="{ 'list-caption__clear--hidden': !canResetLibraryFilters }"
+							@tap="resetLibraryFilters"
+						>
+							<text class="list-caption__clear-text">清除筛选</text>
+						</view>
+					</view>
 				</view>
 
 				<view v-if="filteredRecipes.length" class="recipe-list">
@@ -146,8 +187,8 @@
 
 				<view v-else class="empty-state">
 					<up-icon name="empty-search" size="40" color="#c0b3a5"></up-icon>
-					<text class="empty-state__title">没有找到匹配内容</text>
-					<text class="empty-state__desc">试试换个关键词，或者点中间的加号新增一道菜。</text>
+					<text class="empty-state__title">{{ emptyStateTitle }}</text>
+					<text class="empty-state__desc">{{ emptyStateDesc }}</text>
 				</view>
 			</template>
 
@@ -687,6 +728,7 @@ const createEmptyDraft = (overrides = {}) => ({
 })
 
 const firstUrlPattern = /https?:\/\/[^\s]+/i
+const draftLinkTrailingPunctuationPattern = /[).,，。！!？?】）'"”’]+$/
 const draftPlatformPattern = /\s*-\s*(哔哩哔哩|小红书)\s*$/i
 const draftShareSuffixPattern = /复制后打开【小红书】查看笔记!?/g
 const draftWhitespacePattern = /\s+/g
@@ -699,12 +741,35 @@ const draftNoisePatterns = [
 	/(.+?)(?:最好吃的做法|家常做法|详细做法|做法分享|做法教程|做法来了|做法来咯|做法来啦|教程来咯|教程来啦|教程来了|教程分享|教程|做法).*$/i,
 	/(.+?)(?:就是这个味|超级软烂|超软烂|入口即化|香迷糊了?|巨好吃|好吃到哭|一学就会|零失败|保姆级|超下饭|真的绝了?|超级入味).*$/i
 ]
+const RECENT_SEARCH_STORAGE_KEY = 'caipu-miniapp-recent-searches'
+const LAST_DRAFT_LINK_PREFILL_STORAGE_KEY = 'caipu-miniapp-last-draft-link-prefill'
+const MAX_RECENT_SEARCHES = 6
+const searchSuggestionKeywordsByMeal = {
+	breakfast: ['鸡蛋', '面包', '粥', '快手'],
+	main: ['下饭', '牛肉', '鸡翅', '汤']
+}
+
 function detectDraftLinkPlatform(input = '') {
 	const value = String(input || '').toLowerCase()
 	if (!value) return ''
 	if (value.includes('bilibili.com') || value.includes('b23.tv') || value.includes('bili2233.cn')) return 'bilibili'
 	if (value.includes('xiaohongshu.com') || value.includes('xhslink.com')) return 'xiaohongshu'
 	return ''
+}
+
+function extractSupportedDraftLink(input = '') {
+	const raw = String(input || '').trim()
+	if (!raw) return ''
+
+	const match = raw.match(firstUrlPattern)
+	let candidate = String(match?.[0] || '').trim()
+	if (!candidate && detectDraftLinkPlatform(raw)) {
+		candidate = raw
+	}
+	if (!candidate) return ''
+
+	candidate = candidate.replace(draftLinkTrailingPunctuationPattern, '').trim()
+	return detectDraftLinkPlatform(candidate) ? candidate : ''
 }
 
 function normalizeDraftAutoTitle(input = '') {
@@ -910,6 +975,35 @@ function buildRecipeCoverVersion(recipe = {}) {
 	return String(recipe.updatedAt || recipe.parseFinishedAt || '').trim()
 }
 
+function buildRecipeSearchText(recipe = {}) {
+	const parsedContent = recipe.parsedContent || {}
+	const ingredientLines = [
+		...(Array.isArray(parsedContent.ingredients) ? parsedContent.ingredients : []),
+		...(Array.isArray(parsedContent.mainIngredients) ? parsedContent.mainIngredients : []),
+		...(Array.isArray(parsedContent.secondaryIngredients) ? parsedContent.secondaryIngredients : [])
+	]
+	const stepLines = (Array.isArray(parsedContent.steps) ? parsedContent.steps : []).reduce((result, step) => {
+		if (typeof step === 'string') {
+			return result.concat(step)
+		}
+		return result.concat([step?.title, step?.detail, step?.text].filter(Boolean))
+	}, [])
+		.filter(Boolean)
+
+	return [
+		recipe.title,
+		recipe.summary,
+		recipe.ingredient,
+		recipe.note,
+		recipe.link,
+		...ingredientLines,
+		...stepLines
+	]
+		.filter(Boolean)
+		.join('\n')
+		.toLowerCase()
+}
+
 function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	const images = extractRecipeImages(recipe)
 	const remoteCover = images[0] || ''
@@ -925,6 +1019,43 @@ function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	}
 }
 
+function readRecentSearches() {
+	try {
+		const stored = uni.getStorageSync(RECENT_SEARCH_STORAGE_KEY)
+		if (!Array.isArray(stored)) return []
+		return stored
+			.map((item) => String(item || '').trim())
+			.filter(Boolean)
+			.slice(0, MAX_RECENT_SEARCHES)
+	} catch (error) {
+		return []
+	}
+}
+
+function writeRecentSearches(items = []) {
+	try {
+		uni.setStorageSync(RECENT_SEARCH_STORAGE_KEY, items)
+	} catch (error) {
+		// Ignore storage write failures and keep search usable.
+	}
+}
+
+function readLastDraftLinkPrefill() {
+	try {
+		return String(uni.getStorageSync(LAST_DRAFT_LINK_PREFILL_STORAGE_KEY) || '').trim()
+	} catch (error) {
+		return ''
+	}
+}
+
+function writeLastDraftLinkPrefill(value = '') {
+	try {
+		uni.setStorageSync(LAST_DRAFT_LINK_PREFILL_STORAGE_KEY, String(value || '').trim())
+	} catch (error) {
+		// Ignore storage write failures and keep prefill usable.
+	}
+}
+
 export default {
 	data() {
 		return {
@@ -933,8 +1064,13 @@ export default {
 			activeMealType: 'main',
 			activeStatus: 'all',
 			searchKeyword: '',
+			recentSearches: readRecentSearches(),
+			lastDraftLinkPrefill: readLastDraftLinkPrefill(),
+			isSearchFocused: false,
+			searchBlurTimer: null,
 			selectedRecipeId: '',
 			showAddSheet: false,
+			draftLinkPrefillSource: '',
 			showInviteSheet: false,
 			showInviteCodeSheet: false,
 			showProfileSheet: false,
@@ -990,10 +1126,12 @@ export default {
 	},
 	onHide() {
 		this.clearDraftLinkPreviewState()
+		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
 	},
 	onUnload() {
 		this.clearDraftLinkPreviewState()
+		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
@@ -1012,6 +1150,9 @@ export default {
 	computed: {
 		currentMealLabel() {
 			return this.mealTabs.find((tab) => tab.value === this.activeMealType)?.label || '早餐'
+		},
+		currentStatusLabel() {
+			return this.statusMap[this.activeStatus]?.label || '全部'
 		},
 		wishlistRecipes() {
 			return this.recipes.filter((recipe) => recipe.status === 'wishlist')
@@ -1047,11 +1188,17 @@ export default {
 		doneRecipes() {
 			return this.recipes.filter((recipe) => recipe.status === 'done')
 		},
+		trimmedSearchKeyword() {
+			return String(this.searchKeyword || '').trim()
+		},
+		hasSearchKeyword() {
+			return !!this.trimmedSearchKeyword
+		},
 		librarySummary() {
 			if (!this.currentKitchenName && this.syncErrorMessage) {
 				return this.syncErrorMessage
 			}
-			return this.isSyncing ? '正在同步这份菜单。' : '先按早餐和正餐整理，再看想吃和吃过。'
+			return this.isSyncing ? '正在同步这份菜单。' : '按餐别整理，想吃和吃过一目了然'
 		},
 		inviteActionDescription() {
 			return this.showInviteShareAction ? '复制邀请码或直接分享给朋友' : '复制邀请码发给朋友'
@@ -1078,22 +1225,73 @@ export default {
 			return this.kitchenMembers.length > this.visibleKitchenMembers.length
 		},
 		filteredRecipes() {
-			const keyword = this.searchKeyword.trim().toLowerCase()
+			const keyword = this.trimmedSearchKeyword.toLowerCase()
 			return this.recipes.filter((recipe) => {
 				const matchedMealType = recipe.mealType === this.activeMealType
 				const matchedStatus = this.activeStatus === 'all' || recipe.status === this.activeStatus
-				const matchedKeyword =
-					!keyword ||
-					recipe.title.toLowerCase().includes(keyword) ||
-					(recipe.ingredient || '').toLowerCase().includes(keyword) ||
-					(recipe.summary || '').toLowerCase().includes(keyword) ||
-					(recipe.link || '').toLowerCase().includes(keyword) ||
-					(recipe.note || '').toLowerCase().includes(keyword)
+				const matchedKeyword = !keyword || buildRecipeSearchText(recipe).includes(keyword)
 				return matchedMealType && matchedStatus && matchedKeyword
 			})
 		},
 		recipeCards() {
 			return this.filteredRecipes.map((recipe) => buildRecipeCard(recipe, this.cachedRecipeCoverMap))
+		},
+		searchAssistKeywords() {
+			const keyword = this.trimmedSearchKeyword
+			const recentKeywords = this.recentSearches
+				.filter((item) => item !== keyword)
+				.slice(0, 4)
+			if (recentKeywords.length) {
+				return recentKeywords
+			}
+
+			return (searchSuggestionKeywordsByMeal[this.activeMealType] || searchSuggestionKeywordsByMeal.main)
+				.filter((item) => item !== keyword)
+				.slice(0, 4)
+		},
+		searchAssistLabel() {
+			const recentKeywords = this.recentSearches
+				.filter((item) => item !== this.trimmedSearchKeyword)
+				.slice(0, 4)
+			return recentKeywords.length ? '最近搜索' : '可以试试'
+		},
+		showSearchAssist() {
+			return this.isSearchFocused && !this.hasSearchKeyword && this.searchAssistKeywords.length > 0
+		},
+		currentFilterSummary() {
+			const parts = [this.currentMealLabel]
+			if (this.activeStatus !== 'all') {
+				parts.push(this.currentStatusLabel)
+			}
+			if (this.hasSearchKeyword) {
+				parts.push(`搜“${this.trimmedSearchKeyword}”`)
+			}
+			parts.push(`${this.filteredRecipes.length}道`)
+			return parts.join(' · ')
+		},
+		canResetLibraryFilters() {
+			return this.activeStatus !== 'all' || this.hasSearchKeyword
+		},
+		emptyStateTitle() {
+			if (this.hasSearchKeyword) {
+				return `没有找到“${this.trimmedSearchKeyword}”`
+			}
+			if (this.activeStatus === 'all') {
+				return `还没有${this.currentMealLabel}记录`
+			}
+			return `${this.currentMealLabel}里还没有${this.currentStatusLabel}的菜`
+		},
+		emptyStateDesc() {
+			if (this.hasSearchKeyword) {
+				if (this.searchAssistKeywords.length) {
+					return `试试搜 ${this.searchAssistKeywords.join('、')}，或者换个关键词。`
+				}
+				return '试试换个关键词，或者点中间的加号新增一道菜。'
+			}
+			if (this.activeStatus === 'all') {
+				return `试试切换到另一类餐别，或者点中间的加号新增一道${this.currentMealLabel}。`
+			}
+			return `可以先把${this.currentMealLabel}里的菜标记为${this.currentStatusLabel}，或者切换到全部看看。`
 		},
 		inviteSheetSubtitle() {
 			if (!this.currentKitchenName) {
@@ -1165,6 +1363,9 @@ export default {
 				return this.draftLinkPreviewError
 			}
 			if (this.draft.link.trim()) {
+				if (this.draftLinkPrefillSource === 'clipboard') {
+					return '已从剪贴板填入分享内容，可直接保存或继续修改。'
+				}
 				return '支持直接粘贴 B 站或小红书分享链接，系统会自动帮你补标题。'
 			}
 			return ''
@@ -1174,6 +1375,48 @@ export default {
 		applyRecipes(recipes = []) {
 			this.recipes = Array.isArray(recipes) ? recipes : []
 			this.syncRecipeCoverCache(this.recipes)
+		},
+		clearSearchBlurTimer() {
+			if (!this.searchBlurTimer) return
+			clearTimeout(this.searchBlurTimer)
+			this.searchBlurTimer = null
+		},
+		handleSearchFocus() {
+			this.clearSearchBlurTimer()
+			this.isSearchFocused = true
+		},
+		handleSearchBlur() {
+			this.clearSearchBlurTimer()
+			this.searchBlurTimer = setTimeout(() => {
+				this.isSearchFocused = false
+				this.searchBlurTimer = null
+			}, 120)
+			this.rememberSearchKeyword()
+		},
+		handleSearchConfirm() {
+			this.rememberSearchKeyword()
+		},
+		rememberSearchKeyword() {
+			const keyword = this.trimmedSearchKeyword
+			if (!keyword) return
+
+			const nextKeywords = [keyword, ...this.recentSearches.filter((item) => item !== keyword)].slice(0, MAX_RECENT_SEARCHES)
+			this.recentSearches = nextKeywords
+			writeRecentSearches(nextKeywords)
+		},
+		applySearchKeyword(keyword = '') {
+			const nextKeyword = String(keyword || '').trim()
+			if (!nextKeyword) return
+
+			this.clearSearchBlurTimer()
+			this.searchKeyword = nextKeyword
+			this.isSearchFocused = false
+			this.rememberSearchKeyword()
+		},
+		clearSearchKeyword() {
+			this.searchKeyword = ''
+			this.clearSearchBlurTimer()
+			this.isSearchFocused = true
 		},
 		buildRecipeCoverCacheEntries(recipes = []) {
 			return (Array.isArray(recipes) ? recipes : [])
@@ -1437,6 +1680,39 @@ export default {
 			this.draftTitleTouched = false
 			this.draftLinkPreviewPlatform = ''
 			this.draftLinkPreviewError = ''
+			this.draftLinkPrefillSource = ''
+		},
+		readClipboardText() {
+			return new Promise((resolve) => {
+				uni.getClipboardData({
+					success: (result) => {
+						resolve(String(result?.data || '').trim())
+					},
+					fail: () => {
+						resolve('')
+					}
+				})
+			})
+		},
+		async tryPrefillDraftLinkFromClipboard() {
+			if (!this.showAddSheet || String(this.draft.link || '').trim()) return
+
+			const clipboardText = await this.readClipboardText()
+			if (!this.showAddSheet || String(this.draft.link || '').trim()) return
+			if (!clipboardText || clipboardText === this.lastDraftLinkPrefill) return
+
+			const link = extractSupportedDraftLink(clipboardText)
+			if (!link) return
+
+			this.draft.link = clipboardText
+			this.draftLinkPrefillSource = 'clipboard'
+			this.lastDraftLinkPrefill = clipboardText
+			writeLastDraftLinkPrefill(clipboardText)
+			const guessedTitle = guessDraftTitleFromShareText(clipboardText)
+			if (guessedTitle) {
+				this.applyDraftAutoTitle(guessedTitle)
+			}
+			this.scheduleDraftLinkPreview(clipboardText)
 		},
 		clearDraftLinkPreviewState() {
 			if (this.draftLinkPreviewTimer) {
@@ -1476,6 +1752,7 @@ export default {
 		handleDraftLinkInput(event) {
 			const value = String(event?.detail?.value || '')
 			this.draft.link = value
+			this.draftLinkPrefillSource = ''
 			this.scheduleDraftLinkPreview(value)
 		},
 		scheduleDraftLinkPreview(rawInput = '') {
@@ -1542,6 +1819,12 @@ export default {
 		mealTypeCount(type) {
 			return this.recipes.filter((recipe) => recipe.mealType === type).length
 		},
+		resetLibraryFilters() {
+			this.activeStatus = 'all'
+			this.searchKeyword = ''
+			this.clearSearchBlurTimer()
+			this.isSearchFocused = false
+		},
 		openRecipeDetail(recipeId) {
 			this.selectedRecipeId = recipeId
 			uni.navigateTo({
@@ -1581,10 +1864,11 @@ export default {
 				icon: 'none'
 			})
 		},
-		openAddSheet() {
+		async openAddSheet() {
 			this.resetDraftAssistState()
 			this.draft = this.createDraftFromContext()
 			this.showAddSheet = true
+			await this.tryPrefillDraftLinkFromClipboard()
 		},
 		closeAddSheet() {
 			this.resetDraftAssistState()
@@ -1877,10 +2161,22 @@ export default {
 	}
 
 	.page-header {
+		padding: 6rpx 2rpx 0;
+	}
+
+	.page-header__top {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16rpx;
+	}
+
+	.page-header__heading {
+		flex: 1;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 8rpx;
-		padding: 6rpx 2rpx 0;
 	}
 
 	.page-header__title {
@@ -1893,6 +2189,39 @@ export default {
 		font-size: 23rpx;
 		line-height: 1.5;
 		color: #8d847a;
+	}
+
+	.page-header__action {
+		margin-top: 4rpx;
+		min-height: 56rpx;
+		padding: 0 18rpx;
+		box-sizing: border-box;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.9);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8rpx;
+		flex-shrink: 0;
+	}
+
+	.page-header__action-icon {
+		width: 28rpx;
+		height: 28rpx;
+		border-radius: 999rpx;
+		background: #f4e5d4;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.page-header__action-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		line-height: 1;
+		color: #5b4a3b;
 	}
 
 	.kitchen-hero {
@@ -2700,33 +3029,43 @@ export default {
 		box-shadow: 0 8rpx 20rpx rgba(56, 44, 30, 0.04);
 	}
 
-	.toolbar__row {
+	.filter-group {
+		margin-top: 16rpx;
 		display: flex;
-		align-items: center;
-		gap: 10rpx;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.filter-group--compact {
+		margin-top: 12rpx;
 	}
 
 	.meal-tabs {
-		margin-top: 14rpx;
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 10rpx;
+		gap: 6rpx;
+		padding: 6rpx;
+		border-radius: 20rpx;
+		background: #f7f3ee;
+		border: 1px solid rgba(91, 74, 59, 0.04);
 	}
 
 	.meal-tab {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 18rpx 18rpx;
-		border-radius: 18rpx;
-		background: #f3efe9;
-		border: 1px solid rgba(0, 0, 0, 0.02);
+		min-height: 84rpx;
+		padding: 0 18rpx;
+		box-sizing: border-box;
+		border-radius: 16rpx;
+		background: rgba(255, 255, 255, 0.24);
+		border: 1px solid transparent;
 	}
 
 	.meal-tab--active {
-		background: #ffffff;
-		border: 1px solid rgba(91, 74, 59, 0.14);
-		box-shadow: 0 6rpx 16rpx rgba(56, 44, 30, 0.04);
+		background: #eadfd2;
+		border: 1px solid rgba(91, 74, 59, 0.12);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.22);
 	}
 
 	.meal-tab__left {
@@ -2737,10 +3076,10 @@ export default {
 	}
 
 	.meal-tab__icon-shell {
-		width: 28rpx;
-		height: 28rpx;
+		width: 34rpx;
+		height: 34rpx;
 		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.7);
+		background: rgba(91, 74, 59, 0.05);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -2750,16 +3089,44 @@ export default {
 	.meal-tab__text {
 		font-size: 25rpx;
 		font-weight: 700;
-		color: #4d433a;
+		color: #81756a;
 	}
 
 	.meal-tab__count {
-		font-size: 22rpx;
-		color: #8d847a;
+		min-height: 36rpx;
+		padding: 0 12rpx;
+		border-radius: 999rpx;
+		background: rgba(91, 74, 59, 0.04);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.meal-tab__count-text {
+		font-size: 18rpx;
+		font-weight: 600;
+		line-height: 1;
+		color: #998d82;
+	}
+
+	.meal-tab--active .meal-tab__icon-shell {
+		background: rgba(91, 74, 59, 0.12);
+	}
+
+	.meal-tab--active .meal-tab__text {
+		color: #3f342a;
+	}
+
+	.meal-tab--active .meal-tab__count {
+		background: rgba(91, 74, 59, 0.14);
+	}
+
+	.meal-tab--active .meal-tab__count-text {
+		color: #5f5144;
 	}
 
 	.search-box {
-		flex: 1;
 		height: 72rpx;
 		display: flex;
 		align-items: center;
@@ -2767,7 +3134,14 @@ export default {
 		padding: 0 18rpx;
 		border-radius: 16rpx;
 		background: #fbfaf8;
-		border: 1px solid rgba(0, 0, 0, 0.04);
+		border: 1px solid rgba(91, 74, 59, 0.06);
+		transition: all 0.2s ease;
+	}
+
+	.search-box--active {
+		background: #ffffff;
+		border-color: rgba(91, 74, 59, 0.16);
+		box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.05);
 	}
 
 	.search-box__input {
@@ -2781,42 +3155,85 @@ export default {
 		color: #b0a59a;
 	}
 
-	.tool-button {
-		width: 116rpx;
-		height: 72rpx;
-		border-radius: 16rpx;
-		background: #ece8e2;
+	.search-box__clear {
+		width: 36rpx;
+		height: 36rpx;
+		border-radius: 999rpx;
+		background: #f0ece6;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 8rpx;
+		flex-shrink: 0;
 	}
 
-	.tool-button__text {
+	.search-assist {
+		margin-top: 12rpx;
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
+	.search-assist__label {
+		min-height: 56rpx;
+		display: inline-flex;
+		align-items: center;
 		font-size: 22rpx;
 		font-weight: 600;
-		color: #4d433a;
+		line-height: 1;
+		color: #8d847a;
+		flex-shrink: 0;
 	}
 
-	.status-scroll {
-		margin-top: 12rpx;
-		white-space: nowrap;
+	.search-assist__chips {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10rpx;
+	}
+
+	.search-assist__chip {
+		min-height: 56rpx;
+		box-sizing: border-box;
+		padding: 10rpx 16rpx;
+		border-radius: 999rpx;
+		background: #f2ede7;
+		border: 1px solid rgba(91, 74, 59, 0.04);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.search-assist__chip-text {
+		font-size: 22rpx;
+		line-height: 1;
+		color: #6e6155;
 	}
 
 	.status-track {
-		display: inline-flex;
+		display: flex;
 		gap: 10rpx;
-		padding-right: 20rpx;
 	}
 
 	.status-pill {
-		padding: 12rpx 20rpx;
-		border-radius: 999rpx;
-		background: #efebe5;
+		flex: 1;
+		min-width: 0;
+		min-height: 68rpx;
+		padding: 0 16rpx;
+		box-sizing: border-box;
+		border-radius: 18rpx;
+		background: #f6f2ec;
+		border: 1px solid rgba(91, 74, 59, 0.05);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
 	}
 
 	.status-pill--active {
-		background: #2f2923;
+		background: #5b4a3b;
+		border-color: #5b4a3b;
+		box-shadow: 0 10rpx 20rpx rgba(56, 44, 30, 0.12);
 	}
 
 	.status-pill__inner {
@@ -2832,7 +3249,7 @@ export default {
 	}
 
 	.status-pill--active .status-pill__text {
-		color: #ffffff;
+		color: #fffaf3;
 	}
 
 	.list-caption {
@@ -2840,9 +3257,45 @@ export default {
 		padding: 0 2rpx;
 	}
 
-	.list-caption__text {
+	.list-caption__top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12rpx;
+	}
+
+	.list-caption__title {
+		flex: 1;
+		min-width: 0;
+		font-size: 23rpx;
+		font-weight: 600;
+		line-height: 1.35;
+		color: #695d51;
+		word-break: break-all;
+	}
+
+	.list-caption__clear {
+		min-height: 50rpx;
+		padding: 0 18rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.92);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.list-caption__clear--hidden {
+		visibility: hidden;
+		pointer-events: none;
+	}
+
+	.list-caption__clear-text {
 		font-size: 22rpx;
-		color: #84786d;
+		font-weight: 600;
+		line-height: 1;
+		color: #786b5f;
 	}
 
 	.recipe-list {
