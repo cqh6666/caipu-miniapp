@@ -285,6 +285,13 @@
 								@tap="previewEditImages(index)"
 							>
 								<image class="editor-gallery__thumb" :src="image" mode="aspectFill"></image>
+								<view
+									v-if="editDraft.images.length > 1"
+									class="editor-gallery__sort"
+									@tap.stop="openEditImageOrderActions(index)"
+								>
+									<text class="editor-gallery__sort-text">排序</text>
+								</view>
 								<view class="editor-gallery__badge">
 									<text class="editor-gallery__badge-text">{{ index === 0 ? '封面' : index + 1 }}</text>
 								</view>
@@ -304,7 +311,7 @@
 							</view>
 						</view>
 						<text class="editor-field__hint">
-							{{ editDraft.images.length ? `已添加 ${editDraft.images.length} 张，首张会作为封面。` : `最多上传 ${maxRecipeImages} 张，首张会作为封面。` }}
+							{{ editDraft.images.length ? `已添加 ${editDraft.images.length} 张，可调整顺序，首张会作为封面。` : `最多上传 ${maxRecipeImages} 张，首张会作为封面。` }}
 						</text>
 					</view>
 
@@ -573,6 +580,16 @@ const normalizeParsedContentView = (parsedContent = {}) => {
 	}
 }
 const stepListToText = (steps = []) => normalizeParsedSteps(steps).map((item) => item.detail).join('\n')
+const moveListItem = (items = [], fromIndex = 0, toIndex = 0) => {
+	if (!Array.isArray(items) || !items.length) return Array.isArray(items) ? items : []
+	if (fromIndex < 0 || fromIndex >= items.length) return items
+	if (toIndex < 0 || toIndex >= items.length || fromIndex === toIndex) return items
+
+	const list = [...items]
+	const [item] = list.splice(fromIndex, 1)
+	list.splice(toIndex, 0, item)
+	return list
+}
 
 const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
 const ACTIVE_FLOWCHART_STATUSES = ['pending', 'processing']
@@ -1045,6 +1062,47 @@ export default {
 		removeEditImage(index) {
 			if (typeof index !== 'number') return
 			this.editDraft.images = this.editDraft.images.filter((_, currentIndex) => currentIndex !== index)
+		},
+		openEditImageOrderActions(index) {
+			const images = Array.isArray(this.editDraft.images) ? this.editDraft.images.filter(Boolean) : []
+			if (typeof index !== 'number' || images.length < 2 || index < 0 || index >= images.length) return
+
+			const actions = []
+			if (index > 0) {
+				actions.push({
+					label: '设为封面',
+					handler: () => {
+						this.moveEditImage(index, 0)
+					}
+				})
+				actions.push({
+					label: '左移一位',
+					handler: () => {
+						this.moveEditImage(index, index - 1)
+					}
+				})
+			}
+			if (index < images.length - 1) {
+				actions.push({
+					label: '右移一位',
+					handler: () => {
+						this.moveEditImage(index, index + 1)
+					}
+				})
+			}
+			if (!actions.length) return
+
+			uni.showActionSheet({
+				itemList: actions.map((item) => item.label),
+				success: ({ tapIndex }) => {
+					actions[tapIndex]?.handler?.()
+				}
+			})
+		},
+		moveEditImage(fromIndex, toIndex) {
+			const nextImages = moveListItem(this.editDraft.images, fromIndex, toIndex)
+			if (nextImages === this.editDraft.images) return
+			this.editDraft.images = nextImages
 		},
 		previewEditImages(index = 0) {
 			const urls = Array.isArray(this.editDraft.images) ? this.editDraft.images.filter(Boolean) : []
@@ -2024,6 +2082,25 @@ export default {
 
 	.editor-gallery__badge-text {
 		font-size: 20rpx;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.editor-gallery__sort {
+		position: absolute;
+		top: 12rpx;
+		left: 12rpx;
+		height: 40rpx;
+		padding: 0 14rpx;
+		border-radius: 999rpx;
+		background: rgba(47, 41, 35, 0.56);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.editor-gallery__sort-text {
+		font-size: 19rpx;
 		font-weight: 600;
 		color: #ffffff;
 	}

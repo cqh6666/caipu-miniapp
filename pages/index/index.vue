@@ -278,7 +278,9 @@
 							v-for="member in visibleKitchenMembers"
 							:key="member.userId"
 							class="member-card"
-							:class="{ 'member-card--self': member.isCurrentUser }"
+							:class="{ 'member-card--self': member.isCurrentUser, 'member-card--interactive': member.isCurrentUser }"
+							:hover-class="member.isCurrentUser ? 'member-card--hover' : ''"
+							@tap="handleMemberCardTap(member)"
 						>
 							<view class="member-card__avatar">
 								<image v-if="member.avatarUrl" class="member-card__avatar-image" :src="member.avatarUrl" mode="aspectFill"></image>
@@ -292,7 +294,13 @@
 										<text v-if="member.isCurrentUser" class="member-card__badge member-card__badge--self">你</text>
 									</view>
 								</view>
-								<text class="member-card__meta">{{ memberMemberDescription(member) }}</text>
+								<view class="member-card__meta-row">
+									<text class="member-card__meta">{{ memberMemberDescription(member) }}</text>
+									<view v-if="member.isCurrentUser" class="member-card__action">
+										<text class="member-card__action-text">修改资料</text>
+										<up-icon name="arrow-right" size="12" color="#8a7d70"></up-icon>
+									</view>
+								</view>
 							</view>
 						</view>
 					</view>
@@ -492,8 +500,8 @@
 			<view class="profile-sheet">
 				<view class="profile-sheet__header">
 					<view class="profile-sheet__heading">
-						<text class="profile-sheet__title">完善资料</text>
-						<text class="profile-sheet__subtitle">设置头像和昵称后，厨房成员会更容易认出你。</text>
+						<text class="profile-sheet__title">{{ profileSheetTitle }}</text>
+						<text class="profile-sheet__subtitle">{{ profileSheetSubtitle }}</text>
 					</view>
 					<view class="profile-sheet__close" @tap="closeProfileSheet">
 						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
@@ -524,7 +532,7 @@
 
 					<view class="profile-sheet__footer">
 						<button class="sheet-action" form-type="reset" @tap="closeProfileSheet">
-							<text class="sheet-action__text">暂不设置</text>
+							<text class="sheet-action__text">{{ profileSheetSecondaryActionText }}</text>
 						</button>
 						<button
 							class="sheet-action sheet-action--primary"
@@ -1074,6 +1082,7 @@ export default {
 			showInviteSheet: false,
 			showInviteCodeSheet: false,
 			showProfileSheet: false,
+			profileSheetMode: 'prompt',
 			mealTabs: mealTypeOptions,
 			statusTabs: [
 				{ label: '全部', value: 'all' },
@@ -1330,6 +1339,17 @@ export default {
 		profileAvatarPreview() {
 			return this.profileDraft.avatarUrl || this.currentUser?.avatarUrl || ''
 		},
+		profileSheetTitle() {
+			return this.profileSheetMode === 'edit' ? '个人资料' : '完善资料'
+		},
+		profileSheetSubtitle() {
+			return this.profileSheetMode === 'edit'
+				? '修改头像和昵称后，厨房成员会更容易认出你。'
+				: '设置头像和昵称后，厨房成员会更容易认出你。'
+		},
+		profileSheetSecondaryActionText() {
+			return this.profileSheetMode === 'edit' ? '取消' : '暂不设置'
+		},
 		profileAvatarFallback() {
 			const name = (this.profileDraft.nickname || this.currentUser?.nickname || '厨友').trim()
 			return name.slice(0, 1) || '厨'
@@ -1554,10 +1574,22 @@ export default {
 			}
 			return '已加入这间共享厨房。'
 		},
+		handleMemberCardTap(member = {}) {
+			if (!member.isCurrentUser || !this.currentUser?.id) return
+			this.openProfileSheetWithMode('edit')
+		},
 		openAboutPage() {
 			uni.navigateTo({
 				url: '/pages/about/index'
 			})
+		},
+		openProfileSheetWithMode(mode = 'prompt') {
+			this.profileSheetMode = mode === 'edit' ? 'edit' : 'prompt'
+			this.profileDraft = {
+				nickname: !isPlaceholderNickname(this.currentUser?.nickname) ? this.currentUser.nickname : '',
+				avatarUrl: ''
+			}
+			this.showProfileSheet = true
 		},
 		resetProfileDraft() {
 			this.profileDraft = {
@@ -1570,14 +1602,11 @@ export default {
 			if (this.hasDismissedProfilePrompt || this.showProfileSheet) return
 			if (!this.currentUser?.id) return
 			if (!isProfileIncomplete(this.currentUser)) return
-			this.profileDraft = {
-				nickname: !isPlaceholderNickname(this.currentUser?.nickname) ? this.currentUser.nickname : '',
-				avatarUrl: ''
-			}
-			this.showProfileSheet = true
+			this.openProfileSheetWithMode('prompt')
 		},
 		closeProfileSheet() {
 			this.showProfileSheet = false
+			this.profileSheetMode = 'prompt'
 			this.hasDismissedProfilePrompt = true
 			this.resetProfileDraft()
 		},
@@ -1614,6 +1643,7 @@ export default {
 					// Keep the saved profile result even if the follow-up session refresh fails.
 				}
 				this.showProfileSheet = false
+				this.profileSheetMode = 'prompt'
 				this.hasDismissedProfilePrompt = true
 				this.resetProfileDraft()
 				this.applySession(nextSession || getSessionSnapshot())
@@ -2473,6 +2503,15 @@ export default {
 		gap: 14rpx;
 	}
 
+	.member-card--interactive {
+		transition: transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+	}
+
+	.member-card--hover {
+		transform: translateY(1rpx);
+		box-shadow: 0 8rpx 18rpx rgba(56, 44, 30, 0.06);
+	}
+
 	.member-card--self {
 		background: #f0e8dc;
 		border: 1px solid rgba(91, 74, 59, 0.08);
@@ -2515,14 +2554,38 @@ export default {
 	}
 
 	.member-card__name {
+		flex: 1;
+		min-width: 0;
 		font-size: 25rpx;
 		font-weight: 700;
 		color: #2f2923;
 	}
 
 	.member-card__meta {
+		flex: 1;
+		min-width: 0;
 		font-size: 22rpx;
 		color: #85796e;
+	}
+
+	.member-card__meta-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12rpx;
+	}
+
+	.member-card__action {
+		display: inline-flex;
+		align-items: center;
+		gap: 6rpx;
+		flex-shrink: 0;
+	}
+
+	.member-card__action-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #6e5f50;
 	}
 
 	.member-card__badges {
