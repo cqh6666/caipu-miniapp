@@ -3,6 +3,7 @@ package linkparse
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -298,5 +299,124 @@ func TestParseRecipeLinkRequestsTranscriptForXiaohongshu(t *testing.T) {
 	}
 	if len(outcome.RecipeDraft.ParsedContent.Steps) == 0 {
 		t.Fatalf("RecipeDraft steps should not be empty: %#v", outcome.RecipeDraft)
+	}
+}
+
+func TestParseRecipeLinkFallsBackWhenTranscriptTimesOut(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(Options{
+		XHSSidecarEnabled:  true,
+		XHSSidecarBaseURL:  "http://xhs-sidecar.test",
+		XHSSidecarTimeout:  20 * time.Millisecond,
+		XHSSidecarProvider: "auto",
+	})
+	if svc.xhs == nil {
+		t.Fatal("expected xiaohongshu sidecar client")
+	}
+
+	var calls []bool
+	svc.xhs.client = &http.Client{
+		Timeout: 20 * time.Millisecond,
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			var payload xhsSidecarParseRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+
+			calls = append(calls, payload.IncludeTranscript)
+			if payload.IncludeTranscript {
+				return nil, context.DeadlineExceeded
+			}
+
+			return jsonHTTPResponse(`{
+				"ok": true,
+				"platform": "xiaohongshu",
+				"providerRequested": "auto",
+				"providerUsed": "importer",
+				"normalized": {
+					"shareUrl": "http://xhslink.com/o/demo123",
+					"canonicalUrl": "https://www.xiaohongshu.com/explore/68abcd1234",
+					"noteId": "68abcd1234"
+				},
+				"note": {
+					"title": "葱姜煎鲳鱼",
+					"content": "鲳鱼 1条\n葱 2根\n姜 6片\n先把鲳鱼擦干，再下锅煎到两面金黄，最后放葱姜焖两分钟。",
+					"transcript": "",
+					"transcriptStatus": "",
+					"transcriptError": "",
+					"tags": ["家常菜"],
+					"images": ["http://ci.xiaohongshu.com/1.jpg"],
+					"videos": ["https://sns-video-hw.xhscdn.com/demo.mp4"],
+					"coverUrl": "http://ci.xiaohongshu.com/cover.jpg",
+					"author": {"name": "测试厨房"},
+					"noteType": "video"
+				},
+				"warnings": []
+			}`), nil
+		}),
+	}
+
+	outcome, err := svc.ParseRecipeLink(context.Background(), "https://www.xiaohongshu.com/explore/68abcd1234")
+	if err != nil {
+		t.Fatalf("ParseRecipeLink returned error: %v", err)
+	}
+	if !strings.Contains(outcome.RecipeDraft.Note, "未成功转写") {
+		t.Fatalf("RecipeDraft.Note should mention transcript fallback: %#v", outcome.RecipeDraft)
+	}
+	if len(outcome.RecipeDraft.ParsedContent.Steps) == 0 {
+		t.Fatalf("RecipeDraft steps should not be empty after fallback: %#v", outcome.RecipeDraft)
+	}
+	if got, want := len(calls), 2; got != want {
+		t.Fatalf("sidecar calls = %d, want %d", got, want)
+	}
+	if !calls[0] {
+		t.Fatalf("first request should include transcript: %#v", calls)
+	}
+	if calls[1] {
+		t.Fatalf("second request should disable transcript after timeout: %#v", calls)
+	}
+}
+
+func TestParseXiaohongshuReturnsTimeoutError(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(Options{
+		XHSSidecarEnabled: true,
+		XHSSidecarBaseURL: "http://xhs-sidecar.test",
+		XHSSidecarTimeout: 20 * time.Millisecond,
+	})
+	if svc.xhs == nil {
+		t.Fatal("expected xiaohongshu sidecar client")
+	}
+	svc.xhs.client = &http.Client{
+		Timeout: 20 * time.Millisecond,
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, context.DeadlineExceeded
+		}),
+	}
+
+	_, err := svc.ParseXiaohongshu(context.Background(), "https://www.xiaohongshu.com/explore/68abcd1234")
+	if err == nil {
+		t.Fatal("ParseXiaohongshu should fail on timeout")
+	}
+	if got := err.Error(); got != "xiaohongshu sidecar timed out" {
+		t.Fatalf("error = %q, want timeout message", got)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func jsonHTTPResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/json; charset=utf-8"},
+		},
+		Body: io.NopCloser(strings.NewReader(body)),
 	}
 }

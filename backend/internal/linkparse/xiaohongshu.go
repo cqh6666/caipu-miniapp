@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
@@ -121,7 +123,19 @@ func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (Xiaoho
 func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xhsFetchOptions) (XiaohongshuParseResult, error) {
 	result, err := s.fetchXiaohongshu(ctx, rawInput, opts)
 	if err != nil {
-		return XiaohongshuParseResult{}, err
+		if !opts.IncludeTranscript || !shouldRetryXiaohongshuWithoutTranscript(err) {
+			return XiaohongshuParseResult{}, err
+		}
+
+		fallback, fallbackErr := s.fetchXiaohongshu(ctx, rawInput, xhsFetchOptions{})
+		if fallbackErr != nil {
+			return XiaohongshuParseResult{}, err
+		}
+
+		fallback.TranscriptStatus = "failed"
+		fallback.TranscriptError = "小红书视频转写超时，已回退为仅解析图文内容。"
+		fallback.Warnings = append(fallback.Warnings, fallback.TranscriptError)
+		result = fallback
 	}
 
 	if s.ai != nil {
@@ -177,7 +191,11 @@ func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xh
 
 	resp, err := s.xhs.client.Do(req)
 	if err != nil {
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "request to xiaohongshu sidecar failed", http.StatusBadRequest).WithErr(err)
+		message := "request to xiaohongshu sidecar failed"
+		if isXiaohongshuSidecarTimeout(err) {
+			message = "xiaohongshu sidecar timed out"
+		}
+		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, message, http.StatusBadRequest).WithErr(err)
 	}
 	defer resp.Body.Close()
 
@@ -223,6 +241,14 @@ func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xh
 		Warnings:          parsed.Warnings,
 	}
 	return result, nil
+}
+
+func shouldRetryXiaohongshuWithoutTranscript(err error) bool {
+	return isXiaohongshuSidecarTimeout(err)
+}
+
+func isXiaohongshuSidecarTimeout(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err)
 }
 
 func summarizeXiaohongshuHeuristically(meta XiaohongshuParseResult) RecipeDraft {
