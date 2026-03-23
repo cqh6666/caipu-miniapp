@@ -2,6 +2,7 @@ const http = require("http");
 const { createImporterProvider } = require("./providers/importer");
 const { createRednoteProvider } = require("./providers/rednote");
 const { buildNormalized, isSupportedXHSUrl } = require("./lib/normalize");
+const { enrichTranscriptIfNeeded } = require("./lib/transcript");
 
 function getEnvBool(key, fallback) {
   const raw = String(process.env[key] || "").trim().toLowerCase();
@@ -25,7 +26,16 @@ function readConfig() {
     rednoteCookieDomain: String(process.env.XHS_REDNOTE_COOKIE_DOMAIN || ".xiaohongshu.com").trim() || ".xiaohongshu.com",
     rednoteBrowserHeadless: getEnvBool("XHS_BROWSER_HEADLESS", true),
     rednoteBrowserPath: String(process.env.XHS_REDNOTE_BROWSER_PATH || "").trim(),
-    rednoteTimeoutMS: Number(process.env.XHS_REDNOTE_TIMEOUT_MS || 15000)
+    rednoteTimeoutMS: Number(process.env.XHS_REDNOTE_TIMEOUT_MS || 15000),
+    transcriptEnabled: getEnvBool("XHS_TRANSCRIPT_ENABLED", false),
+    transcriptProvider: String(process.env.XHS_TRANSCRIPT_PROVIDER || "siliconflow").trim().toLowerCase() || "siliconflow",
+    transcriptAPIKey: String(process.env.XHS_TRANSCRIPT_API_KEY || "").trim(),
+    transcriptModel: String(process.env.XHS_TRANSCRIPT_MODEL || "TeleAI/TeleSpeechASR").trim(),
+    transcriptEndpoint: String(process.env.XHS_TRANSCRIPT_ENDPOINT || "").trim(),
+    transcriptTimeoutMS: Number(process.env.XHS_TRANSCRIPT_TIMEOUT_MS || 120000),
+    transcriptMaxVideoMB: Number(process.env.XHS_TRANSCRIPT_MAX_VIDEO_MB || 80),
+    transcriptKeepTemp: getEnvBool("XHS_TRANSCRIPT_KEEP_TEMP", false),
+    ffmpegPath: String(process.env.FFMPEG_PATH || "ffmpeg").trim() || "ffmpeg"
   };
 }
 
@@ -94,6 +104,7 @@ async function handleParseXiaohongshu(req, res, config, providers) {
   const input = String(payload.input || "").trim();
   const providerRequested = String(payload.provider || config.defaultProvider || "auto").trim().toLowerCase() || "auto";
   const includeDebug = !!payload.includeDebug;
+  const includeTranscript = !!payload.includeTranscript;
 
   if (!input) {
     return sendJSON(res, 400, {
@@ -179,7 +190,7 @@ async function handleParseXiaohongshu(req, res, config, providers) {
       providerRequested,
       providerUsed: providerName,
       normalized: result.normalized || buildNormalized(input),
-      note: result.note,
+      note: includeTranscript ? await enrichTranscriptIfNeeded(result.note, config) : result.note,
       warnings: result.warnings || [],
       quality: result.quality || "full"
     };
@@ -196,7 +207,7 @@ async function handleParseXiaohongshu(req, res, config, providers) {
       providerRequested,
       providerUsed: fallbackProvider,
       normalized: fallbackResult.normalized || buildNormalized(input),
-      note: fallbackResult.note,
+      note: includeTranscript ? await enrichTranscriptIfNeeded(fallbackResult.note, config) : fallbackResult.note,
       warnings: fallbackResult.warnings || [],
       quality: fallbackResult.quality || "degraded"
     };
@@ -334,8 +345,16 @@ function createServer(config) {
   });
 }
 
-const config = readConfig();
-const server = createServer(config);
-server.listen(config.port, "127.0.0.1", () => {
-  process.stdout.write(`xhs-sidecar listening on http://127.0.0.1:${config.port}\n`);
-});
+if (require.main === module) {
+  const config = readConfig();
+  const server = createServer(config);
+  server.listen(config.port, "127.0.0.1", () => {
+    process.stdout.write(`xhs-sidecar listening on http://127.0.0.1:${config.port}\n`);
+  });
+}
+
+module.exports = {
+  createServer,
+  readConfig,
+  buildProviderOrder
+};

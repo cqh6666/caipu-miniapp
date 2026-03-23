@@ -147,6 +147,9 @@ type XiaohongshuParseResult struct {
 	ProviderUsed      string      `json:"providerUsed"`
 	Title             string      `json:"title"`
 	Content           string      `json:"content"`
+	Transcript        string      `json:"transcript"`
+	TranscriptStatus  string      `json:"transcriptStatus"`
+	TranscriptError   string      `json:"transcriptError"`
 	CoverURL          string      `json:"coverUrl"`
 	Images            []string    `json:"images"`
 	Videos            []string    `json:"videos"`

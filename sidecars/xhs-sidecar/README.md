@@ -7,6 +7,7 @@
 - sidecar API 形状
 - provider 路由
 - `importer / rednote / auto` 三种策略切换
+- 视频笔记 `ffmpeg + ASR` 转字幕
 - Go 主服务和 sidecar 的联调方式
 
 ## 当前状态
@@ -49,6 +50,14 @@ npm install
 npm start
 ```
 
+如果你要启用视频转字幕，还需要系统里可用的 `ffmpeg`：
+
+```bash
+ffmpeg -version
+```
+
+如果命令不存在，请先安装 `ffmpeg`，或者通过 `FFMPEG_PATH` 指定可执行文件路径。
+
 默认监听：
 
 - `http://127.0.0.1:8091`
@@ -60,7 +69,7 @@ npm start
 ```env
 XHS_SIDECAR_ENABLED=true
 XHS_SIDECAR_BASE_URL=http://127.0.0.1:8091
-XHS_SIDECAR_TIMEOUT_SECONDS=25
+XHS_SIDECAR_TIMEOUT_SECONDS=150
 XHS_SIDECAR_PROVIDER=auto
 XHS_SIDECAR_API_KEY=
 ```
@@ -85,6 +94,15 @@ XHS_BROWSER_HEADLESS=true
 XHS_REDNOTE_BROWSER_PATH=
 XHS_REDNOTE_LOGIN_URL=https://www.xiaohongshu.com/
 XHS_REDNOTE_TIMEOUT_MS=15000
+XHS_TRANSCRIPT_ENABLED=false
+XHS_TRANSCRIPT_PROVIDER=siliconflow
+XHS_TRANSCRIPT_API_KEY=
+XHS_TRANSCRIPT_MODEL=TeleAI/TeleSpeechASR
+XHS_TRANSCRIPT_ENDPOINT=https://api.siliconflow.cn/v1/audio/transcriptions
+XHS_TRANSCRIPT_TIMEOUT_MS=120000
+XHS_TRANSCRIPT_MAX_VIDEO_MB=80
+XHS_TRANSCRIPT_KEEP_TEMP=false
+FFMPEG_PATH=ffmpeg
 ```
 
 说明：
@@ -102,6 +120,15 @@ XHS_REDNOTE_TIMEOUT_MS=15000
 - `XHS_REDNOTE_BROWSER_PATH`: 可选，自定义浏览器可执行文件路径
 - `XHS_REDNOTE_LOGIN_URL`: 初始化登录时打开的页面
 - `XHS_REDNOTE_TIMEOUT_MS`: RedNote provider 页面等待超时
+- `XHS_TRANSCRIPT_ENABLED`: 是否启用小红书视频转字幕
+- `XHS_TRANSCRIPT_PROVIDER`: 默认是 `siliconflow`，当前已兼容 `siliconflow | infiniteai`
+- `XHS_TRANSCRIPT_API_KEY`: ASR 服务 API Key
+- `XHS_TRANSCRIPT_MODEL`: 硅基流动转写模型，默认 `TeleAI/TeleSpeechASR`
+- `XHS_TRANSCRIPT_ENDPOINT`: 可选，自定义转写接口地址
+- `XHS_TRANSCRIPT_TIMEOUT_MS`: 整条转字幕链路的总超时预算，不再按“下载 / ffmpeg / ASR”分别重复计时
+- `XHS_TRANSCRIPT_MAX_VIDEO_MB`: 视频体积保护阈值，超过后直接跳过转写并返回失败状态
+- `XHS_TRANSCRIPT_KEEP_TEMP`: 调试时保留临时 `mp4/mp3`
+- `FFMPEG_PATH`: `ffmpeg` 可执行文件路径
 - `/v1/auth/rednote/status` 现在会区分：
   - `cookieSource`: `header | file`
   - `playwrightAvailable`: Node 包是否可用
@@ -116,9 +143,18 @@ curl -s -X POST http://127.0.0.1:8091/v1/parse/xiaohongshu \
   -d '{
     "input": "【番茄牛腩】今天炖了一锅超下饭的番茄牛腩，牛腩 500克，番茄 3个。 https://www.xiaohongshu.com/explore/68abcd1234",
     "provider": "auto",
+    "includeTranscript": true,
     "includeDebug": true
   }'
 ```
+
+只有当请求里显式传 `includeTranscript: true` 且 `XHS_TRANSCRIPT_ENABLED=true` 时，返回里的 `note` 才会额外包含：
+
+- `transcript`
+- `transcriptStatus`
+- `transcriptError`
+
+设计约束是：即使下载视频、抽音频或 ASR 失败，也不影响原始 note 解析成功返回，只会在这些字段里反映状态。
 
 ## 下一步接入建议
 

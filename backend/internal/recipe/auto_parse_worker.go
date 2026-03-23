@@ -12,7 +12,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 )
 
-const defaultAutoParseJobTimeout = 90 * time.Second
+const defaultAutoParseJobTimeout = 180 * time.Second
 
 type AutoParseWorker struct {
 	logger    *slog.Logger

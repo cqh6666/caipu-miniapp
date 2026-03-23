@@ -20,10 +20,15 @@ type xiaohongshuClient struct {
 }
 
 type xhsSidecarParseRequest struct {
-	Input         string `json:"input"`
-	Provider      string `json:"provider,omitempty"`
-	IncludeImages bool   `json:"includeImages"`
-	IncludeDebug  bool   `json:"includeDebug"`
+	Input             string `json:"input"`
+	Provider          string `json:"provider,omitempty"`
+	IncludeImages     bool   `json:"includeImages"`
+	IncludeDebug      bool   `json:"includeDebug"`
+	IncludeTranscript bool   `json:"includeTranscript"`
+}
+
+type xhsFetchOptions struct {
+	IncludeTranscript bool
 }
 
 type xhsSidecarParseResponse struct {
@@ -38,13 +43,16 @@ type xhsSidecarParseResponse struct {
 		XSECToken    string `json:"xsecToken"`
 	} `json:"normalized"`
 	Note struct {
-		Title    string   `json:"title"`
-		Content  string   `json:"content"`
-		Tags     []string `json:"tags"`
-		Images   []string `json:"images"`
-		Videos   []string `json:"videos"`
-		CoverURL string   `json:"coverUrl"`
-		Author   struct {
+		Title            string   `json:"title"`
+		Content          string   `json:"content"`
+		Transcript       string   `json:"transcript"`
+		TranscriptStatus string   `json:"transcriptStatus"`
+		TranscriptError  string   `json:"transcriptError"`
+		Tags             []string `json:"tags"`
+		Images           []string `json:"images"`
+		Videos           []string `json:"videos"`
+		CoverURL         string   `json:"coverUrl"`
+		Author           struct {
 			Name      string `json:"name"`
 			AvatarURL string `json:"avatarUrl"`
 		} `json:"author"`
@@ -74,7 +82,7 @@ func (s *Service) ParseRecipeLink(ctx context.Context, rawInput string) (RecipeP
 			RecipeDraft: result.RecipeDraft,
 		}, nil
 	case "xiaohongshu":
-		result, err := s.ParseXiaohongshu(ctx, rawInput)
+		result, err := s.parseXiaohongshu(ctx, rawInput, xhsFetchOptions{IncludeTranscript: true})
 		if err != nil {
 			return RecipeParseOutcome{}, err
 		}
@@ -89,7 +97,7 @@ func (s *Service) ParseRecipeLink(ctx context.Context, rawInput string) (RecipeP
 }
 
 func (s *Service) PreviewXiaohongshu(ctx context.Context, rawInput string) (LinkPreviewResult, error) {
-	result, err := s.fetchXiaohongshuPreview(ctx, rawInput)
+	result, err := s.fetchXiaohongshu(ctx, rawInput, xhsFetchOptions{})
 	if err != nil {
 		return LinkPreviewResult{}, err
 	}
@@ -107,7 +115,11 @@ func (s *Service) PreviewXiaohongshu(ctx context.Context, rawInput string) (Link
 }
 
 func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (XiaohongshuParseResult, error) {
-	result, err := s.fetchXiaohongshuPreview(ctx, rawInput)
+	return s.parseXiaohongshu(ctx, rawInput, xhsFetchOptions{})
+}
+
+func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xhsFetchOptions) (XiaohongshuParseResult, error) {
+	result, err := s.fetchXiaohongshu(ctx, rawInput, opts)
 	if err != nil {
 		return XiaohongshuParseResult{}, err
 	}
@@ -127,7 +139,7 @@ func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (Xiaoho
 	return result, nil
 }
 
-func (s *Service) fetchXiaohongshuPreview(ctx context.Context, rawInput string) (XiaohongshuParseResult, error) {
+func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xhsFetchOptions) (XiaohongshuParseResult, error) {
 	if s == nil || s.xhs == nil {
 		return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "xiaohongshu sidecar is not configured", http.StatusInternalServerError)
 	}
@@ -141,10 +153,11 @@ func (s *Service) fetchXiaohongshuPreview(ctx context.Context, rawInput string) 
 	}
 
 	payload := xhsSidecarParseRequest{
-		Input:         rawInput,
-		Provider:      s.xhs.provider,
-		IncludeImages: true,
-		IncludeDebug:  false,
+		Input:             rawInput,
+		Provider:          s.xhs.provider,
+		IncludeImages:     true,
+		IncludeDebug:      false,
+		IncludeTranscript: opts.IncludeTranscript,
 	}
 
 	body, err := json.Marshal(payload)
@@ -196,6 +209,9 @@ func (s *Service) fetchXiaohongshuPreview(ctx context.Context, rawInput string) 
 		ProviderUsed:      strings.TrimSpace(parsed.ProviderUsed),
 		Title:             strings.TrimSpace(parsed.Note.Title),
 		Content:           strings.TrimSpace(parsed.Note.Content),
+		Transcript:        strings.TrimSpace(parsed.Note.Transcript),
+		TranscriptStatus:  strings.TrimSpace(parsed.Note.TranscriptStatus),
+		TranscriptError:   strings.TrimSpace(parsed.Note.TranscriptError),
 		CoverURL:          normalizeXiaohongshuMediaURL(parsed.Note.CoverURL),
 		Images:            normalizeXiaohongshuMediaURLs(parsed.Note.Images, 12),
 		Videos:            normalizeXiaohongshuMediaURLs(parsed.Note.Videos, 4),
@@ -210,7 +226,7 @@ func (s *Service) fetchXiaohongshuPreview(ctx context.Context, rawInput string) 
 }
 
 func summarizeXiaohongshuHeuristically(meta XiaohongshuParseResult) RecipeDraft {
-	lines := collectCandidateLines(meta.Content, strings.Join(meta.Tags, "\n"))
+	lines := collectCandidateLines(meta.Content, strings.Join(meta.Tags, "\n"), meta.Transcript)
 	mainIngredients, secondaryIngredients := splitIngredientLines(extractIngredientLines(lines))
 	steps := buildParsedSteps(extractStepLines(lines))
 
@@ -242,7 +258,12 @@ func summarizeXiaohongshuHeuristically(meta XiaohongshuParseResult) RecipeDraft 
 }
 
 func buildXiaohongshuHeuristicNote(meta XiaohongshuParseResult) string {
-	base := "基于小红书图文正文生成的草稿，建议做菜前回看原笔记核对食材克数、火候和图片里的细节。"
+	base := "基于小红书笔记内容生成的草稿，建议做菜前回看原笔记核对食材克数、火候和图片里的细节。"
+	if strings.TrimSpace(meta.Transcript) != "" {
+		base = "基于小红书正文和视频转写生成的草稿，建议做菜前回看原笔记核对食材克数、火候和图片里的细节。"
+	} else if meta.TranscriptStatus == "failed" {
+		base += " 当前视频口播未成功转写，步骤细节建议回看原视频确认。"
+	}
 	if strings.TrimSpace(meta.ProviderUsed) != "" {
 		base += " 当前解析策略：" + strings.TrimSpace(meta.ProviderUsed) + "。"
 	}
@@ -335,9 +356,13 @@ func buildXiaohongshuAISummaryPrompt(result XiaohongshuParseResult) string {
 	if len([]rune(content)) > defaultPromptCharLimit {
 		content = string([]rune(content)[:defaultPromptCharLimit])
 	}
+	transcript := result.Transcript
+	if len([]rune(transcript)) > defaultPromptCharLimit {
+		transcript = string([]rune(transcript)[:defaultPromptCharLimit])
+	}
 
 	var builder strings.Builder
-	builder.WriteString("请整理这条小红书图文笔记里的菜谱信息。\n")
+	builder.WriteString("请整理这条小红书笔记里的菜谱信息；如果存在视频转写，请优先参考口播里的食材、调味和步骤细节。\n")
 	builder.WriteString("标题: " + firstNonEmpty(result.Title, "未知标题") + "\n")
 	if result.Author != "" {
 		builder.WriteString("作者: " + result.Author + "\n")
@@ -353,6 +378,10 @@ func buildXiaohongshuAISummaryPrompt(result XiaohongshuParseResult) string {
 	}
 	builder.WriteString("正文内容:\n")
 	builder.WriteString(content)
+	if strings.TrimSpace(transcript) != "" {
+		builder.WriteString("\n视频转写:\n")
+		builder.WriteString(transcript)
+	}
 	return builder.String()
 }
 

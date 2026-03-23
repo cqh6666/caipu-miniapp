@@ -87,7 +87,7 @@ func Load() (Config, error) {
 		AITitleTimeoutSeconds:      getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
 		XHSSidecarEnabled:          getBool("XHS_SIDECAR_ENABLED", false),
 		XHSSidecarBaseURL:          strings.TrimSpace(os.Getenv("XHS_SIDECAR_BASE_URL")),
-		XHSSidecarTimeoutSeconds:   getInt("XHS_SIDECAR_TIMEOUT_SECONDS", 25),
+		XHSSidecarTimeoutSeconds:   getInt("XHS_SIDECAR_TIMEOUT_SECONDS", 150),
 		XHSSidecarProvider:         strings.TrimSpace(strings.ToLower(getEnv("XHS_SIDECAR_PROVIDER", "auto"))),
 		XHSSidecarAPIKey:           strings.TrimSpace(os.Getenv("XHS_SIDECAR_API_KEY")),
 		WechatAppID:                os.Getenv("WECHAT_APP_ID"),
