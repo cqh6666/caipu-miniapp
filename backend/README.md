@@ -91,6 +91,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - [docs/xiaohongshu-sidecar-api-plan.md](./docs/xiaohongshu-sidecar-api-plan.md)
 - [docs/xiaohongshu-integration-guide.md](./docs/xiaohongshu-integration-guide.md)
 - [docs/xiaohongshu-cloud-deploy.md](./docs/xiaohongshu-cloud-deploy.md)
+- [docs/linkparse-sidecar-refactor-migration.md](./docs/linkparse-sidecar-refactor-migration.md)
 
 当前可用接口：
 

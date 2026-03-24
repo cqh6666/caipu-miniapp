@@ -2,6 +2,8 @@
 
 这份文档面向 Linux 云服务器，目标是把当前仓库里的小红书 sidecar 部署起来，并接到现有 Go 后端。
 
+如果你当前服务器上跑的是旧 `xhs-sidecar` 命名，先看 [linkparse-sidecar-refactor-migration.md](./linkparse-sidecar-refactor-migration.md) 再按本文部署，会更顺。
+
 假设：
 
 - 项目部署目录：`/srv/caipu-miniapp`
