@@ -17,12 +17,12 @@
 
 新增或调整的核心位置：
 
-- [platform.go](/Users/alexh/github_proj/caipu-miniapp/backend/internal/linkparse/platform.go)
-- [xiaohongshu.go](/Users/alexh/github_proj/caipu-miniapp/backend/internal/linkparse/xiaohongshu.go)
-- [service.go](/Users/alexh/github_proj/caipu-miniapp/backend/internal/linkparse/service.go)
-- [auto_parse_worker.go](/Users/alexh/github_proj/caipu-miniapp/backend/internal/recipe/auto_parse_worker.go)
-- [service.go](/Users/alexh/github_proj/caipu-miniapp/backend/internal/recipe/service.go)
-- [repository.go](/Users/alexh/github_proj/caipu-miniapp/backend/internal/recipe/repository.go)
+- [platform.go](../internal/linkparse/platform.go)
+- [xiaohongshu.go](../internal/linkparse/xiaohongshu.go)
+- [service.go](../internal/linkparse/service.go)
+- [auto_parse_worker.go](../internal/recipe/auto_parse_worker.go)
+- [service.go](../internal/recipe/service.go)
+- [repository.go](../internal/recipe/repository.go)
 
 已经具备的能力：
 
@@ -36,7 +36,7 @@
 
 sidecar 目录：
 
-- [linkparse-sidecar](/Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar)
+- [linkparse-sidecar](../../sidecars/linkparse-sidecar)
 
 当前已经定义并实现的接口：
 
@@ -65,7 +65,7 @@ sidecar 目录：
 
 前端详情页已经能显示小红书解析来源文案，位置在：
 
-- [index.vue](/Users/alexh/github_proj/caipu-miniapp/pages/recipe-detail/index.vue)
+- [index.vue](../../pages/recipe-detail/index.vue)
 
 ## 当前架构
 
@@ -86,8 +86,8 @@ flowchart LR
 
 后端新增配置见：
 
-- [example.env](/Users/alexh/github_proj/caipu-miniapp/backend/configs/example.env)
-- [config.go](/Users/alexh/github_proj/caipu-miniapp/backend/internal/config/config.go)
+- [example.env](../configs/example.env)
+- [config.go](../internal/config/config.go)
 
 当前相关环境变量：
 
@@ -109,14 +109,14 @@ LINKPARSE_SIDECAR_API_KEY=
 ### 1. 安装依赖
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm install
 ```
 
 ### 2. 启动 sidecar
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm start
 ```
 
@@ -205,14 +205,14 @@ XHS_REDNOTE_TIMEOUT_MS=15000
 ### 1. 安装浏览器
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npx playwright install chromium
 ```
 
 ### 2. 初始化登录态
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:init
 ```
 
@@ -225,7 +225,7 @@ npm run rednote:init
 ### 3. 查看当前状态
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:status
 ```
 

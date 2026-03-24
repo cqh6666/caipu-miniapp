@@ -116,7 +116,18 @@ async function resolveFinalURL(rawURL, sessdata, config) {
     headers: buildHeaders(sessdata)
   });
 
-  if (!response || !response.ok) {
+  const resolvedURL = safeTrim(response?.url);
+
+  // B 站短链有时会在最终视频页返回 412，但 fetch 仍然已经跟到了可解析
+  // 的 canonical URL。这里优先使用最终 URL，而不是把 412 直接视为失败。
+  if (resolvedURL) {
+    if (typeof response.text === "function") {
+      await response.text().catch(() => {});
+    }
+    return resolvedURL;
+  }
+
+  if (!response) {
     throw new Error(`failed to resolve bilibili url: HTTP ${response ? response.status : 0}`);
   }
 
@@ -124,7 +135,7 @@ async function resolveFinalURL(rawURL, sessdata, config) {
     await response.text().catch(() => {});
   }
 
-  return safeTrim(response.url) || rawURL;
+  throw new Error(`failed to resolve bilibili url: HTTP ${response.status || 0}`);
 }
 
 async function resolveVideoRef(input, sessdata, config) {

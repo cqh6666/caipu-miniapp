@@ -336,7 +336,7 @@ curl "https://$DOMAIN/api/healthz"
 再到微信小程序后台确认：
 
 - `https://你的域名` 已加入“服务器域名”
-- 前端已使用 [utils/app-config.js](/Users/chenqh114/uni-app-projects/caipu-miniapp/utils/app-config.js) 里的正式配置
+- 前端已使用 [utils/app-config.js](../utils/app-config.js) 里的正式配置
 - 服务器 `.env` 中的 `WECHAT_APP_SECRET` 正确
 
 ## 9. 后续更新代码

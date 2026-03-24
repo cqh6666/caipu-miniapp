@@ -46,7 +46,7 @@ RedNote 登录态现在支持两种来源：
 ## 本地启动
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm install
 npm start
 ```
@@ -188,7 +188,7 @@ curl -s -X POST http://127.0.0.1:8091/v1/parse/xiaohongshu \
 推荐先执行一次：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:init
 ```
 
@@ -197,14 +197,14 @@ npm run rednote:init
 之后可以检查状态：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:status
 ```
 
 如果 `playwrightAvailable=true` 但 `browserInstalled=false`，说明还需要执行：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npx playwright install chromium
 ```
 
@@ -218,7 +218,7 @@ npx playwright install chromium
 如果你要真正启用它，建议先准备：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
+cd /path/to/caipu-miniapp/sidecars/linkparse-sidecar
 npm install playwright
 npx playwright install
 ```
