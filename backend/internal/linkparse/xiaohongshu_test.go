@@ -46,7 +46,7 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sidecar-secret" {
 			t.Fatalf("Authorization = %q", got)
 		}
-		var req xhsSidecarParseRequest
+		var req sidecarParseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
@@ -62,11 +62,11 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 			"normalized": {
 				"shareUrl": "http://xhslink.com/a/demo",
 				"canonicalUrl": "https://www.xiaohongshu.com/explore/68abcd1234",
-				"noteId": "68abcd1234"
+				"id": "68abcd1234"
 			},
-			"note": {
+			"content": {
 				"title": "番茄牛腩",
-				"content": "牛腩 500克\n番茄 3个\n牛腩焯水后和番茄一起炖煮。",
+				"body": "牛腩 500克\n番茄 3个\n牛腩焯水后和番茄一起炖煮。",
 				"transcript": "先把牛腩冷水下锅焯水，再和番茄一起慢炖到软烂。",
 				"transcriptStatus": "success",
 				"transcriptError": "",
@@ -75,7 +75,7 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 				"videos": [],
 				"coverUrl": "http://ci.xiaohongshu.com/cover.jpg",
 				"author": {"name": "测试厨房"},
-				"noteType": "image"
+				"contentType": "image"
 			},
 			"warnings": []
 		}`))
@@ -83,11 +83,10 @@ func TestParseXiaohongshuUsesSidecar(t *testing.T) {
 	defer server.Close()
 
 	svc := NewService(Options{
-		XHSSidecarEnabled:  true,
-		XHSSidecarBaseURL:  server.URL,
-		XHSSidecarTimeout:  3 * time.Second,
-		XHSSidecarProvider: "auto",
-		XHSSidecarAPIKey:   "sidecar-secret",
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: server.URL,
+		LinkparseSidecarTimeout: 3 * time.Second,
+		LinkparseSidecarAPIKey:  "sidecar-secret",
 	})
 
 	result, err := svc.ParseXiaohongshu(context.Background(), "https://www.xiaohongshu.com/explore/68abcd1234")
@@ -184,7 +183,7 @@ func TestPreviewXiaohongshuUsesSidecar(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req xhsSidecarParseRequest
+		var req sidecarParseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
@@ -200,17 +199,17 @@ func TestPreviewXiaohongshuUsesSidecar(t *testing.T) {
 			"normalized": {
 				"shareUrl": "http://xhslink.com/o/demo123",
 				"canonicalUrl": "https://www.xiaohongshu.com/explore/68abcd1234",
-				"noteId": "68abcd1234"
+				"id": "68abcd1234"
 			},
-			"note": {
+			"content": {
 				"title": "番茄土豆炖牛腩教程来咯～",
-				"content": "正文",
+				"body": "正文",
 				"tags": ["家常菜"],
 				"images": ["http://ci.xiaohongshu.com/1.jpg", "https://ci.xiaohongshu.com/2.jpg"],
 				"videos": [],
 				"coverUrl": "http://ci.xiaohongshu.com/cover.jpg",
 				"author": {"name": "测试厨房"},
-				"noteType": "image"
+				"contentType": "image"
 			},
 			"warnings": ["demo"]
 		}`))
@@ -218,10 +217,9 @@ func TestPreviewXiaohongshuUsesSidecar(t *testing.T) {
 	defer server.Close()
 
 	svc := NewService(Options{
-		XHSSidecarEnabled:  true,
-		XHSSidecarBaseURL:  server.URL,
-		XHSSidecarTimeout:  3 * time.Second,
-		XHSSidecarProvider: "auto",
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: server.URL,
+		LinkparseSidecarTimeout: 3 * time.Second,
 	})
 
 	result, err := svc.PreviewXiaohongshu(context.Background(), "http://xhslink.com/o/demo123")
@@ -246,7 +244,7 @@ func TestParseRecipeLinkRequestsTranscriptForXiaohongshu(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req xhsSidecarParseRequest
+		var req sidecarParseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
@@ -263,11 +261,11 @@ func TestParseRecipeLinkRequestsTranscriptForXiaohongshu(t *testing.T) {
 			"normalized": {
 				"shareUrl": "http://xhslink.com/o/demo123",
 				"canonicalUrl": "https://www.xiaohongshu.com/explore/68abcd1234",
-				"noteId": "68abcd1234"
+				"id": "68abcd1234"
 			},
-			"note": {
+			"content": {
 				"title": "葱姜煎鲳鱼",
-				"content": "正文很短。",
+				"body": "正文很短。",
 				"transcript": "鲳鱼 1条\n葱 2根\n姜 6片\n先煎到两面金黄，再加葱姜焖两分钟。",
 				"transcriptStatus": "success",
 				"transcriptError": "",
@@ -276,7 +274,7 @@ func TestParseRecipeLinkRequestsTranscriptForXiaohongshu(t *testing.T) {
 				"videos": ["https://sns-video-hw.xhscdn.com/demo.mp4"],
 				"coverUrl": "http://ci.xiaohongshu.com/cover.jpg",
 				"author": {"name": "测试厨房"},
-				"noteType": "video"
+				"contentType": "video"
 			},
 			"warnings": []
 		}`))
@@ -284,10 +282,9 @@ func TestParseRecipeLinkRequestsTranscriptForXiaohongshu(t *testing.T) {
 	defer server.Close()
 
 	svc := NewService(Options{
-		XHSSidecarEnabled:  true,
-		XHSSidecarBaseURL:  server.URL,
-		XHSSidecarTimeout:  3 * time.Second,
-		XHSSidecarProvider: "auto",
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: server.URL,
+		LinkparseSidecarTimeout: 3 * time.Second,
 	})
 
 	outcome, err := svc.ParseRecipeLink(context.Background(), "https://www.xiaohongshu.com/explore/68abcd1234")
@@ -306,20 +303,19 @@ func TestParseRecipeLinkFallsBackWhenTranscriptTimesOut(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService(Options{
-		XHSSidecarEnabled:  true,
-		XHSSidecarBaseURL:  "http://xhs-sidecar.test",
-		XHSSidecarTimeout:  20 * time.Millisecond,
-		XHSSidecarProvider: "auto",
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: "http://xhs-sidecar.test",
+		LinkparseSidecarTimeout: 20 * time.Millisecond,
 	})
-	if svc.xhs == nil {
+	if svc.sidecar == nil {
 		t.Fatal("expected xiaohongshu sidecar client")
 	}
 
 	var calls []bool
-	svc.xhs.client = &http.Client{
+	svc.sidecar.client = &http.Client{
 		Timeout: 20 * time.Millisecond,
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			var payload xhsSidecarParseRequest
+			var payload sidecarParseRequest
 			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode request body: %v", err)
 			}
@@ -337,11 +333,11 @@ func TestParseRecipeLinkFallsBackWhenTranscriptTimesOut(t *testing.T) {
 				"normalized": {
 					"shareUrl": "http://xhslink.com/o/demo123",
 					"canonicalUrl": "https://www.xiaohongshu.com/explore/68abcd1234",
-					"noteId": "68abcd1234"
+					"id": "68abcd1234"
 				},
-				"note": {
+				"content": {
 					"title": "葱姜煎鲳鱼",
-					"content": "鲳鱼 1条\n葱 2根\n姜 6片\n先把鲳鱼擦干，再下锅煎到两面金黄，最后放葱姜焖两分钟。",
+					"body": "鲳鱼 1条\n葱 2根\n姜 6片\n先把鲳鱼擦干，再下锅煎到两面金黄，最后放葱姜焖两分钟。",
 					"transcript": "",
 					"transcriptStatus": "",
 					"transcriptError": "",
@@ -350,7 +346,7 @@ func TestParseRecipeLinkFallsBackWhenTranscriptTimesOut(t *testing.T) {
 					"videos": ["https://sns-video-hw.xhscdn.com/demo.mp4"],
 					"coverUrl": "http://ci.xiaohongshu.com/cover.jpg",
 					"author": {"name": "测试厨房"},
-					"noteType": "video"
+					"contentType": "video"
 				},
 				"warnings": []
 			}`), nil
@@ -382,14 +378,14 @@ func TestParseXiaohongshuReturnsTimeoutError(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService(Options{
-		XHSSidecarEnabled: true,
-		XHSSidecarBaseURL: "http://xhs-sidecar.test",
-		XHSSidecarTimeout: 20 * time.Millisecond,
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: "http://xhs-sidecar.test",
+		LinkparseSidecarTimeout: 20 * time.Millisecond,
 	})
-	if svc.xhs == nil {
+	if svc.sidecar == nil {
 		t.Fatal("expected xiaohongshu sidecar client")
 	}
-	svc.xhs.client = &http.Client{
+	svc.sidecar.client = &http.Client{
 		Timeout: 20 * time.Millisecond,
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			return nil, context.DeadlineExceeded

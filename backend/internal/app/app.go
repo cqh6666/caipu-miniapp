@@ -66,11 +66,10 @@ func New(cfg config.Config) (*App, error) {
 		AITitleEnabled:     cfg.AITitleEnabled,
 		AITitleModel:       cfg.AITitleModel,
 		AITitleTimeout:     time.Duration(cfg.AITitleTimeoutSeconds) * time.Second,
-		XHSSidecarEnabled:  cfg.XHSSidecarEnabled,
-		XHSSidecarBaseURL:  cfg.XHSSidecarBaseURL,
-		XHSSidecarTimeout:  time.Duration(cfg.XHSSidecarTimeoutSeconds) * time.Second,
-		XHSSidecarProvider: cfg.XHSSidecarProvider,
-		XHSSidecarAPIKey:   cfg.XHSSidecarAPIKey,
+		LinkparseSidecarEnabled: cfg.LinkparseSidecarEnabled,
+		LinkparseSidecarBaseURL: cfg.LinkparseSidecarBaseURL,
+		LinkparseSidecarTimeout: time.Duration(cfg.LinkparseSidecarTimeoutSec) * time.Second,
+		LinkparseSidecarAPIKey:  cfg.LinkparseSidecarAPIKey,
 		BilibiliSessdataProvider: func(ctx context.Context) string {
 			if appSettingsService == nil {
 				return ""

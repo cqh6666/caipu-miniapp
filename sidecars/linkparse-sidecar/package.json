@@ -1,8 +1,8 @@
 {
-  "name": "xhs-sidecar",
+  "name": "linkparse-sidecar",
   "version": "0.1.0",
   "private": true,
-  "description": "Xiaohongshu sidecar stub for caipu-miniapp",
+  "description": "Linkparse sidecar for caipu-miniapp",
   "scripts": {
     "start": "node server.js",
     "rednote:init": "node scripts/rednote-init.js",

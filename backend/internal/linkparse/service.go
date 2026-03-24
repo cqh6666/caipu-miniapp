@@ -67,11 +67,10 @@ type Options struct {
 	AITitleModel             string
 	AITitleTimeout           time.Duration
 	BilibiliSessdataProvider func(context.Context) string
-	XHSSidecarEnabled        bool
-	XHSSidecarBaseURL        string
-	XHSSidecarTimeout        time.Duration
-	XHSSidecarProvider       string
-	XHSSidecarAPIKey         string
+	LinkparseSidecarEnabled  bool
+	LinkparseSidecarBaseURL  string
+	LinkparseSidecarTimeout  time.Duration
+	LinkparseSidecarAPIKey   string
 	HTTPClient               *http.Client
 	AIHTTPClient             *http.Client
 	ResolveURLClient         *http.Client
@@ -82,7 +81,7 @@ type Service struct {
 	resolveURLClient         *http.Client
 	ai                       *aiClient
 	titleAI                  *aiClient
-	xhs                      *xiaohongshuClient
+	sidecar                  *sidecarClient
 	bilibiliSessdataProvider func(context.Context) string
 }
 
@@ -207,18 +206,17 @@ func NewService(opts Options) *Service {
 		resolveURLClient = httpClient
 	}
 
-	var xhs *xiaohongshuClient
-	if opts.XHSSidecarEnabled && strings.TrimSpace(opts.XHSSidecarBaseURL) != "" {
-		xhsHTTPClient := &http.Client{Timeout: defaultHTTPTimeout}
-		if opts.XHSSidecarTimeout > 0 {
-			xhsHTTPClient.Timeout = opts.XHSSidecarTimeout
+	var sidecar *sidecarClient
+	if opts.LinkparseSidecarEnabled && strings.TrimSpace(opts.LinkparseSidecarBaseURL) != "" {
+		sidecarHTTPClient := &http.Client{Timeout: defaultHTTPTimeout}
+		if opts.LinkparseSidecarTimeout > 0 {
+			sidecarHTTPClient.Timeout = opts.LinkparseSidecarTimeout
 		}
 
-		xhs = &xiaohongshuClient{
-			baseURL:  strings.TrimRight(strings.TrimSpace(opts.XHSSidecarBaseURL), "/"),
-			provider: firstNonEmpty(strings.TrimSpace(opts.XHSSidecarProvider), "auto"),
-			apiKey:   strings.TrimSpace(opts.XHSSidecarAPIKey),
-			client:   xhsHTTPClient,
+		sidecar = &sidecarClient{
+			baseURL: strings.TrimRight(strings.TrimSpace(opts.LinkparseSidecarBaseURL), "/"),
+			apiKey:  strings.TrimSpace(opts.LinkparseSidecarAPIKey),
+			client:  sidecarHTTPClient,
 		}
 	}
 
@@ -271,7 +269,7 @@ func NewService(opts Options) *Service {
 		resolveURLClient:         resolveURLClient,
 		ai:                       summaryAI,
 		titleAI:                  titleAI,
-		xhs:                      xhs,
+		sidecar:                  sidecar,
 		bilibiliSessdataProvider: opts.BilibiliSessdataProvider,
 	}
 }
@@ -288,6 +286,23 @@ func (s *Service) PreviewLink(ctx context.Context, rawInput string) (LinkPreview
 }
 
 func (s *Service) PreviewBilibili(ctx context.Context, rawInput string) (LinkPreviewResult, error) {
+	if s != nil && s.sidecar != nil {
+		result, err := s.fetchBilibiliViaSidecar(ctx, rawInput, bilibiliFetchOptions{})
+		if err != nil {
+			return LinkPreviewResult{}, err
+		}
+
+		return LinkPreviewResult{
+			Platform:     "bilibili",
+			Link:         result.Link,
+			CanonicalURL: result.Link,
+			Title:        s.finalizePreviewTitle(ctx, firstNonEmpty(result.Title, result.Part)),
+			CoverURL:     strings.TrimSpace(result.CoverURL),
+			ImageURLs:    draftImageURLs(strings.TrimSpace(result.CoverURL)),
+			Warnings:     result.Warnings,
+		}, nil
+	}
+
 	inputURL, err := extractInputURL(rawInput)
 	if err != nil {
 		return LinkPreviewResult{}, err
@@ -318,6 +333,34 @@ func (s *Service) PreviewBilibili(ctx context.Context, rawInput string) (LinkPre
 }
 
 func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliParseResult, error) {
+	if s != nil && s.sidecar != nil {
+		result, err := s.fetchBilibiliViaSidecar(ctx, rawInput, bilibiliFetchOptions{IncludeTranscript: true})
+		if err != nil {
+			return BilibiliParseResult{}, err
+		}
+
+		if result.SubtitleText == "" {
+			result.SummaryMode = "heuristic"
+			result.RecipeDraft = summarizeHeuristically(result, "")
+			result.Warnings = append(result.Warnings, "当前视频没有可直接访问的字幕，已使用标题和简介生成降级草稿。")
+			return result, nil
+		}
+
+		if s.ai != nil {
+			draft, err := s.ai.summarize(ctx, result)
+			if err == nil {
+				result.SummaryMode = "ai"
+				result.RecipeDraft = normalizeDraft(result, draft)
+				return result, nil
+			}
+			result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
+		}
+
+		result.SummaryMode = "heuristic"
+		result.RecipeDraft = summarizeHeuristically(result, result.SubtitleText)
+		return result, nil
+	}
+
 	inputURL, err := extractInputURL(rawInput)
 	if err != nil {
 		return BilibiliParseResult{}, err

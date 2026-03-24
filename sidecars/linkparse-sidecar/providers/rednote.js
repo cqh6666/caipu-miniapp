@@ -192,7 +192,7 @@ async function parseViaRednote(input, config) {
     return {
       ok: false,
       errorCode: "provider_unavailable",
-      errorMessage: "playwright is not installed; run npm install in sidecars/xhs-sidecar and prepare a browser"
+        errorMessage: "playwright is not installed; run npm install in sidecars/linkparse-sidecar and prepare a browser"
     };
   }
 

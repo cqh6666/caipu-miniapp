@@ -71,7 +71,7 @@ function buildDemoNote(input, normalized) {
       images: [],
       videos: [],
       coverUrl: "",
-      author: { name: "xhs-sidecar-stub" },
+      author: { name: "linkparse-sidecar-stub" },
       noteType: "image",
       likes: 0,
       comments: 0,

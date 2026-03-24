@@ -154,7 +154,7 @@ flowchart LR
 ```json
 {
   "ok": true,
-  "service": "xhs-sidecar",
+  "service": "linkparse-sidecar",
   "version": "0.1.0",
   "providers": {
     "importer": {
@@ -240,12 +240,12 @@ flowchart LR
   "normalized": {
     "shareUrl": "http://xhslink.com/a/xxxx",
     "canonicalUrl": "https://www.xiaohongshu.com/explore/68abcd1234",
-    "noteId": "68abcd1234",
+    "id": "68abcd1234",
     "xsecToken": "optional"
   },
-  "note": {
+  "content": {
     "title": "番茄土豆炖牛腩",
-    "content": "牛腩先焯水，番茄炒出沙，再和土豆一起慢炖...",
+    "body": "牛腩先焯水，番茄炒出沙，再和土豆一起慢炖...",
     "tags": ["家常菜", "番茄牛腩", "炖菜"],
     "images": [
       "https://ci.xiaohongshu.com/xxx-1.jpg",
@@ -257,7 +257,7 @@ flowchart LR
       "name": "某某厨房",
       "avatarUrl": "https://..."
     },
-    "noteType": "image",
+    "contentType": "image",
     "likes": 1203,
     "comments": 86,
     "favorites": 430
@@ -548,20 +548,18 @@ Go 后端把 sidecar 返回的：
 建议给主服务增加这些环境变量：
 
 ```env
-XHS_SIDECAR_ENABLED=true
-XHS_SIDECAR_BASE_URL=http://127.0.0.1:8091
-XHS_SIDECAR_TIMEOUT_SECONDS=25
-XHS_SIDECAR_PROVIDER=auto
-XHS_SIDECAR_API_KEY=
+LINKPARSE_SIDECAR_ENABLED=true
+LINKPARSE_SIDECAR_BASE_URL=http://127.0.0.1:8091
+LINKPARSE_SIDECAR_TIMEOUT_SECONDS=25
+LINKPARSE_SIDECAR_API_KEY=
 ```
 
 说明：
 
-- `XHS_SIDECAR_ENABLED`: 是否启用小红书解析
-- `XHS_SIDECAR_BASE_URL`: sidecar 地址
-- `XHS_SIDECAR_TIMEOUT_SECONDS`: 单次请求超时
-- `XHS_SIDECAR_PROVIDER`: 默认 provider，可选 `auto|importer|rednote`
-- `XHS_SIDECAR_API_KEY`: 如果 sidecar 走内网认证，可加一个简单共享密钥
+- `LINKPARSE_SIDECAR_ENABLED`: 是否启用 sidecar 解析
+- `LINKPARSE_SIDECAR_BASE_URL`: sidecar 地址
+- `LINKPARSE_SIDECAR_TIMEOUT_SECONDS`: 单次请求超时
+- `LINKPARSE_SIDECAR_API_KEY`: 如果 sidecar 走内网认证，可加一个简单共享密钥
 
 ### sidecar 自己的配置建议
 
@@ -570,9 +568,9 @@ PORT=8091
 XHS_PROVIDER_DEFAULT=auto
 XHS_PROVIDER_IMPORTER_ENABLED=true
 XHS_PROVIDER_REDNOTE_ENABLED=true
-XHS_REDNOTE_COOKIE_PATH=~/.xhs-sidecar/rednote-cookies.json
+XHS_REDNOTE_COOKIE_PATH=~/.linkparse-sidecar/rednote-cookies.json
 XHS_BROWSER_HEADLESS=true
-XHS_INTERNAL_API_KEY=
+LINKPARSE_INTERNAL_API_KEY=
 ```
 
 ## 安全建议

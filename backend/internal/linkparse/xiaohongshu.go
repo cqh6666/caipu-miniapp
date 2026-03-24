@@ -14,61 +14,8 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
-type xiaohongshuClient struct {
-	baseURL  string
-	provider string
-	apiKey   string
-	client   *http.Client
-}
-
-type xhsSidecarParseRequest struct {
-	Input             string `json:"input"`
-	Provider          string `json:"provider,omitempty"`
-	IncludeImages     bool   `json:"includeImages"`
-	IncludeDebug      bool   `json:"includeDebug"`
-	IncludeTranscript bool   `json:"includeTranscript"`
-}
-
 type xhsFetchOptions struct {
 	IncludeTranscript bool
-}
-
-type xhsSidecarParseResponse struct {
-	OK                bool   `json:"ok"`
-	Platform          string `json:"platform"`
-	ProviderRequested string `json:"providerRequested"`
-	ProviderUsed      string `json:"providerUsed"`
-	Normalized        struct {
-		ShareURL     string `json:"shareUrl"`
-		CanonicalURL string `json:"canonicalUrl"`
-		NoteID       string `json:"noteId"`
-		XSECToken    string `json:"xsecToken"`
-	} `json:"normalized"`
-	Note struct {
-		Title            string   `json:"title"`
-		Content          string   `json:"content"`
-		Transcript       string   `json:"transcript"`
-		TranscriptStatus string   `json:"transcriptStatus"`
-		TranscriptError  string   `json:"transcriptError"`
-		Tags             []string `json:"tags"`
-		Images           []string `json:"images"`
-		Videos           []string `json:"videos"`
-		CoverURL         string   `json:"coverUrl"`
-		Author           struct {
-			Name      string `json:"name"`
-			AvatarURL string `json:"avatarUrl"`
-		} `json:"author"`
-		NoteType  string `json:"noteType"`
-		Likes     int64  `json:"likes"`
-		Comments  int64  `json:"comments"`
-		Favorites int64  `json:"favorites"`
-	} `json:"note"`
-	Error *struct {
-		Code      string `json:"code"`
-		Message   string `json:"message"`
-		Retryable bool   `json:"retryable"`
-	} `json:"error,omitempty"`
-	Warnings []string `json:"warnings"`
 }
 
 func (s *Service) ParseRecipeLink(ctx context.Context, rawInput string) (RecipeParseOutcome, error) {
@@ -154,8 +101,8 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 }
 
 func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xhsFetchOptions) (XiaohongshuParseResult, error) {
-	if s == nil || s.xhs == nil {
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "xiaohongshu sidecar is not configured", http.StatusInternalServerError)
+	if s == nil || s.sidecar == nil {
+		return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "linkparse sidecar is not configured", http.StatusInternalServerError)
 	}
 
 	inputURL, err := extractSupportedURL(rawInput)
@@ -166,77 +113,40 @@ func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xh
 		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "invalid xiaohongshu url", http.StatusBadRequest)
 	}
 
-	payload := xhsSidecarParseRequest{
+	parsed, err := s.sidecar.parse(ctx, "/v1/parse/xiaohongshu", sidecarParseRequest{
 		Input:             rawInput,
-		Provider:          s.xhs.provider,
-		IncludeImages:     true,
 		IncludeDebug:      false,
 		IncludeTranscript: opts.IncludeTranscript,
-	}
-
-	body, err := json.Marshal(payload)
+	}, nil)
 	if err != nil {
-		return XiaohongshuParseResult{}, common.ErrInternal.WithErr(err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.xhs.baseURL+"/v1/parse/xiaohongshu", bytes.NewReader(body))
-	if err != nil {
-		return XiaohongshuParseResult{}, common.ErrInternal.WithErr(err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if strings.TrimSpace(s.xhs.apiKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(s.xhs.apiKey))
-	}
-
-	resp, err := s.xhs.client.Do(req)
-	if err != nil {
-		message := "request to xiaohongshu sidecar failed"
-		if isXiaohongshuSidecarTimeout(err) {
-			message = "xiaohongshu sidecar timed out"
+		if isLinkparseSidecarTimeout(err) {
+			return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "xiaohongshu sidecar timed out", http.StatusBadRequest).WithErr(err)
 		}
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, message, http.StatusBadRequest).WithErr(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = "xiaohongshu sidecar request failed"
+		var appErr *common.AppError
+		if errors.As(err, &appErr) {
+			return XiaohongshuParseResult{}, err
 		}
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, message, http.StatusBadRequest)
-	}
-
-	var parsed xhsSidecarParseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "failed to decode xiaohongshu sidecar response", http.StatusBadRequest).WithErr(err)
-	}
-	if !parsed.OK {
-		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
-			return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, strings.TrimSpace(parsed.Error.Message), http.StatusBadRequest)
-		}
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "xiaohongshu parse failed", http.StatusBadRequest)
+		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "request to xiaohongshu sidecar failed", http.StatusBadRequest).WithErr(err)
 	}
 
 	result := XiaohongshuParseResult{
 		Source:            "xiaohongshu",
 		Link:              firstNonEmpty(parsed.Normalized.ShareURL, inputURL),
 		CanonicalURL:      firstNonEmpty(parsed.Normalized.CanonicalURL, inputURL),
-		ProviderRequested: firstNonEmpty(parsed.ProviderRequested, s.xhs.provider, "auto"),
+		ProviderRequested: firstNonEmpty(parsed.ProviderRequested, "auto"),
 		ProviderUsed:      strings.TrimSpace(parsed.ProviderUsed),
-		Title:             strings.TrimSpace(parsed.Note.Title),
-		Content:           strings.TrimSpace(parsed.Note.Content),
-		Transcript:        strings.TrimSpace(parsed.Note.Transcript),
-		TranscriptStatus:  strings.TrimSpace(parsed.Note.TranscriptStatus),
-		TranscriptError:   strings.TrimSpace(parsed.Note.TranscriptError),
-		CoverURL:          normalizeXiaohongshuMediaURL(parsed.Note.CoverURL),
-		Images:            normalizeXiaohongshuMediaURLs(parsed.Note.Images, 12),
-		Videos:            normalizeXiaohongshuMediaURLs(parsed.Note.Videos, 4),
-		Tags:              dedupeStrings(cleanLines(parsed.Note.Tags), 12),
-		Author:            strings.TrimSpace(parsed.Note.Author.Name),
-		NoteType:          strings.TrimSpace(parsed.Note.NoteType),
-		NoteID:            strings.TrimSpace(parsed.Normalized.NoteID),
+		Title:             strings.TrimSpace(parsed.Content.Title),
+		Content:           strings.TrimSpace(parsed.Content.Body),
+		Transcript:        strings.TrimSpace(parsed.Content.Transcript),
+		TranscriptStatus:  strings.TrimSpace(parsed.Content.TranscriptStatus),
+		TranscriptError:   strings.TrimSpace(parsed.Content.TranscriptError),
+		CoverURL:          normalizeXiaohongshuMediaURL(parsed.Content.CoverURL),
+		Images:            normalizeXiaohongshuMediaURLs(parsed.Content.Images, 12),
+		Videos:            normalizeXiaohongshuMediaURLs(parsed.Content.Videos, 4),
+		Tags:              dedupeStrings(cleanLines(parsed.Content.Tags), 12),
+		Author:            strings.TrimSpace(parsed.Content.Author.Name),
+		NoteType:          strings.TrimSpace(parsed.Content.ContentType),
+		NoteID:            strings.TrimSpace(parsed.Normalized.ID),
 		XSECToken:         strings.TrimSpace(parsed.Normalized.XSECToken),
 		Warnings:          parsed.Warnings,
 	}
@@ -244,10 +154,10 @@ func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xh
 }
 
 func shouldRetryXiaohongshuWithoutTranscript(err error) bool {
-	return isXiaohongshuSidecarTimeout(err)
+	return isLinkparseSidecarTimeout(err)
 }
 
-func isXiaohongshuSidecarTimeout(err error) bool {
+func isLinkparseSidecarTimeout(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err)
 }
 

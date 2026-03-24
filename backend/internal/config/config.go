@@ -33,11 +33,10 @@ type Config struct {
 	AITitleEnabled             bool
 	AITitleModel               string
 	AITitleTimeoutSeconds      int
-	XHSSidecarEnabled          bool
-	XHSSidecarBaseURL          string
-	XHSSidecarTimeoutSeconds   int
-	XHSSidecarProvider         string
-	XHSSidecarAPIKey           string
+	LinkparseSidecarEnabled    bool
+	LinkparseSidecarBaseURL    string
+	LinkparseSidecarTimeoutSec int
+	LinkparseSidecarAPIKey     string
 	WechatAppID                string
 	WechatAppSecret            string
 	SQLitePath                 string
@@ -85,11 +84,10 @@ func Load() (Config, error) {
 		AITitleEnabled:             getBool("AI_TITLE_ENABLED", false),
 		AITitleModel:               strings.TrimSpace(os.Getenv("AI_TITLE_MODEL")),
 		AITitleTimeoutSeconds:      getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
-		XHSSidecarEnabled:          getBool("XHS_SIDECAR_ENABLED", false),
-		XHSSidecarBaseURL:          strings.TrimSpace(os.Getenv("XHS_SIDECAR_BASE_URL")),
-		XHSSidecarTimeoutSeconds:   getInt("XHS_SIDECAR_TIMEOUT_SECONDS", 150),
-		XHSSidecarProvider:         strings.TrimSpace(strings.ToLower(getEnv("XHS_SIDECAR_PROVIDER", "auto"))),
-		XHSSidecarAPIKey:           strings.TrimSpace(os.Getenv("XHS_SIDECAR_API_KEY")),
+		LinkparseSidecarEnabled:    getBool("LINKPARSE_SIDECAR_ENABLED", false),
+		LinkparseSidecarBaseURL:    strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_BASE_URL")),
+		LinkparseSidecarTimeoutSec: getInt("LINKPARSE_SIDECAR_TIMEOUT_SECONDS", 150),
+		LinkparseSidecarAPIKey:     strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_API_KEY")),
 		WechatAppID:                os.Getenv("WECHAT_APP_ID"),
 		WechatAppSecret:            os.Getenv("WECHAT_APP_SECRET"),
 		SQLitePath:                 filepath.Clean(getEnv("SQLITE_PATH", "./data/app.db")),
@@ -131,8 +129,8 @@ func Load() (Config, error) {
 		return Config{}, errors.New("AI_TITLE_TIMEOUT_SECONDS must be positive")
 	}
 
-	if cfg.XHSSidecarTimeoutSeconds <= 0 {
-		return Config{}, errors.New("XHS_SIDECAR_TIMEOUT_SECONDS must be positive")
+	if cfg.LinkparseSidecarTimeoutSec <= 0 {
+		return Config{}, errors.New("LINKPARSE_SIDECAR_TIMEOUT_SECONDS must be positive")
 	}
 
 	if cfg.InviteDefaultExpireHours <= 0 {
@@ -173,14 +171,6 @@ func Load() (Config, error) {
 	case "admin", "whitelist":
 	default:
 		return Config{}, errors.New("APP_SETTINGS_ACCESS_MODE must be one of all, admin, whitelist")
-	}
-
-	switch cfg.XHSSidecarProvider {
-	case "", "auto":
-		cfg.XHSSidecarProvider = "auto"
-	case "importer", "rednote":
-	default:
-		return Config{}, errors.New("XHS_SIDECAR_PROVIDER must be one of auto, importer, rednote")
 	}
 
 	if cfg.CredentialsSecret == "" {

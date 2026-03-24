@@ -1,6 +1,6 @@
-# xhs-sidecar
+# linkparse-sidecar
 
-这是给 `caipu-miniapp` 准备的小红书 sidecar stub。
+这是给 `caipu-miniapp` 准备的通用解析 sidecar。
 
 当前目标不是直接完成真实小红书抓取，而是先把下面这几件事定稳：
 
@@ -36,6 +36,7 @@ RedNote 登录态现在支持两种来源：
 - `GET /v1/providers`
 - `GET /v1/auth/rednote/status`
 - `POST /v1/parse/xiaohongshu`
+- `POST /v1/parse/bilibili`
 
 另外还提供两个本地辅助命令：
 
@@ -45,7 +46,7 @@ RedNote 登录态现在支持两种来源：
 ## 本地启动
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm install
 npm start
 ```
@@ -67,14 +68,13 @@ ffmpeg -version
 后端需要同时配置：
 
 ```env
-XHS_SIDECAR_ENABLED=true
-XHS_SIDECAR_BASE_URL=http://127.0.0.1:8091
-XHS_SIDECAR_TIMEOUT_SECONDS=150
-XHS_SIDECAR_PROVIDER=auto
-XHS_SIDECAR_API_KEY=
+LINKPARSE_SIDECAR_ENABLED=true
+LINKPARSE_SIDECAR_BASE_URL=http://127.0.0.1:8091
+LINKPARSE_SIDECAR_TIMEOUT_SECONDS=150
+LINKPARSE_SIDECAR_API_KEY=
 ```
 
-如果 sidecar 配了 `XHS_INTERNAL_API_KEY`，记得把同一个值写到后端的 `XHS_SIDECAR_API_KEY`。
+如果 sidecar 配了 `LINKPARSE_INTERNAL_API_KEY`，记得把同一个值写到后端的 `LINKPARSE_SIDECAR_API_KEY`。
 
 主服务启用后，保存带小红书链接的菜谱就会自动进入异步解析队列。
 
@@ -86,7 +86,9 @@ XHS_PROVIDER_DEFAULT=auto
 XHS_PROVIDER_IMPORTER_ENABLED=true
 XHS_PROVIDER_REDNOTE_ENABLED=true
 XHS_SIDECAR_STUB_MODE=echo
-XHS_INTERNAL_API_KEY=
+LINKPARSE_INTERNAL_API_KEY=
+BILI_PROVIDER_DEFAULT=auto
+BILI_PROVIDER_OPENAPI_ENABLED=true
 XHS_REDNOTE_COOKIE_PATH=
 XHS_REDNOTE_COOKIE_HEADER=
 XHS_REDNOTE_COOKIE_DOMAIN=.xiaohongshu.com
@@ -148,7 +150,7 @@ curl -s -X POST http://127.0.0.1:8091/v1/parse/xiaohongshu \
   }'
 ```
 
-只有当请求里显式传 `includeTranscript: true` 且 `XHS_TRANSCRIPT_ENABLED=true` 时，返回里的 `note` 才会额外包含：
+只有当请求里显式传 `includeTranscript: true` 且 `XHS_TRANSCRIPT_ENABLED=true` 时，返回里的 `content` 才会额外包含：
 
 - `transcript`
 - `transcriptStatus`
@@ -186,7 +188,7 @@ curl -s -X POST http://127.0.0.1:8091/v1/parse/xiaohongshu \
 推荐先执行一次：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:init
 ```
 
@@ -195,14 +197,14 @@ npm run rednote:init
 之后可以检查状态：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:status
 ```
 
 如果 `playwrightAvailable=true` 但 `browserInstalled=false`，说明还需要执行：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npx playwright install chromium
 ```
 
@@ -216,7 +218,7 @@ npx playwright install chromium
 如果你要真正启用它，建议先准备：
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm install playwright
 npx playwright install
 ```

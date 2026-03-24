@@ -36,7 +36,7 @@
 
 sidecar 目录：
 
-- [xhs-sidecar](/Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar)
+- [linkparse-sidecar](/Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar)
 
 当前已经定义并实现的接口：
 
@@ -74,7 +74,7 @@ flowchart LR
   A["保存菜谱（含小红书链接）"] --> B["Go backend"]
   B --> C["recipe auto-parse worker"]
   C --> D["linkparse.ParseRecipeLink"]
-  D --> E["XHS sidecar /v1/parse/xiaohongshu"]
+  D --> E["linkparse-sidecar /v1/parse/xiaohongshu"]
   E --> F["importer provider"]
   E --> G["rednote provider"]
   E --> D
@@ -92,32 +92,31 @@ flowchart LR
 当前相关环境变量：
 
 ```env
-XHS_SIDECAR_ENABLED=true
-XHS_SIDECAR_BASE_URL=http://127.0.0.1:8091
-XHS_SIDECAR_TIMEOUT_SECONDS=25
-XHS_SIDECAR_PROVIDER=auto
-XHS_SIDECAR_API_KEY=
+LINKPARSE_SIDECAR_ENABLED=true
+LINKPARSE_SIDECAR_BASE_URL=http://127.0.0.1:8091
+LINKPARSE_SIDECAR_TIMEOUT_SECONDS=25
+LINKPARSE_SIDECAR_API_KEY=
 ```
 
 说明：
 
-- `XHS_SIDECAR_ENABLED=false` 时，小红书链接不会真正去调 sidecar
-- `XHS_SIDECAR_PROVIDER` 支持 `auto | importer | rednote`
-- 如果 sidecar 配置了 `XHS_INTERNAL_API_KEY`，后端要同步填 `XHS_SIDECAR_API_KEY`
+- `LINKPARSE_SIDECAR_ENABLED=false` 时，小红书链接不会真正去调 sidecar
+- 小红书 provider 默认策略由 sidecar 自身的 `XHS_PROVIDER_DEFAULT` 控制
+- 如果 sidecar 配置了 `LINKPARSE_INTERNAL_API_KEY`，后端要同步填 `LINKPARSE_SIDECAR_API_KEY`
 
 ## Sidecar 使用说明
 
 ### 1. 安装依赖
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm install
 ```
 
 ### 2. 启动 sidecar
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm start
 ```
 
@@ -133,7 +132,7 @@ XHS_PROVIDER_DEFAULT=auto
 XHS_PROVIDER_IMPORTER_ENABLED=true
 XHS_PROVIDER_REDNOTE_ENABLED=true
 XHS_SIDECAR_STUB_MODE=echo
-XHS_INTERNAL_API_KEY=
+LINKPARSE_INTERNAL_API_KEY=
 XHS_REDNOTE_COOKIE_PATH=
 XHS_REDNOTE_COOKIE_HEADER=
 XHS_REDNOTE_COOKIE_DOMAIN=.xiaohongshu.com
@@ -206,14 +205,14 @@ XHS_REDNOTE_TIMEOUT_MS=15000
 ### 1. 安装浏览器
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npx playwright install chromium
 ```
 
 ### 2. 初始化登录态
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:init
 ```
 
@@ -226,7 +225,7 @@ npm run rednote:init
 ### 3. 查看当前状态
 
 ```bash
-cd /Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar
+cd /Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar
 npm run rednote:status
 ```
 
@@ -272,9 +271,8 @@ curl -s -X POST http://127.0.0.1:8091/v1/parse/xiaohongshu \
 先确认后端已配置：
 
 ```env
-XHS_SIDECAR_ENABLED=true
-XHS_SIDECAR_BASE_URL=http://127.0.0.1:8091
-XHS_SIDECAR_PROVIDER=auto
+LINKPARSE_SIDECAR_ENABLED=true
+LINKPARSE_SIDECAR_BASE_URL=http://127.0.0.1:8091
 ```
 
 然后：

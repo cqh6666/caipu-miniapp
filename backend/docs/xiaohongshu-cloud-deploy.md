@@ -1,4 +1,4 @@
-# 小红书 Sidecar 云服务器部署清单
+# Linkparse Sidecar 云服务器部署清单
 
 这份文档面向 Linux 云服务器，目标是把当前仓库里的小红书 sidecar 部署起来，并接到现有 Go 后端。
 
@@ -6,9 +6,9 @@
 
 - 项目部署目录：`/srv/caipu-miniapp`
 - 后端目录：`/srv/caipu-miniapp/backend`
-- sidecar 目录：`/srv/caipu-miniapp/sidecars/xhs-sidecar`
+- sidecar 目录：`/srv/caipu-miniapp/sidecars/linkparse-sidecar`
 - 后端服务名：`caipu-backend`
-- sidecar 服务名：`caipu-xhs-sidecar`
+- sidecar 服务名：`caipu-linkparse-sidecar`
 - 当前服务器已安装 `git`、`node`、`npm`
 
 ## 1. 拉取最新代码
@@ -21,21 +21,21 @@ git pull origin main
 ## 2. 安装 sidecar 依赖
 
 ```bash
-cd /srv/caipu-miniapp/sidecars/xhs-sidecar
+cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
 npm install
 ```
 
 ## 3. 安装 Playwright Chromium
 
 ```bash
-cd /srv/caipu-miniapp/sidecars/xhs-sidecar
+cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
 npx playwright install chromium
 ```
 
 如果服务器缺少系统依赖，可以先执行：
 
 ```bash
-cd /srv/caipu-miniapp/sidecars/xhs-sidecar
+cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
 npx playwright install-deps chromium
 ```
 
@@ -43,19 +43,19 @@ npx playwright install-deps chromium
 
 ```bash
 mkdir -p /srv/caipu-miniapp/runtime/rednote
-mkdir -p /srv/caipu-miniapp/runtime/xhs-sidecar
+mkdir -p /srv/caipu-miniapp/runtime/linkparse-sidecar
 ```
 
 说明：
 
 - `runtime/rednote` 用来放 Cookie 文件
-- `runtime/xhs-sidecar` 用来放环境文件
+- `runtime/linkparse-sidecar` 用来放环境文件
 
 ## 5. 创建 sidecar 环境文件
 
 创建：
 
-- `/srv/caipu-miniapp/runtime/xhs-sidecar/xhs-sidecar.env`
+- `/srv/caipu-miniapp/runtime/linkparse-sidecar/linkparse-sidecar.env`
 
 内容示例：
 
@@ -65,7 +65,7 @@ XHS_PROVIDER_DEFAULT=auto
 XHS_PROVIDER_IMPORTER_ENABLED=true
 XHS_PROVIDER_REDNOTE_ENABLED=true
 XHS_SIDECAR_STUB_MODE=echo
-XHS_INTERNAL_API_KEY=replace-with-random-secret
+LINKPARSE_INTERNAL_API_KEY=replace-with-random-secret
 XHS_REDNOTE_COOKIE_PATH=/srv/caipu-miniapp/runtime/rednote/cookies.json
 XHS_REDNOTE_COOKIE_HEADER=
 XHS_REDNOTE_COOKIE_DOMAIN=.xiaohongshu.com
@@ -94,7 +94,7 @@ XHS_REDNOTE_COOKIE_HEADER=你的整段Cookie
 这一步需要交互式浏览器，不建议在已经启动 systemd 服务后直接做。推荐先手动执行一次：
 
 ```bash
-cd /srv/caipu-miniapp/sidecars/xhs-sidecar
+cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
 export XHS_REDNOTE_COOKIE_PATH=/srv/caipu-miniapp/runtime/rednote/cookies.json
 export XHS_REDNOTE_LOGIN_URL=https://www.xiaohongshu.com/
 npm run rednote:init
@@ -109,7 +109,7 @@ npm run rednote:init
 然后检查状态：
 
 ```bash
-cd /srv/caipu-miniapp/sidecars/xhs-sidecar
+cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
 export XHS_REDNOTE_COOKIE_PATH=/srv/caipu-miniapp/runtime/rednote/cookies.json
 npm run rednote:status
 ```
@@ -126,19 +126,19 @@ npm run rednote:status
 
 创建文件：
 
-- `/etc/systemd/system/caipu-xhs-sidecar.service`
+- `/etc/systemd/system/caipu-linkparse-sidecar.service`
 
 内容示例：
 
 ```ini
 [Unit]
-Description=Caipu Xiaohongshu Sidecar
+Description=Caipu Linkparse Sidecar
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/caipu-miniapp/sidecars/xhs-sidecar
-EnvironmentFile=/srv/caipu-miniapp/runtime/xhs-sidecar/xhs-sidecar.env
+WorkingDirectory=/srv/caipu-miniapp/sidecars/linkparse-sidecar
+EnvironmentFile=/srv/caipu-miniapp/runtime/linkparse-sidecar/linkparse-sidecar.env
 ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=3
@@ -152,15 +152,15 @@ WantedBy=multi-user.target
 
 ```bash
 systemctl daemon-reload
-systemctl enable caipu-xhs-sidecar
-systemctl restart caipu-xhs-sidecar
-systemctl status caipu-xhs-sidecar --no-pager
+systemctl enable caipu-linkparse-sidecar
+systemctl restart caipu-linkparse-sidecar
+systemctl status caipu-linkparse-sidecar --no-pager
 ```
 
 查看日志：
 
 ```bash
-journalctl -u caipu-xhs-sidecar -n 100 --no-pager
+journalctl -u caipu-linkparse-sidecar -n 100 --no-pager
 ```
 
 ## 8. 验证 sidecar 服务
@@ -171,7 +171,7 @@ curl -s http://127.0.0.1:8091/v1/providers
 curl -s http://127.0.0.1:8091/v1/auth/rednote/status
 ```
 
-如果你配置了 `XHS_INTERNAL_API_KEY`，要改成带请求头：
+如果你配置了 `LINKPARSE_INTERNAL_API_KEY`，要改成带请求头：
 
 ```bash
 curl -s http://127.0.0.1:8091/v1/health \
@@ -187,16 +187,15 @@ curl -s http://127.0.0.1:8091/v1/health \
 至少补上：
 
 ```env
-XHS_SIDECAR_ENABLED=true
-XHS_SIDECAR_BASE_URL=http://127.0.0.1:8091
-XHS_SIDECAR_TIMEOUT_SECONDS=25
-XHS_SIDECAR_PROVIDER=auto
-XHS_SIDECAR_API_KEY=replace-with-random-secret
+LINKPARSE_SIDECAR_ENABLED=true
+LINKPARSE_SIDECAR_BASE_URL=http://127.0.0.1:8091
+LINKPARSE_SIDECAR_TIMEOUT_SECONDS=25
+LINKPARSE_SIDECAR_API_KEY=replace-with-random-secret
 ```
 
 说明：
 
-- `XHS_SIDECAR_API_KEY` 要和 sidecar 的 `XHS_INTERNAL_API_KEY` 一致
+- `LINKPARSE_SIDECAR_API_KEY` 要和 sidecar 的 `LINKPARSE_INTERNAL_API_KEY` 一致
 - 如果 sidecar 没开 API Key，这里可以留空
 
 ## 10. 重新编译并重启后端
@@ -254,7 +253,7 @@ journalctl -u caipu-backend -f --no-pager
 执行：
 
 ```bash
-cd /srv/caipu-miniapp/sidecars/xhs-sidecar
+cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
 npx playwright install chromium
 ```
 
@@ -263,7 +262,7 @@ npx playwright install chromium
 说明 Cookie 文件不存在、为空，或者整段 Cookie 字符串无效。文件模式下可以重新执行：
 
 ```bash
-cd /srv/caipu-miniapp/sidecars/xhs-sidecar
+cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
 export XHS_REDNOTE_COOKIE_PATH=/srv/caipu-miniapp/runtime/rednote/cookies.json
 npm run rednote:init
 ```

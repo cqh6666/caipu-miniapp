@@ -95,7 +95,7 @@ function logTranscript(stage, fields) {
   const parts = Object.entries(fields || {})
     .filter((entry) => entry[1] !== undefined && entry[1] !== null && String(entry[1]).trim() !== "")
     .map(([key, value]) => `${key}=${String(value).replace(/\s+/g, " ").trim()}`);
-  process.stdout.write(`[xhs-transcript] ${stage}${parts.length ? ` ${parts.join(" ")}` : ""}\n`);
+  process.stdout.write(`[linkparse-transcript] ${stage}${parts.length ? ` ${parts.join(" ")}` : ""}\n`);
 }
 
 function summarizeFFmpegError(stderr, code, signal) {

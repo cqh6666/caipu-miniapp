@@ -53,11 +53,10 @@ go run ./cmd/server
 - `AI_TITLE_ENABLED`
 - `AI_TITLE_MODEL`
 - `AI_TITLE_TIMEOUT_SECONDS`
-- `XHS_SIDECAR_ENABLED`
-- `XHS_SIDECAR_BASE_URL`
-- `XHS_SIDECAR_TIMEOUT_SECONDS`
-- `XHS_SIDECAR_PROVIDER`
-- `XHS_SIDECAR_API_KEY`
+- `LINKPARSE_SIDECAR_ENABLED`
+- `LINKPARSE_SIDECAR_BASE_URL`
+- `LINKPARSE_SIDECAR_TIMEOUT_SECONDS`
+- `LINKPARSE_SIDECAR_API_KEY`
 
 应用级 B 站配置页访问控制：
 
@@ -193,9 +192,9 @@ go run ./cmd/server -migrate-only
 
 - 保存菜谱时如果识别到小红书链接，也会自动标记为 `parseStatus=pending`
 - 后端 worker 会按平台路由到小红书 sidecar
-- 是否真正启用，由 `XHS_SIDECAR_ENABLED` 控制
-- 当前仓库已包含 sidecar、provider 路由和 RedNote 初始化脚本，目录在 [xhs-sidecar](/Users/alexh/github_proj/caipu-miniapp/sidecars/xhs-sidecar)
-- 推荐优先使用 `XHS_SIDECAR_PROVIDER=auto`，让 `importer` 先尝试、`rednote` 兜底
+- 是否真正启用，由 `LINKPARSE_SIDECAR_ENABLED` 控制
+- 当前仓库已包含通用解析 sidecar、provider 路由和 RedNote 初始化脚本，目录在 [linkparse-sidecar](/Users/alexh/github_proj/caipu-miniapp/sidecars/linkparse-sidecar)
+- 小红书 provider 默认策略由 sidecar 自身的 `XHS_PROVIDER_DEFAULT` 控制，推荐保持 `auto`
 - 更完整的使用说明见 [xiaohongshu-integration-guide.md](/Users/alexh/github_proj/caipu-miniapp/backend/docs/xiaohongshu-integration-guide.md)
 
 后续第一批建议实现顺序：
