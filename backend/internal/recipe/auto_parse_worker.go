@@ -159,10 +159,7 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	}
 
 	finishedAt := time.Now().Format(time.RFC3339)
-	parseSource := result.Source
-	if strings.TrimSpace(result.SummaryMode) != "" {
-		parseSource += ":" + strings.TrimSpace(result.SummaryMode)
-	}
+	parseSource := buildAutoParseSource(result)
 
 	if err := w.repo.ApplyAutoParseResult(ctx, item.ID, parseSource, finishedAt, Recipe{
 		Ingredient: result.RecipeDraft.Ingredient,
@@ -183,6 +180,26 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	w.logger.Info("recipe auto-parse completed", "recipeID", item.ID, "source", parseSource)
 	return nil
+}
+
+func buildAutoParseSource(result linkparse.RecipeParseOutcome) string {
+	source := strings.TrimSpace(strings.ToLower(result.Source))
+	if source == "" {
+		return ""
+	}
+
+	if source == "xiaohongshu" {
+		switch strings.TrimSpace(strings.ToLower(result.SourceDetail)) {
+		case "image", "video":
+			source += ":" + strings.TrimSpace(strings.ToLower(result.SourceDetail))
+		}
+	}
+
+	if summaryMode := strings.TrimSpace(strings.ToLower(result.SummaryMode)); summaryMode != "" {
+		source += ":" + summaryMode
+	}
+
+	return source
 }
 
 func mapParsedSteps(steps []linkparse.ParsedStep) []ParsedStep {

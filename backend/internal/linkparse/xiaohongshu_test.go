@@ -291,6 +291,9 @@ func TestParseRecipeLinkRequestsTranscriptForXiaohongshu(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseRecipeLink returned error: %v", err)
 	}
+	if got, want := outcome.SourceDetail, "video"; got != want {
+		t.Fatalf("SourceDetail = %q, want %q", got, want)
+	}
 	if !strings.Contains(outcome.RecipeDraft.Note, "视频转写") {
 		t.Fatalf("RecipeDraft.Note should mention transcript usage: %#v", outcome.RecipeDraft)
 	}

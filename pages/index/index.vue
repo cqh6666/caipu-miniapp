@@ -949,6 +949,8 @@ function detectRecipeSource(recipe = {}) {
 		return 'B站'
 	}
 	if (parseSource.includes('xiaohongshu') || link.includes('xiaohongshu.com') || link.includes('xhslink.com')) {
+		if (parseSource.includes(':video')) return '小红书视频'
+		if (parseSource.includes(':image')) return '小红书图文'
 		return '小红书'
 	}
 	if (link) return '链接'

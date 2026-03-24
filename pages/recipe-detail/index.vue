@@ -713,9 +713,20 @@ function formatParseSourceLabel(source = '') {
 	if (value === 'bilibili') return '来源：B 站链接自动解析'
 	if (value === 'bilibili:ai') return '来源：B 站内容 + AI 总结'
 	if (value === 'bilibili:heuristic') return '来源：B 站简介规则整理'
-	if (value === 'xiaohongshu') return '来源：小红书链接自动解析'
-	if (value === 'xiaohongshu:ai') return '来源：小红书图文 + AI 总结'
-	if (value === 'xiaohongshu:heuristic') return '来源：小红书正文规则整理'
+	if (value.startsWith('xiaohongshu')) {
+		const parts = value.toLowerCase().split(':').filter(Boolean)
+		const contentType = parts.includes('video') ? 'video' : parts.includes('image') ? 'image' : ''
+		const summaryMode = parts.includes('ai') ? 'ai' : parts.includes('heuristic') ? 'heuristic' : ''
+		const contentLabel = contentType === 'video'
+			? '小红书视频'
+			: contentType === 'image'
+				? '小红书图文'
+				: '小红书内容'
+		if (!contentType && !summaryMode) return '来源：小红书链接自动解析'
+		if (!summaryMode) return `来源：${contentLabel}链接自动解析`
+		if (summaryMode === 'ai') return `来源：${contentLabel} + AI 总结`
+		if (summaryMode === 'heuristic') return `来源：${contentLabel}规则整理`
+	}
 	return `来源：${value}`
 }
 

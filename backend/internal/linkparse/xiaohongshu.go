@@ -36,9 +36,10 @@ func (s *Service) ParseRecipeLink(ctx context.Context, rawInput string) (RecipeP
 			return RecipeParseOutcome{}, err
 		}
 		return RecipeParseOutcome{
-			Source:      result.Source,
-			SummaryMode: result.SummaryMode,
-			RecipeDraft: result.RecipeDraft,
+			Source:       result.Source,
+			SourceDetail: strings.TrimSpace(result.NoteType),
+			SummaryMode:  result.SummaryMode,
+			RecipeDraft:  result.RecipeDraft,
 		}, nil
 	default:
 		return RecipeParseOutcome{}, common.NewAppError(common.CodeBadRequest, "unsupported auto-parse link", http.StatusBadRequest)
@@ -178,7 +179,7 @@ func summarizeXiaohongshuHeuristically(meta XiaohongshuParseResult) RecipeDraft 
 	}
 
 	return RecipeDraft{
-		Title:      firstNonEmpty(meta.Title, "小红书图文菜谱草稿"),
+		Title:      firstNonEmpty(meta.Title, "小红书菜谱草稿"),
 		Ingredient: buildIngredientSummary(mainIngredients, meta.Title),
 		Summary:    buildHeuristicSummary(steps),
 		Link:       firstNonEmpty(meta.CanonicalURL, meta.Link),
@@ -322,14 +323,14 @@ func buildXiaohongshuAISummaryPrompt(result XiaohongshuParseResult) string {
 }
 
 func normalizeXiaohongshuDraft(meta XiaohongshuParseResult, draft RecipeDraft) RecipeDraft {
-	draft.Title = firstNonEmpty(strings.TrimSpace(draft.Title), meta.Title, "小红书图文菜谱草稿")
+	draft.Title = firstNonEmpty(strings.TrimSpace(draft.Title), meta.Title, "小红书菜谱草稿")
 	draft.Ingredient = firstNonEmpty(strings.TrimSpace(draft.Ingredient), strings.TrimSpace(meta.Title))
 	draft.Link = firstNonEmpty(meta.CanonicalURL, meta.Link)
 	draft.ImageURL = firstNonEmpty(strings.TrimSpace(draft.ImageURL), strings.TrimSpace(meta.CoverURL), firstImage(meta.Images))
 	if len(draft.ImageURLs) == 0 {
 		draft.ImageURLs = preferredXiaohongshuImages(meta)
 	}
-	draft.Note = firstNonEmpty(strings.TrimSpace(draft.Note), "基于小红书图文内容生成的 AI 草稿，建议回看原笔记和配图补齐克数、火候和时间。")
+	draft.Note = firstNonEmpty(strings.TrimSpace(draft.Note), "基于小红书笔记内容生成的 AI 草稿，建议回看原笔记补齐克数、火候和时间。")
 	draft.ParsedContent = normalizeParsedContentDraft(draft.ParsedContent)
 	draft.Summary = normalizeRecipeSummary(draft.Summary)
 

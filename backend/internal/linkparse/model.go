@@ -102,9 +102,10 @@ type RecipeDraft struct {
 }
 
 type RecipeParseOutcome struct {
-	Source      string      `json:"source"`
-	SummaryMode string      `json:"summaryMode"`
-	RecipeDraft RecipeDraft `json:"recipeDraft"`
+	Source       string      `json:"source"`
+	SourceDetail string      `json:"sourceDetail,omitempty"`
+	SummaryMode  string      `json:"summaryMode"`
+	RecipeDraft  RecipeDraft `json:"recipeDraft"`
 }
 
 type LinkPreviewResult struct {
