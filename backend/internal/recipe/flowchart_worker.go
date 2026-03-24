@@ -9,6 +9,7 @@ import (
 )
 
 const defaultFlowchartJobTimeout = 3 * time.Minute
+const staleFlowchartProcessingThreshold = 10 * time.Minute
 
 type FlowchartWorker struct {
 	logger    *slog.Logger
@@ -79,6 +80,8 @@ func (w *FlowchartWorker) runBatch(parent context.Context) {
 	ctx, cancel := context.WithTimeout(parent, defaultFlowchartJobTimeout)
 	defer cancel()
 
+	w.requeueStaleProcessing(ctx)
+
 	items, err := w.repo.ListPendingFlowcharts(ctx, w.batchSize)
 	if err != nil {
 		w.logger.Error("list pending recipe flowchart jobs failed", "error", err)
@@ -89,6 +92,27 @@ func (w *FlowchartWorker) runBatch(parent context.Context) {
 		if err := w.processOne(parent, item.ID); err != nil && !errors.Is(err, context.Canceled) {
 			w.logger.Error("process recipe flowchart job failed", "recipeID", item.ID, "error", err)
 		}
+	}
+}
+
+func (w *FlowchartWorker) requeueStaleProcessing(ctx context.Context) {
+	if w == nil || w.repo == nil {
+		return
+	}
+
+	// Keep the reclaim threshold comfortably above the normal job timeout so a
+	// restarted instance does not steal a legitimately in-flight job.
+	now := time.Now()
+	staleBefore := now.Add(-staleFlowchartProcessingThreshold).Format(time.RFC3339)
+	requeuedAt := now.Format(time.RFC3339)
+
+	requeued, err := w.repo.RequeueStaleFlowcharts(ctx, staleBefore, requeuedAt)
+	if err != nil {
+		w.logger.Error("requeue stale recipe flowchart jobs failed", "error", err)
+		return
+	}
+	if requeued > 0 {
+		w.logger.Warn("requeued stale recipe flowchart jobs", "count", requeued, "staleBefore", staleBefore)
 	}
 }
 

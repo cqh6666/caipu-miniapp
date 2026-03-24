@@ -603,6 +603,32 @@ WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ?`,
 	return rowsAffected > 0, nil
 }
 
+func (r *Repository) RequeueStaleFlowcharts(ctx context.Context, staleBefore, requestedAt string) (int64, error) {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL, updated_at = ?
+WHERE deleted_at IS NULL
+  AND flowchart_status = ?
+  AND datetime(COALESCE(NULLIF(flowchart_requested_at, ''), NULLIF(updated_at, ''), NULLIF(created_at, ''))) <= datetime(?)`,
+		FlowchartStatusPending,
+		nullableString(requestedAt),
+		requestedAt,
+		FlowchartStatusProcessing,
+		staleBefore,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("requeue stale recipe flowcharts: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read stale flowchart rows: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
 func (r *Repository) MarkAutoParseFailed(ctx context.Context, recipeID, parseSource, parseError, finishedAt string) error {
 	if _, err := r.db.ExecContext(
 		ctx,
