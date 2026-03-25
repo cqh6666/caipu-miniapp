@@ -665,7 +665,9 @@
 						:class="{ 'sheet-action--disabled': !mealOrderCanCheckout }"
 						@tap="submitMealOrder"
 					>
-						<text class="sheet-action__text sheet-action__text--primary">安排这天菜单</text>
+						<text class="sheet-action__text sheet-action__text--primary">
+							{{ isSubmittingMealOrder ? '安排中...' : '安排这天菜单' }}
+						</text>
 					</view>
 				</view>
 			</view>
@@ -2455,10 +2457,6 @@ export default {
 			const contextID = this.mealOrderSyncContextID + 1
 			this.mealOrderSyncContextID = contextID
 			this.isSubmittingMealOrder = true
-			uni.showLoading({
-				title: '提交中',
-				mask: true
-			})
 
 			try {
 				const store = await submitMealPlanRequest(kitchenId, this.mealOrderDate, currentDraft)
@@ -2481,7 +2479,6 @@ export default {
 				})
 			} finally {
 				this.isSubmittingMealOrder = false
-				uni.hideLoading()
 			}
 		},
 		clearSearchBlurTimer() {
