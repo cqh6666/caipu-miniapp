@@ -712,7 +712,7 @@ function formatParseSourceLabel(source = '') {
 	if (!value) return ''
 	if (value === 'bilibili') return '来源：B 站链接自动解析'
 	if (value === 'bilibili:ai') return '来源：B 站内容 + AI 总结'
-	if (value === 'bilibili:heuristic') return '来源：B 站简介规则整理'
+	if (value === 'bilibili:heuristic') return '来源：B 站规则整理'
 	if (value.startsWith('xiaohongshu')) {
 		const parts = value.toLowerCase().split(':').filter(Boolean)
 		const contentType = parts.includes('video') ? 'video' : parts.includes('image') ? 'image' : ''
@@ -728,6 +728,16 @@ function formatParseSourceLabel(source = '') {
 		if (summaryMode === 'heuristic') return `来源：${contentLabel}规则整理`
 	}
 	return `来源：${value}`
+}
+
+function buildParseResultHint(status = '', source = '') {
+	const normalizedStatus = String(status || '').trim().toLowerCase()
+	const normalizedSource = String(source || '').trim().toLowerCase()
+	if (normalizedStatus !== 'done') return ''
+	if (normalizedSource === 'bilibili:heuristic') {
+		return '这次先按规则整理，通常是因为字幕不可用，或 AI 总结暂时不可用；可以稍后再试一次。'
+	}
+	return ''
 }
 
 function formatDateTime(value = '') {
@@ -907,6 +917,10 @@ export default {
 			const errorMessage = String(this.recipe?.parseError || '').trim()
 			if (this.parseStatusValue === 'failed' && errorMessage) {
 				return errorMessage
+			}
+			const resultHint = buildParseResultHint(this.parseStatusValue, this.recipe?.parseSource || '')
+			if (resultHint) {
+				return resultHint
 			}
 			return this.parseStatusMeta.description
 		},
