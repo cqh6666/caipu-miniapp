@@ -997,6 +997,7 @@
 
 <script>
 import { appConfig } from '../../utils/app-config'
+import { listMealPlanStore, saveMealPlanDraft, submitMealPlan as submitMealPlanRequest } from '../../utils/meal-plan-api'
 import { previewRecipeLink } from '../../utils/recipe-api'
 import { buildImageCacheKey, getCachedImagePath, warmImageCache } from '../../utils/image-cache'
 import { ensureUploadedImage } from '../../utils/upload-api'
@@ -1056,7 +1057,6 @@ const draftNoisePatterns = [
 const RECENT_SEARCH_STORAGE_KEY = 'caipu-miniapp-recent-searches'
 const LAST_DRAFT_LINK_PREFILL_STORAGE_KEY = 'caipu-miniapp-last-draft-link-prefill'
 const MAX_RECENT_SEARCHES = 6
-const MEAL_ORDER_STORAGE_PREFIX = 'caipu-miniapp-meal-order-prototype-v1'
 const mealOrderWeekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const searchSuggestionKeywordsByMeal = {
 	breakfast: ['鸡蛋', '面包', '粥', '快手'],
@@ -1131,10 +1131,6 @@ function createEmptyMealOrderStore() {
 	}
 }
 
-function getMealOrderStorageKey(kitchenId) {
-	return `${MEAL_ORDER_STORAGE_PREFIX}:${Number(kitchenId) || 0}`
-}
-
 function normalizeMealOrderItem(raw = {}) {
 	const quantity = Math.max(1, Math.min(9, Number(raw.quantity) || 1))
 	const recipeId = String(raw.recipeId || '').trim()
@@ -1207,23 +1203,6 @@ function normalizeMealOrderStore(raw = {}) {
 	return {
 		drafts,
 		submitted
-	}
-}
-
-function readMealOrderStore(kitchenId) {
-	try {
-		const raw = uni.getStorageSync(getMealOrderStorageKey(kitchenId))
-		return normalizeMealOrderStore(raw)
-	} catch (error) {
-		return createEmptyMealOrderStore()
-	}
-}
-
-function writeMealOrderStore(kitchenId, store = {}) {
-	try {
-		uni.setStorageSync(getMealOrderStorageKey(kitchenId), normalizeMealOrderStore(store))
-	} catch (error) {
-		// Ignore storage failures and keep prototype usable.
 	}
 }
 
@@ -1569,12 +1548,18 @@ export default {
 			showMealOrderCartSheet: false,
 			showMealOrderCheckoutSheet: false,
 			isMealOrderMode: false,
+			currentKitchenId: 0,
 			mealOrderDate: '',
 			mealOrderStore: createEmptyMealOrderStore(),
+			mealOrderStoreLoadedKitchenId: 0,
 			mealOrderSpotlightIndex: 0,
 			mealOrderSpotlightTouchStartX: 0,
 			mealOrderSpotlightTouchStartY: 0,
 			mealOrderSpotlightSuppressTap: false,
+			mealOrderDraftSyncTimer: null,
+			mealOrderLocalVersion: 0,
+			mealOrderSyncContextID: 0,
+			mealOrderStoreRequestID: 0,
 			profileSheetMode: 'prompt',
 			mealTabs: mealTypeOptions,
 			statusTabs: [
@@ -1612,6 +1597,7 @@ export default {
 			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
+			isSubmittingMealOrder: false,
 			isSubmittingKitchenName: false,
 			isSubmittingProfile: false,
 			isLoadingKitchenMembers: false,
@@ -1624,15 +1610,22 @@ export default {
 		}
 	},
 	onShow() {
-		this.loadMealOrderStore()
 		this.refreshRecipes()
 	},
 	onHide() {
+		if (!this.isSubmittingMealOrder) {
+			this.syncMealOrderDraft({ silent: true })
+		}
+		this.clearMealOrderDraftSyncTimer()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
 	},
 	onUnload() {
+		if (!this.isSubmittingMealOrder) {
+			this.syncMealOrderDraft({ silent: true })
+		}
+		this.clearMealOrderDraftSyncTimer()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
@@ -1765,7 +1758,7 @@ export default {
 			return this.mealOrderCartItems.length
 		},
 		mealOrderCanCheckout() {
-			return this.mealOrderCartDishCount > 0
+			return this.mealOrderCartDishCount > 0 && !this.isSubmittingMealOrder
 		},
 		mealOrderFloatingTitle() {
 			if (this.mealOrderCanCheckout) {
@@ -2083,25 +2076,24 @@ export default {
 				confirmText: '确认离开',
 				success: ({ confirm }) => {
 					if (!confirm) return
+					this.syncMealOrderDraft({ silent: true })
 					this.showMealOrderSpotlightSheet = false
 					this.activeSection = targetSection
 				}
 			})
 		},
-		loadMealOrderStore() {
-			const kitchenId = getCurrentKitchenId()
-			const store = kitchenId ? readMealOrderStore(kitchenId) : createEmptyMealOrderStore()
-			this.mealOrderStore = store
+		applyMealOrderStore(store = createEmptyMealOrderStore()) {
+			const normalizedStore = normalizeMealOrderStore(store)
+			this.mealOrderStore = normalizedStore
 
 			const normalizedDate = normalizeMealOrderDate(this.mealOrderDate)
-			const hasCurrentDraft = normalizedDate && !!store.drafts[normalizedDate]
-			if (hasCurrentDraft) {
+			if (normalizedDate && normalizedStore.drafts[normalizedDate]) {
 				this.mealOrderDate = normalizedDate
 				return
 			}
 
-			const availableDraftDates = Object.keys(store.drafts).sort((left, right) => left.localeCompare(right))
-			if (availableDraftDates.length) {
+			const availableDraftDates = Object.keys(normalizedStore.drafts).sort((left, right) => left.localeCompare(right))
+			if (availableDraftDates.length && (!this.isMealOrderMode || !normalizedDate)) {
 				this.mealOrderDate = availableDraftDates[0]
 				return
 			}
@@ -2110,14 +2102,66 @@ export default {
 				this.mealOrderDate = ''
 			}
 		},
-		persistMealOrderStore() {
-			const kitchenId = getCurrentKitchenId()
-			if (!kitchenId) return
-			writeMealOrderStore(kitchenId, this.mealOrderStore)
+		async loadMealOrderStore(options = {}) {
+			const { silent = true } = options
+			const kitchenId = Number(getCurrentKitchenId()) || 0
+			if (!kitchenId) {
+				this.mealOrderStoreLoadedKitchenId = 0
+				this.applyMealOrderStore(createEmptyMealOrderStore())
+				return createEmptyMealOrderStore()
+			}
+
+			const requestID = this.mealOrderStoreRequestID + 1
+			this.mealOrderStoreRequestID = requestID
+			const contextID = this.mealOrderSyncContextID
+			const localVersion = this.mealOrderLocalVersion
+
+			try {
+				const store = await listMealPlanStore(kitchenId)
+				if (
+					requestID !== this.mealOrderStoreRequestID ||
+					contextID !== this.mealOrderSyncContextID ||
+					localVersion !== this.mealOrderLocalVersion ||
+					kitchenId !== Number(this.currentKitchenId)
+				) {
+					return normalizeMealOrderStore(this.mealOrderStore)
+				}
+				this.applyMealOrderStore(store)
+				this.mealOrderStoreLoadedKitchenId = kitchenId
+				return store
+			} catch (error) {
+				if (!silent) {
+					uni.showToast({
+						title: error?.message || '加载菜单失败',
+						icon: 'none'
+					})
+				}
+				return normalizeMealOrderStore(this.mealOrderStore)
+			}
 		},
-		updateMealOrderDraft(updater) {
+		clearMealOrderDraftSyncTimer() {
+			if (!this.mealOrderDraftSyncTimer) return
+			clearTimeout(this.mealOrderDraftSyncTimer)
+			this.mealOrderDraftSyncTimer = null
+		},
+		resetMealOrderState() {
+			this.clearMealOrderDraftSyncTimer()
+			this.mealOrderStore = createEmptyMealOrderStore()
+			this.mealOrderDate = ''
+			this.isMealOrderMode = false
+			this.showMealOrderDateSheet = false
+			this.showMealOrderSpotlightSheet = false
+			this.showMealOrderCartSheet = false
+			this.showMealOrderCheckoutSheet = false
+			this.mealOrderSpotlightIndex = 0
+			this.mealOrderSpotlightTouchStartX = 0
+			this.mealOrderSpotlightTouchStartY = 0
+			this.mealOrderSpotlightSuppressTap = false
+		},
+		stageMealOrderDraft(updater) {
 			const date = normalizeMealOrderDate(this.mealOrderDate)
 			if (!date || typeof updater !== 'function') return
+
 			const current = normalizeMealOrderDraft(this.mealOrderStore?.drafts?.[date], date)
 			const nextRawDraft = updater({
 				...current,
@@ -2125,17 +2169,65 @@ export default {
 			})
 			const nextDraft = normalizeMealOrderDraft(nextRawDraft, date)
 			const nextDrafts = {
-				...(this.mealOrderStore?.drafts || {}),
-				[date]: {
+				...(this.mealOrderStore?.drafts || {})
+			}
+
+			if (!nextDraft.items.length && !String(nextDraft.note || '').trim()) {
+				delete nextDrafts[date]
+			} else {
+				nextDrafts[date] = {
 					...nextDraft,
 					updatedAt: new Date().toISOString()
 				}
 			}
+
 			this.mealOrderStore = {
 				...(this.mealOrderStore || createEmptyMealOrderStore()),
 				drafts: nextDrafts
 			}
-			this.persistMealOrderStore()
+			this.mealOrderLocalVersion += 1
+		},
+		scheduleMealOrderDraftSync(delay = 0) {
+			const date = normalizeMealOrderDate(this.mealOrderDate)
+			if (!date || !getCurrentKitchenId()) return
+			this.clearMealOrderDraftSyncTimer()
+			this.mealOrderDraftSyncTimer = setTimeout(() => {
+				this.mealOrderDraftSyncTimer = null
+				this.syncMealOrderDraft({ silent: true })
+			}, Math.max(0, Number(delay) || 0))
+		},
+		async syncMealOrderDraft(options = {}) {
+			const { silent = false } = options
+			if (this.isSubmittingMealOrder) return null
+			const kitchenId = Number(getCurrentKitchenId()) || 0
+			const date = normalizeMealOrderDate(this.mealOrderDate)
+			if (!kitchenId || !date) return null
+
+			this.clearMealOrderDraftSyncTimer()
+			const localVersion = this.mealOrderLocalVersion
+			const contextID = this.mealOrderSyncContextID
+			const draft = normalizeMealOrderDraft(this.mealOrderStore?.drafts?.[date], date)
+
+			try {
+				const store = await saveMealPlanDraft(kitchenId, date, draft)
+				if (
+					localVersion === this.mealOrderLocalVersion &&
+					contextID === this.mealOrderSyncContextID &&
+					kitchenId === Number(this.currentKitchenId)
+				) {
+					this.applyMealOrderStore(store)
+					this.mealOrderStoreLoadedKitchenId = kitchenId
+				}
+				return store
+			} catch (error) {
+				if (!silent) {
+					uni.showToast({
+						title: error?.message || '保存菜单失败',
+						icon: 'none'
+					})
+				}
+				return null
+			}
 		},
 		buildMealOrderItemFromRecipe(recipe = {}) {
 			const recipeId = String(recipe.id || '').trim()
@@ -2247,9 +2339,9 @@ export default {
 			this.isMealOrderMode = true
 			this.showMealOrderDateSheet = false
 			this.showMealOrderSpotlightSheet = false
-			this.updateMealOrderDraft((draft) => draft)
 		},
 		exitMealOrderMode() {
+			this.syncMealOrderDraft({ silent: true })
 			this.isMealOrderMode = false
 			this.showMealOrderSpotlightSheet = false
 			this.showMealOrderCartSheet = false
@@ -2262,7 +2354,7 @@ export default {
 			}
 			const nextItem = this.buildMealOrderItemFromRecipe(recipe)
 			if (!nextItem) return
-			this.updateMealOrderDraft((draft) => {
+			this.stageMealOrderDraft((draft) => {
 				const nextItems = [...draft.items]
 				const index = nextItems.findIndex((item) => item.recipeId === nextItem.recipeId)
 				if (index < 0) {
@@ -2280,6 +2372,7 @@ export default {
 					items: nextItems
 				}
 			})
+			this.scheduleMealOrderDraftSync()
 		},
 		toggleMealOrderRecipe(recipe = {}) {
 			const recipeId = String(recipe?.id || '').trim()
@@ -2301,13 +2394,14 @@ export default {
 		removeMealOrderRecipe(recipeId = '') {
 			const targetRecipeId = String(recipeId || '').trim()
 			if (!targetRecipeId || !this.mealOrderDate) return
-			this.updateMealOrderDraft((draft) => {
+			this.stageMealOrderDraft((draft) => {
 				const nextItems = draft.items.filter((item) => item.recipeId !== targetRecipeId)
 				return {
 					...draft,
 					items: nextItems
 				}
 			})
+			this.scheduleMealOrderDraftSync()
 		},
 		openMealOrderCartSheet() {
 			if (!this.isMealOrderMode || !this.mealOrderDate) {
@@ -2329,10 +2423,11 @@ export default {
 		},
 		handleMealOrderNoteInput(event) {
 			const value = String(event?.detail?.value || '')
-			this.updateMealOrderDraft((draft) => ({
+			this.stageMealOrderDraft((draft) => ({
 				...draft,
 				note: value
 			}))
+			this.scheduleMealOrderDraftSync(320)
 		},
 		clearMealOrderCart() {
 			if (!this.mealOrderCartItems.length && !String(this.mealOrderDraftNote || '').trim()) return
@@ -2342,44 +2437,52 @@ export default {
 				confirmText: '清空',
 				success: ({ confirm }) => {
 					if (!confirm) return
-					this.updateMealOrderDraft((draft) => ({
+					this.stageMealOrderDraft((draft) => ({
 						...draft,
 						items: [],
 						note: ''
 					}))
+					this.scheduleMealOrderDraftSync()
 				}
 			})
 		},
-		submitMealOrder() {
-			if (!this.mealOrderCanCheckout || !this.mealOrderDate) return
+		async submitMealOrder() {
+			if (!this.mealOrderCanCheckout || !this.mealOrderDate || this.isSubmittingMealOrder) return
+			const kitchenId = Number(getCurrentKitchenId()) || 0
+			if (!kitchenId) return
 			const currentDraft = normalizeMealOrderDraft(this.mealOrderCurrentDraft, this.mealOrderDate)
-			const nextRecord = {
-				id: `mord_${Date.now()}`,
-				planDate: this.mealOrderDate,
-				items: currentDraft.items,
-				note: currentDraft.note,
-				submittedAt: new Date().toISOString()
-			}
-			const nextSubmitted = [
-				nextRecord,
-				...(Array.isArray(this.mealOrderStore?.submitted) ? this.mealOrderStore.submitted : []).filter(
-					(record) => String(record?.planDate || '').trim() !== this.mealOrderDate
-				)
-			].slice(0, 60)
-			const nextDrafts = { ...(this.mealOrderStore?.drafts || {}) }
-			delete nextDrafts[this.mealOrderDate]
-			this.mealOrderStore = {
-				drafts: nextDrafts,
-				submitted: nextSubmitted
-			}
-			this.persistMealOrderStore()
-			this.showMealOrderCheckoutSheet = false
-			this.showMealOrderCartSheet = false
-			this.isMealOrderMode = false
-			uni.showToast({
-				title: '菜单已提交',
-				icon: 'none'
+			this.clearMealOrderDraftSyncTimer()
+			const contextID = this.mealOrderSyncContextID + 1
+			this.mealOrderSyncContextID = contextID
+			this.isSubmittingMealOrder = true
+			uni.showLoading({
+				title: '提交中',
+				mask: true
 			})
+
+			try {
+				const store = await submitMealPlanRequest(kitchenId, this.mealOrderDate, currentDraft)
+				if (contextID !== this.mealOrderSyncContextID || kitchenId !== Number(this.currentKitchenId)) {
+					return
+				}
+				this.applyMealOrderStore(store)
+				this.mealOrderStoreLoadedKitchenId = kitchenId
+				this.showMealOrderCheckoutSheet = false
+				this.showMealOrderCartSheet = false
+				this.isMealOrderMode = false
+				uni.showToast({
+					title: '菜单已提交',
+					icon: 'none'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '提交菜单失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isSubmittingMealOrder = false
+				uni.hideLoading()
+			}
 		},
 		clearSearchBlurTimer() {
 			if (!this.searchBlurTimer) return
@@ -2496,22 +2599,28 @@ export default {
 		},
 		applySession(session = getSessionSnapshot()) {
 			const snapshot = session || getSessionSnapshot()
+			const previousKitchenId = Number(this.currentKitchenId) || 0
 			this.currentUser = snapshot?.user || null
 			this.kitchenOptions = Array.isArray(snapshot?.kitchens) ? snapshot.kitchens : []
 			this.currentKitchenName = snapshot?.currentKitchen?.name || ''
 			this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
 			const nextKitchenId = Number(snapshot?.currentKitchenId) || 0
-			if (Number(snapshot?.currentKitchenId) !== this.kitchenMembersKitchenId) {
+			this.currentKitchenId = nextKitchenId
+			if (nextKitchenId !== this.kitchenMembersKitchenId) {
 				this.kitchenMembers = []
 				this.kitchenMembersKitchenId = nextKitchenId
 			}
+			if (previousKitchenId !== nextKitchenId) {
+				this.mealOrderSyncContextID += 1
+				this.mealOrderStoreLoadedKitchenId = 0
+				this.mealOrderLocalVersion += 1
+				this.resetMealOrderState()
+			}
 			if (!nextKitchenId) {
-				this.mealOrderStore = createEmptyMealOrderStore()
-				this.mealOrderDate = ''
-				this.isMealOrderMode = false
-				this.showMealOrderSpotlightSheet = false
-			} else {
-				this.loadMealOrderStore()
+				this.mealOrderStoreLoadedKitchenId = 0
+				this.resetMealOrderState()
+			} else if (this.mealOrderStoreLoadedKitchenId !== nextKitchenId) {
+				this.loadMealOrderStore({ silent: true })
 			}
 			this.activeInvite = null
 			this.inviteCodeCopied = false

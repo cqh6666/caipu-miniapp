@@ -15,6 +15,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/mealplan"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
@@ -27,6 +28,7 @@ func NewRouter(
 	authHandler *auth.Handler,
 	kitchenHandler *kitchen.Handler,
 	inviteHandler *invite.Handler,
+	mealPlanHandler *mealplan.Handler,
 	recipeHandler *recipe.Handler,
 	linkParseHandler *linkparse.Handler,
 	uploadHandler *upload.Handler,
@@ -86,6 +88,9 @@ func NewRouter(
 			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)
 			protected.Post("/link-parsers/bilibili", linkParseHandler.ParseBilibili)
 			protected.Post("/link-parsers/xiaohongshu", linkParseHandler.ParseXiaohongshu)
+			protected.Get("/kitchens/{kitchenID}/meal-plans", mealPlanHandler.List)
+			protected.Put("/kitchens/{kitchenID}/meal-plans/{planDate}/draft", mealPlanHandler.SaveDraft)
+			protected.Post("/kitchens/{kitchenID}/meal-plans/{planDate}/submit", mealPlanHandler.Submit)
 			protected.Get("/kitchens/{kitchenID}/recipes", recipeHandler.List)
 			protected.Post("/kitchens/{kitchenID}/recipes", recipeHandler.Create)
 			protected.Get("/recipes/{recipeID}", recipeHandler.Detail)

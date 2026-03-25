@@ -17,6 +17,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/mealplan"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
@@ -49,6 +50,9 @@ func New(cfg config.Config) (*App, error) {
 	kitchenRepo := kitchen.NewRepository(dbConn)
 	kitchenService := kitchen.NewService(kitchenRepo)
 	kitchenHandler := kitchen.NewHandler(kitchenService)
+	mealPlanRepo := mealplan.NewRepository(dbConn)
+	mealPlanService := mealplan.NewService(mealPlanRepo, kitchenService)
+	mealPlanHandler := mealplan.NewHandler(mealPlanService)
 
 	appSettingsRepo := appsettings.NewRepository(dbConn)
 	var appSettingsService *appsettings.Service
@@ -146,7 +150,7 @@ func New(cfg config.Config) (*App, error) {
 		cfg.RecipeImageMirrorBatchSize,
 	)
 
-	router := NewRouter(cfg, logger, appSettingsHandler, authHandler, kitchenHandler, inviteHandler, recipeHandler, linkParseHandler, uploadHandler, authMiddleware)
+	router := NewRouter(cfg, logger, appSettingsHandler, authHandler, kitchenHandler, inviteHandler, mealPlanHandler, recipeHandler, linkParseHandler, uploadHandler, authMiddleware)
 
 	server := &http.Server{
 		Addr:              cfg.AppAddr,
