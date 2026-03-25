@@ -1,44 +1,81 @@
 <template>
 	<view class="app-shell">
-		<view class="page-content">
+		<view class="page-content" :class="{ 'page-content--meal-order': showMealOrderFloatingBar }">
 			<template v-if="activeSection === 'library'">
-				<view class="page-header">
+				<view class="page-header" :class="{ 'page-header--meal-order': isLibraryMealOrderMode }">
 					<view class="page-header__top">
 						<view class="page-header__heading">
-							<text class="page-header__title">美食库</text>
-							<text class="page-header__summary">{{ librarySummary }}</text>
-						</view>
-						<view class="page-header__action" @tap="drawTonight">
-							<view class="page-header__action-icon">
-								<up-icon name="gift-fill" size="13" color="#8c6544"></up-icon>
+							<view class="page-header__title-row">
+								<view
+									class="page-header__title-mark"
+									:class="isLibraryMealOrderMode ? 'page-header__title-mark--meal-order' : 'page-header__title-mark--library'"
+								>
+									<up-icon
+										:name="isLibraryMealOrderMode ? 'heart-fill' : 'grid-fill'"
+										size="14"
+										:color="isLibraryMealOrderMode ? '#bf715f' : '#7a6755'"
+									></up-icon>
+								</view>
+								<text class="page-header__title">{{ libraryHeaderTitle }}</text>
 							</view>
-							<text class="page-header__action-text">随机吃点</text>
+							<text v-if="libraryHeaderSummary" class="page-header__summary">{{ libraryHeaderSummary }}</text>
+						</view>
+						<view v-if="isLibraryMealOrderMode" class="meal-order-mode-bar__actions page-header__mode-actions">
+							<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--accent" @tap="openMealOrderDateSheet">
+								<text class="meal-order-mode-bar__chip-text">改日期</text>
+							</view>
+							<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--ghost" @tap="exitMealOrderMode">
+								<text class="meal-order-mode-bar__chip-text">返回</text>
+							</view>
+						</view>
+						<view v-else class="page-header__action" @tap="openMealOrderDateSheet">
+							<up-icon name="calendar" size="15" color="#745742"></up-icon>
+							<text class="page-header__action-text">安排菜单</text>
 						</view>
 					</view>
 				</view>
 
+				<view
+					v-if="!isLibraryMealOrderMode"
+					class="meal-order-spotlight"
+					:class="{ 'meal-order-spotlight--empty': !mealOrderSpotlightRecord }"
+					@tap="handleMealOrderSpotlightTap"
+					@touchstart="handleMealOrderSpotlightTouchStart"
+					@touchend="handleMealOrderSpotlightTouchEnd"
+				>
+					<view class="meal-order-spotlight__main">
+						<text class="meal-order-spotlight__title">{{ mealOrderSpotlightTitle }}</text>
+						<text class="meal-order-spotlight__desc">{{ mealOrderSpotlightDesc }}</text>
+					</view>
+					<view class="meal-order-spotlight__aside">
+						<text v-if="mealOrderSpotlightMetaText" class="meal-order-spotlight__meta-text">{{ mealOrderSpotlightMetaText }}</text>
+						<up-icon name="arrow-right" size="16" color="#8a7968"></up-icon>
+					</view>
+				</view>
 				<view class="toolbar">
-					<view
-						class="search-box"
-						:class="{ 'search-box--active': isSearchFocused || trimmedSearchKeyword }"
-					>
-						<up-icon name="search" size="15" color="#8f8377"></up-icon>
-						<input
-							v-model="searchKeyword"
-							class="search-box__input"
-							placeholder="搜菜名、食材或做法"
-							placeholder-class="search-box__placeholder"
-							confirm-type="search"
-							@focus="handleSearchFocus"
-							@blur="handleSearchBlur"
-							@confirm="handleSearchConfirm"
-						/>
-						<view v-if="trimmedSearchKeyword" class="search-box__clear" @tap="clearSearchKeyword">
-							<up-icon name="close" size="14" color="#8f8377"></up-icon>
+					<view class="toolbar__search-row">
+						<view
+							class="search-box"
+							:class="{ 'search-box--active': isSearchFocused || trimmedSearchKeyword }"
+						>
+							<up-icon name="search" size="15" color="#8f8377"></up-icon>
+							<input
+								v-model="searchKeyword"
+								class="search-box__input"
+								:placeholder="searchPlaceholderText"
+								placeholder-class="search-box__placeholder"
+								confirm-type="search"
+								@focus="handleSearchFocus"
+								@blur="handleSearchBlur"
+								@confirm="handleSearchConfirm"
+							/>
+							<view v-if="trimmedSearchKeyword" class="search-box__clear" @tap="clearSearchKeyword">
+								<up-icon name="close" size="14" color="#8f8377"></up-icon>
+							</view>
 						</view>
 					</view>
 
-					<view v-if="showSearchAssist" class="search-assist">
+					<view v-if="showSearchAssist && !isLibraryMealOrderMode" class="search-assist">
 						<text class="search-assist__label">{{ searchAssistLabel }}</text>
 						<view class="search-assist__chips">
 							<view
@@ -52,7 +89,7 @@
 						</view>
 					</view>
 
-					<view class="filter-group">
+					<view v-if="!isLibraryMealOrderMode" class="filter-group">
 						<view class="meal-tabs">
 							<view
 								v-for="tab in mealTabs"
@@ -78,7 +115,7 @@
 						</view>
 					</view>
 
-					<view class="filter-group filter-group--compact">
+					<view v-if="!isLibraryMealOrderMode" class="filter-group filter-group--compact">
 						<view class="status-track">
 							<view
 								v-for="tab in statusTabs"
@@ -100,15 +137,21 @@
 					</view>
 				</view>
 
-				<view class="list-caption">
+				<view v-if="!isLibraryMealOrderMode" class="list-caption">
 					<view class="list-caption__top">
 						<text class="list-caption__title">{{ currentFilterSummary }}</text>
-						<view
-							class="list-caption__clear"
-							:class="{ 'list-caption__clear--hidden': !canResetLibraryFilters }"
-							@tap="resetLibraryFilters"
-						>
-							<text class="list-caption__clear-text">清除筛选</text>
+						<view class="list-caption__actions">
+							<view
+								v-if="canResetLibraryFilters"
+								class="list-caption__clear"
+								@tap="resetLibraryFilters"
+							>
+								<text class="list-caption__clear-text">清除</text>
+							</view>
+							<view class="list-caption__pick" @tap="drawTonight">
+								<up-icon name="reload" size="13" color="#6f6154"></up-icon>
+								<text class="list-caption__pick-text">帮我选</text>
+							</view>
 						</view>
 					</view>
 				</view>
@@ -120,7 +163,8 @@
 						class="recipe-card"
 						:class="{
 							'recipe-card--active': selectedRecipeId === card.id,
-							'recipe-card--pinned': card.isPinned
+							'recipe-card--pinned': card.isPinned,
+							'recipe-card--meal-order-selected': isLibraryMealOrderMode && mealOrderHasRecipe(card.id)
 						}"
 						@tap="openRecipeDetail(card.id)"
 					>
@@ -130,12 +174,19 @@
 								<view class="recipe-card__placeholder-icon">
 									<up-icon :name="card.placeholderIcon" size="26" color="#866d58"></up-icon>
 								</view>
-								<text class="recipe-card__placeholder-text">待补图</text>
+								<text class="recipe-card__placeholder-text">暂无图片</text>
 							</view>
-							<view v-if="card.sourceBadge" class="recipe-card__source-badge">
+							<view
+								v-if="isLibraryMealOrderMode && mealOrderHasRecipe(card.id)"
+								class="recipe-card__selected-badge"
+							>
+								<up-icon name="checkmark" size="10" color="#fff9f1"></up-icon>
+								<text class="recipe-card__selected-badge-text">已选</text>
+							</view>
+							<view v-if="card.sourceBadge && !isLibraryMealOrderMode" class="recipe-card__source-badge">
 								<text class="recipe-card__source-badge-text">{{ card.sourceBadge }}</text>
 							</view>
-							<view v-if="card.imageCount > 1" class="recipe-card__count">
+							<view v-if="card.imageCount > 1 && !isLibraryMealOrderMode" class="recipe-card__count">
 								<text class="recipe-card__count-text">{{ card.imageCount }}</text>
 							</view>
 						</view>
@@ -150,6 +201,7 @@
 									</view>
 								</view>
 								<view
+									v-if="!isLibraryMealOrderMode"
 									class="recipe-switch"
 									:class="'recipe-switch--' + card.status"
 									@tap.stop="toggleRecipeStatus(card.id)"
@@ -178,9 +230,30 @@
 										></up-icon>
 									</view>
 								</view>
+								<view v-else class="meal-order-control" @tap.stop>
+								<view
+									class="meal-order-add"
+									:class="{ 'meal-order-add--active': mealOrderHasRecipe(card.id) }"
+									@tap.stop="toggleMealOrderRecipe(card)"
+								>
+									<up-icon
+										v-if="mealOrderHasRecipe(card.id)"
+										class="meal-order-add__icon"
+										name="checkmark"
+										size="12"
+										color="#fffaf3"
+									></up-icon>
+									<text
+										class="meal-order-add__text"
+										:class="{ 'meal-order-add__text--active': mealOrderHasRecipe(card.id) }"
+									>
+											{{ mealOrderHasRecipe(card.id) ? '已加入' : '加入菜单' }}
+										</text>
+									</view>
+								</view>
 							</view>
-							<text class="recipe-card__info">{{ card.infoLine }}</text>
-							<text class="recipe-card__summary">{{ card.listSummary }}</text>
+							<text v-if="!isLibraryMealOrderMode" class="recipe-card__info">{{ card.infoLine }}</text>
+							<text v-if="!isLibraryMealOrderMode" class="recipe-card__summary">{{ card.listSummary }}</text>
 						</view>
 					</view>
 				</view>
@@ -321,18 +394,39 @@
 
 			</template>
 
-			<view class="app-footer-links">
+			<view v-if="!isLibraryMealOrderMode" class="app-footer-links">
 				<view class="app-footer-link" @tap="openAboutPage">
 					<text class="app-footer-link__label">关于我们</text>
 				</view>
 			</view>
 		</view>
 
-		<view class="bottom-nav">
+		<view v-if="showMealOrderFloatingBar" class="meal-order-floating">
+			<view class="meal-order-floating__summary" @tap="openMealOrderCartSheet">
+				<view class="meal-order-floating__summary-main">
+					<view class="meal-order-floating__pill" :class="{ 'meal-order-floating__pill--empty': !mealOrderCanCheckout }">
+						<view class="meal-order-floating__pill-dot"></view>
+						<text class="meal-order-floating__pill-text">{{ mealOrderFloatingTitle }}</text>
+					</view>
+					<view class="meal-order-floating__peek">
+						<up-icon name="arrow-right" size="14" color="rgba(255, 246, 235, 0.58)"></up-icon>
+					</view>
+				</view>
+			</view>
+			<view
+				class="meal-order-floating__action"
+				:class="{ 'meal-order-floating__action--disabled': !mealOrderCanCheckout }"
+				@tap="openMealOrderCheckoutSheet"
+			>
+				<text class="meal-order-floating__action-text">{{ mealOrderFloatingActionText }}</text>
+			</view>
+		</view>
+
+		<view class="bottom-nav" :class="{ 'bottom-nav--meal-order': showMealOrderFloatingBar }">
 			<view
 				class="nav-item"
 				:class="{ 'nav-item--active': activeSection === 'library' }"
-				@tap="activeSection = 'library'"
+				@tap="switchSection('library')"
 			>
 				<view class="nav-item__icon-shell">
 					<up-icon
@@ -354,7 +448,7 @@
 			<view
 				class="nav-item"
 				:class="{ 'nav-item--active': activeSection === 'kitchen' }"
-				@tap="activeSection = 'kitchen'"
+				@tap="switchSection('kitchen')"
 			>
 				<view class="nav-item__icon-shell">
 					<up-icon
@@ -366,6 +460,216 @@
 				<text class="nav-item__label">厨房</text>
 			</view>
 		</view>
+
+		<up-popup
+			:show="showMealOrderDateSheet"
+			mode="bottom"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
+			@close="closeMealOrderDateSheet"
+		>
+			<view class="meal-order-sheet">
+				<view class="meal-order-sheet__header">
+					<view class="meal-order-sheet__heading">
+						<text class="meal-order-sheet__title">哪天一起吃</text>
+						<text class="meal-order-sheet__subtitle">先挑个日子，再把想吃的菜慢慢放进这天的小菜单里。</text>
+					</view>
+					<view class="meal-order-sheet__close" @tap="closeMealOrderDateSheet">
+						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
+					</view>
+				</view>
+
+				<view class="meal-order-date-grid">
+					<view
+						v-for="option in mealOrderQuickDateOptions"
+						:key="option.value"
+						class="meal-order-date-card"
+						:class="{ 'meal-order-date-card--active': option.value === mealOrderDatePickerValue }"
+						@tap="startMealOrderMode(option.value)"
+					>
+						<text class="meal-order-date-card__label">{{ option.label }}</text>
+						<text class="meal-order-date-card__date">{{ option.dateText }}</text>
+					</view>
+				</view>
+
+				<picker mode="date" :value="mealOrderDatePickerValue" :start="mealOrderDateStart" @change="handleMealOrderDatePickerChange">
+					<view class="meal-order-date-picker">
+						<text class="meal-order-date-picker__text">自选日期</text>
+						<up-icon name="calendar" size="16" color="#6f5f50"></up-icon>
+					</view>
+				</picker>
+			</view>
+		</up-popup>
+
+		<up-popup
+			:show="showMealOrderSpotlightSheet"
+			mode="bottom"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
+			@close="closeMealOrderSpotlightSheet"
+		>
+			<view
+				v-if="mealOrderSpotlightRecord"
+				class="meal-order-sheet"
+				@touchstart="handleMealOrderSpotlightTouchStart"
+				@touchend="handleMealOrderSpotlightTouchEnd"
+			>
+				<view class="meal-order-sheet__header">
+					<view class="meal-order-sheet__heading">
+						<text class="meal-order-sheet__eyebrow">{{ mealOrderSpotlightDetailEyebrow }}</text>
+						<text class="meal-order-sheet__title">{{ mealOrderSpotlightTitle }}</text>
+						<text class="meal-order-sheet__subtitle">{{ mealOrderSpotlightDetailSubtitle }}</text>
+					</view>
+					<view class="meal-order-sheet__close" @tap="closeMealOrderSpotlightSheet">
+						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
+					</view>
+				</view>
+
+				<scroll-view class="meal-order-cart-list" scroll-y>
+					<view class="meal-order-checkout-list">
+						<view
+							v-for="item in mealOrderSpotlightDetailItems"
+							:key="`meal-order-spotlight-${item.recipeId}`"
+							class="meal-order-checkout-item"
+						>
+							<text class="meal-order-checkout-item__title">{{ item.title }}</text>
+						</view>
+					</view>
+				</scroll-view>
+
+				<view v-if="mealOrderSpotlightDetailNote" class="meal-order-checkout-note">
+					<text class="meal-order-checkout-note__label">备注</text>
+					<text class="meal-order-checkout-note__text">{{ mealOrderSpotlightDetailNote }}</text>
+				</view>
+
+				<view class="meal-order-sheet__footer">
+					<view class="sheet-action" @tap="closeMealOrderSpotlightSheet">
+						<text class="sheet-action__text">关闭</text>
+					</view>
+					<view
+						v-if="mealOrderSpotlightCanResume"
+						class="sheet-action sheet-action--primary"
+						@tap="resumeMealOrderSpotlightRecord"
+					>
+						<text class="sheet-action__text sheet-action__text--primary">继续安排</text>
+					</view>
+				</view>
+			</view>
+		</up-popup>
+
+		<up-popup
+			:show="showMealOrderCartSheet"
+			mode="bottom"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
+			@close="closeMealOrderCartSheet"
+		>
+			<view class="meal-order-sheet">
+				<view class="meal-order-sheet__header">
+					<view class="meal-order-sheet__heading">
+						<text class="meal-order-sheet__title">这天的小菜单</text>
+						<text class="meal-order-sheet__subtitle">{{ mealOrderDateText }} · 已选 {{ mealOrderCartDishCount }} 道</text>
+					</view>
+					<view class="meal-order-sheet__close" @tap="closeMealOrderCartSheet">
+						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
+					</view>
+				</view>
+
+				<scroll-view class="meal-order-cart-list" scroll-y>
+					<view v-if="mealOrderCartItems.length" class="meal-order-cart-stack">
+						<view v-for="item in mealOrderCartItems" :key="`meal-order-cart-${item.recipeId}`" class="meal-order-cart-item">
+							<view class="meal-order-cart-item__main">
+								<text class="meal-order-cart-item__title">{{ item.title }}</text>
+							</view>
+							<view class="meal-order-cart-item__action" @tap="removeMealOrderRecipe(item.recipeId)">
+								<text class="meal-order-cart-item__action-text">移出</text>
+							</view>
+						</view>
+					</view>
+					<view v-else class="soft-empty meal-order-cart-empty">
+						<text class="soft-empty__text">还没选菜，先去美食库慢慢挑两道喜欢的吧。</text>
+					</view>
+				</scroll-view>
+
+				<view class="meal-order-note">
+					<text class="meal-order-note__label">想说的话</text>
+					<textarea
+						:value="mealOrderDraftNote"
+						class="meal-order-note__input"
+						placeholder="比如：周六想吃热乎一点，提前把牛肉腌上"
+						placeholder-class="meal-order-note__placeholder"
+						maxlength="120"
+						@input="handleMealOrderNoteInput"
+					/>
+				</view>
+
+				<view class="meal-order-sheet__footer">
+					<view class="sheet-action" @tap="clearMealOrderCart">
+						<text class="sheet-action__text">清空</text>
+					</view>
+					<view
+						class="sheet-action sheet-action--primary"
+						:class="{ 'sheet-action--disabled': !mealOrderCanCheckout }"
+						@tap="openMealOrderCheckoutSheet"
+					>
+						<text class="sheet-action__text sheet-action__text--primary">确认菜单</text>
+					</view>
+				</view>
+			</view>
+		</up-popup>
+
+		<up-popup
+			:show="showMealOrderCheckoutSheet"
+			mode="bottom"
+			round="32"
+			overlayOpacity="0.22"
+			:safeAreaInsetBottom="false"
+			@close="closeMealOrderCheckoutSheet"
+		>
+			<view class="meal-order-sheet">
+				<view class="meal-order-sheet__header">
+					<view class="meal-order-sheet__heading">
+						<text class="meal-order-sheet__title">一起确认菜单</text>
+						<text class="meal-order-sheet__subtitle">{{ mealOrderDateText }} · 共 {{ mealOrderCartDishCount }} 道</text>
+					</view>
+					<view class="meal-order-sheet__close" @tap="closeMealOrderCheckoutSheet">
+						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
+					</view>
+				</view>
+
+				<scroll-view class="meal-order-cart-list" scroll-y>
+					<view v-if="mealOrderCartItems.length" class="meal-order-checkout-list">
+						<view v-for="item in mealOrderCartItems" :key="`meal-order-checkout-${item.recipeId}`" class="meal-order-checkout-item">
+							<text class="meal-order-checkout-item__title">{{ item.title }}</text>
+						</view>
+					</view>
+					<view v-else class="soft-empty meal-order-cart-empty">
+						<text class="soft-empty__text">这天还没有安排菜，先回去挑一挑。</text>
+					</view>
+				</scroll-view>
+
+				<view v-if="mealOrderDraftNote" class="meal-order-checkout-note">
+					<text class="meal-order-checkout-note__label">备注</text>
+					<text class="meal-order-checkout-note__text">{{ mealOrderDraftNote }}</text>
+				</view>
+
+				<view class="meal-order-sheet__footer">
+					<view class="sheet-action" @tap="closeMealOrderCheckoutSheet">
+						<text class="sheet-action__text">返回修改</text>
+					</view>
+					<view
+						class="sheet-action sheet-action--primary"
+						:class="{ 'sheet-action--disabled': !mealOrderCanCheckout }"
+						@tap="submitMealOrder"
+					>
+						<text class="sheet-action__text sheet-action__text--primary">安排这天菜单</text>
+					</view>
+				</view>
+			</view>
+		</up-popup>
 
 		<up-popup
 			:show="showInviteSheet"
@@ -752,9 +1056,184 @@ const draftNoisePatterns = [
 const RECENT_SEARCH_STORAGE_KEY = 'caipu-miniapp-recent-searches'
 const LAST_DRAFT_LINK_PREFILL_STORAGE_KEY = 'caipu-miniapp-last-draft-link-prefill'
 const MAX_RECENT_SEARCHES = 6
+const MEAL_ORDER_STORAGE_PREFIX = 'caipu-miniapp-meal-order-prototype-v1'
+const mealOrderWeekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const searchSuggestionKeywordsByMeal = {
 	breakfast: ['鸡蛋', '面包', '粥', '快手'],
 	main: ['下饭', '牛肉', '鸡翅', '汤']
+}
+
+function padDateNumber(value) {
+	return String(Number(value) || 0).padStart(2, '0')
+}
+
+function toISODate(value = new Date()) {
+	const date = value instanceof Date ? value : new Date(value)
+	if (Number.isNaN(date.getTime())) return ''
+	return `${date.getFullYear()}-${padDateNumber(date.getMonth() + 1)}-${padDateNumber(date.getDate())}`
+}
+
+function parseISODate(value = '') {
+	const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/)
+	if (!match) return null
+	const year = Number(match[1])
+	const month = Number(match[2]) - 1
+	const day = Number(match[3])
+	const date = new Date(year, month, day)
+	if (Number.isNaN(date.getTime())) return null
+	if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null
+	return date
+}
+
+function normalizeMealOrderDate(value = '') {
+	const date = parseISODate(value)
+	return date ? toISODate(date) : ''
+}
+
+function addDaysFromISODate(baseDate = '', offset = 0) {
+	const date = parseISODate(baseDate) || new Date()
+	date.setDate(date.getDate() + Number(offset || 0))
+	return toISODate(date)
+}
+
+function nextWeekendISODate(baseDate = '') {
+	const seed = parseISODate(baseDate) || new Date()
+	for (let index = 0; index < 8; index += 1) {
+		const candidate = new Date(seed)
+		candidate.setDate(seed.getDate() + index)
+		const day = candidate.getDay()
+		if (day === 0 || day === 6) {
+			return toISODate(candidate)
+		}
+	}
+	return toISODate(seed)
+}
+
+function formatMealOrderDateText(value = '') {
+	const date = parseISODate(value)
+	if (!date) return '--'
+	const month = padDateNumber(date.getMonth() + 1)
+	const day = padDateNumber(date.getDate())
+	const weekday = mealOrderWeekdays[date.getDay()] || ''
+	return `${month}月${day}日 ${weekday}`
+}
+
+function formatMealOrderHeaderTitle(value = '') {
+	const date = parseISODate(value)
+	if (!date) return '这天的小菜单'
+	return `${date.getMonth() + 1}月${date.getDate()}日的小菜单`
+}
+
+function createEmptyMealOrderStore() {
+	return {
+		drafts: {},
+		submitted: []
+	}
+}
+
+function getMealOrderStorageKey(kitchenId) {
+	return `${MEAL_ORDER_STORAGE_PREFIX}:${Number(kitchenId) || 0}`
+}
+
+function normalizeMealOrderItem(raw = {}) {
+	const quantity = Math.max(1, Math.min(9, Number(raw.quantity) || 1))
+	const recipeId = String(raw.recipeId || '').trim()
+	if (!recipeId) return null
+	const titleSnapshot = String(raw.titleSnapshot || raw.title || '').trim() || '未命名菜品'
+	const imageSnapshot = String(raw.imageSnapshot || raw.image || '').trim()
+	const mealTypeSnapshot = String(raw.mealTypeSnapshot || raw.mealType || '').trim() || 'main'
+
+	return {
+		recipeId,
+		quantity,
+		titleSnapshot,
+		imageSnapshot,
+		mealTypeSnapshot
+	}
+}
+
+function normalizeMealOrderDraft(raw = {}, planDate = '') {
+	const normalizedPlanDate = normalizeMealOrderDate(planDate || raw.planDate || '')
+	const items = (Array.isArray(raw.items) ? raw.items : [])
+		.map((item) => normalizeMealOrderItem(item))
+		.filter(Boolean)
+	const note = String(raw.note || '').trim()
+	const updatedAt = String(raw.updatedAt || '').trim()
+
+	return {
+		planDate: normalizedPlanDate,
+		items,
+		note,
+		updatedAt
+	}
+}
+
+function normalizeMealOrderRecord(raw = {}) {
+	const planDate = normalizeMealOrderDate(raw.planDate || '')
+	const items = (Array.isArray(raw.items) ? raw.items : [])
+		.map((item) => normalizeMealOrderItem(item))
+		.filter(Boolean)
+	const note = String(raw.note || '').trim()
+	const submittedAt = String(raw.submittedAt || '').trim()
+	if (!planDate || !items.length) return null
+
+	return {
+		id: String(raw.id || '').trim() || `mord_${Date.now()}`,
+		planDate,
+		items,
+		note,
+		submittedAt
+	}
+}
+
+function normalizeMealOrderStore(raw = {}) {
+	const source = raw && typeof raw === 'object' ? raw : {}
+	const draftSource = source.drafts && typeof source.drafts === 'object' ? source.drafts : {}
+	const drafts = {}
+	Object.keys(draftSource).forEach((dateKey) => {
+		const normalizedDate = normalizeMealOrderDate(dateKey)
+		if (!normalizedDate) return
+		const draft = normalizeMealOrderDraft(draftSource[dateKey], normalizedDate)
+		if (!draft.items.length && !draft.note) return
+		drafts[normalizedDate] = draft
+	})
+
+	const submitted = (Array.isArray(source.submitted) ? source.submitted : [])
+		.map((record) => normalizeMealOrderRecord(record))
+		.filter(Boolean)
+		.sort((left, right) => String(right.submittedAt || '').localeCompare(String(left.submittedAt || '')))
+		.slice(0, 60)
+
+	return {
+		drafts,
+		submitted
+	}
+}
+
+function readMealOrderStore(kitchenId) {
+	try {
+		const raw = uni.getStorageSync(getMealOrderStorageKey(kitchenId))
+		return normalizeMealOrderStore(raw)
+	} catch (error) {
+		return createEmptyMealOrderStore()
+	}
+}
+
+function writeMealOrderStore(kitchenId, store = {}) {
+	try {
+		uni.setStorageSync(getMealOrderStorageKey(kitchenId), normalizeMealOrderStore(store))
+	} catch (error) {
+		// Ignore storage failures and keep prototype usable.
+	}
+}
+
+function buildMealOrderDishSummary(items = []) {
+	const names = (Array.isArray(items) ? items : [])
+		.map((item) => String(item?.titleSnapshot || '').trim())
+		.filter(Boolean)
+		.slice(0, 3)
+	if (!names.length) return '还没有菜'
+	return names.join(' / ')
 }
 
 function detectDraftLinkPlatform(input = '') {
@@ -1024,6 +1503,7 @@ function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 		imageCount: images.length,
 		sourceBadge: detectRecipeSource(recipe),
 		placeholderIcon: pickRecipePlaceholderIcon(recipe),
+		mealTypeLabel: mealTypeLabelMap[recipe.mealType] || '正餐',
 		infoLine: buildRecipeInfoLine(recipe),
 		listSummary: buildRecipeListSummary(recipe)
 	}
@@ -1084,6 +1564,17 @@ export default {
 			showInviteSheet: false,
 			showInviteCodeSheet: false,
 			showProfileSheet: false,
+			showMealOrderDateSheet: false,
+			showMealOrderSpotlightSheet: false,
+			showMealOrderCartSheet: false,
+			showMealOrderCheckoutSheet: false,
+			isMealOrderMode: false,
+			mealOrderDate: '',
+			mealOrderStore: createEmptyMealOrderStore(),
+			mealOrderSpotlightIndex: 0,
+			mealOrderSpotlightTouchStartX: 0,
+			mealOrderSpotlightTouchStartY: 0,
+			mealOrderSpotlightSuppressTap: false,
 			profileSheetMode: 'prompt',
 			mealTabs: mealTypeOptions,
 			statusTabs: [
@@ -1133,6 +1624,7 @@ export default {
 		}
 	},
 	onShow() {
+		this.loadMealOrderStore()
 		this.refreshRecipes()
 	},
 	onHide() {
@@ -1164,6 +1656,15 @@ export default {
 		},
 		currentStatusLabel() {
 			return this.statusMap[this.activeStatus]?.label || '全部'
+		},
+		libraryHeaderTitle() {
+			return this.isLibraryMealOrderMode ? formatMealOrderHeaderTitle(this.mealOrderDate) : '美食库'
+		},
+		libraryHeaderSummary() {
+			if (this.isLibraryMealOrderMode) {
+				return ''
+			}
+			return this.librarySummary
 		},
 		wishlistRecipes() {
 			return this.recipes.filter((recipe) => recipe.status === 'wishlist')
@@ -1205,11 +1706,177 @@ export default {
 		hasSearchKeyword() {
 			return !!this.trimmedSearchKeyword
 		},
+		mealOrderDateStart() {
+			return toISODate(new Date())
+		},
+		mealOrderDatePickerValue() {
+			return normalizeMealOrderDate(this.mealOrderDate) || this.mealOrderDateStart
+		},
+		mealOrderDateText() {
+			return formatMealOrderDateText(this.mealOrderDate)
+		},
+		mealOrderQuickDateOptions() {
+			const today = this.mealOrderDateStart
+			const options = [
+				{ label: '今天', value: today },
+				{ label: '明天', value: addDaysFromISODate(today, 1) },
+				{ label: '周末', value: nextWeekendISODate(today) }
+			]
+			const seen = new Set()
+			return options
+				.filter((option) => {
+					if (!option.value || seen.has(option.value)) return false
+					seen.add(option.value)
+					return true
+				})
+				.map((option) => ({
+					...option,
+					dateText: formatMealOrderDateText(option.value)
+				}))
+		},
+		mealOrderCurrentDraft() {
+			const date = normalizeMealOrderDate(this.mealOrderDate)
+			if (!date) {
+				return normalizeMealOrderDraft({}, '')
+			}
+			return normalizeMealOrderDraft(this.mealOrderStore?.drafts?.[date], date)
+		},
+		mealOrderCartItems() {
+			const recipeMap = this.recipes.reduce((result, recipe) => {
+				result[recipe.id] = recipe
+				return result
+			}, {})
+			return this.mealOrderCurrentDraft.items.map((item) => {
+				const recipe = recipeMap[item.recipeId] || {}
+				const title = item.titleSnapshot || recipe.title || '未命名菜品'
+				const mealType = item.mealTypeSnapshot || recipe.mealType || 'main'
+				const mealTypeLabel = mealTypeLabelMap[mealType] || '正餐'
+				return {
+					...item,
+					title,
+					mealTypeLabel
+				}
+			})
+		},
+		mealOrderDraftNote() {
+			return String(this.mealOrderCurrentDraft.note || '')
+		},
+		mealOrderCartDishCount() {
+			return this.mealOrderCartItems.length
+		},
+		mealOrderCanCheckout() {
+			return this.mealOrderCartDishCount > 0
+		},
+		mealOrderFloatingTitle() {
+			if (this.mealOrderCanCheckout) {
+				return `已选 ${this.mealOrderCartDishCount} 道`
+			}
+			return '还没选菜'
+		},
+		mealOrderFloatingActionText() {
+			return '去确认'
+		},
+		isLibraryMealOrderMode() {
+			return this.activeSection === 'library' && this.isMealOrderMode && !!normalizeMealOrderDate(this.mealOrderDate)
+		},
+		showMealOrderFloatingBar() {
+			return this.isLibraryMealOrderMode
+		},
+		mealOrderSpotlightRecords() {
+			const today = this.mealOrderDateStart
+			const drafts = Object.values(this.mealOrderStore?.drafts || {})
+				.map((draft) => normalizeMealOrderDraft(draft, draft?.planDate))
+				.filter((draft) => draft.planDate && draft.items.length)
+				.map((draft) => ({
+					id: `draft:${draft.planDate}`,
+					type: 'draft',
+					planDate: draft.planDate,
+					items: draft.items,
+					note: draft.note
+				}))
+			const submitted = (Array.isArray(this.mealOrderStore?.submitted) ? this.mealOrderStore.submitted : [])
+				.map((record) => normalizeMealOrderRecord(record))
+				.filter(Boolean)
+				.map((record) => ({
+					id: `submitted:${record.planDate}`,
+					type: 'submitted',
+					planDate: record.planDate,
+					items: record.items,
+					note: record.note
+				}))
+			const allRecords = [...drafts, ...submitted]
+			const sortRecords = (left, right) => {
+				const byDate = String(left.planDate || '').localeCompare(String(right.planDate || ''))
+				if (byDate) return byDate
+				if (left.type === right.type) return 0
+				return left.type === 'draft' ? -1 : 1
+			}
+			const upcoming = allRecords
+				.filter((record) => record.planDate >= today)
+				.sort(sortRecords)
+			const fallback = allRecords
+				.filter((record) => record.planDate < today)
+				.sort((left, right) => String(right.planDate || '').localeCompare(String(left.planDate || '')))
+			return [...upcoming, ...fallback]
+		},
+		mealOrderSpotlightRecordIndex() {
+			const total = this.mealOrderSpotlightRecords.length
+			if (!total) return 0
+			const current = Number(this.mealOrderSpotlightIndex) || 0
+			return Math.min(Math.max(current, 0), total - 1)
+		},
+		mealOrderSpotlightRecord() {
+			return this.mealOrderSpotlightRecords[this.mealOrderSpotlightRecordIndex] || null
+		},
+		mealOrderSpotlightTitle() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return '还没有安排菜单'
+			return formatMealOrderDateText(record.planDate)
+		},
+		mealOrderSpotlightDesc() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return '点右侧安排菜单，先挑一天'
+			return buildMealOrderDishSummary(record.items)
+		},
+		mealOrderSpotlightMetaText() {
+			const total = this.mealOrderSpotlightRecords.length
+			if (total < 2) return ''
+			return `${this.mealOrderSpotlightRecordIndex + 1}/${total}`
+		},
+		mealOrderSpotlightDetailEyebrow() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return ''
+			const prefix = record.type === 'draft' ? '草稿中' : '已安排'
+			const total = this.mealOrderSpotlightRecords.length
+			if (total < 2) return prefix
+			return `${prefix} · ${this.mealOrderSpotlightRecordIndex + 1}/${total}`
+		},
+		mealOrderSpotlightDetailSubtitle() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return ''
+			const dishCount = Array.isArray(record.items) ? record.items.length : 0
+			return `共 ${dishCount} 道菜`
+		},
+		mealOrderSpotlightDetailItems() {
+			const record = this.mealOrderSpotlightRecord
+			return (Array.isArray(record?.items) ? record.items : []).map((item) => ({
+				...item,
+				title: String(item?.titleSnapshot || '').trim() || '未命名菜品'
+			}))
+		},
+		mealOrderSpotlightDetailNote() {
+			return String(this.mealOrderSpotlightRecord?.note || '').trim()
+		},
+		mealOrderSpotlightCanResume() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record || record.type !== 'draft') return false
+			return record.planDate >= this.mealOrderDateStart
+		},
 		librarySummary() {
 			if (!this.currentKitchenName && this.syncErrorMessage) {
 				return this.syncErrorMessage
 			}
-			return this.isSyncing ? '正在同步这份菜单。' : '按餐别整理，想吃和吃过一目了然'
+			return this.isSyncing ? '正在同步这份菜单。' : '按餐别整理，想吃和吃过更清楚'
 		},
 		inviteActionDescription() {
 			return this.showInviteShareAction ? '复制邀请码或直接分享给朋友' : '复制邀请码发给朋友'
@@ -1238,8 +1905,8 @@ export default {
 		filteredRecipes() {
 			const keyword = this.trimmedSearchKeyword.toLowerCase()
 			return this.recipes.filter((recipe) => {
-				const matchedMealType = recipe.mealType === this.activeMealType
-				const matchedStatus = this.activeStatus === 'all' || recipe.status === this.activeStatus
+				const matchedMealType = this.isLibraryMealOrderMode ? true : recipe.mealType === this.activeMealType
+				const matchedStatus = this.isLibraryMealOrderMode ? true : this.activeStatus === 'all' || recipe.status === this.activeStatus
 				const matchedKeyword = !keyword || buildRecipeSearchText(recipe).includes(keyword)
 				return matchedMealType && matchedStatus && matchedKeyword
 			})
@@ -1265,6 +1932,9 @@ export default {
 				.filter((item) => item !== this.trimmedSearchKeyword)
 				.slice(0, 4)
 			return recentKeywords.length ? '最近搜索' : '可以试试'
+		},
+		searchPlaceholderText() {
+			return this.isLibraryMealOrderMode ? '搜索菜名' : '搜菜名 / 食材'
 		},
 		showSearchAssist() {
 			return this.isSearchFocused && !this.hasSearchKeyword && this.searchAssistKeywords.length > 0
@@ -1398,6 +2068,319 @@ export default {
 			this.recipes = Array.isArray(recipes) ? recipes : []
 			this.syncRecipeCoverCache(this.recipes)
 		},
+		switchSection(nextSection = 'library') {
+			const targetSection = String(nextSection || '').trim()
+			if (!targetSection || targetSection === this.activeSection) return
+			if (!this.isMealOrderMode || this.activeSection !== 'library' || targetSection === 'library') {
+				this.showMealOrderSpotlightSheet = false
+				this.activeSection = targetSection
+				return
+			}
+
+			uni.showModal({
+				title: '离开点菜模式',
+				content: '当前菜单草稿会自动保存，确认先离开吗？',
+				confirmText: '确认离开',
+				success: ({ confirm }) => {
+					if (!confirm) return
+					this.showMealOrderSpotlightSheet = false
+					this.activeSection = targetSection
+				}
+			})
+		},
+		loadMealOrderStore() {
+			const kitchenId = getCurrentKitchenId()
+			const store = kitchenId ? readMealOrderStore(kitchenId) : createEmptyMealOrderStore()
+			this.mealOrderStore = store
+
+			const normalizedDate = normalizeMealOrderDate(this.mealOrderDate)
+			const hasCurrentDraft = normalizedDate && !!store.drafts[normalizedDate]
+			if (hasCurrentDraft) {
+				this.mealOrderDate = normalizedDate
+				return
+			}
+
+			const availableDraftDates = Object.keys(store.drafts).sort((left, right) => left.localeCompare(right))
+			if (availableDraftDates.length) {
+				this.mealOrderDate = availableDraftDates[0]
+				return
+			}
+
+			if (!this.isMealOrderMode) {
+				this.mealOrderDate = ''
+			}
+		},
+		persistMealOrderStore() {
+			const kitchenId = getCurrentKitchenId()
+			if (!kitchenId) return
+			writeMealOrderStore(kitchenId, this.mealOrderStore)
+		},
+		updateMealOrderDraft(updater) {
+			const date = normalizeMealOrderDate(this.mealOrderDate)
+			if (!date || typeof updater !== 'function') return
+			const current = normalizeMealOrderDraft(this.mealOrderStore?.drafts?.[date], date)
+			const nextRawDraft = updater({
+				...current,
+				items: current.items.map((item) => ({ ...item }))
+			})
+			const nextDraft = normalizeMealOrderDraft(nextRawDraft, date)
+			const nextDrafts = {
+				...(this.mealOrderStore?.drafts || {}),
+				[date]: {
+					...nextDraft,
+					updatedAt: new Date().toISOString()
+				}
+			}
+			this.mealOrderStore = {
+				...(this.mealOrderStore || createEmptyMealOrderStore()),
+				drafts: nextDrafts
+			}
+			this.persistMealOrderStore()
+		},
+		buildMealOrderItemFromRecipe(recipe = {}) {
+			const recipeId = String(recipe.id || '').trim()
+			if (!recipeId) return null
+			const image = (extractRecipeImages(recipe) || [])[0] || ''
+			return {
+				recipeId,
+				quantity: 1,
+				titleSnapshot: String(recipe.title || '').trim() || '未命名菜品',
+				imageSnapshot: String(image || '').trim(),
+				mealTypeSnapshot: String(recipe.mealType || '').trim() || 'main'
+			}
+		},
+		mealOrderHasRecipe(recipeId = '') {
+			const targetRecipeId = String(recipeId || '').trim()
+			if (!targetRecipeId) return false
+			return this.mealOrderCurrentDraft.items.some((item) => item.recipeId === targetRecipeId)
+		},
+		handleMealOrderSpotlightTap() {
+			if (this.mealOrderSpotlightSuppressTap) {
+				this.mealOrderSpotlightSuppressTap = false
+				return
+			}
+			const record = this.mealOrderSpotlightRecord
+			if (!record) {
+				this.openMealOrderDateSheet()
+				return
+			}
+			this.showMealOrderSpotlightSheet = true
+		},
+		handleMealOrderSpotlightTouchStart(event) {
+			const touch = event?.touches?.[0] || event?.changedTouches?.[0]
+			if (!touch) return
+			this.mealOrderSpotlightTouchStartX = Number(touch.clientX || touch.pageX || 0)
+			this.mealOrderSpotlightTouchStartY = Number(touch.clientY || touch.pageY || 0)
+			this.mealOrderSpotlightSuppressTap = false
+		},
+		handleMealOrderSpotlightTouchEnd(event) {
+			const touch = event?.changedTouches?.[0] || event?.touches?.[0]
+			const startX = Number(this.mealOrderSpotlightTouchStartX || 0)
+			const startY = Number(this.mealOrderSpotlightTouchStartY || 0)
+			this.mealOrderSpotlightTouchStartX = 0
+			this.mealOrderSpotlightTouchStartY = 0
+			if (!touch || this.mealOrderSpotlightRecords.length < 2 || (!startX && !startY)) return
+
+			const endX = Number(touch.clientX || touch.pageX || 0)
+			const endY = Number(touch.clientY || touch.pageY || 0)
+			const diffX = endX - startX
+			const diffY = endY - startY
+			if (Math.abs(diffX) < 56 || Math.abs(diffX) <= Math.abs(diffY)) return
+
+			this.shiftMealOrderSpotlight(diffX > 0 ? 'next' : 'previous')
+			this.mealOrderSpotlightSuppressTap = true
+		},
+		shiftMealOrderSpotlight(direction = 'next') {
+			const total = this.mealOrderSpotlightRecords.length
+			if (total < 2) return
+			const step = direction === 'previous' ? -1 : 1
+			this.mealOrderSpotlightIndex = (this.mealOrderSpotlightRecordIndex + step + total) % total
+		},
+		closeMealOrderSpotlightSheet() {
+			this.showMealOrderSpotlightSheet = false
+		},
+		resumeMealOrderSpotlightRecord() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record || !this.mealOrderSpotlightCanResume) return
+			this.showMealOrderSpotlightSheet = false
+			this.startMealOrderMode(record.planDate)
+		},
+		drawTonight() {
+			const pool = this.wishlistRecipes.length ? this.wishlistRecipes : this.recipes
+			if (!pool.length) {
+				uni.showToast({
+					title: '先添加几道菜吧',
+					icon: 'none'
+				})
+				return
+			}
+			const picked = pool[Math.floor(Math.random() * pool.length)]
+			this.selectedRecipeId = picked.id
+			uni.showToast({
+				title: `帮你选了：${picked.title}`,
+				icon: 'none'
+			})
+		},
+		openMealOrderDateSheet() {
+			if (!getCurrentKitchenId()) {
+				uni.showToast({
+					title: '请先完成厨房同步',
+					icon: 'none'
+				})
+				return
+			}
+			this.showMealOrderDateSheet = true
+		},
+		closeMealOrderDateSheet() {
+			this.showMealOrderDateSheet = false
+		},
+		handleMealOrderDatePickerChange(event) {
+			const value = normalizeMealOrderDate(event?.detail?.value || '')
+			if (!value) return
+			this.startMealOrderMode(value)
+		},
+		startMealOrderMode(planDate = '') {
+			const normalizedDate = normalizeMealOrderDate(planDate)
+			if (!normalizedDate) return
+			this.mealOrderDate = normalizedDate
+			this.activeSection = 'library'
+			this.isMealOrderMode = true
+			this.showMealOrderDateSheet = false
+			this.showMealOrderSpotlightSheet = false
+			this.updateMealOrderDraft((draft) => draft)
+		},
+		exitMealOrderMode() {
+			this.isMealOrderMode = false
+			this.showMealOrderSpotlightSheet = false
+			this.showMealOrderCartSheet = false
+			this.showMealOrderCheckoutSheet = false
+		},
+		addMealOrderRecipe(recipe = {}) {
+			if (!this.isMealOrderMode || !this.mealOrderDate) {
+				this.openMealOrderDateSheet()
+				return
+			}
+			const nextItem = this.buildMealOrderItemFromRecipe(recipe)
+			if (!nextItem) return
+			this.updateMealOrderDraft((draft) => {
+				const nextItems = [...draft.items]
+				const index = nextItems.findIndex((item) => item.recipeId === nextItem.recipeId)
+				if (index < 0) {
+					nextItems.push(nextItem)
+				} else {
+					nextItems[index] = {
+						...nextItems[index],
+						titleSnapshot: nextItem.titleSnapshot,
+						imageSnapshot: nextItem.imageSnapshot,
+						mealTypeSnapshot: nextItem.mealTypeSnapshot
+					}
+				}
+				return {
+					...draft,
+					items: nextItems
+				}
+			})
+		},
+		toggleMealOrderRecipe(recipe = {}) {
+			const recipeId = String(recipe?.id || '').trim()
+			if (!recipeId) return
+			if (this.mealOrderHasRecipe(recipeId)) {
+				this.removeMealOrderRecipe(recipeId)
+				uni.showToast({
+					title: '已移出这天菜单',
+					icon: 'none'
+				})
+				return
+			}
+			this.addMealOrderRecipe(recipe)
+			uni.showToast({
+				title: '已加入这天菜单',
+				icon: 'none'
+			})
+		},
+		removeMealOrderRecipe(recipeId = '') {
+			const targetRecipeId = String(recipeId || '').trim()
+			if (!targetRecipeId || !this.mealOrderDate) return
+			this.updateMealOrderDraft((draft) => {
+				const nextItems = draft.items.filter((item) => item.recipeId !== targetRecipeId)
+				return {
+					...draft,
+					items: nextItems
+				}
+			})
+		},
+		openMealOrderCartSheet() {
+			if (!this.isMealOrderMode || !this.mealOrderDate) {
+				this.openMealOrderDateSheet()
+				return
+			}
+			this.showMealOrderCartSheet = true
+		},
+		closeMealOrderCartSheet() {
+			this.showMealOrderCartSheet = false
+		},
+		openMealOrderCheckoutSheet() {
+			if (!this.mealOrderCanCheckout) return
+			this.showMealOrderCartSheet = false
+			this.showMealOrderCheckoutSheet = true
+		},
+		closeMealOrderCheckoutSheet() {
+			this.showMealOrderCheckoutSheet = false
+		},
+		handleMealOrderNoteInput(event) {
+			const value = String(event?.detail?.value || '')
+			this.updateMealOrderDraft((draft) => ({
+				...draft,
+				note: value
+			}))
+		},
+		clearMealOrderCart() {
+			if (!this.mealOrderCartItems.length && !String(this.mealOrderDraftNote || '').trim()) return
+			uni.showModal({
+				title: '清空菜单',
+				content: '确认清空这一天已经安排的菜单吗？',
+				confirmText: '清空',
+				success: ({ confirm }) => {
+					if (!confirm) return
+					this.updateMealOrderDraft((draft) => ({
+						...draft,
+						items: [],
+						note: ''
+					}))
+				}
+			})
+		},
+		submitMealOrder() {
+			if (!this.mealOrderCanCheckout || !this.mealOrderDate) return
+			const currentDraft = normalizeMealOrderDraft(this.mealOrderCurrentDraft, this.mealOrderDate)
+			const nextRecord = {
+				id: `mord_${Date.now()}`,
+				planDate: this.mealOrderDate,
+				items: currentDraft.items,
+				note: currentDraft.note,
+				submittedAt: new Date().toISOString()
+			}
+			const nextSubmitted = [
+				nextRecord,
+				...(Array.isArray(this.mealOrderStore?.submitted) ? this.mealOrderStore.submitted : []).filter(
+					(record) => String(record?.planDate || '').trim() !== this.mealOrderDate
+				)
+			].slice(0, 60)
+			const nextDrafts = { ...(this.mealOrderStore?.drafts || {}) }
+			delete nextDrafts[this.mealOrderDate]
+			this.mealOrderStore = {
+				drafts: nextDrafts,
+				submitted: nextSubmitted
+			}
+			this.persistMealOrderStore()
+			this.showMealOrderCheckoutSheet = false
+			this.showMealOrderCartSheet = false
+			this.isMealOrderMode = false
+			uni.showToast({
+				title: '菜单已提交',
+				icon: 'none'
+			})
+		},
 		clearSearchBlurTimer() {
 			if (!this.searchBlurTimer) return
 			clearTimeout(this.searchBlurTimer)
@@ -1517,9 +2500,18 @@ export default {
 			this.kitchenOptions = Array.isArray(snapshot?.kitchens) ? snapshot.kitchens : []
 			this.currentKitchenName = snapshot?.currentKitchen?.name || ''
 			this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
+			const nextKitchenId = Number(snapshot?.currentKitchenId) || 0
 			if (Number(snapshot?.currentKitchenId) !== this.kitchenMembersKitchenId) {
 				this.kitchenMembers = []
-				this.kitchenMembersKitchenId = Number(snapshot?.currentKitchenId) || 0
+				this.kitchenMembersKitchenId = nextKitchenId
+			}
+			if (!nextKitchenId) {
+				this.mealOrderStore = createEmptyMealOrderStore()
+				this.mealOrderDate = ''
+				this.isMealOrderMode = false
+				this.showMealOrderSpotlightSheet = false
+			} else {
+				this.loadMealOrderStore()
 			}
 			this.activeInvite = null
 			this.inviteCodeCopied = false
@@ -1880,22 +2872,6 @@ export default {
 				})
 			}
 		},
-		drawTonight() {
-			const pool = this.wishlistRecipes.length ? this.wishlistRecipes : this.recipes
-			if (!pool.length) {
-				uni.showToast({
-					title: '先添加几道菜吧',
-					icon: 'none'
-				})
-				return
-			}
-			const picked = pool[Math.floor(Math.random() * pool.length)]
-			this.selectedRecipeId = picked.id
-			uni.showToast({
-				title: `今晚试试：${picked.title}`,
-				icon: 'none'
-			})
-		},
 		async openAddSheet() {
 			this.resetDraftAssistState()
 			this.draft = this.createDraftFromContext()
@@ -2192,8 +3168,20 @@ export default {
 		padding: 24rpx 24rpx 176rpx;
 	}
 
+	.page-content--meal-order {
+		padding-bottom: 294rpx;
+	}
+
 	.page-header {
 		padding: 6rpx 2rpx 0;
+	}
+
+	.page-header--meal-order {
+		padding-top: 0;
+	}
+
+	.page-header--meal-order .page-header__top {
+		align-items: center;
 	}
 
 	.page-header__top {
@@ -2211,9 +3199,64 @@ export default {
 		gap: 8rpx;
 	}
 
+	.page-header__title-row {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		min-width: 0;
+	}
+
+	.page-header__title-mark {
+		position: relative;
+		width: 44rpx;
+		height: 44rpx;
+		border-radius: 14rpx;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.page-header__title-mark--library {
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0) 46%),
+			linear-gradient(145deg, #f3ece3 0%, #e7dccc 100%);
+		border: 1px solid rgba(122, 103, 85, 0.12);
+		box-shadow:
+			0 8rpx 16rpx rgba(97, 70, 47, 0.06),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
+	}
+
+	.page-header__title-mark--meal-order {
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0) 46%),
+			linear-gradient(145deg, #f7e3d2 0%, #edd2ba 100%);
+		border: 1px solid rgba(191, 113, 95, 0.12);
+		box-shadow:
+			0 8rpx 16rpx rgba(97, 70, 47, 0.08),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
+	}
+
+	.page-header__title-mark::after {
+		content: '';
+		position: absolute;
+		right: -4rpx;
+		top: -4rpx;
+		width: 14rpx;
+		height: 14rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 244, 233, 0.92);
+		border: 1px solid rgba(122, 103, 85, 0.12);
+	}
+
+	.page-header__title-mark--meal-order::after {
+		border-color: rgba(191, 113, 95, 0.12);
+	}
+
 	.page-header__title {
 		font-size: 40rpx;
 		font-weight: 700;
+		line-height: 1.18;
 		color: #2f2923;
 	}
 
@@ -2223,14 +3266,61 @@ export default {
 		color: #8d847a;
 	}
 
+	.page-header--meal-order .page-header__heading {
+		gap: 0;
+	}
+
+	.page-header--meal-order .page-header__title {
+		font-size: 36rpx;
+		letter-spacing: 0.6rpx;
+	}
+
+	.page-header--meal-order .page-header__title-row {
+		gap: 6rpx;
+	}
+
+	.page-header--meal-order .page-header__title-mark {
+		width: 34rpx;
+		height: 34rpx;
+		border-radius: 11rpx;
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 46%),
+			linear-gradient(145deg, rgba(247, 227, 210, 0.82) 0%, rgba(237, 210, 186, 0.72) 100%);
+		border-color: rgba(191, 113, 95, 0.08);
+		box-shadow:
+			0 4rpx 10rpx rgba(97, 70, 47, 0.05),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
+	}
+
+	.page-header--meal-order .page-header__title-mark::after {
+		right: -3rpx;
+		top: -3rpx;
+		width: 10rpx;
+		height: 10rpx;
+		background: rgba(255, 244, 233, 0.88);
+		border-color: rgba(191, 113, 95, 0.1);
+	}
+
+	.page-header__mode-actions {
+		padding: 0;
+		background: transparent;
+		border: 0;
+		box-shadow: none;
+		backdrop-filter: none;
+	}
+
 	.page-header__action {
-		margin-top: 4rpx;
 		min-height: 56rpx;
 		padding: 0 18rpx;
 		box-sizing: border-box;
 		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.9);
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 48%),
+			linear-gradient(145deg, #f1e3d5 0%, #ead8c6 100%);
 		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow:
+			0 10rpx 18rpx rgba(56, 44, 30, 0.05),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.6);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -2238,22 +3328,124 @@ export default {
 		flex-shrink: 0;
 	}
 
-	.page-header__action-icon {
-		width: 28rpx;
-		height: 28rpx;
-		border-radius: 999rpx;
-		background: #f4e5d4;
+	.page-header__action-text {
+		font-size: 23rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #5f4736;
+	}
+
+	.meal-order-spotlight {
+		margin-top: 12rpx;
+		padding: 18rpx 20rpx;
+		border-radius: 22rpx;
+		background:
+			radial-gradient(circle at top right, rgba(255, 233, 205, 0.5) 0%, rgba(255, 233, 205, 0) 34%),
+			rgba(255, 250, 244, 0.94);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow:
+			0 10rpx 22rpx rgba(56, 44, 30, 0.05),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.68);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 18rpx;
+	}
+
+	.meal-order-spotlight--empty {
+		background: rgba(255, 252, 247, 0.9);
+	}
+
+	.meal-order-spotlight__main {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.meal-order-spotlight__title {
+		font-size: 28rpx;
+		font-weight: 700;
+		line-height: 1.28;
+		color: #2f2923;
+	}
+
+	.meal-order-spotlight__desc {
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: #7d6f63;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.meal-order-spotlight__aside {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
+		gap: 10rpx;
 		flex-shrink: 0;
 	}
 
-	.page-header__action-text {
-		font-size: 22rpx;
-		font-weight: 600;
+	.meal-order-spotlight__meta-text {
+		font-size: 19rpx;
+		font-weight: 700;
 		line-height: 1;
-		color: #5b4a3b;
+		color: #9a8b7c;
+	}
+
+	.meal-order-mode-bar__actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 8rpx;
+		flex-shrink: 0;
+	}
+
+	.meal-order-mode-bar__chip {
+		min-height: 42rpx;
+		padding: 0 14rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.88);
+		border: 1px solid rgba(91, 74, 59, 0.07);
+		box-shadow:
+			0 6rpx 12rpx rgba(56, 44, 30, 0.03),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.82);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6rpx;
+	}
+
+	.meal-order-mode-bar__chip--accent {
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 42%),
+			linear-gradient(145deg, rgba(247, 227, 210, 0.84) 0%, rgba(237, 210, 186, 0.76) 100%);
+		border-color: rgba(191, 113, 95, 0.08);
+		box-shadow:
+			0 8rpx 14rpx rgba(97, 70, 47, 0.05),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.76);
+	}
+
+	.meal-order-mode-bar__chip--ghost {
+		background: rgba(255, 255, 255, 0.72);
+		border-color: rgba(91, 74, 59, 0.05);
+		padding-left: 12rpx;
+		padding-right: 12rpx;
+	}
+
+	.meal-order-mode-bar__chip-text {
+		font-size: 17rpx;
+		font-weight: 600;
+		color: #7a6655;
+		line-height: 1;
+	}
+
+	.meal-order-mode-bar__chip--accent .meal-order-mode-bar__chip-text {
+		color: #765948;
+	}
+
+	.meal-order-mode-bar__chip--ghost .meal-order-mode-bar__chip-text {
+		color: #948476;
 	}
 
 	.kitchen-hero {
@@ -3094,6 +4286,21 @@ export default {
 		box-shadow: 0 8rpx 20rpx rgba(56, 44, 30, 0.04);
 	}
 
+	.page-content--meal-order .toolbar {
+		margin-top: 14rpx;
+		padding: 0;
+		border-radius: 0;
+		background: transparent;
+		border: 0;
+		box-shadow: none;
+	}
+
+	.toolbar__search-row {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
 	.filter-group {
 		margin-top: 16rpx;
 		display: flex;
@@ -3192,26 +4399,28 @@ export default {
 	}
 
 	.search-box {
-		height: 72rpx;
+		flex: 1;
+		min-width: 0;
+		height: 68rpx;
 		display: flex;
 		align-items: center;
 		gap: 10rpx;
 		padding: 0 18rpx;
-		border-radius: 16rpx;
-		background: #fbfaf8;
-		border: 1px solid rgba(91, 74, 59, 0.06);
+		border-radius: 18rpx;
+		background: #fcfbf8;
+		border: 1px solid rgba(91, 74, 59, 0.07);
 		transition: all 0.2s ease;
 	}
 
 	.search-box--active {
 		background: #ffffff;
 		border-color: rgba(91, 74, 59, 0.16);
-		box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.05);
+		box-shadow: 0 12rpx 20rpx rgba(56, 44, 30, 0.05);
 	}
 
 	.search-box__input {
 		flex: 1;
-		height: 72rpx;
+		height: 68rpx;
 		font-size: 25rpx;
 		color: #2f2923;
 	}
@@ -3229,6 +4438,22 @@ export default {
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
+	}
+
+	.page-content--meal-order .search-box {
+		height: 72rpx;
+		padding: 0 22rpx;
+		border-radius: 22rpx;
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0) 44%),
+			rgba(255, 255, 255, 0.98);
+		border-color: rgba(91, 74, 59, 0.07);
+		box-shadow: 0 14rpx 22rpx rgba(56, 44, 30, 0.045);
+	}
+
+	.page-content--meal-order .search-box__input {
+		height: 72rpx;
+		font-size: 24rpx;
 	}
 
 	.search-assist {
@@ -3339,46 +4564,67 @@ export default {
 		word-break: break-all;
 	}
 
+	.list-caption__actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 10rpx;
+		flex-shrink: 0;
+	}
+
 	.list-caption__clear {
-		min-height: 50rpx;
-		padding: 0 18rpx;
+		min-height: 48rpx;
+		padding: 0 16rpx;
 		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.92);
-		border: 1px solid rgba(91, 74, 59, 0.08);
+		background: rgba(255, 255, 255, 0.88);
+		border: 1px solid rgba(91, 74, 59, 0.06);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
 	}
 
-	.list-caption__clear--hidden {
-		visibility: hidden;
-		pointer-events: none;
-	}
-
 	.list-caption__clear-text {
-		font-size: 22rpx;
+		font-size: 21rpx;
 		font-weight: 600;
 		line-height: 1;
-		color: #786b5f;
+		color: #8a7b6e;
+	}
+
+	.list-caption__pick {
+		min-height: 48rpx;
+		padding: 0 18rpx;
+		border-radius: 999rpx;
+		background: #f2ebe3;
+		border: 1px solid rgba(91, 74, 59, 0.06);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.list-caption__pick-text {
+		font-size: 21rpx;
+		font-weight: 600;
+		line-height: 1;
+		color: #6f6154;
 	}
 
 	.recipe-list {
-		margin-top: 12rpx;
+		margin-top: 14rpx;
 		display: flex;
 		flex-direction: column;
-		gap: 12rpx;
+		gap: 14rpx;
 	}
 
 	.recipe-card {
 		display: flex;
 		align-items: stretch;
-		gap: 16rpx;
-		padding: 14rpx;
-		border-radius: 24rpx;
+		gap: 18rpx;
+		padding: 16rpx;
+		border-radius: 26rpx;
 		background: rgba(255, 253, 249, 0.96);
 		border: 1px solid rgba(100, 78, 58, 0.05);
-		box-shadow: 0 8rpx 18rpx rgba(70, 54, 40, 0.04);
+		box-shadow: 0 12rpx 24rpx rgba(70, 54, 40, 0.045);
 		transform: scale(1);
 		transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 	}
@@ -3399,17 +4645,19 @@ export default {
 
 	.recipe-card__media {
 		position: relative;
-		width: 126rpx;
-		height: 126rpx;
+		width: 128rpx;
+		height: 128rpx;
 		border-radius: 20rpx;
 		overflow: hidden;
 		flex-shrink: 0;
-		background: #e9ddd1;
+		background: linear-gradient(145deg, #ebdfd3 0%, #e1d3c4 100%);
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
 	}
 
 	.recipe-card__media--empty {
-		background: linear-gradient(135deg, #efe4d7 0%, #e3d3c0 100%);
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0) 42%),
+			linear-gradient(135deg, #f0e6db 0%, #dfcfbd 100%);
 	}
 
 	.recipe-card__image {
@@ -3429,19 +4677,40 @@ export default {
 	}
 
 	.recipe-card__placeholder-icon {
-		width: 56rpx;
-		height: 56rpx;
+		width: 58rpx;
+		height: 58rpx;
 		border-radius: 18rpx;
-		background: rgba(255, 255, 255, 0.42);
+		background: rgba(255, 255, 255, 0.5);
+		border: 1px solid rgba(255, 255, 255, 0.26);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 	}
 
 	.recipe-card__placeholder-text {
-		font-size: 22rpx;
+		font-size: 20rpx;
 		font-weight: 600;
-		color: #866d58;
+		color: #8b725f;
+	}
+
+	.recipe-card__selected-badge {
+		position: absolute;
+		top: 10rpx;
+		left: 10rpx;
+		padding: 8rpx 12rpx;
+		border-radius: 999rpx;
+		background: rgba(55, 44, 35, 0.68);
+		backdrop-filter: blur(10rpx);
+		display: inline-flex;
+		align-items: center;
+		gap: 6rpx;
+	}
+
+	.recipe-card__selected-badge-text {
+		font-size: 18rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #fff9f1;
 	}
 
 	.recipe-card__source-badge {
@@ -3497,6 +4766,40 @@ export default {
 		flex-direction: column;
 		justify-content: center;
 		gap: 8rpx;
+	}
+
+	.page-content--meal-order .recipe-card {
+		padding: 14rpx;
+		gap: 16rpx;
+		border-radius: 24rpx;
+	}
+
+	.page-content--meal-order .recipe-card__media {
+		width: 118rpx;
+		height: 118rpx;
+		border-radius: 20rpx;
+	}
+
+	.page-content--meal-order .recipe-card__body {
+		gap: 8rpx;
+	}
+
+	.page-content--meal-order .recipe-card__title {
+		font-size: 28rpx;
+		line-height: 1.34;
+		-webkit-line-clamp: 1;
+	}
+
+	.page-content--meal-order .recipe-card__top {
+		align-items: center;
+	}
+
+	.recipe-card--meal-order-selected {
+		border-color: rgba(103, 79, 58, 0.14);
+		background:
+			radial-gradient(circle at top right, rgba(255, 231, 205, 0.56) 0%, rgba(255, 231, 205, 0) 34%),
+			rgba(255, 252, 247, 0.98);
+		box-shadow: 0 16rpx 26rpx rgba(70, 54, 40, 0.06);
 	}
 
 	.recipe-card__top {
@@ -3566,6 +4869,18 @@ export default {
 		-webkit-line-clamp: 1;
 	}
 
+	.recipe-card__meta-compact {
+		display: inline-flex;
+		align-self: flex-start;
+		padding: 6rpx 12rpx;
+		border-radius: 999rpx;
+		background: #f3ede5;
+		font-size: 20rpx;
+		font-weight: 600;
+		line-height: 1;
+		color: #7a6a5d;
+	}
+
 	.recipe-switch {
 		position: relative;
 		display: flex;
@@ -3617,6 +4932,61 @@ export default {
 
 	.recipe-switch--done .recipe-switch__thumb {
 		transform: translateX(48rpx);
+	}
+
+	.meal-order-control {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+	}
+
+	.meal-order-add {
+		min-width: 140rpx;
+		height: 52rpx;
+		padding: 0 14rpx;
+		border-radius: 999rpx;
+		border: 1px solid rgba(121, 95, 73, 0.18);
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.86) 0%, rgba(255, 255, 255, 0) 44%),
+			linear-gradient(180deg, #fff2e5 0%, #f3e2d0 100%);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.82),
+			0 8rpx 16rpx rgba(63, 52, 42, 0.08);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 5rpx;
+		transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+	}
+
+	.meal-order-add:active {
+		transform: scale(0.988);
+	}
+
+	.meal-order-add--active {
+		border-color: rgba(91, 74, 59, 0.04);
+		background:
+			radial-gradient(circle at top left, rgba(255, 245, 233, 0.18) 0%, rgba(255, 245, 233, 0) 34%),
+			linear-gradient(180deg, #725d4a 0%, #5b4738 100%);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.14),
+			0 10rpx 18rpx rgba(63, 52, 42, 0.14);
+	}
+
+	.meal-order-add__icon {
+		flex-shrink: 0;
+		opacity: 0.92;
+	}
+
+	.meal-order-add__text {
+		font-size: 20rpx;
+		font-weight: 600;
+		line-height: 1;
+		color: #5b4a3b;
+	}
+
+	.meal-order-add__text--active {
+		color: #fffaf3;
 	}
 
 	.empty-state,
@@ -3792,17 +5162,394 @@ export default {
 		color: #8d847a;
 	}
 
+	.meal-order-floating {
+		position: fixed;
+		left: 24rpx;
+		right: 24rpx;
+		bottom: calc(env(safe-area-inset-bottom) + 128rpx);
+		z-index: 11;
+		padding: 8rpx;
+		border-radius: 30rpx;
+		background:
+			radial-gradient(circle at top right, rgba(255, 224, 188, 0.22) 0%, rgba(255, 224, 188, 0) 38%),
+			linear-gradient(145deg, rgba(72, 56, 44, 0.9) 0%, rgba(44, 34, 29, 0.86) 100%);
+		border: 1px solid rgba(255, 233, 207, 0.12);
+		box-shadow:
+			0 20rpx 34rpx rgba(45, 36, 29, 0.18),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.08);
+		backdrop-filter: blur(22rpx);
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.meal-order-floating__summary {
+		flex: 1;
+		min-width: 0;
+		min-height: 72rpx;
+		padding: 0 10rpx 0 6rpx;
+		border-radius: 22rpx;
+		background: rgba(255, 248, 238, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		display: flex;
+		align-items: center;
+	}
+
+	.meal-order-floating__summary-main {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12rpx;
+		width: 100%;
+	}
+
+	.meal-order-floating__pill {
+		max-width: 100%;
+		min-height: 42rpx;
+		padding: 0 14rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 248, 238, 0.12);
+		border: 1px solid rgba(255, 255, 255, 0.07);
+		display: inline-flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.meal-order-floating__pill--empty {
+		background: rgba(255, 248, 238, 0.1);
+	}
+
+	.meal-order-floating__pill-dot {
+		width: 10rpx;
+		height: 10rpx;
+		border-radius: 999rpx;
+		background: #f2d2ae;
+		flex-shrink: 0;
+	}
+
+	.meal-order-floating__pill-text {
+		font-size: 20rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #fff7ed;
+		white-space: nowrap;
+	}
+
+	.meal-order-floating__peek {
+		width: 36rpx;
+		height: 36rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 248, 238, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.meal-order-floating__action {
+		min-width: 154rpx;
+		height: 70rpx;
+		padding: 0 18rpx;
+		border-radius: 20rpx;
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 44%),
+			linear-gradient(180deg, rgba(255, 242, 227, 0.98) 0%, rgba(243, 224, 201, 0.96) 100%);
+		border: 1px solid rgba(255, 255, 255, 0.28);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.92),
+			inset 0 -1rpx 0 rgba(183, 142, 100, 0.12),
+			0 10rpx 18rpx rgba(34, 25, 20, 0.1);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.meal-order-floating__action--disabled {
+		background: rgba(191, 180, 168, 0.84);
+		border-color: rgba(255, 255, 255, 0.08);
+		pointer-events: none;
+		box-shadow: none;
+	}
+
+	.meal-order-floating__action-text {
+		font-size: 23rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #4b3728;
+	}
+
+	.meal-order-sheet {
+		padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+		background:
+			radial-gradient(circle at top right, rgba(255, 236, 214, 0.7) 0%, rgba(255, 236, 214, 0) 32%),
+			#f8f4ee;
+	}
+
+	.meal-order-sheet__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 18rpx;
+	}
+
+	.meal-order-sheet__heading {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.meal-order-sheet__eyebrow {
+		display: block;
+		margin-bottom: 8rpx;
+		font-size: 21rpx;
+		font-weight: 700;
+		line-height: 1.2;
+		color: #9b826d;
+		letter-spacing: 0.4rpx;
+	}
+
+	.meal-order-sheet__title {
+		display: block;
+		font-size: 36rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.meal-order-sheet__subtitle {
+		display: block;
+		margin-top: 10rpx;
+		font-size: 24rpx;
+		line-height: 1.6;
+		color: #8a7d70;
+	}
+
+	.meal-order-sheet__close {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.86);
+		box-shadow: 0 6rpx 12rpx rgba(56, 44, 30, 0.05);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.meal-order-date-grid {
+		margin-top: 22rpx;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 10rpx;
+	}
+
+	.meal-order-date-card {
+		padding: 18rpx 12rpx;
+		border-radius: 20rpx;
+		background: rgba(255, 255, 255, 0.96);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+		text-align: center;
+	}
+
+	.meal-order-date-card--active {
+		background: linear-gradient(180deg, #6d5441 0%, #584233 100%);
+		border-color: rgba(109, 84, 65, 0.5);
+		box-shadow: 0 14rpx 24rpx rgba(74, 56, 42, 0.16);
+	}
+
+	.meal-order-date-card__label {
+		font-size: 24rpx;
+		font-weight: 700;
+		color: #4c3e31;
+	}
+
+	.meal-order-date-card__date {
+		font-size: 21rpx;
+		color: #7d6f63;
+	}
+
+	.meal-order-date-card--active .meal-order-date-card__label,
+	.meal-order-date-card--active .meal-order-date-card__date {
+		color: #fff7ef;
+	}
+
+	.meal-order-date-picker {
+		margin-top: 14rpx;
+		height: 88rpx;
+		padding: 0 22rpx;
+		border-radius: 22rpx;
+		background: rgba(255, 255, 255, 0.96);
+		border: 1px dashed rgba(91, 74, 59, 0.18);
+		box-shadow: 0 8rpx 16rpx rgba(56, 44, 30, 0.04);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.meal-order-date-picker__text {
+		font-size: 25rpx;
+		font-weight: 600;
+		color: #5b4a3b;
+	}
+
+	.meal-order-cart-list {
+		max-height: 46vh;
+		margin-top: 20rpx;
+	}
+
+	.meal-order-cart-stack,
+	.meal-order-checkout-list {
+		display: flex;
+		flex-direction: column;
+		gap: 10rpx;
+	}
+
+	.meal-order-cart-item,
+	.meal-order-checkout-item {
+		padding: 16rpx;
+		border-radius: 18rpx;
+		background: rgba(255, 255, 255, 0.96);
+		border: 1px solid rgba(91, 74, 59, 0.06);
+		box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12rpx;
+	}
+
+	.meal-order-cart-item__main {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.meal-order-cart-item__title,
+	.meal-order-checkout-item__title {
+		display: block;
+		font-size: 25rpx;
+		font-weight: 700;
+		color: #2f2923;
+	}
+
+	.meal-order-cart-item__action {
+		flex-shrink: 0;
+		min-width: 88rpx;
+		height: 50rpx;
+		padding: 0 16rpx;
+		border-radius: 999rpx;
+		background: #f4eee7;
+		border: 1px solid rgba(91, 74, 59, 0.06);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.meal-order-cart-item__action-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		line-height: 1;
+		color: #7d6857;
+	}
+
+	.meal-order-cart-empty {
+		margin-top: 0;
+	}
+
+	.meal-order-note {
+		margin-top: 14rpx;
+	}
+
+	.meal-order-note__label {
+		display: block;
+		font-size: 23rpx;
+		font-weight: 600;
+		color: #5f5144;
+	}
+
+	.meal-order-note__input {
+		margin-top: 10rpx;
+		width: 100%;
+		min-height: 128rpx;
+		padding: 18rpx;
+		box-sizing: border-box;
+		border-radius: 20rpx;
+		background: rgba(255, 255, 255, 0.94);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.75);
+		font-size: 24rpx;
+		line-height: 1.5;
+		color: #2f2923;
+	}
+
+	.meal-order-note__placeholder {
+		color: #b0a59a;
+	}
+
+	.meal-order-checkout-note {
+		margin-top: 12rpx;
+		padding: 16rpx;
+		border-radius: 16rpx;
+		background: rgba(255, 255, 255, 0.9);
+		border: 1px solid rgba(91, 74, 59, 0.06);
+	}
+
+	.meal-order-checkout-note__label {
+		display: block;
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #6e5f50;
+	}
+
+	.meal-order-checkout-note__text {
+		display: block;
+		margin-top: 8rpx;
+		font-size: 23rpx;
+		line-height: 1.6;
+		color: #4f443a;
+	}
+
+	.meal-order-sheet__footer {
+		margin-top: 18rpx;
+		display: flex;
+		gap: 12rpx;
+	}
+
 	.bottom-nav {
 		position: fixed;
 		left: 0;
 		right: 0;
 		bottom: 0;
 		z-index: 9;
-		padding: 12rpx 24rpx calc(env(safe-area-inset-bottom) + 12rpx);
-		background: linear-gradient(180deg, rgba(246, 244, 241, 0), rgba(246, 244, 241, 0.85) 18%, rgba(255, 255, 255, 0.98) 34%);
+		padding: 14rpx 24rpx calc(env(safe-area-inset-bottom) + 14rpx);
+		background:
+			linear-gradient(180deg, rgba(246, 244, 241, 0) 0%, rgba(246, 244, 241, 0.82) 18%, rgba(255, 255, 255, 0.98) 34%),
+			rgba(255, 255, 255, 0.92);
+		border-top: 1px solid rgba(91, 74, 59, 0.04);
+		box-shadow: 0 -8rpx 24rpx rgba(56, 44, 30, 0.03);
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
+	}
+
+	.bottom-nav--meal-order .nav-center {
+		transform: translateY(-8rpx);
+	}
+
+	.bottom-nav--meal-order .nav-fab {
+		width: 98rpx;
+		height: 98rpx;
+		background:
+			radial-gradient(circle at top left, rgba(255, 248, 237, 0.2) 0%, rgba(255, 248, 237, 0) 34%),
+			linear-gradient(180deg, #6b594b 0%, #5a4739 100%);
+		box-shadow:
+			0 14rpx 22rpx rgba(91, 74, 59, 0.12),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.14);
+	}
+
+	.bottom-nav--meal-order .nav-item__icon-shell {
+		box-shadow: 0 8rpx 16rpx rgba(56, 44, 30, 0.04);
 	}
 
 	.nav-item,
@@ -3811,42 +5558,66 @@ export default {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 10rpx;
+		gap: 8rpx;
 	}
 
 	.nav-item__icon-shell {
-		width: 80rpx;
-		height: 80rpx;
-		border-radius: 24rpx;
-		background: rgba(255, 255, 255, 0.94);
-		box-shadow: 0 10rpx 20rpx rgba(56, 44, 30, 0.05);
+		width: 82rpx;
+		height: 82rpx;
+		border-radius: 26rpx;
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0) 46%),
+			linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 240, 234, 0.96) 100%);
+		border: 1px solid rgba(91, 74, 59, 0.06);
+		box-shadow:
+			0 10rpx 18rpx rgba(56, 44, 30, 0.045),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.86);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 	}
 
 	.nav-item__label,
 	.nav-center__label {
 		font-size: 22rpx;
+		line-height: 1;
 		color: #978b80;
 		font-weight: 600;
+		transition: color 0.18s ease;
+	}
+
+	.nav-item--active .nav-item__icon-shell {
+		transform: translateY(-2rpx);
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 44%),
+			linear-gradient(145deg, #f3ece3 0%, #e8dbc9 100%);
+		border-color: rgba(122, 103, 85, 0.12);
+		box-shadow:
+			0 14rpx 22rpx rgba(56, 44, 30, 0.08),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.84);
 	}
 
 	.nav-item--active .nav-item__label {
 		color: #5b4a3b;
+		font-weight: 700;
 	}
 
 	.nav-center {
-		transform: translateY(-18rpx);
+		transform: translateY(-16rpx);
 	}
 
 	.nav-fab {
 		width: 108rpx;
 		height: 108rpx;
 		border-radius: 999rpx;
-		border: 8rpx solid rgba(255, 255, 255, 0.98);
-		background: #5b4a3b;
-		box-shadow: 0 18rpx 28rpx rgba(91, 74, 59, 0.16);
+		border: 10rpx solid rgba(255, 255, 255, 0.98);
+		background:
+			radial-gradient(circle at top left, rgba(255, 248, 237, 0.22) 0%, rgba(255, 248, 237, 0) 34%),
+			linear-gradient(180deg, #6a5849 0%, #534133 100%);
+		box-shadow:
+			0 18rpx 28rpx rgba(91, 74, 59, 0.16),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.14);
 		display: flex;
 		align-items: center;
 		justify-content: center;
