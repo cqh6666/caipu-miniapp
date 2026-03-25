@@ -35,6 +35,8 @@ type Store struct {
 }
 
 type savePlanRequest struct {
-	Items []Item `json:"items"`
-	Note  string `json:"note"`
+	Items     []Item `json:"items"`
+	Note      string `json:"note"`
+	PlanDate  string `json:"planDate,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
 }

@@ -1208,6 +1208,20 @@ function normalizeMealOrderStore(raw = {}) {
 	}
 }
 
+function buildMealPlanPayload(raw = {}) {
+	const draft = normalizeMealOrderDraft(raw, raw?.planDate)
+	return {
+		items: draft.items.map((item) => ({
+			recipeId: item.recipeId,
+			quantity: item.quantity,
+			titleSnapshot: item.titleSnapshot,
+			imageSnapshot: item.imageSnapshot,
+			mealTypeSnapshot: item.mealTypeSnapshot
+		})),
+		note: draft.note
+	}
+}
+
 function buildMealOrderDishSummary(items = []) {
 	const names = (Array.isArray(items) ? items : [])
 		.map((item) => String(item?.titleSnapshot || '').trim())
@@ -2211,7 +2225,7 @@ export default {
 			const draft = normalizeMealOrderDraft(this.mealOrderStore?.drafts?.[date], date)
 
 			try {
-				const store = await saveMealPlanDraft(kitchenId, date, draft)
+				const store = await saveMealPlanDraft(kitchenId, date, buildMealPlanPayload(draft))
 				if (
 					localVersion === this.mealOrderLocalVersion &&
 					contextID === this.mealOrderSyncContextID &&
@@ -2459,7 +2473,7 @@ export default {
 			this.isSubmittingMealOrder = true
 
 			try {
-				const store = await submitMealPlanRequest(kitchenId, this.mealOrderDate, currentDraft)
+				const store = await submitMealPlanRequest(kitchenId, this.mealOrderDate, buildMealPlanPayload(currentDraft))
 				if (contextID !== this.mealOrderSyncContextID || kitchenId !== Number(this.currentKitchenId)) {
 					return
 				}
