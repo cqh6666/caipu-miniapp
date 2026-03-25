@@ -389,7 +389,7 @@ func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Rec
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE deleted_at IS NULL AND parse_status = ?
-ORDER BY COALESCE(parse_requested_at, created_at) ASC, id ASC
+ORDER BY COALESCE(NULLIF(parse_requested_at, ''), created_at) ASC, id ASC
 LIMIT ?`
 
 	rows, err := r.db.QueryContext(ctx, query, ParseStatusPending, limit)
@@ -412,6 +412,42 @@ LIMIT ?`
 	}
 
 	return items, nil
+}
+
+func (r *Repository) CountPendingAutoParseAhead(ctx context.Context, item Recipe) (int, error) {
+	cursor := strings.TrimSpace(item.ParseRequestedAt)
+	if cursor == "" {
+		cursor = strings.TrimSpace(item.CreatedAt)
+	}
+
+	const query = `
+	SELECT COUNT(1)
+	FROM recipes
+	WHERE deleted_at IS NULL
+	  AND parse_status = ?
+	  AND (
+	    COALESCE(NULLIF(parse_requested_at, ''), created_at) < ?
+	    OR (COALESCE(NULLIF(parse_requested_at, ''), created_at) = ? AND id < ?)
+	  )`
+
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, ParseStatusPending, cursor, cursor, item.ID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count pending auto parse ahead: %w", err)
+	}
+	return count, nil
+}
+
+func (r *Repository) CountProcessingAutoParse(ctx context.Context) (int, error) {
+	const query = `
+	SELECT COUNT(1)
+	FROM recipes
+	WHERE deleted_at IS NULL AND parse_status = ?`
+
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, ParseStatusProcessing).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count processing auto parse jobs: %w", err)
+	}
+	return count, nil
 }
 
 func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
@@ -509,7 +545,7 @@ func (r *Repository) ListPendingFlowcharts(ctx context.Context, limit int) ([]Re
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE deleted_at IS NULL AND flowchart_status = ?
-ORDER BY COALESCE(flowchart_requested_at, updated_at, created_at) ASC, id ASC
+ORDER BY COALESCE(NULLIF(flowchart_requested_at, ''), updated_at, created_at) ASC, id ASC
 LIMIT ?`
 
 	rows, err := r.db.QueryContext(ctx, query, FlowchartStatusPending, limit)
@@ -532,6 +568,45 @@ LIMIT ?`
 	}
 
 	return items, nil
+}
+
+func (r *Repository) CountPendingFlowchartAhead(ctx context.Context, item Recipe) (int, error) {
+	cursor := strings.TrimSpace(item.FlowchartRequestedAt)
+	if cursor == "" {
+		cursor = strings.TrimSpace(item.UpdatedAt)
+	}
+	if cursor == "" {
+		cursor = strings.TrimSpace(item.CreatedAt)
+	}
+
+	const query = `
+	SELECT COUNT(1)
+	FROM recipes
+	WHERE deleted_at IS NULL
+	  AND flowchart_status = ?
+	  AND (
+	    COALESCE(NULLIF(flowchart_requested_at, ''), updated_at, created_at) < ?
+	    OR (COALESCE(NULLIF(flowchart_requested_at, ''), updated_at, created_at) = ? AND id < ?)
+	  )`
+
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, FlowchartStatusPending, cursor, cursor, item.ID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count pending flowchart jobs ahead: %w", err)
+	}
+	return count, nil
+}
+
+func (r *Repository) CountProcessingFlowcharts(ctx context.Context) (int, error) {
+	const query = `
+	SELECT COUNT(1)
+	FROM recipes
+	WHERE deleted_at IS NULL AND flowchart_status = ?`
+
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, FlowchartStatusProcessing).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count processing flowchart jobs: %w", err)
+	}
+	return count, nil
 }
 
 func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource string) (bool, error) {

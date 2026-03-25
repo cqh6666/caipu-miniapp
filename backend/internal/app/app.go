@@ -59,13 +59,13 @@ func New(cfg config.Config) (*App, error) {
 
 	recipeRepo := recipe.NewRepository(dbConn)
 	linkParseService := linkparse.NewService(linkparse.Options{
-		AIBaseURL:          cfg.AIBaseURL,
-		AIAPIKey:           cfg.AIAPIKey,
-		AIModel:            cfg.AIModel,
-		AITimeout:          time.Duration(cfg.AITimeoutSeconds) * time.Second,
-		AITitleEnabled:     cfg.AITitleEnabled,
-		AITitleModel:       cfg.AITitleModel,
-		AITitleTimeout:     time.Duration(cfg.AITitleTimeoutSeconds) * time.Second,
+		AIBaseURL:               cfg.AIBaseURL,
+		AIAPIKey:                cfg.AIAPIKey,
+		AIModel:                 cfg.AIModel,
+		AITimeout:               time.Duration(cfg.AITimeoutSeconds) * time.Second,
+		AITitleEnabled:          cfg.AITitleEnabled,
+		AITitleModel:            cfg.AITitleModel,
+		AITitleTimeout:          time.Duration(cfg.AITitleTimeoutSeconds) * time.Second,
 		LinkparseSidecarEnabled: cfg.LinkparseSidecarEnabled,
 		LinkparseSidecarBaseURL: cfg.LinkparseSidecarBaseURL,
 		LinkparseSidecarTimeout: time.Duration(cfg.LinkparseSidecarTimeoutSec) * time.Second,
@@ -91,7 +91,17 @@ func New(cfg config.Config) (*App, error) {
 		Model:   cfg.AIFlowchartModel,
 		Timeout: time.Duration(cfg.AIFlowchartTimeoutSeconds) * time.Second,
 	}, uploadService)
-	recipeService := recipe.NewService(recipeRepo, kitchenService, recipeFlowchart, cfg.RecipeFlowchartEnabled)
+	recipeService := recipe.NewService(recipe.ServiceOptions{
+		Repo:               recipeRepo,
+		KitchenService:     kitchenService,
+		Flowchart:          recipeFlowchart,
+		FlowchartEnabled:   cfg.RecipeFlowchartEnabled,
+		AutoParseEnabled:   cfg.RecipeAutoParseEnabled,
+		AutoParseInterval:  time.Duration(cfg.RecipeAutoParseInterval) * time.Second,
+		AutoParseBatchSize: cfg.RecipeAutoParseBatchSize,
+		FlowchartInterval:  time.Duration(cfg.RecipeFlowchartInterval) * time.Second,
+		FlowchartBatchSize: cfg.RecipeFlowchartBatchSize,
+	})
 	recipeHandler := recipe.NewHandler(recipeService)
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpireHours)

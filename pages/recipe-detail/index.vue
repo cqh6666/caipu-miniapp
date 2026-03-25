@@ -740,6 +740,70 @@ function buildParseResultHint(status = '', source = '') {
 	return ''
 }
 
+function toPositiveInteger(value = 0) {
+	const parsed = Number(value)
+	if (!Number.isFinite(parsed) || parsed <= 0) return 0
+	return Math.ceil(parsed)
+}
+
+function resolveRemainingWaitSeconds(value = 0, syncedAt = 0, now = 0) {
+	const base = toPositiveInteger(value)
+	if (!base) return 0
+	const startedAt = Number(syncedAt) || 0
+	const current = Number(now) || 0
+	const elapsedSeconds = startedAt > 0 && current > startedAt ? Math.floor((current - startedAt) / 1000) : 0
+	return Math.max(base - elapsedSeconds, 0)
+}
+
+function formatApproxWait(seconds = 0) {
+	const totalSeconds = toPositiveInteger(seconds)
+	if (!totalSeconds) return ''
+	if (totalSeconds < 60) {
+		const rounded = Math.max(5, Math.ceil(totalSeconds / 5) * 5)
+		return `${rounded} 秒左右`
+	}
+	if (totalSeconds < 3600) {
+		const minutes = Math.max(1, Math.ceil(totalSeconds / 60))
+		return `${minutes} 分钟左右`
+	}
+	const hours = Math.floor(totalSeconds / 3600)
+	const minutes = Math.ceil((totalSeconds % 3600) / 60)
+	if (!minutes) return `${hours} 小时左右`
+	return `${hours} 小时 ${minutes} 分钟左右`
+}
+
+function buildParseWaitHint(status = '', queueAhead = 0, waitSeconds = 0) {
+	const normalizedStatus = String(status || '').trim().toLowerCase()
+	const waitText = formatApproxWait(waitSeconds)
+	if (!waitText) return ''
+	if (normalizedStatus === 'pending') {
+		if (queueAhead > 0) {
+			return `前面还有 ${queueAhead} 个任务，预计还要 ${waitText}，整理完成后会自动刷新。`
+		}
+		return `已加入整理队列，预计 ${waitText} 后完成。`
+	}
+	if (normalizedStatus === 'processing') {
+		return `后台正在整理链接内容，预计还要 ${waitText}，完成后会自动刷新。`
+	}
+	return ''
+}
+
+function buildFlowchartWaitHint(status = '', queueAhead = 0, waitSeconds = 0) {
+	const normalizedStatus = String(status || '').trim().toLowerCase()
+	const waitText = formatApproxWait(waitSeconds)
+	if (!waitText) return ''
+	if (normalizedStatus === 'pending') {
+		if (queueAhead > 0) {
+			return `前面还有 ${queueAhead} 个任务，预计还要 ${waitText}，出图完成后会自动刷新。`
+		}
+		return `已加入出图队列，预计 ${waitText} 后完成。`
+	}
+	if (normalizedStatus === 'processing') {
+		return `后台正在生成步骤图，预计还要 ${waitText}，完成后会自动刷新。`
+	}
+	return ''
+}
+
 function formatDateTime(value = '') {
 	const date = new Date(value)
 	if (Number.isNaN(date.getTime())) return ''
@@ -770,7 +834,10 @@ export default {
 			isPinSubmitting: false,
 			heroImageIndex: 0,
 			editDraftSnapshot: '',
-			parsePollingTimer: null
+			parsePollingTimer: null,
+			statusEstimateTimer: null,
+			statusEstimateSyncedAt: 0,
+			statusEstimateNow: 0
 		}
 	},
 	computed: {
@@ -890,7 +957,21 @@ export default {
 			if (this.flowchartStatusValue === 'failed' && errorMessage) {
 				return errorMessage
 			}
+			const waitHint = buildFlowchartWaitHint(this.flowchartStatusValue, this.flowchartQueueAhead, this.flowchartEstimatedWaitSeconds)
+			if (waitHint) {
+				return waitHint
+			}
 			return this.flowchartStatusMeta.description
+		},
+		flowchartQueueAhead() {
+			return toPositiveInteger(this.recipe?.flowchartQueueAhead || 0)
+		},
+		flowchartEstimatedWaitSeconds() {
+			return resolveRemainingWaitSeconds(
+				this.recipe?.flowchartEstimatedWaitSeconds || 0,
+				this.statusEstimateSyncedAt,
+				this.statusEstimateNow
+			)
 		},
 		showFlowchartStaleHint() {
 			return this.hasFlowchart && !!this.recipe?.flowchartStale
@@ -918,11 +999,25 @@ export default {
 			if (this.parseStatusValue === 'failed' && errorMessage) {
 				return errorMessage
 			}
+			const waitHint = buildParseWaitHint(this.parseStatusValue, this.parseQueueAhead, this.parseEstimatedWaitSeconds)
+			if (waitHint) {
+				return waitHint
+			}
 			const resultHint = buildParseResultHint(this.parseStatusValue, this.recipe?.parseSource || '')
 			if (resultHint) {
 				return resultHint
 			}
 			return this.parseStatusMeta.description
+		},
+		parseQueueAhead() {
+			return toPositiveInteger(this.recipe?.parseQueueAhead || 0)
+		},
+		parseEstimatedWaitSeconds() {
+			return resolveRemainingWaitSeconds(
+				this.recipe?.parseEstimatedWaitSeconds || 0,
+				this.statusEstimateSyncedAt,
+				this.statusEstimateNow
+			)
 		},
 		parseStatusSourceLabel() {
 			return formatParseSourceLabel(this.recipe?.parseSource || '')
@@ -1003,6 +1098,9 @@ export default {
 		},
 		applyRecipe(recipe) {
 			this.recipe = recipe
+			const now = Date.now()
+			this.statusEstimateSyncedAt = now
+			this.statusEstimateNow = now
 			if (this.heroImageIndex >= this.recipeImages.length) {
 				this.heroImageIndex = 0
 			}
@@ -1021,16 +1119,35 @@ export default {
 				return
 			}
 
+			this.syncStatusEstimateTimer()
+
 			if (this.parsePollingTimer) return
 
 			this.parsePollingTimer = setInterval(() => {
 				this.refreshParseStatus()
 			}, 4000)
 		},
+		syncStatusEstimateTimer() {
+			if (!this.parseEstimatedWaitSeconds && !this.flowchartEstimatedWaitSeconds) {
+				this.stopStatusEstimateTimer()
+				return
+			}
+			if (this.statusEstimateTimer) return
+			this.statusEstimateTimer = setInterval(() => {
+				this.statusEstimateNow = Date.now()
+			}, 1000)
+		},
 		stopParsePolling() {
-			if (!this.parsePollingTimer) return
-			clearInterval(this.parsePollingTimer)
-			this.parsePollingTimer = null
+			if (this.parsePollingTimer) {
+				clearInterval(this.parsePollingTimer)
+				this.parsePollingTimer = null
+			}
+			this.stopStatusEstimateTimer()
+		},
+		stopStatusEstimateTimer() {
+			if (!this.statusEstimateTimer) return
+			clearInterval(this.statusEstimateTimer)
+			this.statusEstimateTimer = null
 		},
 		async refreshParseStatus() {
 			if (!this.recipeId || this.isLoadingRecipe || this.isSavingRecipe || this.isDeletingRecipe || this.isReparseSubmitting || this.isGeneratingFlowchart || this.isPinSubmitting) {

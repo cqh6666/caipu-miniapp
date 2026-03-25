@@ -33,18 +33,44 @@ const (
 )
 
 type Service struct {
-	repo             *Repository
-	kitchen          *kitchen.Service
-	flowchart        *FlowchartGenerator
-	flowchartEnabled bool
+	repo              *Repository
+	kitchen           *kitchen.Service
+	flowchart         *FlowchartGenerator
+	flowchartEnabled  bool
+	autoParseEstimate queueEstimateConfig
+	flowchartEstimate queueEstimateConfig
 }
 
-func NewService(repo *Repository, kitchenService *kitchen.Service, flowchart *FlowchartGenerator, flowchartEnabled bool) *Service {
+type ServiceOptions struct {
+	Repo               *Repository
+	KitchenService     *kitchen.Service
+	Flowchart          *FlowchartGenerator
+	FlowchartEnabled   bool
+	AutoParseEnabled   bool
+	AutoParseInterval  time.Duration
+	AutoParseBatchSize int
+	FlowchartInterval  time.Duration
+	FlowchartBatchSize int
+}
+
+func NewService(opts ServiceOptions) *Service {
 	return &Service{
-		repo:             repo,
-		kitchen:          kitchenService,
-		flowchart:        flowchart,
-		flowchartEnabled: flowchartEnabled,
+		repo:             opts.Repo,
+		kitchen:          opts.KitchenService,
+		flowchart:        opts.Flowchart,
+		flowchartEnabled: opts.FlowchartEnabled,
+		autoParseEstimate: queueEstimateConfig{
+			enabled:         opts.AutoParseEnabled,
+			interval:        opts.AutoParseInterval,
+			batchSize:       opts.AutoParseBatchSize,
+			averageDuration: defaultAutoParseEstimatedDuration,
+		},
+		flowchartEstimate: queueEstimateConfig{
+			enabled:         opts.FlowchartEnabled && opts.Flowchart != nil && opts.Flowchart.IsConfigured(),
+			interval:        opts.FlowchartInterval,
+			batchSize:       opts.FlowchartBatchSize,
+			averageDuration: defaultFlowchartEstimatedDuration,
+		},
 	}
 }
 
@@ -93,7 +119,11 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 	applyCreateParseState(&item, req, now)
 	item.ParsedContentEdited = resolveCreateParsedContentEditedState(item, req)
 
-	return s.repo.Create(ctx, item)
+	created, err := s.repo.Create(ctx, item)
+	if err != nil {
+		return Recipe{}, err
+	}
+	return s.decorateRecipeRuntimeState(ctx, created), nil
 }
 
 func (s *Service) GetByID(ctx context.Context, userID int64, recipeID string) (Recipe, error) {
@@ -109,7 +139,7 @@ func (s *Service) GetByID(ctx context.Context, userID int64, recipeID string) (R
 		return Recipe{}, err
 	}
 
-	return item, nil
+	return s.decorateRecipeRuntimeState(ctx, item), nil
 }
 
 func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req updateRecipeRequest) (Recipe, error) {
@@ -153,7 +183,7 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 		return Recipe{}, err
 	}
 
-	return updated, nil
+	return s.decorateRecipeRuntimeState(ctx, updated), nil
 }
 
 func applyCreateParseState(item *Recipe, req createRecipeRequest, now string) {
@@ -266,7 +296,7 @@ func (s *Service) GenerateFlowchart(ctx context.Context, userID int64, recipeID 
 
 	switch current.FlowchartStatus {
 	case FlowchartStatusPending, FlowchartStatusProcessing:
-		return current, nil
+		return s.decorateRecipeRuntimeState(ctx, current), nil
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -282,7 +312,7 @@ func (s *Service) GenerateFlowchart(ctx context.Context, userID int64, recipeID 
 	current.FlowchartFinishedAt = ""
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
-	return current, nil
+	return s.decorateRecipeRuntimeState(ctx, current), nil
 }
 
 func (s *Service) UpdatePinned(ctx context.Context, userID int64, recipeID string, pinned bool) (Recipe, error) {
@@ -325,7 +355,7 @@ func (s *Service) RequeueAutoParse(ctx context.Context, userID int64, recipeID s
 
 	switch current.ParseStatus {
 	case ParseStatusPending, ParseStatusProcessing:
-		return current, nil
+		return s.decorateRecipeRuntimeState(ctx, current), nil
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -342,7 +372,81 @@ func (s *Service) RequeueAutoParse(ctx context.Context, userID int64, recipeID s
 	current.ParseFinishedAt = ""
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
-	return current, nil
+	return s.decorateRecipeRuntimeState(ctx, current), nil
+}
+
+func (s *Service) decorateRecipeRuntimeState(ctx context.Context, item Recipe) Recipe {
+	item = s.decorateParseEstimate(ctx, item)
+	item = s.decorateFlowchartEstimate(ctx, item)
+	return item
+}
+
+func (s *Service) decorateParseEstimate(ctx context.Context, item Recipe) Recipe {
+	if s == nil || s.repo == nil {
+		return item
+	}
+
+	switch item.ParseStatus {
+	case ParseStatusPending:
+		if !s.autoParseEstimate.enabled {
+			return item
+		}
+		ahead, err := s.repo.CountPendingAutoParseAhead(ctx, item)
+		if err != nil {
+			return item
+		}
+		processing, err := s.repo.CountProcessingAutoParse(ctx)
+		if err != nil {
+			return item
+		}
+		item.ParseQueueAhead = ahead + processing
+		item.ParseEstimatedWait = estimatePendingQueueWaitSeconds(s.autoParseEstimate, item.ParseQueueAhead)
+	case ParseStatusProcessing:
+		if !s.autoParseEstimate.enabled {
+			return item
+		}
+		item.ParseQueueAhead = 0
+		item.ParseEstimatedWait = estimateProcessingQueueWaitSeconds(s.autoParseEstimate)
+	default:
+		item.ParseQueueAhead = 0
+		item.ParseEstimatedWait = 0
+	}
+
+	return item
+}
+
+func (s *Service) decorateFlowchartEstimate(ctx context.Context, item Recipe) Recipe {
+	if s == nil || s.repo == nil {
+		return item
+	}
+
+	switch item.FlowchartStatus {
+	case FlowchartStatusPending:
+		if !s.flowchartEstimate.enabled {
+			return item
+		}
+		ahead, err := s.repo.CountPendingFlowchartAhead(ctx, item)
+		if err != nil {
+			return item
+		}
+		processing, err := s.repo.CountProcessingFlowcharts(ctx)
+		if err != nil {
+			return item
+		}
+		item.FlowchartQueueAhead = ahead + processing
+		item.FlowchartEstimatedWait = estimatePendingQueueWaitSeconds(s.flowchartEstimate, item.FlowchartQueueAhead)
+	case FlowchartStatusProcessing:
+		if !s.flowchartEstimate.enabled {
+			return item
+		}
+		item.FlowchartQueueAhead = 0
+		item.FlowchartEstimatedWait = estimateProcessingQueueWaitSeconds(s.flowchartEstimate)
+	default:
+		item.FlowchartQueueAhead = 0
+		item.FlowchartEstimatedWait = 0
+	}
+
+	return item
 }
 
 func (s *Service) Delete(ctx context.Context, userID int64, recipeID string) error {
