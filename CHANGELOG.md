@@ -1,4 +1,4 @@
-# Backend Changelog
+# Project Changelog
 
 ## 2026-03-12
 
