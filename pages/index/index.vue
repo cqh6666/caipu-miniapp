@@ -941,22 +941,24 @@ export default {
 			return '链接'
 		},
 		draftLinkTitleSourceLabel() {
-			if (this.draftLinkPreviewTitleSource === 'ai') return 'AI 智能提取'
-			if (this.draftLinkPreviewTitleSource === 'rule') return '规则提取'
+			if (this.draftLinkPreviewTitleSource === 'ai') return 'AI 识别'
+			if (this.draftLinkPreviewTitleSource === 'rule') return '规则识别'
 			return ''
 		},
 		draftTitleAssistText() {
 			if (!this.draftAutoTitle) return ''
+			const platformLabel = this.draftLinkPlatformLabel
 			const sourceLabel = this.draftLinkTitleSourceLabel
-			const sourceSuffix = sourceLabel ? `（${sourceLabel}）` : ''
+			const sourceParts = [platformLabel !== '链接' ? platformLabel : '', sourceLabel].filter(Boolean)
+			const sourceSuffix = sourceParts.length ? ` 来源：${sourceParts.join(' · ')}` : ''
 			if (this.draftTitleTouched) {
-				return `已识别出菜名${sourceSuffix}，当前保留你手动填写的菜名。`
+				return `已识别到菜名，当前保留你手动填写的内容。${sourceSuffix}`.trim()
 			}
-			return `已从${this.draftLinkPlatformLabel}链接识别菜名${sourceSuffix}，可直接保存。`
+			return `已识别到菜名，可直接保存。${sourceSuffix}`.trim()
 		},
 		draftLinkAssistText() {
 			if (this.isDraftLinkPreviewing) {
-				return `正在从${this.draftLinkPlatformLabel}链接识别菜名...`
+				return `正在识别${this.draftLinkPlatformLabel}链接里的菜名...`
 			}
 			if (this.draftLinkPreviewError) {
 				return this.draftLinkPreviewError
