@@ -34,6 +34,9 @@ type Config struct {
 	AITitleBaseURL             string
 	AITitleAPIKey              string
 	AITitleModel               string
+	AITitleStream              bool
+	AITitleTemperature         float64
+	AITitleMaxTokens           int
 	AITitleTimeoutSeconds      int
 	LinkparseSidecarEnabled    bool
 	LinkparseSidecarBaseURL    string
@@ -87,6 +90,9 @@ func Load() (Config, error) {
 		AITitleBaseURL:             strings.TrimSpace(os.Getenv("AI_TITLE_BASE_URL")),
 		AITitleAPIKey:              strings.TrimSpace(os.Getenv("AI_TITLE_API_KEY")),
 		AITitleModel:               strings.TrimSpace(os.Getenv("AI_TITLE_MODEL")),
+		AITitleStream:              getBool("AI_TITLE_STREAM", false),
+		AITitleTemperature:         getFloat("AI_TITLE_TEMPERATURE", 0),
+		AITitleMaxTokens:           getInt("AI_TITLE_MAX_TOKENS", 64),
 		AITitleTimeoutSeconds:      getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
 		LinkparseSidecarEnabled:    getBool("LINKPARSE_SIDECAR_ENABLED", false),
 		LinkparseSidecarBaseURL:    strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_BASE_URL")),
@@ -131,6 +137,10 @@ func Load() (Config, error) {
 
 	if cfg.AITitleTimeoutSeconds <= 0 {
 		return Config{}, errors.New("AI_TITLE_TIMEOUT_SECONDS must be positive")
+	}
+
+	if cfg.AITitleMaxTokens <= 0 {
+		return Config{}, errors.New("AI_TITLE_MAX_TOKENS must be positive")
 	}
 
 	if cfg.LinkparseSidecarTimeoutSec <= 0 {
@@ -223,6 +233,20 @@ func getInt(key string, fallback int) int {
 	}
 
 	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+
+	return value
+}
+
+func getFloat(key string, fallback float64) float64 {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return fallback
 	}

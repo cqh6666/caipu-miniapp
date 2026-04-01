@@ -1,7 +1,11 @@
 package linkparse
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -202,5 +206,46 @@ func TestSanitizePreviewTitle(t *testing.T) {
 				t.Fatalf("sanitizePreviewTitle(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestRefineTitleUsesConfiguredRequestParameters(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req openAIChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if req.Stream == nil || *req.Stream {
+			t.Fatalf("Stream = %#v, want false", req.Stream)
+		}
+		if req.Temperature != 0 {
+			t.Fatalf("Temperature = %v, want 0", req.Temperature)
+		}
+		if req.MaxTokens == nil || *req.MaxTokens != 64 {
+			t.Fatalf("MaxTokens = %#v, want 64", req.MaxTokens)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"香菜牛肉\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	client := &aiClient{
+		baseURL:     server.URL,
+		model:       "demo-title-model",
+		httpClient:  &http.Client{},
+		stream:      false,
+		temperature: 0,
+		maxTokens:   64,
+	}
+
+	title, err := client.refineTitle(context.Background(), "【香菜牛肉最好吃的做法~-哔哩哔哩】", "香菜牛肉")
+	if err != nil {
+		t.Fatalf("refineTitle returned error: %v", err)
+	}
+	if got, want := title, "香菜牛肉"; got != want {
+		t.Fatalf("title = %q, want %q", got, want)
 	}
 }

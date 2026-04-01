@@ -67,6 +67,9 @@ type Options struct {
 	AITitleBaseURL           string
 	AITitleAPIKey            string
 	AITitleModel             string
+	AITitleStream            bool
+	AITitleTemperature       float64
+	AITitleMaxTokens         int
 	AITitleTimeout           time.Duration
 	BilibiliSessdataProvider func(context.Context) string
 	LinkparseSidecarEnabled  bool
@@ -88,10 +91,13 @@ type Service struct {
 }
 
 type aiClient struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
+	baseURL     string
+	apiKey      string
+	model       string
+	httpClient  *http.Client
+	stream      bool
+	temperature float64
+	maxTokens   int
 }
 
 type videoRef struct {
@@ -179,6 +185,8 @@ type openAIChatRequest struct {
 	Model       string              `json:"model"`
 	Messages    []openAIChatMessage `json:"messages"`
 	Temperature float64             `json:"temperature"`
+	Stream      *bool               `json:"stream,omitempty"`
+	MaxTokens   *int                `json:"max_tokens,omitempty"`
 }
 
 type openAIChatMessage struct {
@@ -271,10 +279,13 @@ func NewService(opts Options) *Service {
 		}
 
 		titleAI = &aiClient{
-			baseURL:    baseURL,
-			apiKey:     apiKey,
-			model:      titleModel,
-			httpClient: titleHTTPClient,
+			baseURL:     baseURL,
+			apiKey:      apiKey,
+			model:       titleModel,
+			httpClient:  titleHTTPClient,
+			stream:      opts.AITitleStream,
+			temperature: opts.AITitleTemperature,
+			maxTokens:   opts.AITitleMaxTokens,
 		}
 	}
 
@@ -1566,9 +1577,21 @@ func trimTrailingPreviewTag(title string) string {
 }
 
 func (c *aiClient) refineTitle(ctx context.Context, rawTitle, currentTitle string) (string, error) {
+	stream := c != nil && c.stream
+	maxTokens := 64
+	if c != nil && c.maxTokens > 0 {
+		maxTokens = c.maxTokens
+	}
+	temperature := 0.0
+	if c != nil {
+		temperature = c.temperature
+	}
+
 	payload := openAIChatRequest{
 		Model:       c.model,
-		Temperature: 0,
+		Temperature: temperature,
+		Stream:      &stream,
+		MaxTokens:   &maxTokens,
 		Messages: []openAIChatMessage{
 			{
 				Role: "system",

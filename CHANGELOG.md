@@ -10,6 +10,9 @@
 - `AI title` 模型配置补充支持独立的 `baseUrl / apiKey / model / timeout`
   - 新增 `AI_TITLE_BASE_URL`、`AI_TITLE_API_KEY`
   - 若标题专用配置为空，会分别回退到全局 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`
+- `AI title` 请求参数补充支持独立配置 `stream / temperature / max_tokens`
+  - 新增 `AI_TITLE_STREAM`、`AI_TITLE_TEMPERATURE`、`AI_TITLE_MAX_TOKENS`
+  - 默认值分别为 `false`、`0`、`64`
 - 前端新增菜品弹窗的链接预览不再强依赖本地平台识别命中，疑似分享文案也会继续请求后端预览
 - 前端在链接预览阶段保留用户原始粘贴内容不变，只在提交保存前静默规范化为后端返回的标准链接，降低“存进去的是分享文案而不是来源链接”的概率
 
