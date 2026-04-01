@@ -1,0 +1,275 @@
+.page-header {
+	padding: 6rpx 2rpx 0;
+}
+
+.page-header--meal-order {
+	padding-top: 0;
+}
+
+.page-header--meal-order .page-header__top {
+	align-items: center;
+}
+
+.page-header__top {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16rpx;
+}
+
+.page-header__heading {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8rpx;
+}
+
+.page-header__title-row {
+	display: flex;
+	align-items: center;
+	gap: 10rpx;
+	min-width: 0;
+}
+
+.page-header__title-mark {
+	position: relative;
+	width: 44rpx;
+	height: 44rpx;
+	border-radius: 14rpx;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.page-header__title-mark--library {
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0) 46%),
+		linear-gradient(145deg, #f3ece3 0%, #e7dccc 100%);
+	border: 1px solid rgba(122, 103, 85, 0.12);
+	box-shadow:
+		0 8rpx 16rpx rgba(97, 70, 47, 0.06),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
+}
+
+.page-header__title-mark--meal-order {
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0) 46%),
+		linear-gradient(145deg, #f7e3d2 0%, #edd2ba 100%);
+	border: 1px solid rgba(191, 113, 95, 0.12);
+	box-shadow:
+		0 8rpx 16rpx rgba(97, 70, 47, 0.08),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
+}
+
+.page-header__title-mark::after {
+	content: '';
+	position: absolute;
+	right: -4rpx;
+	top: -4rpx;
+	width: 14rpx;
+	height: 14rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 244, 233, 0.92);
+	border: 1px solid rgba(122, 103, 85, 0.12);
+}
+
+.page-header__title-mark--meal-order::after {
+	border-color: rgba(191, 113, 95, 0.12);
+}
+
+.page-header__title {
+	font-size: 40rpx;
+	font-weight: 700;
+	line-height: 1.18;
+	color: #2f2923;
+}
+
+.page-header__summary {
+	font-size: 23rpx;
+	line-height: 1.5;
+	color: #8d847a;
+}
+
+.page-header--meal-order .page-header__heading {
+	gap: 0;
+}
+
+.page-header--meal-order .page-header__title {
+	font-size: 36rpx;
+	letter-spacing: 0.6rpx;
+}
+
+.page-header--meal-order .page-header__title-row {
+	gap: 6rpx;
+}
+
+.page-header--meal-order .page-header__title-mark {
+	width: 34rpx;
+	height: 34rpx;
+	border-radius: 11rpx;
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 46%),
+		linear-gradient(145deg, rgba(247, 227, 210, 0.82) 0%, rgba(237, 210, 186, 0.72) 100%);
+	border-color: rgba(191, 113, 95, 0.08);
+	box-shadow:
+		0 4rpx 10rpx rgba(97, 70, 47, 0.05),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
+}
+
+.page-header--meal-order .page-header__title-mark::after {
+	right: -3rpx;
+	top: -3rpx;
+	width: 10rpx;
+	height: 10rpx;
+	background: rgba(255, 244, 233, 0.88);
+	border-color: rgba(191, 113, 95, 0.1);
+}
+
+.page-header__mode-actions {
+	padding: 0;
+	background: transparent;
+	border: 0;
+	box-shadow: none;
+	backdrop-filter: none;
+}
+
+.page-header__action {
+	min-height: 56rpx;
+	padding: 0 18rpx;
+	box-sizing: border-box;
+	border-radius: 999rpx;
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 48%),
+		linear-gradient(145deg, #f1e3d5 0%, #ead8c6 100%);
+	border: 1px solid rgba(91, 74, 59, 0.08);
+	box-shadow:
+		0 10rpx 18rpx rgba(56, 44, 30, 0.05),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.6);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8rpx;
+	flex-shrink: 0;
+}
+
+.page-header__action-text {
+	font-size: 23rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #5f4736;
+}
+
+.meal-order-spotlight {
+	margin-top: 12rpx;
+	padding: 18rpx 20rpx;
+	border-radius: 22rpx;
+	background:
+		radial-gradient(circle at top right, rgba(255, 233, 205, 0.5) 0%, rgba(255, 233, 205, 0) 34%),
+		rgba(255, 250, 244, 0.94);
+	border: 1px solid rgba(91, 74, 59, 0.08);
+	box-shadow:
+		0 10rpx 22rpx rgba(56, 44, 30, 0.05),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.68);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18rpx;
+}
+
+.meal-order-spotlight--empty {
+	background: rgba(255, 252, 247, 0.9);
+}
+
+.meal-order-spotlight__main {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8rpx;
+}
+
+.meal-order-spotlight__title {
+	font-size: 28rpx;
+	font-weight: 700;
+	line-height: 1.28;
+	color: #2f2923;
+}
+
+.meal-order-spotlight__desc {
+	font-size: 22rpx;
+	line-height: 1.5;
+	color: #7d6f63;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.meal-order-spotlight__aside {
+	display: inline-flex;
+	align-items: center;
+	gap: 10rpx;
+	flex-shrink: 0;
+}
+
+.meal-order-spotlight__meta-text {
+	font-size: 19rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #9a8b7c;
+}
+
+.meal-order-mode-bar__actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 8rpx;
+	flex-shrink: 0;
+}
+
+.meal-order-mode-bar__chip {
+	min-height: 42rpx;
+	padding: 0 14rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 255, 255, 0.88);
+	border: 1px solid rgba(91, 74, 59, 0.07);
+	box-shadow:
+		0 6rpx 12rpx rgba(56, 44, 30, 0.03),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.82);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6rpx;
+}
+
+.meal-order-mode-bar__chip--accent {
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 42%),
+		linear-gradient(145deg, rgba(247, 227, 210, 0.84) 0%, rgba(237, 210, 186, 0.76) 100%);
+	border-color: rgba(191, 113, 95, 0.08);
+	box-shadow:
+		0 8rpx 14rpx rgba(97, 70, 47, 0.05),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.76);
+}
+
+.meal-order-mode-bar__chip--ghost {
+	background: rgba(255, 255, 255, 0.72);
+	border-color: rgba(91, 74, 59, 0.05);
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+}
+
+.meal-order-mode-bar__chip-text {
+	font-size: 17rpx;
+	font-weight: 600;
+	color: #7a6655;
+	line-height: 1;
+}
+
+.meal-order-mode-bar__chip--accent .meal-order-mode-bar__chip-text {
+	color: #765948;
+}
+
+.meal-order-mode-bar__chip--ghost .meal-order-mode-bar__chip-text {
+	color: #948476;
+}
