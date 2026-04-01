@@ -2,56 +2,20 @@
 	<view class="app-shell">
 		<view class="page-content" :class="{ 'page-content--meal-order': showMealOrderFloatingBar }">
 			<template v-if="activeSection === 'library'">
-				<view class="page-header" :class="{ 'page-header--meal-order': isLibraryMealOrderMode }">
-					<view class="page-header__top">
-						<view class="page-header__heading">
-							<view class="page-header__title-row">
-								<view
-									class="page-header__title-mark"
-									:class="isLibraryMealOrderMode ? 'page-header__title-mark--meal-order' : 'page-header__title-mark--library'"
-								>
-									<up-icon
-										:name="isLibraryMealOrderMode ? 'heart-fill' : 'grid-fill'"
-										size="14"
-										:color="isLibraryMealOrderMode ? '#bf715f' : '#7a6755'"
-									></up-icon>
-								</view>
-								<text class="page-header__title">{{ libraryHeaderTitle }}</text>
-							</view>
-							<text v-if="libraryHeaderSummary" class="page-header__summary">{{ libraryHeaderSummary }}</text>
-						</view>
-						<view v-if="isLibraryMealOrderMode" class="meal-order-mode-bar__actions page-header__mode-actions">
-							<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--accent" @tap="openMealOrderDateSheet">
-								<text class="meal-order-mode-bar__chip-text">改日期</text>
-							</view>
-							<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--ghost" @tap="exitMealOrderMode">
-								<text class="meal-order-mode-bar__chip-text">返回</text>
-							</view>
-						</view>
-						<view v-else class="page-header__action" @tap="openMealOrderDateSheet">
-							<up-icon name="calendar" size="15" color="#745742"></up-icon>
-							<text class="page-header__action-text">安排菜单</text>
-						</view>
-					</view>
-				</view>
-
-				<view
-					v-if="!isLibraryMealOrderMode"
-					class="meal-order-spotlight"
-					:class="{ 'meal-order-spotlight--empty': !mealOrderSpotlightRecord }"
-					@tap="handleMealOrderSpotlightTap"
-					@touchstart="handleMealOrderSpotlightTouchStart"
-					@touchend="handleMealOrderSpotlightTouchEnd"
-				>
-					<view class="meal-order-spotlight__main">
-						<text class="meal-order-spotlight__title">{{ mealOrderSpotlightTitle }}</text>
-						<text class="meal-order-spotlight__desc">{{ mealOrderSpotlightDesc }}</text>
-					</view>
-					<view class="meal-order-spotlight__aside">
-						<text v-if="mealOrderSpotlightMetaText" class="meal-order-spotlight__meta-text">{{ mealOrderSpotlightMetaText }}</text>
-						<up-icon name="arrow-right" size="16" color="#8a7968"></up-icon>
-					</view>
-				</view>
+				<library-header-section
+					:is-library-meal-order-mode="isLibraryMealOrderMode"
+					:library-header-title="libraryHeaderTitle"
+					:library-header-summary="libraryHeaderSummary"
+					:has-meal-order-spotlight-record="!!mealOrderSpotlightRecord"
+					:meal-order-spotlight-title="mealOrderSpotlightTitle"
+					:meal-order-spotlight-desc="mealOrderSpotlightDesc"
+					:meal-order-spotlight-meta-text="mealOrderSpotlightMetaText"
+					@open-meal-order-date-sheet="openMealOrderDateSheet"
+					@exit-meal-order-mode="exitMealOrderMode"
+					@spotlight-tap="handleMealOrderSpotlightTap"
+					@spotlight-touchstart="handleMealOrderSpotlightTouchStart"
+					@spotlight-touchend="handleMealOrderSpotlightTouchEnd"
+				></library-header-section>
 				<view class="toolbar">
 					<view class="toolbar__search-row">
 						<view
@@ -428,6 +392,7 @@ import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFrom
 import InviteCodeSheet from './components/invite-code-sheet.vue'
 import InviteSheet from './components/invite-sheet.vue'
 import KitchenSection from './components/kitchen-section.vue'
+import LibraryHeaderSection from './components/library-header-section.vue'
 import MealOrderCartSheet from './components/meal-order-cart-sheet.vue'
 import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
 import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
@@ -457,6 +422,7 @@ export default {
 		InviteCodeSheet,
 		InviteSheet,
 		KitchenSection,
+		LibraryHeaderSection,
 		MealOrderCartSheet,
 		MealOrderCheckoutSheet,
 		MealOrderDateSheet,
@@ -1815,7 +1781,8 @@ export default {
 			if (!clipboardText || clipboardText === this.lastDraftLinkPrefill) return
 
 			const link = extractSupportedDraftLink(clipboardText)
-			if (!link) return
+			const mayContainShareLink = /https?:\/\/|www\.|bilibili|b23\.tv|bili2233\.cn|xiaohongshu|xhslink/i.test(clipboardText)
+			if (!link && !mayContainShareLink) return
 
 			this.draft.link = clipboardText
 			this.draftLinkPrefillSource = 'clipboard'
@@ -1902,7 +1869,8 @@ export default {
 				this.applyDraftAutoTitle(guessedTitle)
 			}
 
-			if (!platform) {
+			const mayContainShareLink = /https?:\/\/|www\.|bilibili|b23\.tv|bili2233\.cn|xiaohongshu|xhslink/i.test(value)
+			if (!platform && !mayContainShareLink) {
 				if (!guessedTitle && !this.draftTitleTouched && previousAutoTitle && String(this.draft.title || '').trim() === previousAutoTitle) {
 					this.draft.title = ''
 					this.draftAutoTitle = ''
@@ -1913,15 +1881,16 @@ export default {
 			const requestID = this.draftLinkPreviewRequestID
 			this.isDraftLinkPreviewing = true
 			this.draftLinkPreviewTimer = setTimeout(async () => {
-				try {
-					const result = await previewRecipeLink(value)
-					if (requestID !== this.draftLinkPreviewRequestID) return
+					try {
+						const result = await previewRecipeLink(value)
+						if (requestID !== this.draftLinkPreviewRequestID) return
 
-					this.isDraftLinkPreviewing = false
-					this.draftLinkPreviewTimer = null
-					this.draftLinkPreviewPlatform = detectDraftLinkPlatform(result?.canonicalUrl || result?.link || value) || platform
+						this.isDraftLinkPreviewing = false
+						this.draftLinkPreviewTimer = null
+						const resolvedLink = String(result?.canonicalUrl || result?.link || '').trim()
+						this.draftLinkPreviewPlatform = detectDraftLinkPlatform(resolvedLink || value) || platform
 
-					const previewTitle = normalizeDraftAutoTitle(result?.title || '')
+						const previewTitle = normalizeDraftAutoTitle(result?.title || '')
 					if (previewTitle) {
 						this.applyDraftAutoTitle(previewTitle)
 						return
@@ -2032,6 +2001,31 @@ export default {
 				urls
 			})
 		},
+		async normalizeDraftLinkBeforeSubmit() {
+			const rawLink = String(this.draft.link || '').trim()
+			if (!rawLink) return
+
+			const platform = detectDraftLinkPlatform(rawLink)
+			const mayContainShareLink = /https?:\/\/|www\.|bilibili|b23\.tv|bili2233\.cn|xiaohongshu|xhslink/i.test(rawLink)
+			if (platform && !/\s/.test(rawLink)) return
+			if (!mayContainShareLink) return
+
+			try {
+				const result = await previewRecipeLink(rawLink)
+				const resolvedLink = String(result?.canonicalUrl || result?.link || '').trim()
+				if (resolvedLink) {
+					this.draft.link = resolvedLink
+					this.draftLinkPreviewPlatform = detectDraftLinkPlatform(resolvedLink) || platform
+				}
+
+				const previewTitle = normalizeDraftAutoTitle(result?.title || '')
+				if (previewTitle) {
+					this.applyDraftAutoTitle(previewTitle)
+				}
+			} catch (_) {
+				// 提交阶段只做静默规范化，不阻塞用户保存。
+			}
+		},
 		async submitDraft() {
 			if (!this.canSubmitDraft || this.isSubmittingDraft) return
 
@@ -2042,6 +2036,7 @@ export default {
 			})
 
 			try {
+				await this.normalizeDraftLinkBeforeSubmit()
 				const newRecipe = await createRecipeFromDraft(this.draft)
 				this.applyRecipes(getCachedRecipes())
 				this.selectedRecipeId = newRecipe.id
@@ -2281,282 +2276,6 @@ export default {
 
 	.page-content--meal-order {
 		padding-bottom: 294rpx;
-	}
-
-	.page-header {
-		padding: 6rpx 2rpx 0;
-	}
-
-	.page-header--meal-order {
-		padding-top: 0;
-	}
-
-	.page-header--meal-order .page-header__top {
-		align-items: center;
-	}
-
-	.page-header__top {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 16rpx;
-	}
-
-	.page-header__heading {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 8rpx;
-	}
-
-	.page-header__title-row {
-		display: flex;
-		align-items: center;
-		gap: 10rpx;
-		min-width: 0;
-	}
-
-	.page-header__title-mark {
-		position: relative;
-		width: 44rpx;
-		height: 44rpx;
-		border-radius: 14rpx;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.page-header__title-mark--library {
-		background:
-			radial-gradient(circle at top left, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0) 46%),
-			linear-gradient(145deg, #f3ece3 0%, #e7dccc 100%);
-		border: 1px solid rgba(122, 103, 85, 0.12);
-		box-shadow:
-			0 8rpx 16rpx rgba(97, 70, 47, 0.06),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
-	}
-
-	.page-header__title-mark--meal-order {
-		background:
-			radial-gradient(circle at top left, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0) 46%),
-			linear-gradient(145deg, #f7e3d2 0%, #edd2ba 100%);
-		border: 1px solid rgba(191, 113, 95, 0.12);
-		box-shadow:
-			0 8rpx 16rpx rgba(97, 70, 47, 0.08),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
-	}
-
-	.page-header__title-mark::after {
-		content: '';
-		position: absolute;
-		right: -4rpx;
-		top: -4rpx;
-		width: 14rpx;
-		height: 14rpx;
-		border-radius: 999rpx;
-		background: rgba(255, 244, 233, 0.92);
-		border: 1px solid rgba(122, 103, 85, 0.12);
-	}
-
-	.page-header__title-mark--meal-order::after {
-		border-color: rgba(191, 113, 95, 0.12);
-	}
-
-	.page-header__title {
-		font-size: 40rpx;
-		font-weight: 700;
-		line-height: 1.18;
-		color: #2f2923;
-	}
-
-	.page-header__summary {
-		font-size: 23rpx;
-		line-height: 1.5;
-		color: #8d847a;
-	}
-
-	.page-header--meal-order .page-header__heading {
-		gap: 0;
-	}
-
-	.page-header--meal-order .page-header__title {
-		font-size: 36rpx;
-		letter-spacing: 0.6rpx;
-	}
-
-	.page-header--meal-order .page-header__title-row {
-		gap: 6rpx;
-	}
-
-	.page-header--meal-order .page-header__title-mark {
-		width: 34rpx;
-		height: 34rpx;
-		border-radius: 11rpx;
-		background:
-			radial-gradient(circle at top left, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 46%),
-			linear-gradient(145deg, rgba(247, 227, 210, 0.82) 0%, rgba(237, 210, 186, 0.72) 100%);
-		border-color: rgba(191, 113, 95, 0.08);
-		box-shadow:
-			0 4rpx 10rpx rgba(97, 70, 47, 0.05),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
-	}
-
-	.page-header--meal-order .page-header__title-mark::after {
-		right: -3rpx;
-		top: -3rpx;
-		width: 10rpx;
-		height: 10rpx;
-		background: rgba(255, 244, 233, 0.88);
-		border-color: rgba(191, 113, 95, 0.1);
-	}
-
-	.page-header__mode-actions {
-		padding: 0;
-		background: transparent;
-		border: 0;
-		box-shadow: none;
-		backdrop-filter: none;
-	}
-
-	.page-header__action {
-		min-height: 56rpx;
-		padding: 0 18rpx;
-		box-sizing: border-box;
-		border-radius: 999rpx;
-		background:
-			radial-gradient(circle at top left, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 48%),
-			linear-gradient(145deg, #f1e3d5 0%, #ead8c6 100%);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-		box-shadow:
-			0 10rpx 18rpx rgba(56, 44, 30, 0.05),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.6);
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 8rpx;
-		flex-shrink: 0;
-	}
-
-	.page-header__action-text {
-		font-size: 23rpx;
-		font-weight: 700;
-		line-height: 1;
-		color: #5f4736;
-	}
-
-	.meal-order-spotlight {
-		margin-top: 12rpx;
-		padding: 18rpx 20rpx;
-		border-radius: 22rpx;
-		background:
-			radial-gradient(circle at top right, rgba(255, 233, 205, 0.5) 0%, rgba(255, 233, 205, 0) 34%),
-			rgba(255, 250, 244, 0.94);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-		box-shadow:
-			0 10rpx 22rpx rgba(56, 44, 30, 0.05),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.68);
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 18rpx;
-	}
-
-	.meal-order-spotlight--empty {
-		background: rgba(255, 252, 247, 0.9);
-	}
-
-	.meal-order-spotlight__main {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 8rpx;
-	}
-
-	.meal-order-spotlight__title {
-		font-size: 28rpx;
-		font-weight: 700;
-		line-height: 1.28;
-		color: #2f2923;
-	}
-
-	.meal-order-spotlight__desc {
-		font-size: 22rpx;
-		line-height: 1.5;
-		color: #7d6f63;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.meal-order-spotlight__aside {
-		display: inline-flex;
-		align-items: center;
-		gap: 10rpx;
-		flex-shrink: 0;
-	}
-
-	.meal-order-spotlight__meta-text {
-		font-size: 19rpx;
-		font-weight: 700;
-		line-height: 1;
-		color: #9a8b7c;
-	}
-
-	.meal-order-mode-bar__actions {
-		display: inline-flex;
-		align-items: center;
-		gap: 8rpx;
-		flex-shrink: 0;
-	}
-
-	.meal-order-mode-bar__chip {
-		min-height: 42rpx;
-		padding: 0 14rpx;
-		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.88);
-		border: 1px solid rgba(91, 74, 59, 0.07);
-		box-shadow:
-			0 6rpx 12rpx rgba(56, 44, 30, 0.03),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.82);
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 6rpx;
-	}
-
-	.meal-order-mode-bar__chip--accent {
-		background:
-			radial-gradient(circle at top left, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0) 42%),
-			linear-gradient(145deg, rgba(247, 227, 210, 0.84) 0%, rgba(237, 210, 186, 0.76) 100%);
-		border-color: rgba(191, 113, 95, 0.08);
-		box-shadow:
-			0 8rpx 14rpx rgba(97, 70, 47, 0.05),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.76);
-	}
-
-	.meal-order-mode-bar__chip--ghost {
-		background: rgba(255, 255, 255, 0.72);
-		border-color: rgba(91, 74, 59, 0.05);
-		padding-left: 12rpx;
-		padding-right: 12rpx;
-	}
-
-	.meal-order-mode-bar__chip-text {
-		font-size: 17rpx;
-		font-weight: 600;
-		color: #7a6655;
-		line-height: 1;
-	}
-
-	.meal-order-mode-bar__chip--accent .meal-order-mode-bar__chip-text {
-		color: #765948;
-	}
-
-	.meal-order-mode-bar__chip--ghost .meal-order-mode-bar__chip-text {
-		color: #948476;
 	}
 
 	.app-footer-links {

@@ -245,7 +245,11 @@ func NewService(opts Options) *Service {
 	}
 
 	var titleAI *aiClient
-	if opts.AITitleEnabled && strings.TrimSpace(opts.AITitleModel) != "" {
+	titleModel := strings.TrimSpace(opts.AITitleModel)
+	if titleModel == "" {
+		titleModel = strings.TrimSpace(opts.AIModel)
+	}
+	if titleModel != "" {
 		titleHTTPClient := &http.Client{Timeout: 3 * time.Second}
 		if opts.AITitleTimeout > 0 {
 			titleHTTPClient.Timeout = opts.AITitleTimeout
@@ -259,7 +263,7 @@ func NewService(opts Options) *Service {
 		titleAI = &aiClient{
 			baseURL:    baseURL,
 			apiKey:     strings.TrimSpace(opts.AIAPIKey),
-			model:      strings.TrimSpace(opts.AITitleModel),
+			model:      titleModel,
 			httpClient: titleHTTPClient,
 		}
 	}
