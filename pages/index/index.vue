@@ -538,9 +538,12 @@
 						<view
 							v-for="item in mealOrderSpotlightDetailItems"
 							:key="`meal-order-spotlight-${item.recipeId}`"
-							class="meal-order-checkout-item"
+							class="meal-order-checkout-item meal-order-checkout-item--link"
+							hover-class="meal-order-checkout-item--hover"
+							@tap="openMealOrderRecipeDetail(item)"
 						>
 							<text class="meal-order-checkout-item__title">{{ item.title }}</text>
+							<up-icon class="meal-order-checkout-item__chevron" name="arrow-right" size="14" color="#9d8c7a"></up-icon>
 						</view>
 					</view>
 				</scroll-view>
@@ -586,11 +589,17 @@
 
 				<scroll-view class="meal-order-cart-list" scroll-y>
 					<view v-if="mealOrderCartItems.length" class="meal-order-cart-stack">
-						<view v-for="item in mealOrderCartItems" :key="`meal-order-cart-${item.recipeId}`" class="meal-order-cart-item">
+						<view
+							v-for="item in mealOrderCartItems"
+							:key="`meal-order-cart-${item.recipeId}`"
+							class="meal-order-cart-item meal-order-cart-item--link"
+							hover-class="meal-order-cart-item--hover"
+							@tap="openMealOrderRecipeDetail(item)"
+						>
 							<view class="meal-order-cart-item__main">
 								<text class="meal-order-cart-item__title">{{ item.title }}</text>
 							</view>
-							<view class="meal-order-cart-item__action" @tap="removeMealOrderRecipe(item.recipeId)">
+							<view class="meal-order-cart-item__action" @tap.stop="removeMealOrderRecipe(item.recipeId)">
 								<text class="meal-order-cart-item__action-text">移出</text>
 							</view>
 						</view>
@@ -648,8 +657,15 @@
 
 				<scroll-view class="meal-order-cart-list" scroll-y>
 					<view v-if="mealOrderCartItems.length" class="meal-order-checkout-list">
-						<view v-for="item in mealOrderCartItems" :key="`meal-order-checkout-${item.recipeId}`" class="meal-order-checkout-item">
+						<view
+							v-for="item in mealOrderCartItems"
+							:key="`meal-order-checkout-${item.recipeId}`"
+							class="meal-order-checkout-item meal-order-checkout-item--link"
+							hover-class="meal-order-checkout-item--hover"
+							@tap="openMealOrderRecipeDetail(item)"
+						>
 							<text class="meal-order-checkout-item__title">{{ item.title }}</text>
+							<up-icon class="meal-order-checkout-item__chevron" name="arrow-right" size="14" color="#9d8c7a"></up-icon>
 						</view>
 					</view>
 					<view v-else class="soft-empty meal-order-cart-empty">
@@ -3036,6 +3052,17 @@ export default {
 			uni.navigateTo({
 				url: `/pages/recipe-detail/index?id=${recipeId}`
 			})
+		},
+		openMealOrderRecipeDetail(item = {}) {
+			const recipeId = String(item?.recipeId || '').trim()
+			if (!recipeId) {
+				uni.showToast({
+					title: '这道菜暂时打不开',
+					icon: 'none'
+				})
+				return
+			}
+			this.openRecipeDetail(recipeId)
 		},
 		nextStatusText(status) {
 			return status === 'done' ? '标记想吃' : '标记吃过'
@@ -5602,6 +5629,18 @@ export default {
 		gap: 12rpx;
 	}
 
+	.meal-order-cart-item--link,
+	.meal-order-checkout-item--link {
+		transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+	}
+
+	.meal-order-cart-item--hover,
+	.meal-order-checkout-item--hover {
+		background: #fffaf4;
+		box-shadow: 0 12rpx 24rpx rgba(56, 44, 30, 0.06);
+		transform: translateY(-1px);
+	}
+
 	.meal-order-cart-item__main {
 		flex: 1;
 		min-width: 0;
@@ -5613,6 +5652,11 @@ export default {
 		font-size: 25rpx;
 		font-weight: 700;
 		color: #2f2923;
+	}
+
+	.meal-order-checkout-item__chevron {
+		flex-shrink: 0;
+		opacity: 0.9;
 	}
 
 	.meal-order-cart-item__action {
