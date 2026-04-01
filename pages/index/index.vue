@@ -521,187 +521,45 @@
 			@submit="submitMealOrder"
 		></meal-order-checkout-sheet>
 
-		<up-popup
+		<invite-sheet
 			:show="showInviteSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
+			:subtitle="inviteSheetSubtitle"
+			:is-preparing="isPreparingInvite"
+			:invite="activeInvite"
+			:preparing-text="invitePreparingText"
+			:formatted-code="formattedActiveInviteCode"
+			:meta-line="inviteMetaLine"
+			:copied="inviteCodeCopied"
+			:show-share-action="showInviteShareAction"
 			@close="closeInviteSheet"
-		>
-			<view class="invite-sheet">
-				<view class="invite-sheet__header">
-					<view class="invite-sheet__heading">
-						<text class="invite-sheet__title">邀请成员</text>
-						<text class="invite-sheet__subtitle">{{ inviteSheetSubtitle }}</text>
-					</view>
-					<view class="invite-sheet__close" @tap="closeInviteSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
+			@copy-code="copyInviteCode"
+			@regenerate="regenerateInviteCode"
+		></invite-sheet>
 
-				<scroll-view class="invite-sheet__body" scroll-y>
-					<view v-if="isPreparingInvite" class="invite-sheet__state">
-						<up-icon name="reload" size="22" color="#8d8074"></up-icon>
-						<text class="invite-sheet__state-title">正在生成邀请</text>
-						<text class="invite-sheet__state-desc">{{ invitePreparingText }}</text>
-					</view>
-
-					<view v-else-if="activeInvite" class="invite-sheet__stack">
-						<view class="invite-sheet__code-card" @tap="copyInviteCode">
-							<text class="invite-sheet__code-label">邀请码</text>
-							<text class="invite-sheet__code">{{ formattedActiveInviteCode }}</text>
-						</view>
-
-						<text class="invite-sheet__meta-line">{{ inviteMetaLine }}</text>
-					</view>
-
-					<view v-else class="invite-sheet__state">
-						<up-icon name="info-circle" size="22" color="#8d8074"></up-icon>
-						<text class="invite-sheet__state-title">暂时没拿到邀请码</text>
-						<text class="invite-sheet__state-desc">可以稍后重试，或直接重新生成一组新的邀请码。</text>
-					</view>
-				</scroll-view>
-
-				<view class="invite-sheet__footer">
-					<view class="invite-sheet__button-group">
-						<button
-							class="invite-sheet__action invite-sheet__action--primary"
-							:class="{ 'invite-sheet__action--disabled': !activeInvite || isPreparingInvite }"
-							:disabled="!activeInvite || isPreparingInvite"
-							@tap="copyInviteCode"
-						>
-							<text class="invite-sheet__action-text invite-sheet__action-text--primary">
-								{{ isPreparingInvite ? '生成中...' : inviteCodeCopied ? '邀请码已复制' : '复制邀请码' }}
-							</text>
-						</button>
-						<button
-							v-if="showInviteShareAction"
-							class="invite-sheet__action invite-sheet__action--secondary"
-							open-type="share"
-							:disabled="!activeInvite || isPreparingInvite"
-						>
-							<view class="invite-sheet__action-inner">
-								<up-icon name="share" size="16" color="#7a6d61"></up-icon>
-								<text class="invite-sheet__action-text invite-sheet__action-text--secondary">发送给微信好友</text>
-							</view>
-						</button>
-					</view>
-					<view class="invite-sheet__utility">
-						<view class="invite-sheet__utility-link" @tap="regenerateInviteCode">
-							<up-icon name="reload" size="14" color="#7f7265"></up-icon>
-							<text class="invite-sheet__utility-text">重新生成邀请码</text>
-						</view>
-					</view>
-				</view>
-			</view>
-		</up-popup>
-
-		<up-popup
+		<invite-code-sheet
 			:show="showInviteCodeSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
+			:value="inviteCodeInput"
+			:can-submit="canSubmitInviteCode"
 			@close="closeInviteCodeSheet"
-		>
-			<view class="invite-code-sheet">
-				<view class="invite-code-sheet__header">
-					<view class="invite-code-sheet__heading">
-						<text class="invite-code-sheet__title">输入邀请码</text>
-						<text class="invite-code-sheet__subtitle">让朋友把邀请码发给你，输入后就能进入邀请页确认加入。</text>
-					</view>
-					<view class="invite-code-sheet__close" @tap="closeInviteCodeSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
+			@input-code="handleInviteCodeInput"
+			@submit="submitInviteCode"
+		></invite-code-sheet>
 
-				<view class="invite-code-sheet__body">
-					<input
-						:value="inviteCodeInput"
-						class="invite-code-sheet__input"
-						placeholder="输入邀请码，例如 AB12-CD34"
-						placeholder-class="invite-code-sheet__placeholder"
-						maxlength="9"
-						@input="handleInviteCodeInput"
-					/>
-					<text class="invite-code-sheet__hint">输入后会先打开邀请页，再由你确认是否加入。</text>
-				</view>
-
-				<view class="invite-code-sheet__footer">
-					<view class="sheet-action" @tap="closeInviteCodeSheet">
-						<text class="sheet-action__text">取消</text>
-					</view>
-					<view
-						class="sheet-action sheet-action--primary"
-						:class="{ 'sheet-action--disabled': !canSubmitInviteCode }"
-						@tap="submitInviteCode"
-					>
-						<text class="sheet-action__text sheet-action__text--primary">继续</text>
-					</view>
-				</view>
-			</view>
-		</up-popup>
-
-		<up-popup
+		<profile-sheet
 			:show="showProfileSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
+			:title="profileSheetTitle"
+			:subtitle="profileSheetSubtitle"
+			:avatar-preview="profileAvatarPreview"
+			:avatar-fallback="profileAvatarFallback"
+			:nickname="profileDraft.nickname"
+			:secondary-action-text="profileSheetSecondaryActionText"
+			:can-submit="canSubmitProfile"
+			:is-submitting="isSubmittingProfile"
 			@close="closeProfileSheet"
-		>
-			<view class="profile-sheet">
-				<view class="profile-sheet__header">
-					<view class="profile-sheet__heading">
-						<text class="profile-sheet__title">{{ profileSheetTitle }}</text>
-						<text class="profile-sheet__subtitle">{{ profileSheetSubtitle }}</text>
-					</view>
-					<view class="profile-sheet__close" @tap="closeProfileSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
-
-				<form class="profile-sheet__body" @submit="submitProfile">
-					<button class="profile-sheet__avatar-button" open-type="chooseAvatar" @chooseavatar="handleChooseAvatar">
-						<image v-if="profileAvatarPreview" class="profile-sheet__avatar-image" :src="profileAvatarPreview" mode="aspectFill"></image>
-						<view v-else class="profile-sheet__avatar-fallback">{{ profileAvatarFallback }}</view>
-					</button>
-					<text class="profile-sheet__avatar-tip">点击头像选择你的微信头像</text>
-
-					<view class="profile-sheet__field">
-						<text class="profile-sheet__label">昵称</text>
-						<input
-							:value="profileDraft.nickname"
-							class="profile-sheet__input"
-							type="nickname"
-							name="nickname"
-							placeholder="输入昵称"
-							placeholder-class="profile-sheet__placeholder"
-							maxlength="20"
-							@input="handleProfileNicknameInput"
-						/>
-						<text class="profile-sheet__hint">点击输入框时，键盘上方会出现微信昵称。</text>
-					</view>
-
-					<view class="profile-sheet__footer">
-						<button class="sheet-action" form-type="reset" @tap="closeProfileSheet">
-							<text class="sheet-action__text">{{ profileSheetSecondaryActionText }}</text>
-						</button>
-						<button
-							class="sheet-action sheet-action--primary"
-							:class="{ 'sheet-action--disabled': !canSubmitProfile || isSubmittingProfile }"
-							form-type="submit"
-							:disabled="!canSubmitProfile || isSubmittingProfile"
-						>
-							<text class="sheet-action__text sheet-action__text--primary">
-								{{ isSubmittingProfile ? '保存中...' : '保存资料' }}
-							</text>
-						</button>
-					</view>
-				</form>
-			</view>
-		</up-popup>
+			@choose-avatar="handleChooseAvatar"
+			@nickname-input="handleProfileNicknameInput"
+			@submit="submitProfile"
+		></profile-sheet>
 
 		<up-popup
 			:show="showAddSheet"
@@ -875,10 +733,13 @@ import {
 } from '../../utils/auth'
 import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
+import InviteCodeSheet from './components/invite-code-sheet.vue'
+import InviteSheet from './components/invite-sheet.vue'
 import MealOrderCartSheet from './components/meal-order-cart-sheet.vue'
 import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
 import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
 import MealOrderSpotlightSheet from './components/meal-order-spotlight-sheet.vue'
+import ProfileSheet from './components/profile-sheet.vue'
 import {
 	addDaysFromISODate,
 	buildMealOrderDishSummary,
@@ -898,10 +759,13 @@ import { readLastDraftLinkPrefill, readRecentSearches, writeLastDraftLinkPrefill
 
 export default {
 	components: {
+		InviteCodeSheet,
+		InviteSheet,
 		MealOrderCartSheet,
 		MealOrderCheckoutSheet,
 		MealOrderDateSheet,
-		MealOrderSpotlightSheet
+		MealOrderSpotlightSheet,
+		ProfileSheet
 	},
 	data() {
 		return {
@@ -3383,437 +3247,6 @@ export default {
 		font-weight: 600;
 		color: #7b6c5f;
 		letter-spacing: 1rpx;
-	}
-
-	.invite-sheet {
-		padding: 26rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
-		background: #f8f4ee;
-	}
-
-	.invite-sheet__header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 18rpx;
-	}
-
-	.invite-sheet__heading {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.invite-sheet__title {
-		display: block;
-		font-size: 36rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.invite-sheet__subtitle {
-		display: block;
-		margin-top: 10rpx;
-		font-size: 24rpx;
-		line-height: 1.6;
-		color: #8a7d70;
-	}
-
-	.invite-sheet__close {
-		width: 56rpx;
-		height: 56rpx;
-		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.75);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.invite-sheet__body {
-		max-height: 46vh;
-		margin-top: 22rpx;
-	}
-
-	.invite-sheet__code-card,
-	.invite-sheet__state {
-		padding: 24rpx;
-		border-radius: 24rpx;
-		background: rgba(255, 255, 255, 0.94);
-		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
-	}
-
-	.invite-sheet__stack {
-		display: flex;
-		flex-direction: column;
-		gap: 10rpx;
-	}
-
-	.invite-sheet__state-desc {
-		display: block;
-		font-size: 23rpx;
-		line-height: 1.6;
-		color: #82766b;
-	}
-
-	.invite-sheet__meta-line {
-		display: block;
-		font-size: 21rpx;
-		line-height: 1.5;
-		color: #908275;
-		text-align: center;
-	}
-
-	.invite-sheet__state {
-		margin-top: 16rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 12rpx;
-	}
-
-	.invite-sheet__state-title {
-		font-size: 30rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.invite-sheet__code-card {
-		position: relative;
-		padding: 18rpx 20rpx;
-		border-radius: 18rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		text-align: center;
-	}
-
-	.invite-sheet__code-card:active {
-		transform: scale(0.995);
-	}
-
-	.invite-sheet__code-label {
-		font-size: 21rpx;
-		font-weight: 500;
-		color: #a3968a;
-	}
-
-	.invite-sheet__code {
-		display: block;
-		margin-top: 8rpx;
-		font-size: 34rpx;
-		font-weight: 700;
-		letter-spacing: 3rpx;
-		color: #2f2923;
-		font-family: 'SF Mono', 'Menlo', monospace;
-	}
-
-	.invite-sheet__footer {
-		margin-top: 22rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 18rpx;
-	}
-
-	.invite-sheet__button-group {
-		display: flex;
-		flex-direction: column;
-		gap: 10rpx;
-	}
-
-	.invite-sheet__action {
-		width: 100%;
-		height: 92rpx;
-		padding: 0;
-		border-radius: 22rpx;
-		background: #ece6de;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: none;
-		box-sizing: border-box;
-		line-height: 1;
-	}
-
-	.invite-sheet__action::after {
-		border: none;
-	}
-
-	.invite-sheet__action-inner {
-		display: inline-flex;
-		align-items: center;
-		gap: 10rpx;
-	}
-
-	.invite-sheet__action--primary {
-		background: #3f352d;
-	}
-
-	.invite-sheet__action--secondary {
-		background: rgba(255, 255, 255, 0.98);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-	}
-
-	.invite-sheet__action--disabled {
-		background: #cfc5bb;
-	}
-
-	.invite-sheet__action[disabled] {
-		opacity: 0.7;
-	}
-
-	.invite-sheet__action-text {
-		font-size: 26rpx;
-		font-weight: 700;
-		color: #5c5146;
-	}
-
-	.invite-sheet__action-text--primary {
-		color: #ffffff;
-	}
-
-	.invite-sheet__action-text--secondary {
-		color: #6d6054;
-	}
-
-	.invite-sheet__action--disabled .invite-sheet__action-text--primary {
-		color: rgba(255, 255, 255, 0.84);
-	}
-
-	.invite-sheet__utility {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.invite-sheet__utility-link {
-		padding: 8rpx 2rpx;
-		display: inline-flex;
-		align-items: center;
-		gap: 10rpx;
-	}
-
-	.invite-sheet__utility-text {
-		font-size: 21rpx;
-		font-weight: 600;
-		color: #6e5f50;
-	}
-
-	.invite-code-sheet {
-		padding: 26rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
-		background: #f8f4ee;
-	}
-
-	.invite-code-sheet__header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 18rpx;
-	}
-
-	.invite-code-sheet__heading {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.invite-code-sheet__title {
-		display: block;
-		font-size: 36rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.invite-code-sheet__subtitle {
-		display: block;
-		margin-top: 10rpx;
-		font-size: 24rpx;
-		line-height: 1.6;
-		color: #8a7d70;
-	}
-
-	.invite-code-sheet__close {
-		width: 56rpx;
-		height: 56rpx;
-		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.75);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.invite-code-sheet__body {
-		margin-top: 22rpx;
-		padding: 24rpx;
-		border-radius: 24rpx;
-		background: rgba(255, 255, 255, 0.94);
-		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
-	}
-
-	.invite-code-sheet__input {
-		height: 96rpx;
-		padding: 0 24rpx;
-		border-radius: 20rpx;
-		background: #f8f3ec;
-		font-size: 32rpx;
-		font-weight: 700;
-		letter-spacing: 3rpx;
-		color: #2f2923;
-		font-family: 'SF Mono', 'Menlo', monospace;
-	}
-
-	.invite-code-sheet__placeholder {
-		font-size: 28rpx;
-		font-weight: 600;
-		letter-spacing: 1rpx;
-		color: #b0a59a;
-	}
-
-	.invite-code-sheet__hint {
-		display: block;
-		margin-top: 14rpx;
-		font-size: 22rpx;
-		line-height: 1.6;
-		color: #82766b;
-	}
-
-	.invite-code-sheet__footer {
-		margin-top: 22rpx;
-		display: flex;
-		gap: 12rpx;
-	}
-
-	.profile-sheet {
-		padding: 26rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
-		background: #f8f4ee;
-	}
-
-	.profile-sheet__header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 18rpx;
-	}
-
-	.profile-sheet__heading {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.profile-sheet__title {
-		display: block;
-		font-size: 36rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.profile-sheet__subtitle {
-		display: block;
-		margin-top: 10rpx;
-		font-size: 24rpx;
-		line-height: 1.6;
-		color: #8a7d70;
-	}
-
-	.profile-sheet__close {
-		width: 56rpx;
-		height: 56rpx;
-		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.75);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.profile-sheet__body {
-		margin-top: 22rpx;
-		padding: 24rpx;
-		border-radius: 24rpx;
-		background: rgba(255, 255, 255, 0.94);
-		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-	}
-
-	.profile-sheet__avatar-button {
-		width: 144rpx;
-		height: 144rpx;
-		padding: 0;
-		border-radius: 999rpx;
-		background: transparent;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: none;
-	}
-
-	.profile-sheet__avatar-button::after {
-		border: none;
-	}
-
-	.profile-sheet__avatar-image,
-	.profile-sheet__avatar-fallback {
-		width: 144rpx;
-		height: 144rpx;
-		border-radius: 999rpx;
-	}
-
-	.profile-sheet__avatar-image {
-		display: block;
-	}
-
-	.profile-sheet__avatar-fallback {
-		background: linear-gradient(180deg, #e8d8c5 0%, #dbc4a8 100%);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 48rpx;
-		font-weight: 700;
-		color: #5b4a3b;
-	}
-
-	.profile-sheet__avatar-tip {
-		margin-top: 16rpx;
-		font-size: 22rpx;
-		color: #877a6e;
-	}
-
-	.profile-sheet__field {
-		width: 100%;
-		margin-top: 28rpx;
-	}
-
-	.profile-sheet__label {
-		display: block;
-		font-size: 24rpx;
-		font-weight: 600;
-		color: #594c40;
-	}
-
-	.profile-sheet__input {
-		margin-top: 12rpx;
-		height: 92rpx;
-		padding: 0 24rpx;
-		border-radius: 20rpx;
-		background: #f8f3ec;
-		font-size: 28rpx;
-		color: #2f2923;
-	}
-
-	.profile-sheet__placeholder {
-		color: #b0a59a;
-	}
-
-	.profile-sheet__hint {
-		display: block;
-		margin-top: 12rpx;
-		font-size: 22rpx;
-		line-height: 1.6;
-		color: #8a7d70;
-	}
-
-	.profile-sheet__footer {
-		width: 100%;
-		margin-top: 28rpx;
-		display: flex;
-		gap: 12rpx;
 	}
 
 	.toolbar {

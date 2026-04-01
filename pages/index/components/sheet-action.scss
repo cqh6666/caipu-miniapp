@@ -1,0 +1,43 @@
+.sheet-action {
+	flex: 1;
+	width: 100%;
+	height: 88rpx;
+	padding: 0;
+	border-radius: 24rpx;
+	background: #f1ede8;
+	border: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	line-height: 1;
+}
+
+.sheet-action::after {
+	border: none;
+}
+
+.sheet-action--primary {
+	background: #5b4a3b;
+	box-shadow: 0 12rpx 20rpx rgba(91, 74, 59, 0.16);
+}
+
+.sheet-action--disabled {
+	background: #d9d1c8;
+	box-shadow: none;
+	pointer-events: none;
+}
+
+.sheet-action__text {
+	font-size: 28rpx;
+	font-weight: 600;
+	color: #675c51;
+}
+
+.sheet-action__text--primary {
+	color: #ffffff;
+}
+
+.sheet-action--disabled .sheet-action__text--primary {
+	opacity: 0.76;
+}
