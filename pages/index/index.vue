@@ -561,145 +561,26 @@
 			@submit="submitProfile"
 		></profile-sheet>
 
-		<up-popup
-			:show="showAddSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
-			@close="closeAddSheet"
-		>
-			<view class="sheet">
-				<view class="sheet__header">
-					<view class="sheet__heading">
-						<text class="sheet__title">添加菜品</text>
-						<text class="sheet__subtitle">先记下来，后面再慢慢补全</text>
-					</view>
-					<view class="sheet__close" @tap="closeAddSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
-
-				<scroll-view class="sheet__body" scroll-y>
-					<view class="form-field">
-						<text class="form-field__label">菜谱链接</text>
-						<input
-							:value="draft.link"
-							class="sheet-input"
-							placeholder="支持直接粘贴 B 站或小红书分享链接"
-							placeholder-class="sheet-input__placeholder"
-							maxlength="300"
-							@input="handleDraftLinkInput"
-						/>
-						<text v-if="draftLinkAssistText" class="form-field__hint">{{ draftLinkAssistText }}</text>
-					</view>
-
-					<view class="form-field">
-						<text class="form-field__label">菜名</text>
-						<input
-							:value="draft.title"
-							class="sheet-input sheet-input--title"
-							placeholder="可手动填写，或等待系统自动识别"
-							placeholder-class="sheet-input__placeholder"
-							maxlength="40"
-							@input="handleDraftTitleInput"
-						/>
-						<text v-if="draftTitleAssistText" class="form-field__hint">{{ draftTitleAssistText }}</text>
-					</view>
-
-					<view class="form-field">
-						<text class="form-field__label">成品图（可选）</text>
-						<view class="upload-gallery">
-							<view
-								v-for="(image, index) in draft.images"
-								:key="`draft-image-${index}`"
-								class="upload-gallery__item"
-								@tap="previewDraftImages(index)"
-							>
-								<image class="upload-gallery__thumb" :src="image" mode="aspectFill"></image>
-								<view class="upload-gallery__badge">
-									<text class="upload-gallery__badge-text">{{ index === 0 ? '封面' : index + 1 }}</text>
-								</view>
-								<view class="upload-gallery__remove" @tap.stop="removeDraftImage(index)">
-									<up-icon name="close" size="14" color="#ffffff"></up-icon>
-								</view>
-							</view>
-							<view
-								v-if="draft.images.length < maxRecipeImages"
-								class="upload-gallery__add"
-								@tap="chooseDraftImages"
-							>
-								<view class="upload-gallery__plus">
-									<up-icon name="plus" size="20" color="#8c8074"></up-icon>
-								</view>
-								<text class="upload-gallery__add-text">上传成品图</text>
-							</view>
-						</view>
-						<text class="form-field__hint">
-							{{ draft.images.length ? `已添加 ${draft.images.length} 张，首张会作为封面展示。` : `最多上传 ${maxRecipeImages} 张，首张会作为封面展示。` }}
-						</text>
-					</view>
-
-					<view class="form-field">
-						<text class="form-field__label">分类</text>
-						<view class="segment">
-							<view
-								v-for="tab in mealTabs"
-								:key="tab.value"
-								class="segment__item"
-								:class="{ 'segment__item--active': draft.mealType === tab.value }"
-								@tap="draft.mealType = tab.value"
-							>
-								<text class="segment__text">{{ tab.label }}</text>
-							</view>
-						</view>
-					</view>
-
-					<view class="form-field">
-						<text class="form-field__label">状态</text>
-						<view class="segment">
-							<view
-								v-for="tab in draftStatusOptions"
-								:key="tab.value"
-								class="segment__item"
-								:class="{
-									'segment__item--active': draft.status === tab.value,
-									'segment__item--wishlist': draft.status === tab.value && tab.value === 'wishlist',
-									'segment__item--done': draft.status === tab.value && tab.value === 'done'
-								}"
-								@tap="draft.status = tab.value"
-							>
-								<text class="segment__text">{{ tab.label }}</text>
-							</view>
-						</view>
-					</view>
-
-					<view class="form-field">
-						<text class="form-field__label">备注</text>
-						<textarea
-							v-model="draft.note"
-							class="sheet-textarea"
-							placeholder="比如口味、做法备注、视频亮点"
-							placeholder-class="sheet-textarea__placeholder"
-							maxlength="300"
-						/>
-					</view>
-				</scroll-view>
-
-				<view class="sheet__footer">
-					<view class="sheet-action" @tap="closeAddSheet">
-						<text class="sheet-action__text">取消</text>
-					</view>
-					<view
-						class="sheet-action sheet-action--primary"
-						:class="{ 'sheet-action--disabled': !canSubmitDraft }"
-						@tap="submitDraft"
-					>
-						<text class="sheet-action__text sheet-action__text--primary">保存</text>
-					</view>
-				</view>
-			</view>
-		</up-popup>
+	<add-recipe-sheet
+		:show="showAddSheet"
+		:draft="draft"
+		:draft-link-assist-text="draftLinkAssistText"
+		:draft-title-assist-text="draftTitleAssistText"
+		:max-recipe-images="maxRecipeImages"
+		:meal-tabs="mealTabs"
+		:draft-status-options="draftStatusOptions"
+		:can-submit="canSubmitDraft"
+		@close="closeAddSheet"
+		@link-input="handleDraftLinkInput"
+		@title-input="handleDraftTitleInput"
+		@preview-image="previewDraftImages"
+		@remove-image="removeDraftImage"
+		@choose-images="chooseDraftImages"
+		@select-meal-type="handleDraftMealTypeSelect"
+		@select-status="handleDraftStatusSelect"
+		@note-input="handleDraftNoteInput"
+		@submit="submitDraft"
+	></add-recipe-sheet>
 	</view>
 </template>
 
@@ -732,6 +613,7 @@ import {
 	updateSessionKitchen
 } from '../../utils/auth'
 import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
+import AddRecipeSheet from './components/add-recipe-sheet.vue'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import InviteCodeSheet from './components/invite-code-sheet.vue'
 import InviteSheet from './components/invite-sheet.vue'
@@ -759,6 +641,7 @@ import { readLastDraftLinkPrefill, readRecentSearches, writeLastDraftLinkPrefill
 
 export default {
 	components: {
+		AddRecipeSheet,
 		InviteCodeSheet,
 		InviteSheet,
 		MealOrderCartSheet,
@@ -2164,6 +2047,17 @@ export default {
 
 			const autoTitle = String(this.draftAutoTitle || '').trim()
 			this.draftTitleTouched = autoTitle ? normalizedTitle !== autoTitle : true
+		},
+		handleDraftMealTypeSelect(value) {
+			if (!this.mealTabs.some((tab) => tab.value === value)) return
+			this.draft.mealType = value
+		},
+		handleDraftStatusSelect(value) {
+			if (!this.draftStatusOptions.some((tab) => tab.value === value)) return
+			this.draft.status = value
+		},
+		handleDraftNoteInput(event) {
+			this.draft.note = String(event?.detail?.value || '')
 		},
 		handleDraftLinkInput(event) {
 			const value = String(event?.detail?.value || '')
@@ -4359,287 +4253,4 @@ export default {
 		justify-content: center;
 	}
 
-	.sheet {
-		height: 78vh;
-		background: #ffffff;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.sheet__header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 16rpx;
-		padding: 28rpx 28rpx 18rpx;
-	}
-
-	.sheet__heading {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.sheet__title {
-		font-size: 38rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.sheet__subtitle {
-		display: block;
-		margin-top: 8rpx;
-		font-size: 22rpx;
-		line-height: 1.5;
-		color: #9b9186;
-	}
-
-	.sheet__close {
-		width: 68rpx;
-		height: 68rpx;
-		border-radius: 18rpx;
-		background: #f4f0eb;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.sheet__body {
-		flex: 1;
-		min-height: 0;
-		padding: 0 28rpx 28rpx;
-		box-sizing: border-box;
-	}
-
-	.form-field {
-		display: flex;
-		flex-direction: column;
-		gap: 12rpx;
-		margin-top: 26rpx;
-	}
-
-	.form-field:first-child {
-		margin-top: 0;
-	}
-
-	.form-field__label {
-		font-size: 22rpx;
-		font-weight: 500;
-		color: #9b9186;
-	}
-
-	.form-field__hint {
-		font-size: 22rpx;
-		line-height: 1.6;
-		color: #9b9186;
-	}
-
-	.sheet-input,
-	.sheet-textarea {
-		width: 100%;
-		box-sizing: border-box;
-		border-radius: 24rpx;
-		background: #f7f4f0;
-		border: 1px solid #ebe4db;
-		color: #2f2923;
-	}
-
-	.sheet-input {
-		height: 88rpx;
-		padding: 0 24rpx;
-		font-size: 27rpx;
-	}
-
-	.sheet-input--title {
-		height: 96rpx;
-		font-size: 30rpx;
-		font-weight: 600;
-		background: #ffffff;
-		border-color: #e3dbd2;
-	}
-
-	.sheet-input__placeholder,
-	.sheet-textarea__placeholder {
-		color: #b7aea3;
-	}
-
-	.sheet-textarea {
-		min-height: 180rpx;
-		padding: 22rpx 24rpx;
-		font-size: 26rpx;
-		line-height: 1.6;
-	}
-
-	.upload-gallery {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 16rpx;
-	}
-
-	.upload-gallery__item,
-	.upload-gallery__add {
-		position: relative;
-		width: calc((100% - 32rpx) / 3);
-		height: 176rpx;
-		border-radius: 24rpx;
-		overflow: hidden;
-	}
-
-	.upload-gallery__item {
-		background: #ebe4db;
-	}
-
-	.upload-gallery__thumb {
-		width: 100%;
-		height: 100%;
-		display: block;
-	}
-
-	.upload-gallery__badge {
-		position: absolute;
-		left: 12rpx;
-		bottom: 12rpx;
-		padding: 8rpx 14rpx;
-		border-radius: 999rpx;
-		background: rgba(47, 41, 35, 0.58);
-		backdrop-filter: blur(10rpx);
-	}
-
-	.upload-gallery__badge-text {
-		font-size: 20rpx;
-		font-weight: 600;
-		color: #ffffff;
-	}
-
-	.upload-gallery__remove {
-		position: absolute;
-		top: 12rpx;
-		right: 12rpx;
-		width: 40rpx;
-		height: 40rpx;
-		border-radius: 999rpx;
-		background: rgba(47, 41, 35, 0.6);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.upload-gallery__add {
-		border: 1px dashed #d8cec3;
-		background: #faf7f3;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 12rpx;
-	}
-
-	.upload-gallery__plus {
-		width: 64rpx;
-		height: 64rpx;
-		border-radius: 20rpx;
-		background: #f1ebe4;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.upload-gallery__add-text {
-		font-size: 24rpx;
-		font-weight: 600;
-		color: #75685c;
-	}
-
-	.segment {
-		display: flex;
-		gap: 10rpx;
-		padding: 8rpx;
-		border-radius: 24rpx;
-		background: #f3efea;
-	}
-
-	.segment__item {
-		flex: 1;
-		height: 76rpx;
-		border-radius: 18rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: transparent;
-	}
-
-	.segment__item--active {
-		background: #ffffff;
-		box-shadow: 0 8rpx 18rpx rgba(59, 47, 36, 0.06);
-	}
-
-	.segment__item--wishlist {
-		background: #f3e7de;
-	}
-
-	.segment__item--done {
-		background: #e8efe5;
-	}
-
-	.segment__text {
-		font-size: 24rpx;
-		font-weight: 600;
-		color: #867a6f;
-	}
-
-	.segment__item--active .segment__text {
-		color: #5b4a3b;
-	}
-
-	.sheet__footer {
-		padding: 18rpx 28rpx calc(env(safe-area-inset-bottom) + 20rpx);
-		border-top: 1px solid rgba(91, 74, 59, 0.08);
-		background: #ffffff;
-		display: flex;
-		gap: 16rpx;
-	}
-
-	.sheet-action {
-		flex: 1;
-		width: 100%;
-		height: 88rpx;
-		padding: 0;
-		border-radius: 24rpx;
-		background: #f1ede8;
-		border: none;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-sizing: border-box;
-		line-height: 1;
-	}
-
-	.sheet-action::after {
-		border: none;
-	}
-
-	.sheet-action--primary {
-		background: #5b4a3b;
-		box-shadow: 0 12rpx 20rpx rgba(91, 74, 59, 0.16);
-	}
-
-	.sheet-action--disabled {
-		background: #d9d1c8;
-		box-shadow: none;
-		pointer-events: none;
-	}
-
-	.sheet-action__text {
-		font-size: 28rpx;
-		font-weight: 600;
-		color: #675c51;
-	}
-
-	.sheet-action__text--primary {
-		color: #ffffff;
-	}
-
-	.sheet-action--disabled .sheet-action__text--primary {
-		opacity: 0.76;
-	}
 </style>
