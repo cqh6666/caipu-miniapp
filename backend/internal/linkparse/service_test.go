@@ -249,3 +249,74 @@ func TestRefineTitleUsesConfiguredRequestParameters(t *testing.T) {
 		t.Fatalf("title = %q, want %q", got, want)
 	}
 }
+
+func TestFinalizePreviewTitleDefaultsToRuleSource(t *testing.T) {
+	t.Parallel()
+
+	service := &Service{}
+
+	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨】")
+	if got.Title != "蒜香排骨" {
+		t.Fatalf("Title = %q, want %q", got.Title, "蒜香排骨")
+	}
+	if got.Source != "rule" {
+		t.Fatalf("Source = %q, want %q", got.Source, "rule")
+	}
+}
+
+func TestFinalizePreviewTitleMarksAISourceWhenRefinedTitleWins(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"香菜牛肉\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	service := &Service{
+		titleAI: &aiClient{
+			baseURL:     server.URL,
+			model:       "demo-title-model",
+			httpClient:  &http.Client{},
+			stream:      false,
+			temperature: 0,
+			maxTokens:   64,
+		},
+	}
+
+	got := service.finalizePreviewTitle(context.Background(), "教程")
+	if got.Title != "香菜牛肉" {
+		t.Fatalf("Title = %q, want %q", got.Title, "香菜牛肉")
+	}
+	if got.Source != "ai" {
+		t.Fatalf("Source = %q, want %q", got.Source, "ai")
+	}
+}
+
+func TestFinalizePreviewTitleFallsBackToRuleWhenAIRequestFails(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"message":"boom"}}`, http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	service := &Service{
+		titleAI: &aiClient{
+			baseURL:     server.URL,
+			model:       "demo-title-model",
+			httpClient:  &http.Client{},
+			stream:      false,
+			temperature: 0,
+			maxTokens:   64,
+		},
+	}
+
+	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨】")
+	if got.Title != "蒜香排骨" {
+		t.Fatalf("Title = %q, want %q", got.Title, "蒜香排骨")
+	}
+	if got.Source != "rule" {
+		t.Fatalf("Source = %q, want %q", got.Source, "rule")
+	}
+}

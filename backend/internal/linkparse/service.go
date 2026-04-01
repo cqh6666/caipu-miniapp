@@ -316,12 +316,14 @@ func (s *Service) PreviewBilibili(ctx context.Context, rawInput string) (LinkPre
 		if err != nil {
 			return LinkPreviewResult{}, err
 		}
+		titleOutcome := s.finalizePreviewTitle(ctx, firstNonEmpty(result.Title, result.Part))
 
 		return LinkPreviewResult{
 			Platform:     "bilibili",
 			Link:         result.Link,
 			CanonicalURL: result.Link,
-			Title:        s.finalizePreviewTitle(ctx, firstNonEmpty(result.Title, result.Part)),
+			Title:        titleOutcome.Title,
+			TitleSource:  titleOutcome.Source,
 			CoverURL:     strings.TrimSpace(result.CoverURL),
 			ImageURLs:    draftImageURLs(strings.TrimSpace(result.CoverURL)),
 			Warnings:     result.Warnings,
@@ -345,12 +347,14 @@ func (s *Service) PreviewBilibili(ctx context.Context, rawInput string) (LinkPre
 
 	page, pageWarnings := pickPage(view.Data.Pages, ref.Page)
 	warnings = append(warnings, pageWarnings...)
+	titleOutcome := s.finalizePreviewTitle(ctx, firstNonEmpty(view.Data.Title, page.Part))
 
 	return LinkPreviewResult{
 		Platform:     "bilibili",
 		Link:         ref.URL,
 		CanonicalURL: ref.URL,
-		Title:        s.finalizePreviewTitle(ctx, firstNonEmpty(view.Data.Title, page.Part)),
+		Title:        titleOutcome.Title,
+		TitleSource:  titleOutcome.Source,
 		CoverURL:     strings.TrimSpace(view.Data.Pic),
 		ImageURLs:    draftImageURLs(strings.TrimSpace(view.Data.Pic)),
 		Warnings:     warnings,
@@ -1409,6 +1413,11 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+type previewTitleOutcome struct {
+	Title  string
+	Source string
+}
+
 func sanitizePreviewTitle(raw string) string {
 	title := strings.TrimSpace(raw)
 	if title == "" {
@@ -1430,25 +1439,32 @@ func sanitizePreviewTitle(raw string) string {
 	return title
 }
 
-func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) string {
+func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewTitleOutcome {
 	title := sanitizePreviewTitle(raw)
-	if title == "" || s == nil || s.titleAI == nil || !isLowConfidencePreviewTitle(title) {
-		return title
+	outcome := previewTitleOutcome{
+		Title:  title,
+		Source: "",
+	}
+	if title == "" {
+		return outcome
+	}
+	outcome.Source = "rule"
+	if s == nil || s.titleAI == nil {
+		return outcome
 	}
 
 	refined, err := s.titleAI.refineTitle(ctx, raw, title)
 	if err != nil {
-		return title
+		return outcome
 	}
 
 	refined = sanitizePreviewTitle(refined)
 	if refined == "" {
-		return title
+		return outcome
 	}
-	if scorePreviewTitleCandidate(refined) >= scorePreviewTitleCandidate(title) {
-		return refined
-	}
-	return title
+	outcome.Title = refined
+	outcome.Source = "ai"
+	return outcome
 }
 
 func trimPreviewTitleNoise(title string) string {

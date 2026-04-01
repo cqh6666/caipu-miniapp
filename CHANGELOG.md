@@ -6,7 +6,10 @@
 
 - 来源链接识别策略调整为“规则提取 `platform/url` + 模型清洗 `title`”：
   - 后端 `linkparse` 的平台识别、URL 提取与归一化继续使用现有规则链路
-  - 链接标题仅在低置信度时再交给模型清洗，标题模型默认复用 `AI_MODEL`，并沿用 3 秒超时预算
+  - 链接标题现为模型优先清洗，若模型不可用、超时或返回空结果，再回退到规则清洗
+- 新增菜品弹窗的链接预览会补充标题来源提示：
+  - 预览接口新增 `titleSource`
+  - 前端会明确展示当前菜名来自 `AI 智能提取` 还是 `规则提取`
 - `AI title` 模型配置补充支持独立的 `baseUrl / apiKey / model / timeout`
   - 新增 `AI_TITLE_BASE_URL`、`AI_TITLE_API_KEY`
   - 若标题专用配置为空，会分别回退到全局 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`

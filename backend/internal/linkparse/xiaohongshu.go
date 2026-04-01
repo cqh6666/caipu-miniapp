@@ -51,12 +51,14 @@ func (s *Service) PreviewXiaohongshu(ctx context.Context, rawInput string) (Link
 	if err != nil {
 		return LinkPreviewResult{}, err
 	}
+	titleOutcome := s.finalizePreviewTitle(ctx, result.Title)
 
 	return LinkPreviewResult{
 		Platform:     "xiaohongshu",
 		Link:         result.Link,
 		CanonicalURL: firstNonEmpty(result.CanonicalURL, result.Link),
-		Title:        s.finalizePreviewTitle(ctx, result.Title),
+		Title:        titleOutcome.Title,
+		TitleSource:  titleOutcome.Source,
 		CoverURL:     firstNonEmpty(result.CoverURL, firstImage(result.Images)),
 		ImageURLs:    preferredXiaohongshuImages(result),
 		ProviderUsed: result.ProviderUsed,

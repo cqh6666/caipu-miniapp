@@ -113,6 +113,7 @@ type LinkPreviewResult struct {
 	Link         string   `json:"link"`
 	CanonicalURL string   `json:"canonicalUrl"`
 	Title        string   `json:"title"`
+	TitleSource  string   `json:"titleSource,omitempty"`
 	CoverURL     string   `json:"coverUrl"`
 	ImageURLs    []string `json:"imageUrls"`
 	ProviderUsed string   `json:"providerUsed,omitempty"`

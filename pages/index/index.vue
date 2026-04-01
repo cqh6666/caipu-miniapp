@@ -491,6 +491,7 @@ export default {
 			draftAutoTitle: '',
 			draftTitleTouched: false,
 			draftLinkPreviewPlatform: '',
+			draftLinkPreviewTitleSource: '',
 			draftLinkPreviewError: '',
 			draftLinkPreviewTimer: null,
 			draftLinkPreviewRequestID: 0,
@@ -939,12 +940,19 @@ export default {
 			if (this.draftLinkPreviewPlatform === 'xiaohongshu') return '小红书'
 			return '链接'
 		},
+		draftLinkTitleSourceLabel() {
+			if (this.draftLinkPreviewTitleSource === 'ai') return 'AI 智能提取'
+			if (this.draftLinkPreviewTitleSource === 'rule') return '规则提取'
+			return ''
+		},
 		draftTitleAssistText() {
 			if (!this.draftAutoTitle) return ''
+			const sourceLabel = this.draftLinkTitleSourceLabel
+			const sourceSuffix = sourceLabel ? `（${sourceLabel}）` : ''
 			if (this.draftTitleTouched) {
-				return `已识别出原始标题，当前保留你手动填写的菜名。`
+				return `已识别出菜名${sourceSuffix}，当前保留你手动填写的菜名。`
 			}
-			return `已从${this.draftLinkPlatformLabel}链接识别菜名，可直接保存。`
+			return `已从${this.draftLinkPlatformLabel}链接识别菜名${sourceSuffix}，可直接保存。`
 		},
 		draftLinkAssistText() {
 			if (this.isDraftLinkPreviewing) {
@@ -1758,6 +1766,7 @@ export default {
 			this.draftAutoTitle = ''
 			this.draftTitleTouched = false
 			this.draftLinkPreviewPlatform = ''
+			this.draftLinkPreviewTitleSource = ''
 			this.draftLinkPreviewError = ''
 			this.draftLinkPrefillSource = ''
 		},
@@ -1801,6 +1810,7 @@ export default {
 			}
 			this.draftLinkPreviewRequestID += 1
 			this.isDraftLinkPreviewing = false
+			this.draftLinkPreviewTitleSource = ''
 		},
 		applyDraftAutoTitle(title = '') {
 			const normalizedTitle = normalizeDraftAutoTitle(title)
@@ -1858,6 +1868,7 @@ export default {
 				}
 				this.draftAutoTitle = ''
 				this.draftLinkPreviewPlatform = ''
+				this.draftLinkPreviewTitleSource = ''
 				return
 			}
 
@@ -1889,6 +1900,7 @@ export default {
 						this.draftLinkPreviewTimer = null
 						const resolvedLink = String(result?.canonicalUrl || result?.link || '').trim()
 						this.draftLinkPreviewPlatform = detectDraftLinkPlatform(resolvedLink || value) || platform
+						this.draftLinkPreviewTitleSource = String(result?.titleSource || '').trim().toLowerCase()
 
 						const previewTitle = normalizeDraftAutoTitle(result?.title || '')
 					if (previewTitle) {
