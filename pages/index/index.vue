@@ -272,131 +272,32 @@
 			</template>
 
 			<template v-else>
-				<view class="kitchen-hero">
-					<view
-						class="kitchen-card"
-						:class="{ 'kitchen-card--disabled': !currentKitchenName }"
-						@tap="openKitchenSelector"
-					>
-						<view class="kitchen-card__header">
-							<view class="kitchen-card__badge">
-								<up-icon name="grid-fill" size="12" color="#5b4a3b"></up-icon>
-								<text class="kitchen-card__badge-text">当前厨房</text>
-							</view>
-							<view class="kitchen-card__switch">
-								<text class="kitchen-card__switch-text">{{ canSwitchKitchen ? '切换' : kitchenConnectionLabel }}</text>
-								<up-icon
-									v-if="canSwitchKitchen"
-									name="arrow-right"
-									size="14"
-									color="#7f7265"
-								></up-icon>
-								<view
-									v-else
-									class="kitchen-card__status-dot"
-									:class="{ 'kitchen-card__status-dot--connected': isKitchenConnected }"
-								></view>
-							</view>
-						</view>
-						<view class="kitchen-card__name-row">
-							<text class="kitchen-card__name">{{ currentKitchenDisplayName }}</text>
-							<view
-								v-if="currentKitchenName"
-								class="kitchen-card__name-edit"
-								@tap.stop="openKitchenNameSheet"
-							>
-								<up-icon name="edit-pen" size="15" color="#6e5f50"></up-icon>
-							</view>
-						</view>
-						<text class="kitchen-card__meta">{{ currentKitchenMetaText }}</text>
-						<view v-if="currentKitchenName" class="kitchen-card__tags">
-							<view class="kitchen-card__tag">
-								<text class="kitchen-card__tag-value">{{ kitchenMembers.length || 0 }}</text>
-								<text class="kitchen-card__tag-label">成员</text>
-							</view>
-							<view v-if="currentKitchenRoleLabel" class="kitchen-card__tag">
-								<text class="kitchen-card__tag-value">{{ currentKitchenRoleLabel }}</text>
-								<text class="kitchen-card__tag-label">身份</text>
-							</view>
-							<view v-if="canSwitchKitchen" class="kitchen-card__tag">
-								<text class="kitchen-card__tag-value">{{ kitchenOptions.length }}</text>
-								<text class="kitchen-card__tag-label">厨房</text>
-							</view>
-						</view>
-					</view>
-
-					<view class="kitchen-actions">
-						<view class="kitchen-actions__primary" @tap="openInviteSheet">
-							<view class="kitchen-actions__primary-icon">
-								<up-icon name="share" size="16" color="#ffffff"></up-icon>
-							</view>
-							<view class="kitchen-actions__primary-body">
-								<text class="kitchen-actions__primary-title">邀请成员</text>
-								<text class="kitchen-actions__primary-desc">{{ inviteActionDescription }}</text>
-							</view>
-						</view>
-					</view>
-				</view>
-
-				<view class="member-panel">
-					<view class="member-panel__header">
-						<view class="member-panel__heading">
-							<text class="member-panel__title">厨房成员</text>
-							<text class="member-panel__desc">与你共同维护菜单的人</text>
-						</view>
-						<view class="member-panel__aside">
-							<text class="member-panel__meta">{{ memberPanelSummary }}</text>
-							<view v-if="hasMoreKitchenMembers" class="member-panel__inline-action" @tap="showAllMembers">
-								<text class="member-panel__inline-action-text">查看全部</text>
-							</view>
-						</view>
-					</view>
-
-					<view v-if="visibleKitchenMembers.length" class="member-list">
-						<view
-							v-for="member in visibleKitchenMembers"
-							:key="member.userId"
-							class="member-card"
-							:class="{ 'member-card--self': member.isCurrentUser, 'member-card--interactive': member.isCurrentUser }"
-							:hover-class="member.isCurrentUser ? 'member-card--hover' : ''"
-							@tap="handleMemberCardTap(member)"
-						>
-							<view class="member-card__avatar">
-								<image v-if="member.avatarUrl" class="member-card__avatar-image" :src="member.avatarUrl" mode="aspectFill"></image>
-								<text v-else>{{ memberInitial(member) }}</text>
-							</view>
-							<view class="member-card__body">
-								<view class="member-card__top">
-									<text class="member-card__name">{{ memberDisplayName(member) }}</text>
-									<view class="member-card__badges">
-										<text class="member-card__badge">{{ memberRoleLabel(member.role) }}</text>
-										<text v-if="member.isCurrentUser" class="member-card__badge member-card__badge--self">你</text>
-									</view>
-								</view>
-								<view class="member-card__meta-row">
-									<text class="member-card__meta">{{ memberMemberDescription(member) }}</text>
-									<view v-if="member.isCurrentUser" class="member-card__action">
-										<text class="member-card__action-text">修改资料</text>
-										<up-icon name="arrow-right" size="12" color="#8a7d70"></up-icon>
-									</view>
-								</view>
-							</view>
-						</view>
-					</view>
-
-					<view v-else class="soft-empty soft-empty--inline member-panel__empty">
-						<text class="soft-empty__text">
-							{{ isLoadingKitchenMembers ? '正在获取成员信息...' : '这间厨房暂时只有你，邀请好友后会显示在这里。' }}
-						</text>
-					</view>
-
-					<view class="member-panel__footer">
-						<view class="member-panel__join-link" @tap="openInviteCodeSheet">
-							<text class="member-panel__join-link-text">已有邀请码？去加入</text>
-							<up-icon name="arrow-right" size="14" color="#7f7265"></up-icon>
-						</view>
-					</view>
-				</view>
+				<kitchen-section
+					:current-kitchen-name="currentKitchenName"
+					:can-switch-kitchen="canSwitchKitchen"
+					:kitchen-connection-label="kitchenConnectionLabel"
+					:is-kitchen-connected="isKitchenConnected"
+					:current-kitchen-display-name="currentKitchenDisplayName"
+					:current-kitchen-meta-text="currentKitchenMetaText"
+					:kitchen-members-count="kitchenMembers.length || 0"
+					:current-kitchen-role-label="currentKitchenRoleLabel"
+					:kitchen-options-count="kitchenOptions.length"
+					:invite-action-description="inviteActionDescription"
+					:member-panel-summary="memberPanelSummary"
+					:has-more-kitchen-members="hasMoreKitchenMembers"
+					:visible-kitchen-members="visibleKitchenMembers"
+					:is-loading-kitchen-members="isLoadingKitchenMembers"
+					:member-initial="memberInitial"
+					:member-display-name="memberDisplayName"
+					:member-role-label="memberRoleLabel"
+					:member-member-description="memberMemberDescription"
+					@open-kitchen-selector="openKitchenSelector"
+					@open-kitchen-name-sheet="openKitchenNameSheet"
+					@open-invite-sheet="openInviteSheet"
+					@show-all-members="showAllMembers"
+					@member-tap="handleMemberCardTap"
+					@open-invite-code-sheet="openInviteCodeSheet"
+				></kitchen-section>
 
 			</template>
 
@@ -617,6 +518,7 @@ import AddRecipeSheet from './components/add-recipe-sheet.vue'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import InviteCodeSheet from './components/invite-code-sheet.vue'
 import InviteSheet from './components/invite-sheet.vue'
+import KitchenSection from './components/kitchen-section.vue'
 import MealOrderCartSheet from './components/meal-order-cart-sheet.vue'
 import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
 import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
@@ -644,6 +546,7 @@ export default {
 		AddRecipeSheet,
 		InviteCodeSheet,
 		InviteSheet,
+		KitchenSection,
 		MealOrderCartSheet,
 		MealOrderCheckoutSheet,
 		MealOrderDateSheet,
@@ -2743,384 +2646,6 @@ export default {
 
 	.meal-order-mode-bar__chip--ghost .meal-order-mode-bar__chip-text {
 		color: #948476;
-	}
-
-	.kitchen-hero {
-		margin-top: 18rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 14rpx;
-	}
-
-	.kitchen-card {
-		padding: 22rpx 20rpx;
-		border-radius: 26rpx;
-		background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(246, 240, 232, 0.98) 100%);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-		box-shadow: 0 12rpx 26rpx rgba(56, 44, 30, 0.05);
-		display: flex;
-		flex-direction: column;
-		gap: 16rpx;
-	}
-
-	.kitchen-card--disabled {
-		opacity: 0.78;
-	}
-
-	.kitchen-card__header,
-	.kitchen-card__switch {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12rpx;
-	}
-
-	.kitchen-card__badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 8rpx;
-		align-self: flex-start;
-		padding: 8rpx 14rpx;
-		border-radius: 999rpx;
-		background: rgba(91, 74, 59, 0.08);
-	}
-
-	.kitchen-card__badge-text,
-	.kitchen-card__switch-text {
-		font-size: 20rpx;
-		font-weight: 600;
-		color: #6a5a4b;
-	}
-
-	.kitchen-card__status-dot {
-		width: 14rpx;
-		height: 14rpx;
-		border-radius: 999rpx;
-		background: #b9b0a5;
-		box-shadow: 0 0 0 6rpx rgba(185, 176, 165, 0.18);
-		flex-shrink: 0;
-	}
-
-	.kitchen-card__status-dot--connected {
-		background: #78b86d;
-		box-shadow: 0 0 0 6rpx rgba(120, 184, 109, 0.16);
-	}
-
-	.kitchen-card__name {
-		font-size: 38rpx;
-		font-weight: 700;
-		line-height: 1.28;
-		color: #2f2923;
-	}
-
-	.kitchen-card__name-row {
-		display: flex;
-		align-items: center;
-		gap: 12rpx;
-	}
-
-	.kitchen-card__name-edit {
-		width: 52rpx;
-		height: 52rpx;
-		border-radius: 16rpx;
-		background: rgba(91, 74, 59, 0.08);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.kitchen-card__meta {
-		font-size: 24rpx;
-		line-height: 1.6;
-		color: #8b7e72;
-	}
-
-	.kitchen-card__tags {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 12rpx;
-	}
-
-	.kitchen-card__tag {
-		min-width: 132rpx;
-		padding: 14rpx 16rpx;
-		border-radius: 18rpx;
-		background: rgba(255, 255, 255, 0.7);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-		display: flex;
-		flex-direction: column;
-		gap: 4rpx;
-	}
-
-	.kitchen-card__tag-value {
-		font-size: 28rpx;
-		font-weight: 700;
-		line-height: 1.2;
-		color: #3d3128;
-	}
-
-	.kitchen-card__tag-label {
-		font-size: 20rpx;
-		color: #8b7e72;
-	}
-
-	.kitchen-actions {
-		padding: 20rpx;
-		border-radius: 24rpx;
-		background: rgba(255, 255, 255, 0.92);
-		border: 1px solid rgba(91, 74, 59, 0.06);
-		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
-		display: flex;
-		flex-direction: column;
-		gap: 14rpx;
-	}
-
-	.kitchen-actions__primary {
-		padding: 18rpx;
-		border-radius: 22rpx;
-		background: linear-gradient(180deg, #5c493c 0%, #46362c 100%);
-		display: flex;
-		align-items: center;
-		gap: 16rpx;
-	}
-
-	.kitchen-actions__primary-icon {
-		width: 64rpx;
-		height: 64rpx;
-		border-radius: 20rpx;
-		background: rgba(255, 255, 255, 0.16);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.kitchen-actions__primary-body {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 6rpx;
-	}
-
-	.kitchen-actions__primary-title {
-		font-size: 27rpx;
-		font-weight: 700;
-		color: #ffffff;
-	}
-
-	.kitchen-actions__primary-desc {
-		font-size: 22rpx;
-		line-height: 1.5;
-		color: rgba(255, 255, 255, 0.74);
-	}
-
-	.member-panel {
-		margin-top: 18rpx;
-		padding: 22rpx 20rpx;
-		border-radius: 24rpx;
-		background: rgba(255, 255, 255, 0.92);
-		border: 1px solid rgba(91, 74, 59, 0.06);
-		box-shadow: 0 10rpx 24rpx rgba(56, 44, 30, 0.04);
-	}
-
-	.member-panel__header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 16rpx;
-	}
-
-	.member-panel__aside {
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		gap: 12rpx;
-	}
-
-	.member-panel__heading {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.member-panel__title {
-		display: block;
-		font-size: 28rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.member-panel__desc {
-		display: block;
-		margin-top: 8rpx;
-		font-size: 22rpx;
-		line-height: 1.55;
-		color: #887b6f;
-	}
-
-	.member-panel__meta {
-		flex-shrink: 0;
-		font-size: 22rpx;
-		font-weight: 600;
-		color: #8a7d70;
-	}
-
-	.member-panel__inline-action {
-		padding: 8rpx 14rpx;
-		border-radius: 999rpx;
-		background: rgba(91, 74, 59, 0.08);
-	}
-
-	.member-panel__inline-action-text {
-		font-size: 20rpx;
-		font-weight: 600;
-		color: #6e5f50;
-	}
-
-	.member-list {
-		margin-top: 18rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 12rpx;
-	}
-
-	.member-card {
-		padding: 16rpx;
-		border-radius: 18rpx;
-		background: #f7f2ec;
-		display: flex;
-		align-items: center;
-		gap: 14rpx;
-	}
-
-	.member-card--interactive {
-		transition: transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
-	}
-
-	.member-card--hover {
-		transform: translateY(1rpx);
-		box-shadow: 0 8rpx 18rpx rgba(56, 44, 30, 0.06);
-	}
-
-	.member-card--self {
-		background: #f0e8dc;
-		border: 1px solid rgba(91, 74, 59, 0.08);
-	}
-
-	.member-card__avatar {
-		width: 58rpx;
-		height: 58rpx;
-		border-radius: 999rpx;
-		background: linear-gradient(180deg, #e8d8c5 0%, #dbc4a8 100%);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 24rpx;
-		font-weight: 700;
-		color: #5b4a3b;
-		flex-shrink: 0;
-		overflow: hidden;
-	}
-
-	.member-card__avatar-image {
-		width: 100%;
-		height: 100%;
-		display: block;
-	}
-
-	.member-card__body {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 4rpx;
-	}
-
-	.member-card__top {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12rpx;
-	}
-
-	.member-card__name {
-		flex: 1;
-		min-width: 0;
-		font-size: 25rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.member-card__meta {
-		flex: 1;
-		min-width: 0;
-		font-size: 22rpx;
-		color: #85796e;
-	}
-
-	.member-card__meta-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12rpx;
-	}
-
-	.member-card__action {
-		display: inline-flex;
-		align-items: center;
-		gap: 6rpx;
-		flex-shrink: 0;
-	}
-
-	.member-card__action-text {
-		font-size: 20rpx;
-		font-weight: 600;
-		color: #6e5f50;
-	}
-
-	.member-card__badges {
-		display: flex;
-		align-items: center;
-		gap: 8rpx;
-		flex-shrink: 0;
-	}
-
-	.member-card__badge {
-		padding: 6rpx 12rpx;
-		border-radius: 999rpx;
-		background: rgba(91, 74, 59, 0.09);
-		font-size: 20rpx;
-		font-weight: 600;
-		color: #6e5f50;
-	}
-
-	.member-card__badge--self {
-		background: rgba(92, 73, 60, 0.14);
-		color: #4c3c31;
-	}
-
-	.member-panel__empty {
-		margin-top: 18rpx;
-	}
-
-	.member-panel__footer {
-		margin-top: 18rpx;
-		display: flex;
-		justify-content: flex-end;
-	}
-
-	.member-panel__join-link {
-		padding: 10rpx 2rpx;
-		display: inline-flex;
-		align-items: center;
-		gap: 10rpx;
-	}
-
-	.member-panel__join-link-text {
-		font-size: 22rpx;
-		font-weight: 600;
-		color: #6e5f50;
 	}
 
 	.app-footer-links {
