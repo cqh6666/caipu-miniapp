@@ -1,0 +1,314 @@
+.soft-empty {
+	margin-top: 20rpx;
+	padding: 56rpx 30rpx;
+	border-radius: 22rpx;
+	background: rgba(255, 255, 255, 0.84);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	gap: 12rpx;
+}
+
+.soft-empty__text {
+	font-size: 24rpx;
+	line-height: 1.6;
+	color: #8d847a;
+}
+
+.meal-order-sheet {
+	padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+	background:
+		radial-gradient(circle at top right, rgba(255, 236, 214, 0.7) 0%, rgba(255, 236, 214, 0) 32%),
+		#f8f4ee;
+}
+
+.meal-order-sheet__header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 18rpx;
+}
+
+.meal-order-sheet__heading {
+	flex: 1;
+	min-width: 0;
+}
+
+.meal-order-sheet__eyebrow {
+	display: block;
+	margin-bottom: 8rpx;
+	font-size: 21rpx;
+	font-weight: 700;
+	line-height: 1.2;
+	color: #9b826d;
+	letter-spacing: 0.4rpx;
+}
+
+.meal-order-sheet__title {
+	display: block;
+	font-size: 36rpx;
+	font-weight: 700;
+	color: #2f2923;
+}
+
+.meal-order-sheet__subtitle {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 24rpx;
+	line-height: 1.6;
+	color: #8a7d70;
+}
+
+.meal-order-sheet__close {
+	width: 56rpx;
+	height: 56rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 255, 255, 0.86);
+	box-shadow: 0 6rpx 12rpx rgba(56, 44, 30, 0.05);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-date-grid {
+	margin-top: 22rpx;
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10rpx;
+}
+
+.meal-order-date-card {
+	padding: 18rpx 12rpx;
+	border-radius: 20rpx;
+	background: rgba(255, 255, 255, 0.96);
+	border: 1px solid rgba(91, 74, 59, 0.08);
+	box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+	display: flex;
+	flex-direction: column;
+	gap: 8rpx;
+	text-align: center;
+}
+
+.meal-order-date-card--active {
+	background: linear-gradient(180deg, #6d5441 0%, #584233 100%);
+	border-color: rgba(109, 84, 65, 0.5);
+	box-shadow: 0 14rpx 24rpx rgba(74, 56, 42, 0.16);
+}
+
+.meal-order-date-card__label {
+	font-size: 24rpx;
+	font-weight: 700;
+	color: #4c3e31;
+}
+
+.meal-order-date-card__date {
+	font-size: 21rpx;
+	color: #7d6f63;
+}
+
+.meal-order-date-card--active .meal-order-date-card__label,
+.meal-order-date-card--active .meal-order-date-card__date {
+	color: #fff7ef;
+}
+
+.meal-order-date-picker {
+	margin-top: 14rpx;
+	height: 88rpx;
+	padding: 0 22rpx;
+	border-radius: 22rpx;
+	background: rgba(255, 255, 255, 0.96);
+	border: 1px dashed rgba(91, 74, 59, 0.18);
+	box-shadow: 0 8rpx 16rpx rgba(56, 44, 30, 0.04);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.meal-order-date-picker__text {
+	font-size: 25rpx;
+	font-weight: 600;
+	color: #5b4a3b;
+}
+
+.meal-order-cart-list {
+	max-height: 46vh;
+	margin-top: 20rpx;
+}
+
+.meal-order-cart-stack,
+.meal-order-checkout-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10rpx;
+}
+
+.meal-order-cart-item,
+.meal-order-checkout-item {
+	padding: 16rpx;
+	border-radius: 18rpx;
+	background: rgba(255, 255, 255, 0.96);
+	border: 1px solid rgba(91, 74, 59, 0.06);
+	box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12rpx;
+}
+
+.meal-order-cart-item--link,
+.meal-order-checkout-item--link {
+	transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.meal-order-cart-item--hover,
+.meal-order-checkout-item--hover {
+	background: #fffaf4;
+	box-shadow: 0 12rpx 24rpx rgba(56, 44, 30, 0.06);
+	transform: translateY(-1px);
+}
+
+.meal-order-cart-item__main {
+	flex: 1;
+	min-width: 0;
+}
+
+.meal-order-cart-item__title,
+.meal-order-checkout-item__title {
+	display: block;
+	font-size: 25rpx;
+	font-weight: 700;
+	color: #2f2923;
+}
+
+.meal-order-checkout-item__chevron {
+	flex-shrink: 0;
+	opacity: 0.9;
+}
+
+.meal-order-cart-item__action {
+	flex-shrink: 0;
+	min-width: 88rpx;
+	height: 50rpx;
+	padding: 0 16rpx;
+	border-radius: 999rpx;
+	background: #f4eee7;
+	border: 1px solid rgba(91, 74, 59, 0.06);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-cart-item__action-text {
+	font-size: 20rpx;
+	font-weight: 600;
+	line-height: 1;
+	color: #7d6857;
+}
+
+.meal-order-cart-empty {
+	margin-top: 0;
+}
+
+.meal-order-note {
+	margin-top: 14rpx;
+}
+
+.meal-order-note__label {
+	display: block;
+	font-size: 23rpx;
+	font-weight: 600;
+	color: #5f5144;
+}
+
+.meal-order-note__input {
+	margin-top: 10rpx;
+	width: 100%;
+	min-height: 128rpx;
+	padding: 18rpx;
+	box-sizing: border-box;
+	border-radius: 20rpx;
+	background: rgba(255, 255, 255, 0.94);
+	border: 1px solid rgba(91, 74, 59, 0.08);
+	box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.75);
+	font-size: 24rpx;
+	line-height: 1.5;
+	color: #2f2923;
+}
+
+.meal-order-note__placeholder {
+	color: #b0a59a;
+}
+
+.meal-order-checkout-note {
+	margin-top: 12rpx;
+	padding: 16rpx;
+	border-radius: 16rpx;
+	background: rgba(255, 255, 255, 0.9);
+	border: 1px solid rgba(91, 74, 59, 0.06);
+}
+
+.meal-order-checkout-note__label {
+	display: block;
+	font-size: 22rpx;
+	font-weight: 600;
+	color: #6e5f50;
+}
+
+.meal-order-checkout-note__text {
+	display: block;
+	margin-top: 8rpx;
+	font-size: 23rpx;
+	line-height: 1.6;
+	color: #4f443a;
+}
+
+.meal-order-sheet__footer {
+	margin-top: 18rpx;
+	display: flex;
+	gap: 12rpx;
+}
+
+.sheet-action {
+	flex: 1;
+	width: 100%;
+	height: 88rpx;
+	padding: 0;
+	border-radius: 24rpx;
+	background: #f1ede8;
+	border: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	line-height: 1;
+}
+
+.sheet-action::after {
+	border: none;
+}
+
+.sheet-action--primary {
+	background: #5b4a3b;
+	box-shadow: 0 12rpx 20rpx rgba(91, 74, 59, 0.16);
+}
+
+.sheet-action--disabled {
+	background: #d9d1c8;
+	box-shadow: none;
+	pointer-events: none;
+}
+
+.sheet-action__text {
+	font-size: 28rpx;
+	font-weight: 600;
+	color: #675c51;
+}
+
+.sheet-action__text--primary {
+	color: #ffffff;
+}
+
+.sheet-action--disabled .sheet-action__text--primary {
+	opacity: 0.76;
+}

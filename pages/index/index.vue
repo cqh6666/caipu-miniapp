@@ -467,233 +467,59 @@
 			</view>
 		</view>
 
-		<up-popup
+		<meal-order-date-sheet
 			:show="showMealOrderDateSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
+			:quick-date-options="mealOrderQuickDateOptions"
+			:picker-value="mealOrderDatePickerValue"
+			:date-start="mealOrderDateStart"
 			@close="closeMealOrderDateSheet"
-		>
-			<view class="meal-order-sheet">
-				<view class="meal-order-sheet__header">
-					<view class="meal-order-sheet__heading">
-						<text class="meal-order-sheet__title">哪天一起吃</text>
-						<text class="meal-order-sheet__subtitle">先挑个日子，再把想吃的菜慢慢放进这天的小菜单里。</text>
-					</view>
-					<view class="meal-order-sheet__close" @tap="closeMealOrderDateSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
+			@pick-date="startMealOrderMode"
+			@start="startMealOrderMode"
+		></meal-order-date-sheet>
 
-				<view class="meal-order-date-grid">
-					<view
-						v-for="option in mealOrderQuickDateOptions"
-						:key="option.value"
-						class="meal-order-date-card"
-						:class="{ 'meal-order-date-card--active': option.value === mealOrderDatePickerValue }"
-						@tap="startMealOrderMode(option.value)"
-					>
-						<text class="meal-order-date-card__label">{{ option.label }}</text>
-						<text class="meal-order-date-card__date">{{ option.dateText }}</text>
-					</view>
-				</view>
-
-				<picker mode="date" :value="mealOrderDatePickerValue" :start="mealOrderDateStart" @change="handleMealOrderDatePickerChange">
-					<view class="meal-order-date-picker">
-						<text class="meal-order-date-picker__text">自选日期</text>
-						<up-icon name="calendar" size="16" color="#6f5f50"></up-icon>
-					</view>
-				</picker>
-			</view>
-		</up-popup>
-
-		<up-popup
+		<meal-order-spotlight-sheet
 			:show="showMealOrderSpotlightSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
+			:record="mealOrderSpotlightRecord"
+			:eyebrow="mealOrderSpotlightDetailEyebrow"
+			:title="mealOrderSpotlightTitle"
+			:subtitle="mealOrderSpotlightDetailSubtitle"
+			:items="mealOrderSpotlightDetailItems"
+			:note="mealOrderSpotlightDetailNote"
+			:can-resume="mealOrderSpotlightCanResume"
 			@close="closeMealOrderSpotlightSheet"
-		>
-			<view
-				v-if="mealOrderSpotlightRecord"
-				class="meal-order-sheet"
-				@touchstart="handleMealOrderSpotlightTouchStart"
-				@touchend="handleMealOrderSpotlightTouchEnd"
-			>
-				<view class="meal-order-sheet__header">
-					<view class="meal-order-sheet__heading">
-						<text class="meal-order-sheet__eyebrow">{{ mealOrderSpotlightDetailEyebrow }}</text>
-						<text class="meal-order-sheet__title">{{ mealOrderSpotlightTitle }}</text>
-						<text class="meal-order-sheet__subtitle">{{ mealOrderSpotlightDetailSubtitle }}</text>
-					</view>
-					<view class="meal-order-sheet__close" @tap="closeMealOrderSpotlightSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
+			@resume="resumeMealOrderSpotlightRecord"
+			@open-recipe="openMealOrderRecipeDetail"
+			@touchstart-sheet="handleMealOrderSpotlightTouchStart"
+			@touchend-sheet="handleMealOrderSpotlightTouchEnd"
+		></meal-order-spotlight-sheet>
 
-				<scroll-view class="meal-order-cart-list" scroll-y>
-					<view class="meal-order-checkout-list">
-						<view
-							v-for="item in mealOrderSpotlightDetailItems"
-							:key="`meal-order-spotlight-${item.recipeId}`"
-							class="meal-order-checkout-item meal-order-checkout-item--link"
-							hover-class="meal-order-checkout-item--hover"
-							@tap="openMealOrderRecipeDetail(item)"
-						>
-							<text class="meal-order-checkout-item__title">{{ item.title }}</text>
-							<up-icon class="meal-order-checkout-item__chevron" name="arrow-right" size="14" color="#9d8c7a"></up-icon>
-						</view>
-					</view>
-				</scroll-view>
-
-				<view v-if="mealOrderSpotlightDetailNote" class="meal-order-checkout-note">
-					<text class="meal-order-checkout-note__label">备注</text>
-					<text class="meal-order-checkout-note__text">{{ mealOrderSpotlightDetailNote }}</text>
-				</view>
-
-				<view class="meal-order-sheet__footer">
-					<view class="sheet-action" @tap="closeMealOrderSpotlightSheet">
-						<text class="sheet-action__text">关闭</text>
-					</view>
-					<view
-						v-if="mealOrderSpotlightCanResume"
-						class="sheet-action sheet-action--primary"
-						@tap="resumeMealOrderSpotlightRecord"
-					>
-						<text class="sheet-action__text sheet-action__text--primary">继续安排</text>
-					</view>
-				</view>
-			</view>
-		</up-popup>
-
-		<up-popup
+		<meal-order-cart-sheet
 			:show="showMealOrderCartSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
+			:date-text="mealOrderDateText"
+			:dish-count="mealOrderCartDishCount"
+			:items="mealOrderCartItems"
+			:note="mealOrderDraftNote"
+			:can-checkout="mealOrderCanCheckout"
 			@close="closeMealOrderCartSheet"
-		>
-			<view class="meal-order-sheet">
-				<view class="meal-order-sheet__header">
-					<view class="meal-order-sheet__heading">
-						<text class="meal-order-sheet__title">这天的小菜单</text>
-						<text class="meal-order-sheet__subtitle">{{ mealOrderDateText }} · 已选 {{ mealOrderCartDishCount }} 道</text>
-					</view>
-					<view class="meal-order-sheet__close" @tap="closeMealOrderCartSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
+			@open-recipe="openMealOrderRecipeDetail"
+			@remove-recipe="removeMealOrderRecipe"
+			@note-input="handleMealOrderNoteInput"
+			@clear="clearMealOrderCart"
+			@confirm="openMealOrderCheckoutSheet"
+		></meal-order-cart-sheet>
 
-				<scroll-view class="meal-order-cart-list" scroll-y>
-					<view v-if="mealOrderCartItems.length" class="meal-order-cart-stack">
-						<view
-							v-for="item in mealOrderCartItems"
-							:key="`meal-order-cart-${item.recipeId}`"
-							class="meal-order-cart-item meal-order-cart-item--link"
-							hover-class="meal-order-cart-item--hover"
-							@tap="openMealOrderRecipeDetail(item)"
-						>
-							<view class="meal-order-cart-item__main">
-								<text class="meal-order-cart-item__title">{{ item.title }}</text>
-							</view>
-							<view class="meal-order-cart-item__action" @tap.stop="removeMealOrderRecipe(item.recipeId)">
-								<text class="meal-order-cart-item__action-text">移出</text>
-							</view>
-						</view>
-					</view>
-					<view v-else class="soft-empty meal-order-cart-empty">
-						<text class="soft-empty__text">还没选菜，先去美食库慢慢挑两道喜欢的吧。</text>
-					</view>
-				</scroll-view>
-
-				<view class="meal-order-note">
-					<text class="meal-order-note__label">想说的话</text>
-					<textarea
-						:value="mealOrderDraftNote"
-						class="meal-order-note__input"
-						placeholder="比如：周六想吃热乎一点，提前把牛肉腌上"
-						placeholder-class="meal-order-note__placeholder"
-						maxlength="120"
-						@input="handleMealOrderNoteInput"
-					/>
-				</view>
-
-				<view class="meal-order-sheet__footer">
-					<view class="sheet-action" @tap="clearMealOrderCart">
-						<text class="sheet-action__text">清空</text>
-					</view>
-					<view
-						class="sheet-action sheet-action--primary"
-						:class="{ 'sheet-action--disabled': !mealOrderCanCheckout }"
-						@tap="openMealOrderCheckoutSheet"
-					>
-						<text class="sheet-action__text sheet-action__text--primary">确认菜单</text>
-					</view>
-				</view>
-			</view>
-		</up-popup>
-
-		<up-popup
+		<meal-order-checkout-sheet
 			:show="showMealOrderCheckoutSheet"
-			mode="bottom"
-			round="32"
-			overlayOpacity="0.22"
-			:safeAreaInsetBottom="false"
+			:date-text="mealOrderDateText"
+			:dish-count="mealOrderCartDishCount"
+			:items="mealOrderCartItems"
+			:note="mealOrderDraftNote"
+			:can-checkout="mealOrderCanCheckout"
+			:is-submitting="isSubmittingMealOrder"
 			@close="closeMealOrderCheckoutSheet"
-		>
-			<view class="meal-order-sheet">
-				<view class="meal-order-sheet__header">
-					<view class="meal-order-sheet__heading">
-						<text class="meal-order-sheet__title">一起确认菜单</text>
-						<text class="meal-order-sheet__subtitle">{{ mealOrderDateText }} · 共 {{ mealOrderCartDishCount }} 道</text>
-					</view>
-					<view class="meal-order-sheet__close" @tap="closeMealOrderCheckoutSheet">
-						<up-icon name="close" size="18" color="#8a7d70"></up-icon>
-					</view>
-				</view>
-
-				<scroll-view class="meal-order-cart-list" scroll-y>
-					<view v-if="mealOrderCartItems.length" class="meal-order-checkout-list">
-						<view
-							v-for="item in mealOrderCartItems"
-							:key="`meal-order-checkout-${item.recipeId}`"
-							class="meal-order-checkout-item meal-order-checkout-item--link"
-							hover-class="meal-order-checkout-item--hover"
-							@tap="openMealOrderRecipeDetail(item)"
-						>
-							<text class="meal-order-checkout-item__title">{{ item.title }}</text>
-							<up-icon class="meal-order-checkout-item__chevron" name="arrow-right" size="14" color="#9d8c7a"></up-icon>
-						</view>
-					</view>
-					<view v-else class="soft-empty meal-order-cart-empty">
-						<text class="soft-empty__text">这天还没有安排菜，先回去挑一挑。</text>
-					</view>
-				</scroll-view>
-
-				<view v-if="mealOrderDraftNote" class="meal-order-checkout-note">
-					<text class="meal-order-checkout-note__label">备注</text>
-					<text class="meal-order-checkout-note__text">{{ mealOrderDraftNote }}</text>
-				</view>
-
-				<view class="meal-order-sheet__footer">
-					<view class="sheet-action" @tap="closeMealOrderCheckoutSheet">
-						<text class="sheet-action__text">返回修改</text>
-					</view>
-					<view
-						class="sheet-action sheet-action--primary"
-						:class="{ 'sheet-action--disabled': !mealOrderCanCheckout }"
-						@tap="submitMealOrder"
-					>
-						<text class="sheet-action__text sheet-action__text--primary">
-							{{ isSubmittingMealOrder ? '安排中...' : '安排这天菜单' }}
-						</text>
-					</view>
-				</view>
-			</view>
-		</up-popup>
+			@open-recipe="openMealOrderRecipeDetail"
+			@submit="submitMealOrder"
+		></meal-order-checkout-sheet>
 
 		<up-popup
 			:show="showInviteSheet"
@@ -1049,6 +875,10 @@ import {
 } from '../../utils/auth'
 import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
+import MealOrderCartSheet from './components/meal-order-cart-sheet.vue'
+import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
+import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
+import MealOrderSpotlightSheet from './components/meal-order-spotlight-sheet.vue'
 import {
 	addDaysFromISODate,
 	buildMealOrderDishSummary,
@@ -1067,6 +897,12 @@ import { buildRecipeCard, buildRecipeCoverVersion, buildRecipeSearchText, extrac
 import { readLastDraftLinkPrefill, readRecentSearches, writeLastDraftLinkPrefill, writeRecentSearches } from './storage'
 
 export default {
+	components: {
+		MealOrderCartSheet,
+		MealOrderCheckoutSheet,
+		MealOrderDateSheet,
+		MealOrderSpotlightSheet
+	},
 	data() {
 		return {
 			statusMap,
@@ -1918,11 +1754,6 @@ export default {
 		},
 		closeMealOrderDateSheet() {
 			this.showMealOrderDateSheet = false
-		},
-		handleMealOrderDatePickerChange(event) {
-			const value = normalizeMealOrderDate(event?.detail?.value || '')
-			if (!value) return
-			this.startMealOrderMode(value)
 		},
 		startMealOrderMode(planDate = '') {
 			const normalizedDate = normalizeMealOrderDate(planDate)
@@ -4986,259 +4817,6 @@ export default {
 		font-weight: 700;
 		line-height: 1;
 		color: #4b3728;
-	}
-
-	.meal-order-sheet {
-		padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
-		background:
-			radial-gradient(circle at top right, rgba(255, 236, 214, 0.7) 0%, rgba(255, 236, 214, 0) 32%),
-			#f8f4ee;
-	}
-
-	.meal-order-sheet__header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 18rpx;
-	}
-
-	.meal-order-sheet__heading {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.meal-order-sheet__eyebrow {
-		display: block;
-		margin-bottom: 8rpx;
-		font-size: 21rpx;
-		font-weight: 700;
-		line-height: 1.2;
-		color: #9b826d;
-		letter-spacing: 0.4rpx;
-	}
-
-	.meal-order-sheet__title {
-		display: block;
-		font-size: 36rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.meal-order-sheet__subtitle {
-		display: block;
-		margin-top: 10rpx;
-		font-size: 24rpx;
-		line-height: 1.6;
-		color: #8a7d70;
-	}
-
-	.meal-order-sheet__close {
-		width: 56rpx;
-		height: 56rpx;
-		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.86);
-		box-shadow: 0 6rpx 12rpx rgba(56, 44, 30, 0.05);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.meal-order-date-grid {
-		margin-top: 22rpx;
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 10rpx;
-	}
-
-	.meal-order-date-card {
-		padding: 18rpx 12rpx;
-		border-radius: 20rpx;
-		background: rgba(255, 255, 255, 0.96);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-		box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
-		display: flex;
-		flex-direction: column;
-		gap: 8rpx;
-		text-align: center;
-	}
-
-	.meal-order-date-card--active {
-		background: linear-gradient(180deg, #6d5441 0%, #584233 100%);
-		border-color: rgba(109, 84, 65, 0.5);
-		box-shadow: 0 14rpx 24rpx rgba(74, 56, 42, 0.16);
-	}
-
-	.meal-order-date-card__label {
-		font-size: 24rpx;
-		font-weight: 700;
-		color: #4c3e31;
-	}
-
-	.meal-order-date-card__date {
-		font-size: 21rpx;
-		color: #7d6f63;
-	}
-
-	.meal-order-date-card--active .meal-order-date-card__label,
-	.meal-order-date-card--active .meal-order-date-card__date {
-		color: #fff7ef;
-	}
-
-	.meal-order-date-picker {
-		margin-top: 14rpx;
-		height: 88rpx;
-		padding: 0 22rpx;
-		border-radius: 22rpx;
-		background: rgba(255, 255, 255, 0.96);
-		border: 1px dashed rgba(91, 74, 59, 0.18);
-		box-shadow: 0 8rpx 16rpx rgba(56, 44, 30, 0.04);
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.meal-order-date-picker__text {
-		font-size: 25rpx;
-		font-weight: 600;
-		color: #5b4a3b;
-	}
-
-	.meal-order-cart-list {
-		max-height: 46vh;
-		margin-top: 20rpx;
-	}
-
-	.meal-order-cart-stack,
-	.meal-order-checkout-list {
-		display: flex;
-		flex-direction: column;
-		gap: 10rpx;
-	}
-
-	.meal-order-cart-item,
-	.meal-order-checkout-item {
-		padding: 16rpx;
-		border-radius: 18rpx;
-		background: rgba(255, 255, 255, 0.96);
-		border: 1px solid rgba(91, 74, 59, 0.06);
-		box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12rpx;
-	}
-
-	.meal-order-cart-item--link,
-	.meal-order-checkout-item--link {
-		transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
-	}
-
-	.meal-order-cart-item--hover,
-	.meal-order-checkout-item--hover {
-		background: #fffaf4;
-		box-shadow: 0 12rpx 24rpx rgba(56, 44, 30, 0.06);
-		transform: translateY(-1px);
-	}
-
-	.meal-order-cart-item__main {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.meal-order-cart-item__title,
-	.meal-order-checkout-item__title {
-		display: block;
-		font-size: 25rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.meal-order-checkout-item__chevron {
-		flex-shrink: 0;
-		opacity: 0.9;
-	}
-
-	.meal-order-cart-item__action {
-		flex-shrink: 0;
-		min-width: 88rpx;
-		height: 50rpx;
-		padding: 0 16rpx;
-		border-radius: 999rpx;
-		background: #f4eee7;
-		border: 1px solid rgba(91, 74, 59, 0.06);
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.meal-order-cart-item__action-text {
-		font-size: 20rpx;
-		font-weight: 600;
-		line-height: 1;
-		color: #7d6857;
-	}
-
-	.meal-order-cart-empty {
-		margin-top: 0;
-	}
-
-	.meal-order-note {
-		margin-top: 14rpx;
-	}
-
-	.meal-order-note__label {
-		display: block;
-		font-size: 23rpx;
-		font-weight: 600;
-		color: #5f5144;
-	}
-
-	.meal-order-note__input {
-		margin-top: 10rpx;
-		width: 100%;
-		min-height: 128rpx;
-		padding: 18rpx;
-		box-sizing: border-box;
-		border-radius: 20rpx;
-		background: rgba(255, 255, 255, 0.94);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.75);
-		font-size: 24rpx;
-		line-height: 1.5;
-		color: #2f2923;
-	}
-
-	.meal-order-note__placeholder {
-		color: #b0a59a;
-	}
-
-	.meal-order-checkout-note {
-		margin-top: 12rpx;
-		padding: 16rpx;
-		border-radius: 16rpx;
-		background: rgba(255, 255, 255, 0.9);
-		border: 1px solid rgba(91, 74, 59, 0.06);
-	}
-
-	.meal-order-checkout-note__label {
-		display: block;
-		font-size: 22rpx;
-		font-weight: 600;
-		color: #6e5f50;
-	}
-
-	.meal-order-checkout-note__text {
-		display: block;
-		margin-top: 8rpx;
-		font-size: 23rpx;
-		line-height: 1.6;
-		color: #4f443a;
-	}
-
-	.meal-order-sheet__footer {
-		margin-top: 18rpx;
-		display: flex;
-		gap: 12rpx;
 	}
 
 	.bottom-nav {
