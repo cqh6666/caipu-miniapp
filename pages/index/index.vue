@@ -168,8 +168,14 @@
 						}"
 						@tap="openRecipeDetail(card.id)"
 					>
-						<view class="recipe-card__media" :class="{ 'recipe-card__media--empty': !card.cover }">
-							<image v-if="card.cover" class="recipe-card__image" :src="card.cover" mode="aspectFill"></image>
+						<view class="recipe-card__media" :class="{ 'recipe-card__media--empty': !getRecipeCardDisplayCover(card) }">
+							<image
+								v-if="getRecipeCardDisplayCover(card)"
+								class="recipe-card__image"
+								:src="getRecipeCardDisplayCover(card)"
+								mode="aspectFill"
+								@error="handleRecipeCardImageError(card)"
+							></image>
 							<view v-else class="recipe-card__placeholder">
 								<view class="recipe-card__placeholder-icon">
 									<up-icon :name="card.placeholderIcon" size="26" color="#866d58"></up-icon>
@@ -1001,7 +1007,7 @@
 import { appConfig } from '../../utils/app-config'
 import { listMealPlanStore, saveMealPlanDraft, submitMealPlan as submitMealPlanRequest } from '../../utils/meal-plan-api'
 import { previewRecipeLink } from '../../utils/recipe-api'
-import { buildImageCacheKey, getCachedImagePath, warmImageCache } from '../../utils/image-cache'
+import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import {
 	MAX_RECIPE_IMAGES,
@@ -1491,9 +1497,13 @@ function buildRecipeSearchText(recipe = {}) {
 function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	const images = extractRecipeImages(recipe)
 	const remoteCover = images[0] || ''
+	const cachedCover = cachedCoverMap[recipe.id] || ''
 	return {
 		...recipe,
-		cover: cachedCoverMap[recipe.id] || remoteCover,
+		cover: cachedCover || remoteCover,
+		cachedCover,
+		remoteCover,
+		coverVersion: buildRecipeCoverVersion(recipe),
 		isPinned: !!String(recipe.pinnedAt || '').trim(),
 		imageCount: images.length,
 		sourceBadge: detectRecipeSource(recipe),
@@ -1609,6 +1619,8 @@ export default {
 			isDraftLinkPreviewing: false,
 			hasDismissedProfilePrompt: false,
 			cachedRecipeCoverMap: {},
+			recipeCardCoverFallbackMap: {},
+			recipeCardHiddenMap: {},
 			recipeCoverCacheRequestID: 0,
 			syncErrorMessage: '',
 			isSyncing: false,
@@ -2075,7 +2087,57 @@ export default {
 	methods: {
 		applyRecipes(recipes = []) {
 			this.recipes = Array.isArray(recipes) ? recipes : []
+			this.recipeCardCoverFallbackMap = {}
+			this.recipeCardHiddenMap = {}
 			this.syncRecipeCoverCache(this.recipes)
+		},
+		getRecipeCardDisplayCover(card = {}) {
+			const recipeId = String(card?.id || '').trim()
+			if (recipeId && this.recipeCardHiddenMap[recipeId]) return ''
+			if (recipeId && this.recipeCardCoverFallbackMap[recipeId]) {
+				return String(card?.remoteCover || '').trim()
+			}
+			return String(card?.cover || '').trim()
+		},
+		async handleRecipeCardImageError(card = {}) {
+			const recipeId = String(card?.id || '').trim()
+			if (!recipeId) return
+
+			const displayedCover = this.getRecipeCardDisplayCover(card)
+			const cachedCover = String(card?.cachedCover || '').trim()
+			const remoteCover = String(card?.remoteCover || '').trim()
+
+			if (
+				cachedCover &&
+				remoteCover &&
+				displayedCover === cachedCover &&
+				cachedCover !== remoteCover &&
+				!this.recipeCardCoverFallbackMap[recipeId]
+			) {
+				this.recipeCardCoverFallbackMap = {
+					...this.recipeCardCoverFallbackMap,
+					[recipeId]: true
+				}
+
+				if (this.cachedRecipeCoverMap[recipeId]) {
+					const nextCoverMap = { ...this.cachedRecipeCoverMap }
+					delete nextCoverMap[recipeId]
+					this.cachedRecipeCoverMap = nextCoverMap
+				}
+
+				try {
+					await invalidateCachedImage(remoteCover, card.coverVersion)
+				} catch (error) {
+					// Ignore cache cleanup failures and keep the UI fallback path usable.
+				}
+				return
+			}
+
+			if (this.recipeCardHiddenMap[recipeId]) return
+			this.recipeCardHiddenMap = {
+				...this.recipeCardHiddenMap,
+				[recipeId]: true
+			}
 		},
 		switchSection(nextSection = 'library') {
 			const targetSection = String(nextSection || '').trim()

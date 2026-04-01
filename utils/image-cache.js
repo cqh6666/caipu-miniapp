@@ -169,6 +169,27 @@ export function buildImageCacheKey(url = '', version = '') {
 	return `${normalizeURL(url)}::${normalizeVersion(version)}`
 }
 
+export async function invalidateCachedImage(url = '', version = '') {
+	if (!canUsePersistentImageCache()) return false
+
+	const cacheKey = buildImageCacheKey(url, version)
+	if (!cacheKey || cacheKey === '::') return false
+
+	const records = getStoredImageCacheRecords()
+	const record = records[cacheKey]
+	if (!record) return false
+
+	delete records[cacheKey]
+	saveImageCacheRecords(records)
+	pendingImageTasks.delete(cacheKey)
+
+	const filePath = String(record.filePath || '').trim()
+	if (!filePath) return true
+
+	await removeSavedFile(filePath)
+	return true
+}
+
 export async function getCachedImagePath(url = '', version = '', options = {}) {
 	if (!canUsePersistentImageCache()) return ''
 
