@@ -31,6 +31,8 @@ type Config struct {
 	AIFlowchartModel           string
 	AIFlowchartTimeoutSeconds  int
 	AITitleEnabled             bool
+	AITitleBaseURL             string
+	AITitleAPIKey              string
 	AITitleModel               string
 	AITitleTimeoutSeconds      int
 	LinkparseSidecarEnabled    bool
@@ -82,6 +84,8 @@ func Load() (Config, error) {
 		AIFlowchartModel:           strings.TrimSpace(os.Getenv("AI_FLOWCHART_MODEL")),
 		AIFlowchartTimeoutSeconds:  getInt("AI_FLOWCHART_TIMEOUT_SECONDS", 45),
 		AITitleEnabled:             getBool("AI_TITLE_ENABLED", false),
+		AITitleBaseURL:             strings.TrimSpace(os.Getenv("AI_TITLE_BASE_URL")),
+		AITitleAPIKey:              strings.TrimSpace(os.Getenv("AI_TITLE_API_KEY")),
 		AITitleModel:               strings.TrimSpace(os.Getenv("AI_TITLE_MODEL")),
 		AITitleTimeoutSeconds:      getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
 		LinkparseSidecarEnabled:    getBool("LINKPARSE_SIDECAR_ENABLED", false),

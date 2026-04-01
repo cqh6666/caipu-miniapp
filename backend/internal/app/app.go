@@ -68,6 +68,8 @@ func New(cfg config.Config) (*App, error) {
 		AIModel:                 cfg.AIModel,
 		AITimeout:               time.Duration(cfg.AITimeoutSeconds) * time.Second,
 		AITitleEnabled:          cfg.AITitleEnabled,
+		AITitleBaseURL:          cfg.AITitleBaseURL,
+		AITitleAPIKey:           cfg.AITitleAPIKey,
 		AITitleModel:            cfg.AITitleModel,
 		AITitleTimeout:          time.Duration(cfg.AITitleTimeoutSeconds) * time.Second,
 		LinkparseSidecarEnabled: cfg.LinkparseSidecarEnabled,

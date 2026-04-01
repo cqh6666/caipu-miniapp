@@ -64,6 +64,8 @@ type Options struct {
 	AIModel                  string
 	AITimeout                time.Duration
 	AITitleEnabled           bool
+	AITitleBaseURL           string
+	AITitleAPIKey            string
 	AITitleModel             string
 	AITitleTimeout           time.Duration
 	BilibiliSessdataProvider func(context.Context) string
@@ -255,14 +257,22 @@ func NewService(opts Options) *Service {
 			titleHTTPClient.Timeout = opts.AITitleTimeout
 		}
 
-		baseURL := strings.TrimRight(strings.TrimSpace(opts.AIBaseURL), "/")
+		baseURL := strings.TrimRight(strings.TrimSpace(opts.AITitleBaseURL), "/")
+		if baseURL == "" {
+			baseURL = strings.TrimRight(strings.TrimSpace(opts.AIBaseURL), "/")
+		}
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
 
+		apiKey := strings.TrimSpace(opts.AITitleAPIKey)
+		if apiKey == "" {
+			apiKey = strings.TrimSpace(opts.AIAPIKey)
+		}
+
 		titleAI = &aiClient{
 			baseURL:    baseURL,
-			apiKey:     strings.TrimSpace(opts.AIAPIKey),
+			apiKey:     apiKey,
 			model:      titleModel,
 			httpClient: titleHTTPClient,
 		}
