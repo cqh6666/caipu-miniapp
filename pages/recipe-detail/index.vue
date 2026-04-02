@@ -8,30 +8,35 @@
 					@tap="handleHeroCardTap"
 				>
 					<swiper
-						v-if="recipeImages.length"
+						v-if="displayRecipeImages.length"
 						class="hero-card__swiper"
-						:circular="recipeImages.length > 1"
-						:autoplay="recipeImages.length > 1"
+						:circular="displayRecipeImages.length > 1"
+						:autoplay="displayRecipeImages.length > 1"
 						:interval="3600"
 						:duration="320"
 						@change="handleHeroSwiperChange"
 					>
-						<swiper-item v-for="(image, index) in recipeImages" :key="`hero-image-${index}`">
-							<image class="hero-card__image" :src="image" mode="aspectFill"></image>
+						<swiper-item v-for="(image, index) in displayRecipeImages" :key="image.cacheKey || `hero-image-${index}`">
+							<image
+								class="hero-card__image"
+								:src="image.displayURL"
+								mode="aspectFill"
+								@error="handleRecipeImageError(image)"
+							></image>
 						</swiper-item>
 					</swiper>
 					<view v-if="recipeImages.length" class="hero-card__preview-tip">
 						<up-icon name="photo" size="14" color="#ffffff"></up-icon>
 						<text class="hero-card__preview-tip-text">查看大图</text>
 					</view>
-					<view v-if="recipeImages.length > 1" class="hero-card__counter">
-						<text class="hero-card__counter-text">{{ heroImageIndex + 1 }} / {{ recipeImages.length }}</text>
+					<view v-if="displayRecipeImages.length > 1" class="hero-card__counter">
+						<text class="hero-card__counter-text">{{ heroImageIndex + 1 }} / {{ displayRecipeImages.length }}</text>
 					</view>
-					<view v-if="!recipeImages.length" class="hero-card__placeholder">
+					<view v-if="!displayRecipeImages.length" class="hero-card__placeholder">
 						<view class="hero-card__placeholder-mask"></view>
 						<view class="hero-card__upload-action" :class="{ 'hero-card__upload-action--loading': isUploadingHeroImage }">
-							<up-icon :name="isUploadingHeroImage ? 'reload' : 'plus'" size="18" color="#5b4a3b"></up-icon>
-							<text class="hero-card__upload-action-text">{{ isUploadingHeroImage ? '上传中...' : '上传成品图' }}</text>
+							<up-icon :name="recipeImages.length ? 'photo' : (isUploadingHeroImage ? 'reload' : 'plus')" size="18" color="#5b4a3b"></up-icon>
+							<text class="hero-card__upload-action-text">{{ recipeImages.length ? '封面加载失败，点查看原图' : (isUploadingHeroImage ? '上传中...' : '上传成品图') }}</text>
 						</view>
 					</view>
 				</view>
@@ -568,6 +573,7 @@ import {
 	statusOptions,
 	updateRecipeById
 } from '../../utils/recipe-store'
+import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
 
 const createEmptyDraft = (overrides = {}) => ({
 	title: '',
@@ -808,6 +814,10 @@ function formatDateTime(value = '') {
 	return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
+function buildRecipeImageVersion(recipe = {}) {
+	return String(recipe?.updatedAt || recipe?.parseFinishedAt || '').trim()
+}
+
 export default {
 	data() {
 		return {
@@ -830,7 +840,11 @@ export default {
 			parsePollingTimer: null,
 			statusEstimateTimer: null,
 			statusEstimateSyncedAt: 0,
-			statusEstimateNow: 0
+			statusEstimateNow: 0,
+			cachedRecipeImageMap: {},
+			recipeImageFallbackMap: {},
+			recipeImageHiddenMap: {},
+			recipeImageCacheRequestID: 0
 		}
 	},
 	computed: {
@@ -906,12 +920,31 @@ export default {
 		hasManualParsedContentEdits() {
 			return !!this.recipe?.parsedContentEdited
 		},
+		recipeImageVersion() {
+			return buildRecipeImageVersion(this.recipe || {})
+		},
 		recipeImages() {
 			if (Array.isArray(this.recipe?.imageUrls) && this.recipe.imageUrls.length) {
 				return this.recipe.imageUrls.filter(Boolean)
 			}
 			const fallbackImage = String(this.recipe?.image || this.recipe?.imageUrl || '').trim()
 			return fallbackImage ? [fallbackImage] : []
+		},
+		displayRecipeImages() {
+			const version = this.recipeImageVersion
+			return this.recipeImages
+				.map((remoteURL) => {
+					const cacheKey = buildImageCacheKey(remoteURL, version)
+					if (this.recipeImageHiddenMap[cacheKey]) return null
+
+					const cachedURL = String(this.cachedRecipeImageMap[cacheKey] || '').trim()
+					return {
+						cacheKey,
+						remoteURL,
+						displayURL: this.recipeImageFallbackMap[cacheKey] ? remoteURL : (cachedURL || remoteURL)
+					}
+				})
+				.filter(Boolean)
 		},
 		flowchartImageUrl() {
 			return String(this.recipe?.flowchartImageUrl || '').trim()
@@ -1094,7 +1127,8 @@ export default {
 			const now = Date.now()
 			this.statusEstimateSyncedAt = now
 			this.statusEstimateNow = now
-			if (this.heroImageIndex >= this.recipeImages.length) {
+			this.syncRecipeImageCache(recipe)
+			if (this.heroImageIndex >= this.displayRecipeImages.length) {
 				this.heroImageIndex = 0
 			}
 			if (this.recipe?.title) {
@@ -1103,6 +1137,59 @@ export default {
 				})
 			}
 			this.syncParsePolling()
+		},
+		buildRecipeImageCacheEntries(recipe = this.recipe) {
+			const source = recipe || {}
+			const images =
+				Array.isArray(source.imageUrls) && source.imageUrls.length
+					? source.imageUrls.filter(Boolean)
+					: [source.image, source.imageUrl].filter(Boolean)
+			const version = buildRecipeImageVersion(source)
+			return images.map((url) => ({
+				url: String(url || '').trim(),
+				version,
+				cacheKey: buildImageCacheKey(url, version)
+			})).filter((entry) => entry.url)
+		},
+		async syncRecipeImageCache(recipe = this.recipe) {
+			const entries = this.buildRecipeImageCacheEntries(recipe)
+			const requestID = this.recipeImageCacheRequestID + 1
+			this.recipeImageCacheRequestID = requestID
+			this.cachedRecipeImageMap = {}
+			this.recipeImageFallbackMap = {}
+			this.recipeImageHiddenMap = {}
+
+			if (!entries.length) {
+				return
+			}
+
+			const cachedEntries = await Promise.all(
+				entries.map(async (entry) => ({
+					cacheKey: entry.cacheKey,
+					localPath: await getCachedImagePath(entry.url, entry.version)
+				}))
+			)
+
+			if (requestID !== this.recipeImageCacheRequestID) return
+
+			const nextImageMap = {}
+			cachedEntries.forEach((entry) => {
+				if (!entry.localPath) return
+				nextImageMap[entry.cacheKey] = entry.localPath
+			})
+			this.cachedRecipeImageMap = nextImageMap
+
+			warmImageCache(entries, {
+				concurrency: 2,
+				onResolved: ({ cacheKey, localPath }) => {
+					if (requestID !== this.recipeImageCacheRequestID || !localPath) return
+					if (this.cachedRecipeImageMap[cacheKey] === localPath) return
+					this.cachedRecipeImageMap = {
+						...this.cachedRecipeImageMap,
+						[cacheKey]: localPath
+					}
+				}
+			})
 		},
 		syncParsePolling() {
 			const parseStatus = String(this.recipe?.parseStatus || '').trim()
@@ -1193,6 +1280,47 @@ export default {
 		},
 		handleHeroSwiperChange(event) {
 			this.heroImageIndex = Number(event?.detail?.current) || 0
+		},
+		async handleRecipeImageError(image = {}) {
+			const remoteURL = String(image?.remoteURL || '').trim()
+			if (!remoteURL) return
+
+			const version = this.recipeImageVersion
+			const cacheKey = String(image?.cacheKey || buildImageCacheKey(remoteURL, version)).trim()
+			const displayedURL = String(image?.displayURL || '').trim()
+			const cachedURL = String(this.cachedRecipeImageMap[cacheKey] || '').trim()
+
+			if (
+				cachedURL &&
+				displayedURL === cachedURL &&
+				cachedURL !== remoteURL &&
+				!this.recipeImageFallbackMap[cacheKey]
+			) {
+				this.recipeImageFallbackMap = {
+					...this.recipeImageFallbackMap,
+					[cacheKey]: true
+				}
+
+				if (this.cachedRecipeImageMap[cacheKey]) {
+					const nextImageMap = { ...this.cachedRecipeImageMap }
+					delete nextImageMap[cacheKey]
+					this.cachedRecipeImageMap = nextImageMap
+				}
+
+				try {
+					await invalidateCachedImage(remoteURL, version)
+				} catch (error) {
+					// Ignore cache cleanup failures and keep the remote fallback usable.
+				}
+				return
+			}
+
+			if (this.recipeImageHiddenMap[cacheKey]) return
+			this.recipeImageHiddenMap = {
+				...this.recipeImageHiddenMap,
+				[cacheKey]: true
+			}
+			this.heroImageIndex = 0
 		},
 		handleEditSheetPopupClose() {
 			if (!this.showEditSheet) return
@@ -1703,7 +1831,9 @@ export default {
 			})
 		},
 		previewRecipeImage() {
-			const urls = this.recipeImages
+			const urls = this.displayRecipeImages.length
+				? this.displayRecipeImages.map((item) => item.displayURL).filter(Boolean)
+				: this.recipeImages
 			if (!urls.length) return
 
 			uni.previewImage({

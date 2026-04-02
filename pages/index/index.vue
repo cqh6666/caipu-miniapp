@@ -1509,6 +1509,8 @@ export default {
 
 			if (!entries.length) {
 				this.cachedRecipeCoverMap = {}
+				this.recipeCardCoverFallbackMap = {}
+				this.recipeCardHiddenMap = {}
 				return
 			}
 
@@ -1522,11 +1524,17 @@ export default {
 			if (requestID !== this.recipeCoverCacheRequestID) return
 
 			const nextCoverMap = {}
+			const nextFallbackMap = { ...this.recipeCardCoverFallbackMap }
+			const nextHiddenMap = { ...this.recipeCardHiddenMap }
 			cachedEntries.forEach((entry) => {
 				if (!entry.localPath) return
 				nextCoverMap[entry.recipeId] = entry.localPath
+				delete nextFallbackMap[entry.recipeId]
+				delete nextHiddenMap[entry.recipeId]
 			})
 			this.cachedRecipeCoverMap = nextCoverMap
+			this.recipeCardCoverFallbackMap = nextFallbackMap
+			this.recipeCardHiddenMap = nextHiddenMap
 
 			const recipeIdsByCacheKey = entries.reduce((result, entry) => {
 				if (!result[entry.cacheKey]) {
@@ -1545,14 +1553,20 @@ export default {
 
 					let changed = false
 					const updatedCoverMap = { ...this.cachedRecipeCoverMap }
+					const updatedFallbackMap = { ...this.recipeCardCoverFallbackMap }
+					const updatedHiddenMap = { ...this.recipeCardHiddenMap }
 					recipeIds.forEach((recipeId) => {
 						if (updatedCoverMap[recipeId] === localPath) return
 						updatedCoverMap[recipeId] = localPath
+						delete updatedFallbackMap[recipeId]
+						delete updatedHiddenMap[recipeId]
 						changed = true
 					})
 
 					if (changed) {
 						this.cachedRecipeCoverMap = updatedCoverMap
+						this.recipeCardCoverFallbackMap = updatedFallbackMap
+						this.recipeCardHiddenMap = updatedHiddenMap
 					}
 				}
 			})

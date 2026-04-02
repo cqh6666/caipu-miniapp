@@ -486,8 +486,16 @@ func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) (
 	FROM recipes
 WHERE deleted_at IS NULL
   AND (
-    COALESCE(image_urls_json, '[]') <> '[]'
-    OR COALESCE(TRIM(image_url), '') <> ''
+    (
+      LOWER(TRIM(COALESCE(image_url, ''))) LIKE 'http%'
+      AND LOWER(TRIM(COALESCE(image_url, ''))) NOT LIKE '%/uploads/%'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM json_each(COALESCE(NULLIF(image_urls_json, ''), '[]'))
+      WHERE LOWER(TRIM(COALESCE(json_each.value, ''))) LIKE 'http%'
+        AND LOWER(TRIM(COALESCE(json_each.value, ''))) NOT LIKE '%/uploads/%'
+    )
   )
 ORDER BY updated_at ASC, id ASC
 LIMIT ?`
