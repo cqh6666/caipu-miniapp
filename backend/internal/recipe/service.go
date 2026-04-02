@@ -300,7 +300,7 @@ func (s *Service) GenerateFlowchart(ctx context.Context, userID int64, recipeID 
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	if err := s.repo.QueueFlowchart(ctx, current.ID, current.KitchenID, userID, now); errors.Is(err, sql.ErrNoRows) {
+	if err := s.repo.QueueFlowchart(ctx, current.ID, now); errors.Is(err, sql.ErrNoRows) {
 		return Recipe{}, common.ErrNotFound
 	} else if err != nil {
 		return Recipe{}, err
@@ -310,8 +310,6 @@ func (s *Service) GenerateFlowchart(ctx context.Context, userID int64, recipeID 
 	current.FlowchartError = ""
 	current.FlowchartRequestedAt = now
 	current.FlowchartFinishedAt = ""
-	current.UpdatedBy = userID
-	current.UpdatedAt = now
 	return s.decorateRecipeRuntimeState(ctx, current), nil
 }
 

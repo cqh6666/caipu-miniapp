@@ -56,6 +56,7 @@ type Config struct {
 	RecipeAutoParseInterval    int
 	RecipeAutoParseBatchSize   int
 	RecipeFlowchartEnabled     bool
+	RecipeFlowchartAutoEnqueue bool
 	RecipeFlowchartInterval    int
 	RecipeFlowchartBatchSize   int
 	RecipeImageMirrorEnabled   bool
@@ -112,6 +113,7 @@ func Load() (Config, error) {
 		RecipeAutoParseInterval:    getInt("RECIPE_AUTO_PARSE_INTERVAL_SECONDS", 30),
 		RecipeAutoParseBatchSize:   getInt("RECIPE_AUTO_PARSE_BATCH_SIZE", 3),
 		RecipeFlowchartEnabled:     getBool("RECIPE_FLOWCHART_ENABLED", true),
+		RecipeFlowchartAutoEnqueue: getBool("RECIPE_FLOWCHART_AUTO_ENQUEUE_ENABLED", false),
 		RecipeFlowchartInterval:    getInt("RECIPE_FLOWCHART_INTERVAL_SECONDS", 5),
 		RecipeFlowchartBatchSize:   getInt("RECIPE_FLOWCHART_BATCH_SIZE", 1),
 		RecipeImageMirrorEnabled:   getBool("RECIPE_IMAGE_MIRROR_ENABLED", true),

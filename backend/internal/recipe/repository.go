@@ -204,46 +204,26 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	return item, nil
 }
 
-func (r *Repository) QueueFlowchart(ctx context.Context, recipeID string, kitchenID int64, updatedBy int64, requestedAt string) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin queue flowchart tx: %w", err)
-	}
-
-	result, err := tx.ExecContext(
+func (r *Repository) QueueFlowchart(ctx context.Context, recipeID, requestedAt string) error {
+	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL,
-    updated_by = ?, updated_at = ?
+SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL
 WHERE id = ? AND deleted_at IS NULL`,
 		FlowchartStatusPending,
 		nullableString(requestedAt),
-		updatedBy,
-		requestedAt,
 		recipeID,
 	)
 	if err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("queue recipe flowchart: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("read queue flowchart rows: %w", err)
 	}
 	if rowsAffected == 0 {
-		_ = tx.Rollback()
 		return sql.ErrNoRows
-	}
-
-	if err := bumpKitchenUpdatedAt(ctx, tx, kitchenID, requestedAt); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit queue flowchart: %w", err)
 	}
 
 	return nil
@@ -609,6 +589,45 @@ func (r *Repository) CountProcessingFlowcharts(ctx context.Context) (int, error)
 	return count, nil
 }
 
+func (r *Repository) ListAutoFlowchartCandidates(ctx context.Context, limit int) ([]Recipe, error) {
+	const query = `
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
+	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
+	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
+	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''),
+	       created_by, updated_by, created_at, updated_at
+	FROM recipes
+WHERE deleted_at IS NULL
+  AND COALESCE(flowchart_status, '') = ''
+  AND COALESCE(TRIM(flowchart_image_url), '') = ''
+  AND COALESCE(parse_status, '') NOT IN (?, ?)
+ORDER BY created_at ASC, id ASC
+LIMIT ?`
+
+	rows, err := r.db.QueryContext(ctx, query, ParseStatusPending, ParseStatusProcessing, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list auto flowchart candidates: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Recipe, 0, limit)
+	for rows.Next() {
+		item, err := scanRecipe(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate auto flowchart candidates: %w", err)
+	}
+
+	return items, nil
+}
+
 func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource string) (bool, error) {
 	result, err := r.db.ExecContext(
 		ctx,
@@ -678,17 +697,40 @@ WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ?`,
 	return rowsAffected > 0, nil
 }
 
+func (r *Repository) MarkAutoFlowchartPending(ctx context.Context, recipeID, requestedAt string) (bool, error) {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL
+WHERE id = ? AND deleted_at IS NULL
+  AND COALESCE(flowchart_status, '') = ''
+  AND COALESCE(TRIM(flowchart_image_url), '') = ''`,
+		FlowchartStatusPending,
+		nullableString(requestedAt),
+		recipeID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("mark auto recipe flowchart pending: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read auto flowchart pending rows: %w", err)
+	}
+
+	return rowsAffected > 0, nil
+}
+
 func (r *Repository) RequeueStaleFlowcharts(ctx context.Context, staleBefore, requestedAt string) (int64, error) {
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL, updated_at = ?
+SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL
 WHERE deleted_at IS NULL
   AND flowchart_status = ?
   AND datetime(COALESCE(NULLIF(flowchart_requested_at, ''), NULLIF(updated_at, ''), NULLIF(created_at, ''))) <= datetime(?)`,
 		FlowchartStatusPending,
 		nullableString(requestedAt),
-		requestedAt,
 		FlowchartStatusProcessing,
 		staleBefore,
 	)
@@ -726,11 +768,10 @@ func (r *Repository) MarkFlowchartFailed(ctx context.Context, recipeID, flowchar
 	if _, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = ?, flowchart_finished_at = ?, updated_at = ?
+SET flowchart_status = ?, flowchart_error = ?, flowchart_finished_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		FlowchartStatusFailed,
 		truncateString(strings.TrimSpace(flowchartError), 300),
-		finishedAt,
 		finishedAt,
 		recipeID,
 	); err != nil {
@@ -869,53 +910,29 @@ WHERE id = ? AND deleted_at IS NULL`,
 }
 
 func (r *Repository) ApplyFlowchartResult(ctx context.Context, recipeID, imageURL, sourceHash, finishedAt string) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin apply flowchart tx: %w", err)
-	}
-
-	current, err := findRecipeByIDTx(ctx, tx, recipeID)
-	if err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	result, err := tx.ExecContext(
+	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
 SET flowchart_image_url = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
-    flowchart_status = ?, flowchart_error = '', flowchart_finished_at = ?, updated_at = ?
+    flowchart_status = ?, flowchart_error = '', flowchart_finished_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(imageURL),
 		nullableString(finishedAt),
 		strings.TrimSpace(sourceHash),
 		FlowchartStatusDone,
 		finishedAt,
-		finishedAt,
 		recipeID,
 	)
 	if err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("apply recipe flowchart result: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("read flowchart result rows: %w", err)
 	}
 	if rowsAffected == 0 {
-		_ = tx.Rollback()
 		return sql.ErrNoRows
-	}
-
-	if err := bumpKitchenUpdatedAt(ctx, tx, current.KitchenID, finishedAt); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit apply flowchart result: %w", err)
 	}
 
 	return nil

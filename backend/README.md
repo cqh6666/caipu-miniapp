@@ -48,6 +48,7 @@ go run ./cmd/server
 - `AI_FLOWCHART_MODEL`
 - `AI_FLOWCHART_TIMEOUT_SECONDS`
 - `RECIPE_FLOWCHART_ENABLED`
+- `RECIPE_FLOWCHART_AUTO_ENQUEUE_ENABLED`
 - `RECIPE_FLOWCHART_INTERVAL_SECONDS`
 - `RECIPE_FLOWCHART_BATCH_SIZE`
 - `AI_TITLE_ENABLED`
@@ -193,6 +194,14 @@ go run ./cmd/server -migrate-only
 - 成功后会自动补齐 `ingredient`、`parsedContent.ingredients`、`parsedContent.steps`
 - 失败后会保留 `parseStatus=failed` 和 `parseError`
 - 可通过 `POST /api/recipes/{recipeID}/reparse` 手动重新入队
+
+当前步骤图生成策略：
+
+- 用户仍可通过 `POST /api/recipes/{recipeID}/flowchart` 手动入队生成步骤图
+- `RECIPE_FLOWCHART_AUTO_ENQUEUE_ENABLED=true` 时，后端会在当前没有 `pending / processing` 步骤图任务时，自动补位 1 条候选菜谱入队
+- 自动补位只挑选“还没生成步骤图、做法已完整、当前不在自动解析中”的菜谱
+- 第一版自动补位不会自动重试 `failed`，也不会自动重生成已有但过期的步骤图
+- 步骤图队列状态和生成结果会更新 `flowchart_*` 字段，但不会改 `recipe.updated_at`，避免首页列表被后台任务打乱顺序
 
 当前小红书预留策略：
 

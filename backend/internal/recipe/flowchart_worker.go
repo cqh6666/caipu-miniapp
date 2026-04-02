@@ -12,27 +12,29 @@ const defaultFlowchartJobTimeout = 3 * time.Minute
 const staleFlowchartProcessingThreshold = 10 * time.Minute
 
 type FlowchartWorker struct {
-	logger    *slog.Logger
-	repo      *Repository
-	generator *FlowchartGenerator
-	enabled   bool
-	interval  time.Duration
-	batchSize int
+	logger             *slog.Logger
+	repo               *Repository
+	generator          *FlowchartGenerator
+	enabled            bool
+	autoEnqueueEnabled bool
+	interval           time.Duration
+	batchSize          int
 
 	cancel func()
 	done   chan struct{}
 	once   sync.Once
 }
 
-func NewFlowchartWorker(logger *slog.Logger, repo *Repository, generator *FlowchartGenerator, enabled bool, interval time.Duration, batchSize int) *FlowchartWorker {
+func NewFlowchartWorker(logger *slog.Logger, repo *Repository, generator *FlowchartGenerator, enabled bool, autoEnqueueEnabled bool, interval time.Duration, batchSize int) *FlowchartWorker {
 	return &FlowchartWorker{
-		logger:    logger,
-		repo:      repo,
-		generator: generator,
-		enabled:   enabled,
-		interval:  interval,
-		batchSize: batchSize,
-		done:      make(chan struct{}),
+		logger:             logger,
+		repo:               repo,
+		generator:          generator,
+		enabled:            enabled,
+		autoEnqueueEnabled: autoEnqueueEnabled,
+		interval:           interval,
+		batchSize:          batchSize,
+		done:               make(chan struct{}),
 	}
 }
 
@@ -48,7 +50,15 @@ func (w *FlowchartWorker) Start(parent context.Context) {
 		go func() {
 			defer close(w.done)
 
-			w.logger.Info("recipe flowchart worker started", "interval", w.interval.String(), "batchSize", w.batchSize)
+			w.logger.Info(
+				"recipe flowchart worker started",
+				"interval",
+				w.interval.String(),
+				"batchSize",
+				w.batchSize,
+				"autoEnqueueEnabled",
+				w.autoEnqueueEnabled,
+			)
 			w.runBatch(ctx)
 
 			ticker := time.NewTicker(w.interval)
@@ -87,11 +97,62 @@ func (w *FlowchartWorker) runBatch(parent context.Context) {
 		w.logger.Error("list pending recipe flowchart jobs failed", "error", err)
 		return
 	}
+	if len(items) == 0 {
+		processing, err := w.repo.CountProcessingFlowcharts(ctx)
+		if err != nil {
+			w.logger.Error("count processing recipe flowchart jobs failed", "error", err)
+			return
+		}
+		if processing == 0 {
+			w.enqueueAutoCandidates(ctx)
+			items, err = w.repo.ListPendingFlowcharts(ctx, w.batchSize)
+			if err != nil {
+				w.logger.Error("reload pending recipe flowchart jobs failed", "error", err)
+				return
+			}
+		}
+	}
 
 	for _, item := range items {
 		if err := w.processOne(parent, item.ID); err != nil && !errors.Is(err, context.Canceled) {
 			w.logger.Error("process recipe flowchart job failed", "recipeID", item.ID, "error", err)
 		}
+	}
+}
+
+func (w *FlowchartWorker) enqueueAutoCandidates(ctx context.Context) {
+	if w == nil || !w.autoEnqueueEnabled || w.repo == nil {
+		return
+	}
+
+	scanLimit := w.batchSize * 10
+	if scanLimit < 50 {
+		scanLimit = 50
+	}
+
+	items, err := w.repo.ListAutoFlowchartCandidates(ctx, scanLimit)
+	if err != nil {
+		w.logger.Error("list auto recipe flowchart candidates failed", "error", err)
+		return
+	}
+
+	requestedAt := time.Now().Format(time.RFC3339)
+	for _, item := range items {
+		if !canGenerateFlowchartForRecipe(item) {
+			continue
+		}
+
+		marked, err := w.repo.MarkAutoFlowchartPending(ctx, item.ID, requestedAt)
+		if err != nil {
+			w.logger.Error("mark auto recipe flowchart pending failed", "recipeID", item.ID, "error", err)
+			continue
+		}
+		if !marked {
+			continue
+		}
+
+		w.logger.Info("queued auto recipe flowchart candidate", "recipeID", item.ID)
+		return
 	}
 }
 

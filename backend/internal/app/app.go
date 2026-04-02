@@ -143,6 +143,7 @@ func New(cfg config.Config) (*App, error) {
 		recipeRepo,
 		recipeFlowchart,
 		cfg.RecipeFlowchartEnabled,
+		cfg.RecipeFlowchartAutoEnqueue,
 		time.Duration(cfg.RecipeFlowchartInterval)*time.Second,
 		cfg.RecipeFlowchartBatchSize,
 	)

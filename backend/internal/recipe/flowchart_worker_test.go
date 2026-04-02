@@ -3,6 +3,7 @@ package recipe
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -37,7 +38,7 @@ INSERT INTO recipes (
 		t.Fatalf("RequeueStaleFlowcharts() requeued %d rows, want %d", got, want)
 	}
 
-	assertFlowchartState(t, db, "stale-processing", FlowchartStatusPending, "", "2026-03-25T00:30:00+08:00", "", "2026-03-25T00:30:00+08:00")
+	assertFlowchartState(t, db, "stale-processing", FlowchartStatusPending, "", "2026-03-25T00:30:00+08:00", "", "2026-03-25T00:01:00+08:00")
 	assertFlowchartState(t, db, "fresh-processing", FlowchartStatusProcessing, "", "2026-03-25T00:27:00+08:00", "", "2026-03-25T00:27:00+08:00")
 	assertFlowchartState(t, db, "old-pending", FlowchartStatusPending, "", "2026-03-25T00:00:00+08:00", "", "2026-03-25T00:00:00+08:00")
 }
@@ -68,7 +69,125 @@ INSERT INTO recipes (
 		t.Fatalf("RequeueStaleFlowcharts() requeued %d rows, want %d", got, want)
 	}
 
-	assertFlowchartState(t, db, "missing-requested-at", FlowchartStatusPending, "", "2026-03-25T00:30:00+08:00", "", "2026-03-25T00:30:00+08:00")
+	assertFlowchartState(t, db, "missing-requested-at", FlowchartStatusPending, "", "2026-03-25T00:30:00+08:00", "", "2026-03-25T00:05:00+08:00")
+}
+
+func TestFlowchartWorkerEnqueueAutoCandidatesQueuesFirstEligibleRecipe(t *testing.T) {
+	db := openFlowchartTestDB(t)
+	defer db.Close()
+
+	if _, err := db.Exec(`
+INSERT INTO recipes (
+  id, title, meal_type, status, ingredients_json, steps_json, flowchart_status, flowchart_image_url, parse_status, created_at, updated_at
+) VALUES
+  ('too-few-steps', '番茄牛腩', 'main', 'wishlist', '{"mainIngredients":["牛腩 500克"]}', '[{"title":"焯水","detail":"焯水去腥。"},{"title":"慢炖","detail":"小火慢炖。"}]', '', '', 'done', '2026-03-25T00:00:00+08:00', '2026-03-25T00:00:00+08:00'),
+  ('eligible', '红烧排骨', 'main', 'wishlist', '{"mainIngredients":["排骨 500克"],"secondaryIngredients":["盐 适量"]}', '[{"title":"焯水","detail":"排骨焯水去腥。"},{"title":"炒糖","detail":"小火炒出糖色。"},{"title":"炖煮","detail":"加水炖至软烂。"}]', '', '', 'done', '2026-03-25T00:01:00+08:00', '2026-03-25T00:01:00+08:00'),
+  ('has-flowchart', '葱油鸡', 'main', 'wishlist', '{"mainIngredients":["鸡 1只"]}', '[{"title":"处理","detail":"鸡肉擦干。"},{"title":"蒸熟","detail":"蒸到熟透。"},{"title":"淋油","detail":"热油激香。"}]', '', 'https://cdn.example.com/existing.png', 'done', '2026-03-25T00:02:00+08:00', '2026-03-25T00:02:00+08:00'),
+  ('parse-running', '麻婆豆腐', 'main', 'wishlist', '{"mainIngredients":["豆腐 1盒"]}', '[{"title":"备料","detail":"豆腐切块。"},{"title":"煸香","detail":"炒香肉末豆瓣。"},{"title":"收汁","detail":"勾芡出锅。"}]', '', '', 'processing', '2026-03-25T00:03:00+08:00', '2026-03-25T00:03:00+08:00');
+`); err != nil {
+		t.Fatalf("seed recipes error = %v", err)
+	}
+
+	worker := &FlowchartWorker{
+		logger:             slog.Default(),
+		repo:               NewRepository(db),
+		autoEnqueueEnabled: true,
+		batchSize:          1,
+	}
+
+	worker.enqueueAutoCandidates(context.Background())
+
+	assertFlowchartState(t, db, "too-few-steps", FlowchartStatusIdle, "", "", "", "2026-03-25T00:00:00+08:00")
+	assertFlowchartState(t, db, "has-flowchart", FlowchartStatusIdle, "", "", "", "2026-03-25T00:02:00+08:00")
+	assertFlowchartState(t, db, "parse-running", FlowchartStatusIdle, "", "", "", "2026-03-25T00:03:00+08:00")
+
+	var pendingCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM recipes WHERE flowchart_status = ?`, FlowchartStatusPending).Scan(&pendingCount); err != nil {
+		t.Fatalf("count pending flowcharts error = %v", err)
+	}
+	if got, want := pendingCount, 1; got != want {
+		t.Fatalf("pending flowchart count = %d, want %d", got, want)
+	}
+
+	var requestedAt string
+	var updatedAt string
+	if err := db.QueryRow(`
+SELECT COALESCE(flowchart_requested_at, ''), updated_at
+FROM recipes
+WHERE id = 'eligible'
+`).Scan(&requestedAt, &updatedAt); err != nil {
+		t.Fatalf("query eligible recipe error = %v", err)
+	}
+	if requestedAt == "" {
+		t.Fatal("eligible recipe should have flowchart_requested_at after auto enqueue")
+	}
+	if got, want := updatedAt, "2026-03-25T00:01:00+08:00"; got != want {
+		t.Fatalf("eligible recipe updated_at = %q, want %q", got, want)
+	}
+}
+
+func TestRepositoryQueueFlowchartDoesNotTouchUpdatedAt(t *testing.T) {
+	db := openFlowchartTestDB(t)
+	defer db.Close()
+
+	if _, err := db.Exec(`
+INSERT INTO recipes (
+  id, title, meal_type, status, created_at, updated_at
+) VALUES
+  ('manual-queue', '红烧肉', 'main', 'wishlist', '2026-03-25T00:00:00+08:00', '2026-03-25T00:10:00+08:00');
+`); err != nil {
+		t.Fatalf("seed recipe error = %v", err)
+	}
+
+	repo := NewRepository(db)
+	if err := repo.QueueFlowchart(context.Background(), "manual-queue", "2026-03-25T00:30:00+08:00"); err != nil {
+		t.Fatalf("QueueFlowchart() error = %v", err)
+	}
+
+	assertFlowchartState(t, db, "manual-queue", FlowchartStatusPending, "", "2026-03-25T00:30:00+08:00", "", "2026-03-25T00:10:00+08:00")
+}
+
+func TestRepositoryApplyFlowchartResultDoesNotTouchUpdatedAt(t *testing.T) {
+	db := openFlowchartTestDB(t)
+	defer db.Close()
+
+	if _, err := db.Exec(`
+INSERT INTO recipes (
+  id, title, meal_type, status, flowchart_status, flowchart_requested_at, created_at, updated_at
+) VALUES
+  ('apply-result', '清炖牛腩', 'main', 'wishlist', 'processing', '2026-03-25T00:20:00+08:00', '2026-03-25T00:00:00+08:00', '2026-03-25T00:12:00+08:00');
+`); err != nil {
+		t.Fatalf("seed recipe error = %v", err)
+	}
+
+	repo := NewRepository(db)
+	if err := repo.ApplyFlowchartResult(
+		context.Background(),
+		"apply-result",
+		"https://cdn.example.com/flowchart-result.png",
+		"source-hash",
+		"2026-03-25T00:40:00+08:00",
+	); err != nil {
+		t.Fatalf("ApplyFlowchartResult() error = %v", err)
+	}
+
+	assertFlowchartState(t, db, "apply-result", FlowchartStatusDone, "", "2026-03-25T00:20:00+08:00", "2026-03-25T00:40:00+08:00", "2026-03-25T00:12:00+08:00")
+
+	var imageURL string
+	var flowchartUpdatedAt sql.NullString
+	if err := db.QueryRow(`
+SELECT flowchart_image_url, flowchart_updated_at
+FROM recipes
+WHERE id = 'apply-result'
+`).Scan(&imageURL, &flowchartUpdatedAt); err != nil {
+		t.Fatalf("query apply-result recipe error = %v", err)
+	}
+	if got, want := imageURL, "https://cdn.example.com/flowchart-result.png"; got != want {
+		t.Fatalf("flowchart_image_url = %q, want %q", got, want)
+	}
+	if got, want := flowchartUpdatedAt.String, "2026-03-25T00:40:00+08:00"; got != want {
+		t.Fatalf("flowchart_updated_at = %q, want %q", got, want)
+	}
 }
 
 func openFlowchartTestDB(t *testing.T) *sql.DB {
@@ -82,10 +201,34 @@ func openFlowchartTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(`
 CREATE TABLE recipes (
   id TEXT PRIMARY KEY,
+  kitchen_id INTEGER NOT NULL DEFAULT 1,
+  title TEXT NOT NULL DEFAULT '',
+  ingredient TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  link TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  image_urls_json TEXT NOT NULL DEFAULT '[]',
+  flowchart_image_url TEXT NOT NULL DEFAULT '',
+  flowchart_updated_at TEXT,
+  flowchart_source_hash TEXT NOT NULL DEFAULT '',
   flowchart_status TEXT NOT NULL DEFAULT '',
   flowchart_error TEXT NOT NULL DEFAULT '',
   flowchart_requested_at TEXT,
   flowchart_finished_at TEXT,
+  meal_type TEXT NOT NULL DEFAULT 'main',
+  status TEXT NOT NULL DEFAULT 'wishlist',
+  note TEXT NOT NULL DEFAULT '',
+  ingredients_json TEXT NOT NULL DEFAULT '{}',
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  parse_status TEXT NOT NULL DEFAULT '',
+  parse_source TEXT NOT NULL DEFAULT '',
+  parse_error TEXT NOT NULL DEFAULT '',
+  parse_requested_at TEXT NOT NULL DEFAULT '',
+  parse_finished_at TEXT NOT NULL DEFAULT '',
+  parsed_content_edited INTEGER NOT NULL DEFAULT 0,
+  pinned_at TEXT NOT NULL DEFAULT '',
+  created_by INTEGER NOT NULL DEFAULT 0,
+  updated_by INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT '',
   deleted_at TEXT
