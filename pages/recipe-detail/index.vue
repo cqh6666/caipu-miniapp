@@ -332,7 +332,7 @@
 							</view>
 						</view>
 						<text class="editor-field__hint">
-							{{ editDraft.images.length ? `已添加 ${editDraft.images.length} 张，可调整顺序，首张会作为封面。` : `最多上传 ${maxRecipeImages} 张，首张会作为封面。` }}
+							{{ editDraft.images.length ? `已添加 ${editDraft.images.length} 张，首张作封面，可调整顺序。` : `最多上传 ${maxRecipeImages} 张，首张作封面。` }}
 						</text>
 					</view>
 
@@ -461,7 +461,7 @@
 							</view>
 						</view>
 						<text class="editor-field__hint">
-							{{ editIsUsingFallbackContent ? '当前还没有真实食材，系统占位内容已隐藏，可直接手动添加。' : '食材会按主料、辅料/调味分开展示，可通过右侧菜单调整位置。' }}
+							{{ editIsUsingFallbackContent ? '还没添加食材，直接补充即可。' : '食材按主料和辅料分开显示，可调整顺序。' }}
 						</text>
 					</view>
 
@@ -536,7 +536,7 @@
 							</view>
 						</view>
 						<text class="editor-field__hint">
-							{{ editIsUsingFallbackContent ? '当前还没有真实步骤，可手动添加；若有链接，也可以先关闭后从详情页重新整理。' : '步骤标题可手动修改；若留空，保存时会自动补一个简短标题。' }}
+							{{ editIsUsingFallbackContent ? '还没添加步骤，直接补充即可。' : '步骤标题可选填，留空会自动补全。' }}
 						</text>
 					</view>
 
@@ -1496,8 +1496,8 @@ export default {
 		ingredientGroupEmptyText(group = 'main') {
 			if (this.editIsUsingFallbackContent) {
 				return group === 'secondary'
-					? '当前还没有真实辅料或调味，系统占位内容已隐藏。'
-					: '当前还没有真实主料，系统占位内容已隐藏。'
+					? '还没添加辅料或调味。'
+					: '还没添加主料。'
 			}
 			return group === 'secondary'
 				? '还没添加辅料或调味，比如葱姜蒜、盐、生抽。'
@@ -1505,9 +1505,9 @@ export default {
 		},
 		stepEmptyText() {
 			if (this.editIsUsingFallbackContent) {
-				return '当前还没有真实步骤，系统占位内容已隐藏。'
+				return '还没添加步骤。'
 			}
-			return '还没添加步骤，可先补 3 到 6 个关键步骤。'
+			return '还没添加步骤，可先补 3 到 6 步。'
 		},
 		addEditIngredient(group = 'main') {
 			const fieldKey = this.getEditIngredientFieldKey(group)
@@ -2722,7 +2722,9 @@ export default {
 
 	.editor-sheet {
 		height: 78vh;
-		background: #ffffff;
+		background:
+			radial-gradient(circle at top right, rgba(255, 236, 214, 0.26) 0%, rgba(255, 236, 214, 0) 26%),
+			linear-gradient(180deg, #fbf8f4 0%, #f7f3ee 100%);
 		display: flex;
 		flex-direction: column;
 	}
@@ -2758,7 +2760,11 @@ export default {
 		width: 68rpx;
 		height: 68rpx;
 		border-radius: 18rpx;
-		background: #f4f0eb;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(242, 235, 227, 0.94));
+		box-shadow:
+			0 8rpx 18rpx rgba(70, 54, 40, 0.04),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.66);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -2814,8 +2820,10 @@ export default {
 		width: 100%;
 		box-sizing: border-box;
 		border-radius: 24rpx;
-		background: #f7f4f0;
-		border: 1px solid #ebe4db;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(247, 243, 237, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.08);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.58);
 		color: #2f2923;
 	}
 
@@ -2829,8 +2837,12 @@ export default {
 		height: 96rpx;
 		font-size: 30rpx;
 		font-weight: 600;
-		background: #ffffff;
-		border-color: #e3dbd2;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(252, 248, 243, 0.96));
+		border-color: rgba(170, 134, 103, 0.12);
+		box-shadow:
+			0 10rpx 18rpx rgba(70, 54, 40, 0.03),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.66);
 	}
 
 	.editor-input__placeholder,
@@ -2858,8 +2870,12 @@ export default {
 	.editor-structured__section {
 		padding: 22rpx;
 		border-radius: 28rpx;
-		background: #f7f4f0;
-		border: 1px solid #ebe4db;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 243, 236, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.06);
+		box-shadow:
+			0 10rpx 18rpx rgba(70, 54, 40, 0.03),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.58);
 	}
 
 	.editor-structured__header {
@@ -2894,8 +2910,12 @@ export default {
 		height: 56rpx;
 		padding: 0 18rpx;
 		border-radius: 999rpx;
-		background: #ffffff;
-		border: 1px solid #e5ddd4;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 242, 236, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.08);
+		box-shadow:
+			0 8rpx 14rpx rgba(68, 52, 38, 0.035),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.6);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -2937,8 +2957,10 @@ export default {
 		min-height: 84rpx;
 		padding: 0 16rpx;
 		border-radius: 24rpx;
-		background: #ffffff;
-		border: 1px solid #eae2d8;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 245, 240, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.06);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.52);
 		display: flex;
 		align-items: center;
 		gap: 12rpx;
@@ -2973,7 +2995,9 @@ export default {
 		width: 52rpx;
 		height: 52rpx;
 		border-radius: 16rpx;
-		background: #f4eee8;
+		background:
+			linear-gradient(180deg, rgba(244, 238, 230, 0.98), rgba(235, 226, 215, 0.96));
+		border: 1px solid rgba(122, 98, 74, 0.08);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -3004,8 +3028,12 @@ export default {
 	.editor-step-card {
 		padding: 22rpx;
 		border-radius: 28rpx;
-		background: #f7f4f0;
-		border: 1px solid #ebe4db;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 243, 236, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.06);
+		box-shadow:
+			0 10rpx 18rpx rgba(70, 54, 40, 0.03),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.58);
 		display: flex;
 		flex-direction: column;
 		gap: 16rpx;
@@ -3022,8 +3050,10 @@ export default {
 		height: 52rpx;
 		padding: 0 16rpx;
 		border-radius: 999rpx;
-		background: #ffffff;
-		border: 1px solid #e5ddd4;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 242, 236, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.08);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.56);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -3048,8 +3078,10 @@ export default {
 		height: 52rpx;
 		padding: 0 18rpx;
 		border-radius: 999rpx;
-		background: #ffffff;
-		border: 1px solid #e5ddd4;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 242, 236, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.08);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.56);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -3061,8 +3093,9 @@ export default {
 	}
 
 	.editor-step-card__action--danger {
-		background: #fbf1ed;
-		border-color: #f1d9ce;
+		background:
+			linear-gradient(180deg, rgba(252, 241, 237, 0.98), rgba(248, 232, 226, 0.94));
+		border-color: rgba(193, 106, 81, 0.14);
 	}
 
 	.editor-step-card__action-text {
@@ -3092,8 +3125,10 @@ export default {
 		width: 100%;
 		box-sizing: border-box;
 		border-radius: 22rpx;
-		background: #ffffff;
-		border: 1px solid #eae2d8;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 245, 240, 0.94));
+		border: 1px solid rgba(111, 86, 64, 0.06);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.52);
 		color: #2f2923;
 	}
 
@@ -3113,8 +3148,10 @@ export default {
 	.editor-step-add {
 		height: 84rpx;
 		border-radius: 24rpx;
-		background: #faf7f3;
-		border: 1px dashed #d8cec3;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 243, 236, 0.94));
+		border: 1px dashed rgba(150, 126, 104, 0.26);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.52);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -3142,7 +3179,10 @@ export default {
 	}
 
 	.editor-gallery__item {
-		background: #ebe4db;
+		background: linear-gradient(145deg, #ebdfd3 0%, #e1d3c4 100%);
+		box-shadow:
+			0 10rpx 18rpx rgba(66, 51, 37, 0.07),
+			inset 0 0 0 1px rgba(255, 255, 255, 0.24);
 	}
 
 	.editor-gallery__thumb {
@@ -3200,8 +3240,10 @@ export default {
 	}
 
 	.editor-gallery__add {
-		border: 1px dashed #d8cec3;
-		background: #faf7f3;
+		border: 1px dashed rgba(150, 126, 104, 0.26);
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 243, 236, 0.94));
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.58);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -3213,7 +3255,9 @@ export default {
 		width: 64rpx;
 		height: 64rpx;
 		border-radius: 20rpx;
-		background: #f1ebe4;
+		background:
+			linear-gradient(180deg, rgba(244, 238, 230, 0.98), rgba(235, 226, 215, 0.96));
+		border: 1px solid rgba(122, 98, 74, 0.08);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -3230,7 +3274,9 @@ export default {
 		gap: 10rpx;
 		padding: 8rpx;
 		border-radius: 24rpx;
-		background: #f3efea;
+		background:
+			linear-gradient(180deg, rgba(243, 239, 234, 0.96), rgba(238, 232, 224, 0.92));
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.46);
 	}
 
 	.segment__item {
@@ -3244,16 +3290,21 @@ export default {
 	}
 
 	.segment__item--active {
-		background: #ffffff;
-		box-shadow: 0 8rpx 18rpx rgba(59, 47, 36, 0.06);
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 245, 240, 0.96));
+		box-shadow:
+			0 10rpx 18rpx rgba(59, 47, 36, 0.055),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
 	}
 
 	.segment__item--wishlist {
-		background: #f3e7de;
+		background:
+			linear-gradient(180deg, rgba(250, 240, 233, 0.98), rgba(243, 231, 222, 0.96));
 	}
 
 	.segment__item--done {
-		background: #e8efe5;
+		background:
+			linear-gradient(180deg, rgba(240, 247, 239, 0.98), rgba(232, 239, 229, 0.96));
 	}
 
 	.segment__text {
@@ -3269,7 +3320,8 @@ export default {
 	.editor-sheet__footer {
 		padding: 18rpx 28rpx calc(env(safe-area-inset-bottom) + 20rpx);
 		border-top: 1px solid rgba(91, 74, 59, 0.08);
-		background: #ffffff;
+		background:
+			linear-gradient(180deg, rgba(248, 244, 239, 0.4), rgba(255, 255, 255, 0.96) 32%);
 		display: flex;
 		gap: 16rpx;
 	}
@@ -3278,19 +3330,36 @@ export default {
 		flex: 1;
 		height: 88rpx;
 		border-radius: 24rpx;
-		background: #f1ede8;
+		border: 1px solid rgba(100, 78, 58, 0.06);
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(243, 237, 230, 0.96));
+		box-shadow:
+			0 12rpx 22rpx rgba(70, 54, 40, 0.045),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		transform: scale(1);
+		transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+	}
+
+	.editor-sheet__action:active {
+		transform: scale(0.988);
 	}
 
 	.editor-sheet__action--primary {
-		background: #5b4a3b;
-		box-shadow: 0 12rpx 20rpx rgba(91, 74, 59, 0.16);
+		background:
+			linear-gradient(180deg, #6d5846, #594736);
+		border-color: rgba(89, 71, 54, 0.8);
+		box-shadow:
+			0 16rpx 24rpx rgba(91, 74, 59, 0.18),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.12);
 	}
 
 	.editor-sheet__action--disabled {
-		background: #d9d1c8;
+		background:
+			linear-gradient(180deg, #ddd4ca, #d5cbc0);
+		border-color: rgba(174, 159, 143, 0.68);
 		box-shadow: none;
 		pointer-events: none;
 	}

@@ -343,7 +343,11 @@
 		:show="showAddSheet"
 		:draft="draft"
 		:draft-link-assist-text="draftLinkAssistText"
+		:is-link-previewing="isDraftLinkPreviewing"
+		:has-link-preview-error="!!draftLinkPreviewError"
 		:draft-title-assist-text="draftTitleAssistText"
+		:has-auto-title="!!draftAutoTitle"
+		:is-title-touched="draftTitleTouched"
 		:max-recipe-images="maxRecipeImages"
 		:meal-tabs="mealTabs"
 		:draft-status-options="draftStatusOptions"
@@ -954,24 +958,26 @@ export default {
 			const platformLabel = this.draftLinkPlatformLabel
 			const sourceLabel = this.draftLinkTitleSourceLabel
 			const sourceParts = [platformLabel !== '链接' ? platformLabel : '', sourceLabel].filter(Boolean)
-			const sourceSuffix = sourceParts.length ? ` 来源：${sourceParts.join(' · ')}` : ''
+			const sourceSuffix = sourceParts.length ? `（${sourceParts.join(' · ')}）` : ''
 			if (this.draftTitleTouched) {
-				return `已识别到菜名，当前保留你手动填写的内容。${sourceSuffix}`.trim()
+				return `已识别菜名，保留当前填写${sourceSuffix}`.trim()
 			}
-			return `已识别到菜名，可直接保存。${sourceSuffix}`.trim()
+			return `已识别菜名，可直接保存${sourceSuffix}`.trim()
 		},
 		draftLinkAssistText() {
 			if (this.isDraftLinkPreviewing) {
-				return `正在识别${this.draftLinkPlatformLabel}链接里的菜名...`
+				return this.draftLinkPlatformLabel === '链接'
+					? '正在识别链接标题...'
+					: `正在识别${this.draftLinkPlatformLabel}菜名...`
 			}
 			if (this.draftLinkPreviewError) {
 				return this.draftLinkPreviewError
 			}
 			if (this.draft.link.trim()) {
 				if (this.draftLinkPrefillSource === 'clipboard') {
-					return '已从剪贴板填入分享内容，可直接保存或继续修改。'
+					return '已填入剪贴板内容，可直接保存或继续修改。'
 				}
-				return '支持直接粘贴 B 站或小红书分享链接，系统会自动帮你补标题。'
+				return '已粘贴链接，系统会自动补标题。'
 			}
 			return ''
 		}
