@@ -715,17 +715,10 @@ function formatParseSourceLabel(source = '') {
 	if (value === 'bilibili:heuristic') return '来源：B 站规则整理'
 	if (value.startsWith('xiaohongshu')) {
 		const parts = value.toLowerCase().split(':').filter(Boolean)
-		const contentType = parts.includes('video') ? 'video' : parts.includes('image') ? 'image' : ''
 		const summaryMode = parts.includes('ai') ? 'ai' : parts.includes('heuristic') ? 'heuristic' : ''
-		const contentLabel = contentType === 'video'
-			? '小红书视频'
-			: contentType === 'image'
-				? '小红书图文'
-				: '小红书内容'
-		if (!contentType && !summaryMode) return '来源：小红书链接自动解析'
-		if (!summaryMode) return `来源：${contentLabel}链接自动解析`
-		if (summaryMode === 'ai') return `来源：${contentLabel} + AI 总结`
-		if (summaryMode === 'heuristic') return `来源：${contentLabel}规则整理`
+		if (!summaryMode) return '来源：小红书链接自动解析'
+		if (summaryMode === 'ai') return '来源：小红书 + AI 总结'
+		if (summaryMode === 'heuristic') return '来源：小红书规则整理'
 	}
 	return `来源：${value}`
 }
