@@ -85,15 +85,17 @@
 								v-for="tab in statusTabs"
 								:key="tab.value"
 								class="status-pill"
-								:class="{ 'status-pill--active': activeStatus === tab.value }"
+								:class="[`status-pill--${tab.value}`, { 'status-pill--active': activeStatus === tab.value }]"
 								@tap="activeStatus = tab.value"
 							>
 								<view class="status-pill__inner">
-									<up-icon
-										:name="statusMap[tab.value].icon"
-										size="13"
-										:color="activeStatus === tab.value ? '#fffaf3' : '#7a6d61'"
-									></up-icon>
+									<view class="status-pill__icon-shell">
+										<up-icon
+											:name="statusMap[tab.value].icon"
+											size="13"
+											:color="activeStatus === tab.value ? '#fffaf3' : tab.value === 'done' ? '#75866f' : '#8b6f5c'"
+										></up-icon>
+									</view>
 									<text class="status-pill__text">{{ tab.label }}</text>
 								</view>
 							</view>
@@ -113,7 +115,9 @@
 								<text class="list-caption__clear-text">清除</text>
 							</view>
 							<view class="list-caption__pick" @tap="drawTonight">
-								<up-icon name="reload" size="13" color="#6f6154"></up-icon>
+								<view class="list-caption__pick-icon-shell">
+									<up-icon name="reload" size="12" color="#6f5b4a"></up-icon>
+								</view>
 								<text class="list-caption__pick-text">帮我选</text>
 							</view>
 						</view>
@@ -2548,17 +2552,49 @@ export default {
 		padding: 0 16rpx;
 		box-sizing: border-box;
 		border-radius: 18rpx;
-		background: #f6f2ec;
-		border: 1px solid rgba(91, 74, 59, 0.05);
+		border: 1px solid rgba(91, 74, 59, 0.06);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.54);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+	}
+
+	.status-pill--wishlist {
+		background: linear-gradient(180deg, rgba(250, 244, 238, 0.98) 0%, rgba(244, 237, 228, 0.98) 100%);
+	}
+
+	.status-pill--all {
+		background: linear-gradient(180deg, rgba(250, 248, 244, 0.98) 0%, rgba(244, 240, 234, 0.98) 100%);
+	}
+
+	.status-pill--done {
+		background: linear-gradient(180deg, rgba(247, 250, 247, 0.98) 0%, rgba(238, 243, 238, 0.98) 100%);
+	}
+
+	.status-pill:active {
+		transform: scale(0.992);
 	}
 
 	.status-pill--active {
-		background: #5b4a3b;
+		box-shadow:
+			0 10rpx 20rpx rgba(56, 44, 30, 0.12),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.12);
+	}
+
+	.status-pill--wishlist.status-pill--active {
+		background: linear-gradient(180deg, #7a6151 0%, #5b4a3b 100%);
 		border-color: #5b4a3b;
-		box-shadow: 0 10rpx 20rpx rgba(56, 44, 30, 0.12);
+	}
+
+	.status-pill--all.status-pill--active {
+		background: linear-gradient(180deg, #7b7065 0%, #62584f 100%);
+		border-color: #62584f;
+	}
+
+	.status-pill--done.status-pill--active {
+		background: linear-gradient(180deg, #72876f 0%, #5f725d 100%);
+		border-color: #5f725d;
 	}
 
 	.status-pill__inner {
@@ -2567,10 +2603,41 @@ export default {
 		gap: 8rpx;
 	}
 
+	.status-pill__icon-shell {
+		width: 28rpx;
+		height: 28rpx;
+		border-radius: 999rpx;
+		background: rgba(91, 74, 59, 0.06);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.status-pill--done .status-pill__icon-shell {
+		background: rgba(95, 114, 93, 0.08);
+	}
+
+	.status-pill--all .status-pill__icon-shell {
+		background: rgba(109, 96, 83, 0.07);
+	}
+
 	.status-pill__text {
 		font-size: 23rpx;
-		font-weight: 600;
+		font-weight: 700;
 		color: #6f655b;
+	}
+
+	.status-pill--done .status-pill__text {
+		color: #677965;
+	}
+
+	.status-pill--all .status-pill__text {
+		color: #75695f;
+	}
+
+	.status-pill--active .status-pill__icon-shell {
+		background: rgba(255, 255, 255, 0.14);
 	}
 
 	.status-pill--active .status-pill__text {
@@ -2618,6 +2685,10 @@ export default {
 		flex-shrink: 0;
 	}
 
+	.list-caption__clear:active {
+		transform: scale(0.992);
+	}
+
 	.list-caption__clear-text {
 		font-size: 21rpx;
 		font-weight: 600;
@@ -2626,11 +2697,33 @@ export default {
 	}
 
 	.list-caption__pick {
-		min-height: 48rpx;
-		padding: 0 18rpx;
+		min-height: 52rpx;
+		padding: 0 18rpx 0 12rpx;
 		border-radius: 999rpx;
-		background: #f2ebe3;
-		border: 1px solid rgba(91, 74, 59, 0.06);
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.76) 0%, rgba(255, 255, 255, 0) 44%),
+			linear-gradient(180deg, #f6ede3 0%, #efe3d4 100%);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.62),
+			0 8rpx 16rpx rgba(63, 52, 42, 0.06);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8rpx;
+		flex-shrink: 0;
+	}
+
+	.list-caption__pick:active {
+		transform: scale(0.992);
+	}
+
+	.list-caption__pick-icon-shell {
+		width: 28rpx;
+		height: 28rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.58);
+		border: 1px solid rgba(111, 97, 84, 0.08);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -2639,9 +2732,9 @@ export default {
 
 	.list-caption__pick-text {
 		font-size: 21rpx;
-		font-weight: 600;
+		font-weight: 700;
 		line-height: 1;
-		color: #6f6154;
+		color: #6a5848;
 	}
 
 	.recipe-list {
