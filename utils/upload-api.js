@@ -1,8 +1,16 @@
 import { isServerAssetPath, resolveAssetURL } from './app-config'
 import { uploadFile } from './http'
 
+export function isTemporaryImagePath(path = '') {
+	const source = String(path || '').trim()
+	if (!source) return false
+
+	return /^(wxfile:\/\/|file:\/\/|blob:)/i.test(source) || /^https?:\/\/tmp\//i.test(source)
+}
+
 function isRemoteImage(url = '') {
-	return /^https?:\/\//.test((url || '').trim())
+	const source = (url || '').trim()
+	return /^https?:\/\//.test(source) && !isTemporaryImagePath(source)
 }
 
 export async function ensureUploadedImage(imagePath = '') {

@@ -1,6 +1,7 @@
 import { appConfig, resolveAssetURL } from './app-config'
 import { request } from './http'
 import { clearSessionState, getAccessToken, getSessionState, setAccessToken, setSessionState } from './session-storage'
+import { isTemporaryImagePath } from './upload-api'
 
 let pendingSessionPromise = null
 const DEV_IDENTITY_STORAGE_KEY = 'caipu-miniapp-dev-identity'
@@ -132,9 +133,10 @@ function getMiniProgramAppID() {
 
 function getUserProfileFromPayload(payload = {}) {
 	const userInfo = payload?.userInfo || payload
+	const avatarUrl = String(userInfo?.avatarUrl || userInfo?.avatarURL || '').trim()
 	return {
 		nickname: String(userInfo?.nickName || userInfo?.nickname || '').trim(),
-		avatarUrl: String(userInfo?.avatarUrl || userInfo?.avatarURL || '').trim()
+		avatarUrl: isTemporaryImagePath(avatarUrl) ? '' : avatarUrl
 	}
 }
 

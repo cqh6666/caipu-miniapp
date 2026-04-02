@@ -73,6 +73,8 @@ func (s *Service) LoginWithWechatCode(ctx context.Context, code, appID, nickname
 		return SessionResponse{}, common.NewAppError(common.CodeBadRequest, "mini program appId does not match backend wechat config", http.StatusBadRequest)
 	}
 
+	avatarURL = sanitizeLoginAvatarURL(avatarURL)
+
 	session, err := s.wechatClient.Code2Session(ctx, code)
 	if err != nil {
 		return SessionResponse{}, err
@@ -116,6 +118,10 @@ func (s *Service) CurrentSession(ctx context.Context, userID int64) (SessionResp
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, userID int64, nickname, avatarURL string) (User, error) {
+	if err := validateProfileAvatarURL(avatarURL); err != nil {
+		return User{}, err
+	}
+
 	user, err := s.repo.FindByID(ctx, userID)
 	if err != nil {
 		return User{}, err
@@ -213,6 +219,35 @@ func normalizeIdentity(identity string) string {
 		return "demo"
 	}
 	return identity
+}
+
+func sanitizeLoginAvatarURL(avatarURL string) string {
+	if isTemporaryAvatarURL(avatarURL) {
+		return ""
+	}
+
+	return strings.TrimSpace(avatarURL)
+}
+
+func validateProfileAvatarURL(avatarURL string) error {
+	if !isTemporaryAvatarURL(avatarURL) {
+		return nil
+	}
+
+	return common.NewAppError(common.CodeBadRequest, "avatarUrl must be an uploaded image URL", http.StatusBadRequest)
+}
+
+func isTemporaryAvatarURL(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return false
+	}
+
+	return strings.HasPrefix(normalized, "wxfile://") ||
+		strings.HasPrefix(normalized, "file://") ||
+		strings.HasPrefix(normalized, "blob:") ||
+		strings.HasPrefix(normalized, "http://tmp/") ||
+		strings.HasPrefix(normalized, "https://tmp/")
 }
 
 func (s *Service) isAdminUser(user User) bool {

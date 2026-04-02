@@ -25,14 +25,21 @@
   - 第一版仅处理首次生成，不自动重试 `failed`，也不自动重生成已有但过期的步骤图
 - 步骤图队列状态与生成结果不再改写 `recipe.updated_at`，避免后台任务打乱首页菜谱排序
 
+### Fixed
+
+- 修复个人资料页选择微信头像后“提示资料已更新但实际头像未生效”的问题：
+  - 前端上传逻辑不再把 `chooseAvatar` 返回的微信临时头像路径误判为远程图片
+  - 登录态自动资料同步会忽略临时头像路径，避免把无效地址再次写回后端
+  - 后端资料更新接口会拒绝临时头像路径，避免旧客户端继续写入无效头像地址
+
 ### Notes
 
-- 修改时间：2026-04-02 23:37 CST
+- 修改时间：2026-04-03 00:07 CST
 - 变更背景：现有来源链接提取主要依赖前后端规则，面对不规整分享文案时稳定性不足
-- 核心改动：保留规则提取来源链接，模型只参与低置信度标题清洗；标题模型现已支持独立配置地址与密钥；前端来源标签统一展示为 `B站 / 小红书`；后端步骤图 worker 新增空闲自动补位策略，并把步骤图状态流转从普通内容更新时间里剥离
-- 影响范围：`pages/index/index.vue`、`pages/index/recipe-card.js`、`pages/recipe-detail/index.vue`、`backend/internal/linkparse/*`、`backend/internal/recipe/*`、`backend/internal/config/config.go`、`backend/README.md`
-- 兼容性/风险：当前仍只支持 `bilibili` / `xiaohongshu` 两个平台；若运行环境未配置 AI 模型，标题会完全沿用规则清洗结果；步骤图自动补位默认关闭，启用后会带来额外图片生成成本；第一版不会自动重试失败任务，也不会自动重生成已过期步骤图
-- 验证情况：已执行 `cd backend && go test ./...`；已执行前端文案静态自检；已补充步骤图 worker / repository 自动补位与 `updated_at` 稳定性测试
+- 核心改动：保留规则提取来源链接，模型只参与低置信度标题清洗；标题模型现已支持独立配置地址与密钥；前端来源标签统一展示为 `B站 / 小红书`；后端步骤图 worker 新增空闲自动补位策略，并把步骤图状态流转从普通内容更新时间里剥离；个人资料头像上传现会正确识别并上传微信临时头像路径，后端资料更新接口也会拒绝继续写入临时头像地址
+- 影响范围：`pages/index/index.vue`、`pages/index/recipe-card.js`、`pages/recipe-detail/index.vue`、`utils/auth.js`、`utils/upload-api.js`、`backend/internal/auth/service.go`、`backend/internal/auth/service_test.go`、`backend/internal/linkparse/*`、`backend/internal/recipe/*`、`backend/internal/config/config.go`、`backend/README.md`
+- 兼容性/风险：当前仍只支持 `bilibili` / `xiaohongshu` 两个平台；若运行环境未配置 AI 模型，标题会完全沿用规则清洗结果；步骤图自动补位默认关闭，启用后会带来额外图片生成成本；第一版不会自动重试失败任务，也不会自动重生成已有但过期的步骤图；头像临时路径识别当前覆盖 `wxfile://`、`file://`、`blob:` 和 `http(s)://tmp/`；旧前端若仍直接提交临时头像路径，现在会收到明确的 `400` 错误而不是“假成功”
+- 验证情况：已执行 `cd backend && go test ./...`；已执行前端文案静态自检；已补充步骤图 worker / repository 自动补位与 `updated_at` 稳定性测试；已完成头像更新链路静态代码自检，并新增后端 `auth` 头像校验单测
 
 ## 2026-03-12
 
