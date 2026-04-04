@@ -1,6 +1,13 @@
 <template>
 	<view class="app-shell">
-		<view class="page-content" :class="{ 'page-content--meal-order': showMealOrderFloatingBar }">
+		<view
+			class="page-content"
+			:class="{
+				'page-content--meal-order': showMealOrderFloatingBar,
+				'page-content--meal-order-entering': mealOrderModeMotionState === 'entering',
+				'page-content--meal-order-leaving': mealOrderModeMotionState === 'leaving'
+			}"
+		>
 			<template v-if="activeSection === 'library'">
 				<library-header-section
 					:is-library-meal-order-mode="isLibraryMealOrderMode"
@@ -10,6 +17,8 @@
 					:meal-order-spotlight-title="mealOrderSpotlightTitle"
 					:meal-order-spotlight-desc="mealOrderSpotlightDesc"
 					:meal-order-spotlight-meta-text="mealOrderSpotlightMetaText"
+					:meal-order-spotlight-motion-direction="mealOrderSpotlightMotionDirection"
+					:meal-order-spotlight-motion-tick="mealOrderSpotlightMotionTick"
 					@open-meal-order-date-sheet="openMealOrderDateSheet"
 					@exit-meal-order-mode="exitMealOrderMode"
 					@spotlight-tap="handleMealOrderSpotlightTap"
@@ -60,7 +69,7 @@
 								:key="tab.value"
 								class="meal-tab"
 								:class="{ 'meal-tab--active': activeMealType === tab.value }"
-								@tap="activeMealType = tab.value"
+								@tap="handleMealTypeTabChange(tab.value)"
 							>
 								<view class="meal-tab__left">
 									<view class="meal-tab__icon-shell">
@@ -86,7 +95,7 @@
 								:key="tab.value"
 								class="status-pill"
 								:class="[`status-pill--${tab.value}`, { 'status-pill--active': activeStatus === tab.value }]"
-								@tap="activeStatus = tab.value"
+								@tap="handleStatusTabChange(tab.value)"
 							>
 								<view class="status-pill__inner">
 									<view class="status-pill__icon-shell">
@@ -126,13 +135,15 @@
 
 				<view v-if="filteredRecipes.length" class="recipe-list">
 					<recipe-card-item
-						v-for="card in recipeCards"
+						v-for="(card, index) in recipeCards"
 						:key="card.id"
 						:card="card"
 						:cover-src="getRecipeCardDisplayCover(card)"
 						:is-active="selectedRecipeId === card.id"
 						:is-library-meal-order-mode="isLibraryMealOrderMode"
 						:is-meal-order-selected="mealOrderHasRecipe(card.id)"
+						:motion-index="index"
+						:motion-phase="recipeListMotionTick"
 						:status-icon="statusMap[card.status].icon"
 						@open="openRecipeDetail"
 						@image-error="handleRecipeCardImageError"
@@ -185,6 +196,29 @@
 			</view>
 		</view>
 
+		<view
+			v-if="recipeStatusFeedbackVisible && activeSection === 'library'"
+			:key="recipeStatusFeedbackKey"
+			class="recipe-status-feedback"
+			:class="[`recipe-status-feedback--${recipeStatusFeedbackTone}`]"
+		>
+			<view class="recipe-status-feedback__aura"></view>
+			<view class="recipe-status-feedback__card">
+				<view class="recipe-status-feedback__icon-shell">
+					<up-icon :name="recipeStatusFeedbackIcon" size="18" :color="recipeStatusFeedbackIconColor"></up-icon>
+				</view>
+				<view class="recipe-status-feedback__body">
+					<text class="recipe-status-feedback__title">{{ recipeStatusFeedbackTitle }}</text>
+					<text class="recipe-status-feedback__desc">{{ recipeStatusFeedbackRecipeTitle }}</text>
+				</view>
+			</view>
+			<template v-if="recipeStatusFeedbackTone === 'done'">
+				<view class="recipe-status-feedback__spark recipe-status-feedback__spark--one"></view>
+				<view class="recipe-status-feedback__spark recipe-status-feedback__spark--two"></view>
+				<view class="recipe-status-feedback__spark recipe-status-feedback__spark--three"></view>
+			</template>
+		</view>
+
 		<view v-if="showMealOrderFloatingBar" class="meal-order-floating">
 			<view class="meal-order-floating__summary" @tap="openMealOrderCartSheet">
 				<view class="meal-order-floating__summary-main">
@@ -206,7 +240,14 @@
 			</view>
 		</view>
 
-		<view class="bottom-nav" :class="{ 'bottom-nav--meal-order': showMealOrderFloatingBar }">
+		<view
+			class="bottom-nav"
+			:class="{
+				'bottom-nav--meal-order': showMealOrderFloatingBar,
+				'bottom-nav--meal-order-entering': mealOrderModeMotionState === 'entering',
+				'bottom-nav--meal-order-leaving': mealOrderModeMotionState === 'leaving'
+			}"
+		>
 			<view
 				class="nav-item"
 				:class="{ 'nav-item--active': activeSection === 'library' }"
@@ -359,7 +400,7 @@
 		@note-input="handleDraftNoteInput"
 		@submit="submitDraft"
 	></add-recipe-sheet>
-	</view>
+</view>
 </template>
 
 <script>
@@ -461,12 +502,16 @@ export default {
 			showMealOrderCheckoutSheet: false,
 			showMealOrderSuccessSheet: false,
 			isMealOrderMode: false,
+			mealOrderModeMotionState: '',
+			mealOrderModeMotionTimer: null,
 			currentKitchenId: 0,
 			mealOrderDate: '',
 			mealOrderLastSubmittedDate: '',
 			mealOrderStore: createEmptyMealOrderStore(),
 			mealOrderStoreLoadedKitchenId: 0,
 			mealOrderSpotlightIndex: 0,
+			mealOrderSpotlightMotionDirection: '',
+			mealOrderSpotlightMotionTick: 0,
 			mealOrderSpotlightTouchStartX: 0,
 			mealOrderSpotlightTouchStartY: 0,
 			mealOrderSpotlightSuppressTap: false,
@@ -511,6 +556,13 @@ export default {
 			recipeCardCoverFallbackMap: {},
 			recipeCardHiddenMap: {},
 			recipeCoverCacheRequestID: 0,
+			recipeListMotionTick: 0,
+			recipeStatusFeedbackVisible: false,
+			recipeStatusFeedbackTone: '',
+			recipeStatusFeedbackTitle: '',
+			recipeStatusFeedbackRecipeTitle: '',
+			recipeStatusFeedbackTick: 0,
+			recipeStatusFeedbackTimer: null,
 			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
@@ -534,6 +586,8 @@ export default {
 			this.syncMealOrderDraft({ silent: true })
 		}
 		this.clearMealOrderDraftSyncTimer()
+		this.clearMealOrderModeMotionTimer()
+		this.clearRecipeStatusFeedback()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
@@ -543,6 +597,8 @@ export default {
 			this.syncMealOrderDraft({ silent: true })
 		}
 		this.clearMealOrderDraftSyncTimer()
+		this.clearMealOrderModeMotionTimer()
+		this.clearRecipeStatusFeedback()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
@@ -854,6 +910,15 @@ export default {
 		recipeCards() {
 			return this.filteredRecipes.map((recipe) => buildRecipeCard(recipe, this.cachedRecipeCoverMap))
 		},
+		recipeStatusFeedbackKey() {
+			return `${this.recipeStatusFeedbackTone || 'idle'}:${this.recipeStatusFeedbackTick}`
+		},
+		recipeStatusFeedbackIcon() {
+			return this.recipeStatusFeedbackTone === 'done' ? 'checkmark-circle-fill' : 'heart-fill'
+		},
+		recipeStatusFeedbackIconColor() {
+			return this.recipeStatusFeedbackTone === 'done' ? '#f6fff1' : '#fff7ee'
+		},
 		searchAssistKeywords() {
 			const keyword = this.trimmedSearchKeyword
 			const recentKeywords = this.recentSearches
@@ -1014,7 +1079,90 @@ export default {
 			return ''
 		}
 	},
+	watch: {
+		activeSection(next, prev) {
+			if (next === prev) return
+			if (next !== 'library') {
+				this.clearRecipeStatusFeedback()
+			}
+		},
+		isLibraryMealOrderMode(next, prev) {
+			if (next === prev) return
+			this.queueMealOrderModeMotion(next ? 'entering' : 'leaving')
+			this.bumpRecipeListMotion()
+		}
+	},
 	methods: {
+		clearRecipeStatusFeedbackTimer() {
+			if (!this.recipeStatusFeedbackTimer) return
+			clearTimeout(this.recipeStatusFeedbackTimer)
+			this.recipeStatusFeedbackTimer = null
+		},
+		clearRecipeStatusFeedback() {
+			this.clearRecipeStatusFeedbackTimer()
+			this.recipeStatusFeedbackVisible = false
+			this.recipeStatusFeedbackTone = ''
+			this.recipeStatusFeedbackTitle = ''
+			this.recipeStatusFeedbackRecipeTitle = ''
+		},
+		playRecipeStatusHaptic(nextStatus = 'wishlist') {
+			const vibrationType = nextStatus === 'done' ? 'medium' : 'light'
+			try {
+				uni.vibrateShort({
+					type: vibrationType
+				})
+			} catch (_) {
+				try {
+					uni.vibrateShort()
+				} catch (__) {
+					// Ignore unsupported vibration capabilities to keep the toggle path stable.
+				}
+			}
+		},
+		showRecipeStatusFeedback(recipe = {}, nextStatus = 'wishlist') {
+			const tone = nextStatus === 'done' ? 'done' : 'wishlist'
+			this.clearRecipeStatusFeedbackTimer()
+			this.recipeStatusFeedbackTone = tone
+			this.recipeStatusFeedbackTitle = tone === 'done' ? '已标记吃过' : '已改回想吃'
+			this.recipeStatusFeedbackRecipeTitle = String(recipe?.title || '').trim() || '这道菜'
+			this.recipeStatusFeedbackVisible = true
+			this.recipeStatusFeedbackTick += 1
+			this.recipeStatusFeedbackTimer = setTimeout(() => {
+				this.recipeStatusFeedbackVisible = false
+				this.recipeStatusFeedbackTimer = null
+			}, tone === 'done' ? 1680 : 1440)
+		},
+		clearMealOrderModeMotionTimer() {
+			if (!this.mealOrderModeMotionTimer) return
+			clearTimeout(this.mealOrderModeMotionTimer)
+			this.mealOrderModeMotionTimer = null
+		},
+		queueMealOrderModeMotion(state = '') {
+			const nextState = state === 'leaving' ? 'leaving' : 'entering'
+			this.clearMealOrderModeMotionTimer()
+			this.mealOrderModeMotionState = nextState
+			this.mealOrderModeMotionTimer = setTimeout(() => {
+				this.mealOrderModeMotionState = ''
+				this.mealOrderModeMotionTimer = null
+			}, nextState === 'leaving' ? 220 : 260)
+		},
+		bumpRecipeListMotion() {
+			this.recipeListMotionTick += 1
+		},
+		handleMealTypeTabChange(value) {
+			if (!this.mealTabs.some((tab) => tab.value === value) || this.activeMealType === value) return
+			this.activeMealType = value
+			this.bumpRecipeListMotion()
+		},
+		handleStatusTabChange(value) {
+			if (!this.statusTabs.some((tab) => tab.value === value) || this.activeStatus === value) return
+			this.activeStatus = value
+			this.bumpRecipeListMotion()
+		},
+		bumpMealOrderSpotlightMotion(direction = 'next') {
+			this.mealOrderSpotlightMotionDirection = direction === 'previous' ? 'previous' : 'next'
+			this.mealOrderSpotlightMotionTick += 1
+		},
 		applyRecipes(recipes = []) {
 			this.recipes = Array.isArray(recipes) ? recipes : []
 			this.recipeCardCoverFallbackMap = {}
@@ -1160,15 +1308,20 @@ export default {
 		},
 		resetMealOrderState() {
 			this.clearMealOrderDraftSyncTimer()
+			this.clearMealOrderModeMotionTimer()
+			this.clearRecipeStatusFeedback()
 			this.mealOrderStore = createEmptyMealOrderStore()
 			this.mealOrderDate = ''
 			this.isMealOrderMode = false
+			this.mealOrderModeMotionState = ''
 			this.showMealOrderDateSheet = false
 			this.showMealOrderCartSheet = false
 			this.showMealOrderCheckoutSheet = false
 			this.showMealOrderSuccessSheet = false
 			this.mealOrderLastSubmittedDate = ''
 			this.mealOrderSpotlightIndex = 0
+			this.mealOrderSpotlightMotionDirection = ''
+			this.mealOrderSpotlightMotionTick = 0
 			this.mealOrderSpotlightTouchStartX = 0
 			this.mealOrderSpotlightTouchStartY = 0
 			this.mealOrderSpotlightSuppressTap = false
@@ -1267,10 +1420,14 @@ export default {
 		focusMealOrderSpotlightRecord(planDate = '', type = 'submitted') {
 			const normalizedDate = normalizeMealOrderDate(planDate)
 			if (!normalizedDate) return false
+			const currentIndex = this.mealOrderSpotlightRecordIndex
 			const targetIndex = this.mealOrderSpotlightRecords.findIndex(
 				(record) => record.planDate === normalizedDate && record.type === type
 			)
 			if (targetIndex < 0) return false
+			if (targetIndex !== currentIndex) {
+				this.bumpMealOrderSpotlightMotion(targetIndex > currentIndex ? 'next' : 'previous')
+			}
 			this.mealOrderSpotlightIndex = targetIndex
 			return true
 		},
@@ -1320,6 +1477,7 @@ export default {
 			if (total < 2) return
 			const step = direction === 'previous' ? -1 : 1
 			this.mealOrderSpotlightIndex = (this.mealOrderSpotlightRecordIndex + step + total) % total
+			this.bumpMealOrderSpotlightMotion(direction)
 		},
 		closeMealOrderSuccessSheet() {
 			this.showMealOrderSuccessSheet = false
@@ -1548,11 +1706,13 @@ export default {
 			this.searchKeyword = nextKeyword
 			this.isSearchFocused = false
 			this.rememberSearchKeyword()
+			this.bumpRecipeListMotion()
 		},
 		clearSearchKeyword() {
 			this.searchKeyword = ''
 			this.clearSearchBlurTimer()
 			this.isSearchFocused = true
+			this.bumpRecipeListMotion()
 		},
 		buildRecipeCoverCacheEntries(recipes = []) {
 			return (Array.isArray(recipes) ? recipes : [])
@@ -2038,6 +2198,7 @@ export default {
 			this.searchKeyword = ''
 			this.clearSearchBlurTimer()
 			this.isSearchFocused = false
+			this.bumpRecipeListMotion()
 		},
 		openRecipeDetail(recipeId) {
 			this.selectedRecipeId = recipeId
@@ -2078,8 +2239,13 @@ export default {
 		},
 		async toggleRecipeStatusAsync(recipeId) {
 			try {
-				await toggleRecipeStatusById(recipeId)
+				const updatedRecipe = await toggleRecipeStatusById(recipeId)
+				this.playRecipeStatusHaptic(updatedRecipe?.status)
+				this.showRecipeStatusFeedback(updatedRecipe, updatedRecipe?.status)
 				this.applyRecipes(getCachedRecipes())
+				if (this.activeStatus !== 'all') {
+					this.bumpRecipeListMotion()
+				}
 			} catch (error) {
 				uni.showToast({
 					title: error?.message || '更新状态失败',
@@ -2409,8 +2575,239 @@ export default {
 		padding: 24rpx 24rpx 176rpx;
 	}
 
+	.page-content--meal-order-entering {
+		animation: page-content-meal-order-enter 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+
+	.page-content--meal-order-leaving {
+		animation: page-content-meal-order-leave 220ms ease both;
+	}
+
 	.page-content--meal-order {
 		padding-bottom: 294rpx;
+	}
+
+	.recipe-status-feedback {
+		position: fixed;
+		top: calc(env(safe-area-inset-top) + 146rpx);
+		left: 26rpx;
+		right: 26rpx;
+		z-index: 13;
+		display: flex;
+		justify-content: center;
+		pointer-events: none;
+	}
+
+	.recipe-status-feedback__card {
+		position: relative;
+		z-index: 2;
+		width: 100%;
+		max-width: 560rpx;
+		min-height: 92rpx;
+		padding: 14rpx 18rpx;
+		border-radius: 28rpx;
+		display: flex;
+		align-items: center;
+		gap: 14rpx;
+		box-shadow:
+			0 18rpx 34rpx rgba(48, 36, 28, 0.14),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.36);
+		animation: recipe-status-feedback-pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+
+	.recipe-status-feedback__aura {
+		position: absolute;
+		top: 8rpx;
+		left: 50%;
+		width: 232rpx;
+		height: 232rpx;
+		border-radius: 999rpx;
+		transform: translateX(-50%);
+		filter: blur(22rpx);
+		opacity: 0.36;
+		animation: recipe-status-feedback-aura 420ms ease-out both;
+	}
+
+	.recipe-status-feedback__icon-shell {
+		width: 54rpx;
+		height: 54rpx;
+		border-radius: 18rpx;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		border: 1px solid rgba(255, 255, 255, 0.18);
+	}
+
+	.recipe-status-feedback__body {
+		min-width: 0;
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4rpx;
+	}
+
+	.recipe-status-feedback__title {
+		display: block;
+		font-size: 24rpx;
+		font-weight: 700;
+		line-height: 1.2;
+		color: #fffdf8;
+	}
+
+	.recipe-status-feedback__desc {
+		display: block;
+		font-size: 21rpx;
+		line-height: 1.3;
+		color: rgba(255, 250, 244, 0.8);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.recipe-status-feedback--done .recipe-status-feedback__card {
+		background:
+			radial-gradient(circle at top left, rgba(246, 255, 241, 0.24) 0%, rgba(246, 255, 241, 0) 42%),
+			linear-gradient(145deg, rgba(88, 108, 88, 0.96) 0%, rgba(63, 80, 64, 0.94) 100%);
+		border: 1px solid rgba(232, 246, 230, 0.18);
+	}
+
+	.recipe-status-feedback--done .recipe-status-feedback__aura {
+		background: radial-gradient(circle at center, rgba(145, 187, 140, 0.38) 0%, rgba(145, 187, 140, 0) 72%);
+	}
+
+	.recipe-status-feedback--done .recipe-status-feedback__icon-shell {
+		background: rgba(246, 255, 241, 0.14);
+	}
+
+	.recipe-status-feedback--wishlist .recipe-status-feedback__card {
+		background:
+			radial-gradient(circle at top left, rgba(255, 247, 238, 0.26) 0%, rgba(255, 247, 238, 0) 42%),
+			linear-gradient(145deg, rgba(128, 92, 68, 0.96) 0%, rgba(101, 72, 53, 0.94) 100%);
+		border: 1px solid rgba(255, 238, 221, 0.16);
+	}
+
+	.recipe-status-feedback--wishlist .recipe-status-feedback__aura {
+		background: radial-gradient(circle at center, rgba(221, 169, 126, 0.34) 0%, rgba(221, 169, 126, 0) 72%);
+	}
+
+	.recipe-status-feedback--wishlist .recipe-status-feedback__icon-shell {
+		background: rgba(255, 247, 238, 0.14);
+	}
+
+	.recipe-status-feedback__spark {
+		position: absolute;
+		z-index: 1;
+		width: 12rpx;
+		height: 12rpx;
+		border-radius: 999rpx;
+		background: rgba(240, 255, 236, 0.95);
+		box-shadow: 0 0 0 8rpx rgba(240, 255, 236, 0.08);
+		opacity: 0;
+	}
+
+	.recipe-status-feedback__spark--one {
+		top: 24rpx;
+		left: 50%;
+		animation: recipe-status-feedback-spark-one 560ms ease-out 40ms both;
+	}
+
+	.recipe-status-feedback__spark--two {
+		top: 62rpx;
+		left: calc(50% + 72rpx);
+		animation: recipe-status-feedback-spark-two 620ms ease-out 70ms both;
+	}
+
+	.recipe-status-feedback__spark--three {
+		top: 78rpx;
+		left: calc(50% - 76rpx);
+		animation: recipe-status-feedback-spark-three 620ms ease-out 90ms both;
+	}
+
+	@keyframes recipe-status-feedback-pop {
+		from {
+			opacity: 0;
+			transform: translateY(-14rpx) scale(0.94);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+
+	@keyframes recipe-status-feedback-aura {
+		from {
+			opacity: 0;
+			transform: translateX(-50%) scale(0.7);
+		}
+		to {
+			opacity: 0.36;
+			transform: translateX(-50%) scale(1);
+		}
+	}
+
+	@keyframes recipe-status-feedback-spark-one {
+		0% {
+			opacity: 0;
+			transform: translate(-4rpx, 10rpx) scale(0.5);
+		}
+		35% {
+			opacity: 0.9;
+		}
+		100% {
+			opacity: 0;
+			transform: translate(-88rpx, -26rpx) scale(1);
+		}
+	}
+
+	@keyframes recipe-status-feedback-spark-two {
+		0% {
+			opacity: 0;
+			transform: translate(-4rpx, 6rpx) scale(0.48);
+		}
+		32% {
+			opacity: 0.86;
+		}
+		100% {
+			opacity: 0;
+			transform: translate(54rpx, -34rpx) scale(1);
+		}
+	}
+
+	@keyframes recipe-status-feedback-spark-three {
+		0% {
+			opacity: 0;
+			transform: translate(0, 6rpx) scale(0.48);
+		}
+		34% {
+			opacity: 0.86;
+		}
+		100% {
+			opacity: 0;
+			transform: translate(-58rpx, -24rpx) scale(1);
+		}
+	}
+
+	@keyframes page-content-meal-order-enter {
+		from {
+			opacity: 0.76;
+			transform: translateY(14rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes page-content-meal-order-leave {
+		from {
+			opacity: 0.94;
+			transform: translateY(-6rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	.app-footer-links {
@@ -2565,7 +2962,11 @@ export default {
 		border-radius: 18rpx;
 		background: #fcfbf8;
 		border: 1px solid rgba(91, 74, 59, 0.07);
-		transition: all 0.2s ease;
+		transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+	}
+
+	.search-box:active {
+		transform: translateY(1rpx);
 	}
 
 	.search-box--active {
@@ -2594,6 +2995,12 @@ export default {
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
+		transition: transform 0.16s ease, background 0.16s ease;
+	}
+
+	.search-box__clear:active {
+		transform: scale(0.92);
+		background: #e7dfd5;
 	}
 
 	.page-content--meal-order .search-box {
@@ -2649,6 +3056,13 @@ export default {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+	}
+
+	.search-assist__chip:active {
+		transform: translateY(1rpx);
+		background: #ece5dd;
+		border-color: rgba(91, 74, 59, 0.08);
 	}
 
 	.search-assist__chip-text {
@@ -3066,6 +3480,13 @@ export default {
 		border: 1px solid rgba(255, 255, 255, 0.06);
 		display: flex;
 		align-items: center;
+		transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+	}
+
+	.meal-order-floating__summary:active {
+		transform: translateY(1rpx);
+		background: rgba(255, 248, 238, 0.12);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.08);
 	}
 
 	.meal-order-floating__summary-main {
@@ -3118,6 +3539,13 @@ export default {
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
+		transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+	}
+
+	.meal-order-floating__summary:active .meal-order-floating__peek {
+		transform: translateX(2rpx);
+		background: rgba(255, 248, 238, 0.12);
+		opacity: 0.92;
 	}
 
 	.meal-order-floating__action {
@@ -3145,6 +3573,14 @@ export default {
 		border-color: rgba(255, 255, 255, 0.08);
 		pointer-events: none;
 		box-shadow: none;
+	}
+
+	.meal-order-floating__action:active {
+		transform: translateY(2rpx) scale(0.986);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.88),
+			inset 0 -1rpx 0 rgba(183, 142, 100, 0.1),
+			0 6rpx 12rpx rgba(34, 25, 20, 0.09);
 	}
 
 	.meal-order-floating__action-text {
@@ -3180,6 +3616,36 @@ export default {
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
+	}
+
+	.bottom-nav--meal-order-entering {
+		animation: bottom-nav-meal-order-enter 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+
+	.bottom-nav--meal-order-leaving {
+		animation: bottom-nav-meal-order-leave 220ms ease both;
+	}
+
+	@keyframes bottom-nav-meal-order-enter {
+		from {
+			transform: translateY(18rpx);
+			opacity: 0.82;
+		}
+		to {
+			transform: translateY(0);
+			opacity: 1;
+		}
+	}
+
+	@keyframes bottom-nav-meal-order-leave {
+		from {
+			transform: translateY(-8rpx);
+			opacity: 0.94;
+		}
+		to {
+			transform: translateY(0);
+			opacity: 1;
+		}
 	}
 
 	.bottom-nav--meal-order .nav-center {
@@ -3227,6 +3693,13 @@ export default {
 		transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 	}
 
+	.nav-item:active .nav-item__icon-shell {
+		transform: translateY(1rpx);
+		box-shadow:
+			0 6rpx 12rpx rgba(56, 44, 30, 0.035),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.84);
+	}
+
 	.nav-item__label,
 	.nav-center__label {
 		font-size: 22rpx;
@@ -3270,6 +3743,18 @@ export default {
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+	}
+
+	.nav-center:active .nav-fab {
+		transform: translateY(2rpx) scale(0.972);
+		box-shadow:
+			0 10rpx 18rpx rgba(91, 74, 59, 0.12),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.14);
+	}
+
+	.nav-center:active .nav-center__label {
+		color: #6a5848;
 	}
 
 </style>

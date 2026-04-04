@@ -1,14 +1,18 @@
 <template>
 	<view
 		class="recipe-card"
-		:class="{
-			'recipe-card--active': isActive,
-			'recipe-card--pinned': card.isPinned,
-			'recipe-card--status-wishlist': card.status === 'wishlist',
-			'recipe-card--status-done': card.status === 'done',
-			'recipe-card--meal-order-selected': isMealOrderSelected,
-			'recipe-card--meal-order-mode': isLibraryMealOrderMode
-		}"
+		:class="[
+			motionClass,
+			{
+				'recipe-card--active': isActive,
+				'recipe-card--pinned': card.isPinned,
+				'recipe-card--status-wishlist': card.status === 'wishlist',
+				'recipe-card--status-done': card.status === 'done',
+				'recipe-card--meal-order-selected': isMealOrderSelected,
+				'recipe-card--meal-order-mode': isLibraryMealOrderMode
+			}
+		]"
+		:style="motionStyle"
 		@tap="$emit('open', card.id)"
 	>
 		<view class="recipe-card__media" :class="{ 'recipe-card__media--empty': !coverSrc }">
@@ -108,10 +112,26 @@ export default {
 		statusIcon: {
 			type: String,
 			default: 'heart-fill'
+		},
+		motionIndex: {
+			type: Number,
+			default: 0
+		},
+		motionPhase: {
+			type: Number,
+			default: 0
 		}
 	},
 	emits: ['image-error', 'open', 'toggle-meal-order', 'toggle-status'],
 	computed: {
+		motionClass() {
+			return Number(this.motionPhase || 0) % 2 === 0 ? 'recipe-card--motion-even' : 'recipe-card--motion-odd'
+		},
+		motionStyle() {
+			return {
+				'--recipe-card-enter-delay': `${Math.min(Math.max(Number(this.motionIndex) || 0, 0), 4) * 36}ms`
+			}
+		},
 		statusIconColor() {
 			return this.card?.status === 'done' ? '#617a60' : '#9a7b65'
 		}

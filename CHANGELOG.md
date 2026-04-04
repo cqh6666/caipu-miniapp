@@ -31,6 +31,9 @@
 - 修复首页菜谱列表里“点击 `想吃 / 吃过` 后卡片会因为 `updated_at` 被刷新而自动前移”的问题：
   - 后端 `PATCH /api/recipes/{recipeID}/status` 现在只更新状态本身，不再改写 `recipe.updated_at`
   - 首页继续沿用现有按 `updated_at` 的排序口径，但单纯切换状态不会再打乱顺序
+- 修复首页状态切换反馈与列表动效的两个体验问题：
+  - `想吃 / 吃过` 完成态提示现在只会显示在“美食库”页，切去“厨房”页时会立即清掉，避免反馈串页
+  - 菜谱列表改为通过卡片动画类切换来重播入场动效，不再依赖整段列表重建，筛选和模式切换时的闪动更轻
 - 修复点菜模式里“同日期只有备注草稿时，修改菜单会误带出空草稿”的问题：
   - 后端现在只有在同日期草稿里已经有菜品时，才会直接继续那份草稿
   - 若同日期只是 note-only 草稿，点击“修改菜单”会重新带出已安排菜单，避免用户误以为菜丢了
@@ -41,9 +44,9 @@
 
 ### Notes
 
-- 修改时间：2026-04-04 13:39 CST
+- 修改时间：2026-04-04 13:47 CST
 - 变更背景：当前“菜单详情”只能查看和继续安排，已提交菜单缺少修改/删除入口，草稿删除也只能绕回点菜模式，实际体验和用户预期不一致；同时日期选择、提交成功反馈和菜单回看信息密度偏弱，用户需要反复点开确认状态，重操作继续塞在底部弹层里也不利于理解
-- 核心改动：在首页菜单详情入口补上 `修改菜单 / 删除安排 / 删除草稿` 闭环；“修改菜单”改为先从已提交菜单复制出同日期草稿，再进入现有点菜模式继续编辑，原已提交菜单会保留到用户重新提交时再覆盖；若同日期已经有草稿，则直接继续草稿，避免覆盖；同时继续优化点菜体验，在日期选择器补上 `草稿中 / 已安排 / 待修改` 状态提示，在菜单详情、购物车和确认菜单页补上缩略图、餐别和状态说明，并在提交后新增成功反馈面板与明确的下一步动作；菜单详情现已独立为 `pages/meal-plan-detail/index.vue`，首页安排卡和成功态会直接进入该页，详情页内再承载删改和继续安排动作，首页旧的菜单详情弹层实现已下线；本轮首页还进一步收口了动效语言，为菜单 spotlight 增加方向感切换动画，为点菜模式切换补齐页面与底部导航的整体过渡，并为筛选后菜谱列表补上轻量交错入场；这次继续补齐了首页交互反馈层，为 `想吃 / 吃过` 状态切换新增轻震动与页面瞬时完成态提示，并为搜索框、底部 `添加` FAB、点菜悬浮条和卡片状态切换器补上更明确的按压反馈；后端新增相应 `mealplan` 管理接口与测试，并补上“note-only 草稿不拦截修改菜单”的边界修复；本次还把首页状态切换收口为纯状态更新，不再改写 `recipe.updated_at`，避免列表因轻操作自动前移；README 和点菜原型文档同步更新
+- 核心改动：在首页菜单详情入口补上 `修改菜单 / 删除安排 / 删除草稿` 闭环；“修改菜单”改为先从已提交菜单复制出同日期草稿，再进入现有点菜模式继续编辑，原已提交菜单会保留到用户重新提交时再覆盖；若同日期已经有草稿，则直接继续草稿，避免覆盖；同时继续优化点菜体验，在日期选择器补上 `草稿中 / 已安排 / 待修改` 状态提示，在菜单详情、购物车和确认菜单页补上缩略图、餐别和状态说明，并在提交后新增成功反馈面板与明确的下一步动作；菜单详情现已独立为 `pages/meal-plan-detail/index.vue`，首页安排卡和成功态会直接进入该页，详情页内再承载删改和继续安排动作，首页旧的菜单详情弹层实现已下线；本轮首页还进一步收口了动效语言，为菜单 spotlight 增加方向感切换动画，为点菜模式切换补齐页面与底部导航的整体过渡，并为筛选后菜谱列表补上轻量交错入场；这次继续补齐了首页交互反馈层，为 `想吃 / 吃过` 状态切换新增轻震动与页面瞬时完成态提示，并为搜索框、底部 `添加` FAB、点菜悬浮条和卡片状态切换器补上更明确的按压反馈；后续又把状态完成态限制在“美食库”页内，并把列表动效改为卡片级动画类切换，避免切页串提示和整段列表重建；后端新增相应 `mealplan` 管理接口与测试，并补上“note-only 草稿不拦截修改菜单”的边界修复；本次还把首页状态切换收口为纯状态更新，不再改写 `recipe.updated_at`，避免列表因轻操作自动前移；README 和点菜原型文档同步更新
 - 影响范围：`pages/index/index.vue`、`pages/index/meal-order.js`、`pages/index/components/library-header-section.vue`、`pages/index/components/library-header-section.scss`、`pages/index/components/recipe-card-item.vue`、`pages/index/components/recipe-card-item.scss`、`pages/index/components/meal-order-cart-sheet.vue`、`pages/index/components/meal-order-checkout-sheet.vue`、`pages/index/components/meal-order-date-sheet.vue`、`pages/index/components/meal-order-sheet.scss`、`pages/index/components/meal-order-success-sheet.vue`、`pages/meal-plan-detail/index.vue`、`pages.json`、`README.md`、`utils/meal-plan-api.js`、`backend/internal/app/router.go`、`backend/internal/mealplan/*`、`backend/internal/recipe/repository.go`、`backend/internal/recipe/service.go`、`backend/internal/recipe/status_update_test.go`、`backend/README.md`、`docs/meal-order-mode-prototype-v1.md`
 - 兼容性/风险：本次新增了菜单管理接口，前后端需同时更新后功能才完整；“修改菜单”目前走“复制为草稿再编辑”策略，能避免误覆盖已安排菜单，但共享厨房里仍未实现更细粒度的并发冲突提示；首页新增的动效主要基于 CSS 位移、透明度、轻量延迟与短时反馈层，理论上性能压力有限，但小程序端仍需在真机上确认不同机型下的流畅度、滑动手势与列表滚动是否互相干扰；状态切换的轻震动在不支持 `vibrateShort` 的环境下会静默降级，不影响主流程；状态切换接口现在不再改写 `recipe.updated_at`，若后续需要展示“最近切换状态时间”，需改为单独字段承载而不是继续复用内容更新时间；前端当前没有自动化校验脚本，日期状态卡、小图加载、独立菜单详情页跳转、成功面板和首页新动效仍需在微信开发者工具或真机上补一轮完整操作流验证
 - 验证情况：已执行 `@vue/compiler-sfc` 对首页相关 SFC 做模板解析校验；已执行 `node --check` 对首页与相关组件的 `<script>` 片段做语法校验；已执行 `git diff --check`；已执行 `cd backend && go test ./internal/recipe/...`；前端当前仍无可直接执行的自动化测试，尚未做 HBuilderX / 微信开发者工具实机预览
