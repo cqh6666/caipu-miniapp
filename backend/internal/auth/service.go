@@ -127,7 +127,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID int64, nickname, ava
 		return User{}, err
 	}
 
-	user, err = s.repo.EnsureProfile(ctx, user, nickname, avatarURL)
+	user, err = s.repo.UpdateProfile(ctx, user, nickname, avatarURL)
 	if err != nil {
 		return User{}, fmt.Errorf("update user profile: %w", err)
 	}

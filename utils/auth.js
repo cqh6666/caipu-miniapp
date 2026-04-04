@@ -187,7 +187,7 @@ function shouldSyncUserProfile(currentUser = {}, profile = {}) {
 	if (nickname && !isPlaceholderNickname(nickname) && (!currentNickname || isPlaceholderNickname(currentNickname))) {
 		return true
 	}
-	if (avatarUrl && currentAvatarUrl !== avatarUrl) {
+	if (avatarUrl && (!currentAvatarUrl || isTemporaryImagePath(currentAvatarUrl))) {
 		return true
 	}
 	return false

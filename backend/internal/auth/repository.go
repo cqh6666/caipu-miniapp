@@ -112,9 +112,35 @@ func (r *Repository) EnsureProfile(ctx context.Context, user User, nickname, ava
 
 	nextAvatarURL := strings.TrimSpace(user.AvatarURL)
 	providedAvatarURL := strings.TrimSpace(avatarURL)
+	if nextAvatarURL == "" && providedAvatarURL != "" {
+		nextAvatarURL = providedAvatarURL
+	}
+
+	return r.updateUserProfile(ctx, user, nextNickname, nextAvatarURL)
+}
+
+func (r *Repository) UpdateProfile(ctx context.Context, user User, nickname, avatarURL string) (User, error) {
+	nextNickname := strings.TrimSpace(user.Nickname)
+	providedNickname := strings.TrimSpace(nickname)
+	if !profile.IsPlaceholderNickname(providedNickname) && providedNickname != nextNickname {
+		nextNickname = providedNickname
+	}
+	if profile.IsPlaceholderNickname(nextNickname) {
+		nextNickname = profile.FallbackNickname(user.ID, user.OpenID)
+	}
+
+	nextAvatarURL := strings.TrimSpace(user.AvatarURL)
+	providedAvatarURL := strings.TrimSpace(avatarURL)
 	if providedAvatarURL != "" && providedAvatarURL != nextAvatarURL {
 		nextAvatarURL = providedAvatarURL
 	}
+
+	return r.updateUserProfile(ctx, user, nextNickname, nextAvatarURL)
+}
+
+func (r *Repository) updateUserProfile(ctx context.Context, user User, nextNickname, nextAvatarURL string) (User, error) {
+	nextNickname = strings.TrimSpace(nextNickname)
+	nextAvatarURL = strings.TrimSpace(nextAvatarURL)
 
 	if nextNickname == strings.TrimSpace(user.Nickname) && nextAvatarURL == strings.TrimSpace(user.AvatarURL) {
 		user.Nickname = nextNickname
