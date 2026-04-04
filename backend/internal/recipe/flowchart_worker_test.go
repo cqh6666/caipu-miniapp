@@ -78,12 +78,13 @@ func TestFlowchartWorkerEnqueueAutoCandidatesQueuesFirstEligibleRecipe(t *testin
 
 	if _, err := db.Exec(`
 INSERT INTO recipes (
-  id, title, meal_type, status, ingredients_json, steps_json, flowchart_status, flowchart_image_url, parse_status, created_at, updated_at
+  id, title, meal_type, status, ingredients_json, steps_json, flowchart_status, flowchart_error, flowchart_finished_at, flowchart_image_url, parse_status, created_at, updated_at
 ) VALUES
-  ('too-few-steps', '番茄牛腩', 'main', 'wishlist', '{"mainIngredients":["牛腩 500克"]}', '[{"title":"焯水","detail":"焯水去腥。"},{"title":"慢炖","detail":"小火慢炖。"}]', '', '', 'done', '2026-03-25T00:00:00+08:00', '2026-03-25T00:00:00+08:00'),
-  ('eligible', '红烧排骨', 'main', 'wishlist', '{"mainIngredients":["排骨 500克"],"secondaryIngredients":["盐 适量"]}', '[{"title":"焯水","detail":"排骨焯水去腥。"},{"title":"炒糖","detail":"小火炒出糖色。"},{"title":"炖煮","detail":"加水炖至软烂。"}]', '', '', 'done', '2026-03-25T00:01:00+08:00', '2026-03-25T00:01:00+08:00'),
-  ('has-flowchart', '葱油鸡', 'main', 'wishlist', '{"mainIngredients":["鸡 1只"]}', '[{"title":"处理","detail":"鸡肉擦干。"},{"title":"蒸熟","detail":"蒸到熟透。"},{"title":"淋油","detail":"热油激香。"}]', '', 'https://cdn.example.com/existing.png', 'done', '2026-03-25T00:02:00+08:00', '2026-03-25T00:02:00+08:00'),
-  ('parse-running', '麻婆豆腐', 'main', 'wishlist', '{"mainIngredients":["豆腐 1盒"]}', '[{"title":"备料","detail":"豆腐切块。"},{"title":"煸香","detail":"炒香肉末豆瓣。"},{"title":"收汁","detail":"勾芡出锅。"}]', '', '', 'processing', '2026-03-25T00:03:00+08:00', '2026-03-25T00:03:00+08:00');
+  ('too-few-steps', '番茄牛腩', 'main', 'wishlist', '{"mainIngredients":["牛腩 500克"]}', '[{"title":"焯水","detail":"焯水去腥。"},{"title":"慢炖","detail":"小火慢炖。"}]', '', '', NULL, '', 'done', '2026-03-25T00:00:00+08:00', '2026-03-25T00:00:00+08:00'),
+  ('failed-earlier', '糖醋里脊', 'main', 'wishlist', '{"mainIngredients":["里脊 300克"],"secondaryIngredients":["糖 适量"]}', '[{"title":"腌制","detail":"里脊抓匀腌制。"},{"title":"炸制","detail":"分次炸到定型。"},{"title":"挂汁","detail":"裹匀糖醋汁出锅。"}]', 'failed', 'upstream timeout', '2026-03-24T23:59:00+08:00', '', 'done', '2026-03-24T23:50:00+08:00', '2026-03-24T23:50:00+08:00'),
+  ('eligible', '红烧排骨', 'main', 'wishlist', '{"mainIngredients":["排骨 500克"],"secondaryIngredients":["盐 适量"]}', '[{"title":"焯水","detail":"排骨焯水去腥。"},{"title":"炒糖","detail":"小火炒出糖色。"},{"title":"炖煮","detail":"加水炖至软烂。"}]', '', '', NULL, '', 'done', '2026-03-25T00:01:00+08:00', '2026-03-25T00:01:00+08:00'),
+  ('has-flowchart', '葱油鸡', 'main', 'wishlist', '{"mainIngredients":["鸡 1只"]}', '[{"title":"处理","detail":"鸡肉擦干。"},{"title":"蒸熟","detail":"蒸到熟透。"},{"title":"淋油","detail":"热油激香。"}]', '', '', NULL, 'https://cdn.example.com/existing.png', 'done', '2026-03-25T00:02:00+08:00', '2026-03-25T00:02:00+08:00'),
+  ('parse-running', '麻婆豆腐', 'main', 'wishlist', '{"mainIngredients":["豆腐 1盒"]}', '[{"title":"备料","detail":"豆腐切块。"},{"title":"煸香","detail":"炒香肉末豆瓣。"},{"title":"收汁","detail":"勾芡出锅。"}]', '', '', NULL, '', 'processing', '2026-03-25T00:03:00+08:00', '2026-03-25T00:03:00+08:00');
 `); err != nil {
 		t.Fatalf("seed recipes error = %v", err)
 	}
@@ -98,6 +99,7 @@ INSERT INTO recipes (
 	worker.enqueueAutoCandidates(context.Background())
 
 	assertFlowchartState(t, db, "too-few-steps", FlowchartStatusIdle, "", "", "", "2026-03-25T00:00:00+08:00")
+	assertFlowchartState(t, db, "failed-earlier", FlowchartStatusFailed, "upstream timeout", "", "2026-03-24T23:59:00+08:00", "2026-03-24T23:50:00+08:00")
 	assertFlowchartState(t, db, "has-flowchart", FlowchartStatusIdle, "", "", "", "2026-03-25T00:02:00+08:00")
 	assertFlowchartState(t, db, "parse-running", FlowchartStatusIdle, "", "", "", "2026-03-25T00:03:00+08:00")
 
@@ -124,6 +126,50 @@ WHERE id = 'eligible'
 	if got, want := updatedAt, "2026-03-25T00:01:00+08:00"; got != want {
 		t.Fatalf("eligible recipe updated_at = %q, want %q", got, want)
 	}
+}
+
+func TestFlowchartWorkerEnqueueAutoCandidatesRequeuesFailedRecipeWhenNoEligibleIdleCandidate(t *testing.T) {
+	db := openFlowchartTestDB(t)
+	defer db.Close()
+
+	if _, err := db.Exec(`
+INSERT INTO recipes (
+  id, title, meal_type, status, ingredients_json, steps_json, flowchart_status, flowchart_error, flowchart_finished_at, flowchart_image_url, parse_status, created_at, updated_at
+) VALUES
+  ('too-few-steps', '番茄牛腩', 'main', 'wishlist', '{"mainIngredients":["牛腩 500克"]}', '[{"title":"焯水","detail":"焯水去腥。"},{"title":"慢炖","detail":"小火慢炖。"}]', '', '', NULL, '', 'done', '2026-03-25T00:00:00+08:00', '2026-03-25T00:00:00+08:00'),
+  ('failed-eligible', '清蒸鲈鱼', 'main', 'wishlist', '{"mainIngredients":["鲈鱼 1条"],"secondaryIngredients":["姜丝 适量"]}', '[{"title":"改刀","detail":"鱼身划刀方便入味。"},{"title":"铺料","detail":"盘底铺姜葱去腥。"},{"title":"蒸制","detail":"大火蒸到熟透后淋汁。"}]', 'failed', 'temporary upstream error', '2026-03-25T00:05:00+08:00', '', 'done', '2026-03-25T00:01:00+08:00', '2026-03-25T00:01:00+08:00');
+`); err != nil {
+		t.Fatalf("seed recipes error = %v", err)
+	}
+
+	worker := &FlowchartWorker{
+		logger:             slog.Default(),
+		repo:               NewRepository(db),
+		autoEnqueueEnabled: true,
+		batchSize:          1,
+	}
+
+	worker.enqueueAutoCandidates(context.Background())
+
+	assertFlowchartState(t, db, "too-few-steps", FlowchartStatusIdle, "", "", "", "2026-03-25T00:00:00+08:00")
+
+	var requestedAt string
+	var updatedAt string
+	if err := db.QueryRow(`
+SELECT COALESCE(flowchart_requested_at, ''), updated_at
+FROM recipes
+WHERE id = 'failed-eligible'
+`).Scan(&requestedAt, &updatedAt); err != nil {
+		t.Fatalf("query failed-eligible recipe error = %v", err)
+	}
+	if requestedAt == "" {
+		t.Fatal("failed recipe should have flowchart_requested_at after auto requeue")
+	}
+	if got, want := updatedAt, "2026-03-25T00:01:00+08:00"; got != want {
+		t.Fatalf("failed recipe updated_at = %q, want %q", got, want)
+	}
+
+	assertFlowchartState(t, db, "failed-eligible", FlowchartStatusPending, "", requestedAt, "", "2026-03-25T00:01:00+08:00")
 }
 
 func TestRepositoryQueueFlowchartDoesNotTouchUpdatedAt(t *testing.T) {

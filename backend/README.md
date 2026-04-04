@@ -205,8 +205,9 @@ go run ./cmd/server -migrate-only
 
 - 用户仍可通过 `POST /api/recipes/{recipeID}/flowchart` 手动入队生成步骤图
 - `RECIPE_FLOWCHART_AUTO_ENQUEUE_ENABLED=true` 时，后端会在当前没有 `pending / processing` 步骤图任务时，自动补位 1 条候选菜谱入队
-- 自动补位只挑选“还没生成步骤图、做法已完整、当前不在自动解析中”的菜谱
-- 第一版自动补位不会自动重试 `failed`，也不会自动重生成已有但过期的步骤图
+- 自动补位会优先挑选“还没生成步骤图、做法已完整、当前不在自动解析中”的菜谱
+- 若当前没有可用的首次生成候选，会继续回补 `flowchart_status=failed` 且尚未生成图片的菜谱
+- 当前仍不会自动重生成已有但过期的步骤图
 - 步骤图队列状态和生成结果会更新 `flowchart_*` 字段，但不会改 `recipe.updated_at`，避免首页列表被后台任务打乱顺序
 - `PATCH /api/recipes/{recipeID}/status` 只切换 `想吃 / 吃过` 状态，不会改 `recipe.updated_at`，避免首页列表被轻操作打乱顺序
 

@@ -607,13 +607,34 @@ func (r *Repository) ListAutoFlowchartCandidates(ctx context.Context, limit int)
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE deleted_at IS NULL
-  AND COALESCE(flowchart_status, '') = ''
+  AND COALESCE(flowchart_status, '') IN (?, ?)
   AND COALESCE(TRIM(flowchart_image_url), '') = ''
   AND COALESCE(parse_status, '') NOT IN (?, ?)
-ORDER BY created_at ASC, id ASC
+ORDER BY
+  CASE COALESCE(flowchart_status, '')
+    WHEN ? THEN 0
+    WHEN ? THEN 1
+    ELSE 2
+  END ASC,
+  CASE
+    WHEN COALESCE(flowchart_status, '') = ? THEN COALESCE(NULLIF(flowchart_finished_at, ''), NULLIF(flowchart_requested_at, ''), updated_at, created_at)
+    ELSE COALESCE(NULLIF(created_at, ''), updated_at)
+  END ASC,
+  id ASC
 LIMIT ?`
 
-	rows, err := r.db.QueryContext(ctx, query, ParseStatusPending, ParseStatusProcessing, limit)
+	rows, err := r.db.QueryContext(
+		ctx,
+		query,
+		FlowchartStatusIdle,
+		FlowchartStatusFailed,
+		ParseStatusPending,
+		ParseStatusProcessing,
+		FlowchartStatusIdle,
+		FlowchartStatusFailed,
+		FlowchartStatusFailed,
+		limit,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list auto flowchart candidates: %w", err)
 	}
@@ -710,11 +731,13 @@ func (r *Repository) MarkAutoFlowchartPending(ctx context.Context, recipeID, req
 		`UPDATE recipes
 SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL
 WHERE id = ? AND deleted_at IS NULL
-  AND COALESCE(flowchart_status, '') = ''
+  AND COALESCE(flowchart_status, '') IN (?, ?)
   AND COALESCE(TRIM(flowchart_image_url), '') = ''`,
 		FlowchartStatusPending,
 		nullableString(requestedAt),
 		recipeID,
+		FlowchartStatusIdle,
+		FlowchartStatusFailed,
 	)
 	if err != nil {
 		return false, fmt.Errorf("mark auto recipe flowchart pending: %w", err)
