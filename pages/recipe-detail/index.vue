@@ -231,6 +231,31 @@
 			</view>
 		</template>
 
+		<template v-else-if="showRecipeLoadingState">
+			<view class="detail-loading">
+				<view class="detail-loading__hero detail-loading__pulse"></view>
+				<view class="detail-loading__section">
+					<view class="detail-loading__chips">
+						<view class="detail-loading__chip detail-loading__pulse"></view>
+						<view class="detail-loading__chip detail-loading__chip--short detail-loading__pulse"></view>
+					</view>
+					<view class="detail-loading__title detail-loading__pulse"></view>
+					<view class="detail-loading__line detail-loading__pulse"></view>
+				</view>
+				<view class="detail-loading__card">
+					<view class="detail-loading__card-title detail-loading__pulse"></view>
+					<view class="detail-loading__line detail-loading__pulse"></view>
+					<view class="detail-loading__line detail-loading__line--short detail-loading__pulse"></view>
+				</view>
+				<view class="detail-loading__card">
+					<view class="detail-loading__card-title detail-loading__pulse"></view>
+					<view class="detail-loading__row detail-loading__pulse"></view>
+					<view class="detail-loading__row detail-loading__pulse"></view>
+					<view class="detail-loading__row detail-loading__row--short detail-loading__pulse"></view>
+				</view>
+			</view>
+		</template>
+
 		<template v-else>
 			<view class="missing-state">
 				<up-icon name="info-circle" size="42" color="#b8aa9b"></up-icon>
@@ -242,7 +267,16 @@
 			</view>
 		</template>
 
+		<action-feedback
+			:visible="actionFeedbackVisible"
+			:feedback-key="actionFeedbackKey"
+			:tone="actionFeedbackTone"
+			:title="actionFeedbackTitle"
+			:description="actionFeedbackDescription"
+		></action-feedback>
+
 		<up-popup
+			v-if="showEditSheet"
 			:show="showEditSheet"
 			mode="bottom"
 			round="32"
@@ -570,6 +604,7 @@
 </template>
 
 <script>
+import ActionFeedback from '../../components/action-feedback.vue'
 import {
 	MAX_RECIPE_IMAGES,
 	deleteRecipeById,
@@ -834,6 +869,9 @@ function buildRecipeImageVersion(recipe = {}) {
 }
 
 export default {
+	components: {
+		ActionFeedback
+	},
 	data() {
 		return {
 			recipeId: '',
@@ -856,6 +894,13 @@ export default {
 			statusEstimateTimer: null,
 			statusEstimateSyncedAt: 0,
 			statusEstimateNow: 0,
+			actionFeedbackVisible: false,
+			actionFeedbackTone: '',
+			actionFeedbackTitle: '',
+			actionFeedbackDescription: '',
+			actionFeedbackTick: 0,
+			actionFeedbackTimer: null,
+			hasResolvedInitialRecipeLoad: false,
 			cachedRecipeImageMap: {},
 			recipeImageFallbackMap: {},
 			recipeImageHiddenMap: {},
@@ -1087,6 +1132,12 @@ export default {
 		},
 		canSaveEditDraft() {
 			return !!this.editDraft.title.trim()
+		},
+		showRecipeLoadingState() {
+			return !this.recipe && (!this.hasResolvedInitialRecipeLoad || this.isLoadingRecipe)
+		},
+		actionFeedbackKey() {
+			return `${this.actionFeedbackTone || 'idle'}:${this.actionFeedbackTick}`
 		}
 	},
 	onLoad(options) {
@@ -1097,9 +1148,11 @@ export default {
 	},
 	onHide() {
 		this.stopParsePolling()
+		this.clearActionFeedback()
 	},
 	onUnload() {
 		this.stopParsePolling()
+		this.clearActionFeedback()
 	},
 	onBackPress() {
 		if (!this.showEditSheet) return false
@@ -1107,21 +1160,50 @@ export default {
 		return true
 	},
 	methods: {
+		clearActionFeedbackTimer() {
+			if (!this.actionFeedbackTimer) return
+			clearTimeout(this.actionFeedbackTimer)
+			this.actionFeedbackTimer = null
+		},
+		clearActionFeedback() {
+			this.clearActionFeedbackTimer()
+			this.actionFeedbackVisible = false
+			this.actionFeedbackTone = ''
+			this.actionFeedbackTitle = ''
+			this.actionFeedbackDescription = ''
+		},
+		showActionFeedback(options = {}) {
+			const title = String(options?.title || '').trim()
+			if (!title) return
+			this.clearActionFeedbackTimer()
+			this.actionFeedbackTone = String(options?.tone || 'done').trim() || 'done'
+			this.actionFeedbackTitle = title
+			this.actionFeedbackDescription = String(options?.description || '').trim()
+			this.actionFeedbackVisible = true
+			this.actionFeedbackTick += 1
+			this.actionFeedbackTimer = setTimeout(() => {
+				this.actionFeedbackVisible = false
+				this.actionFeedbackTimer = null
+			}, Math.max(1200, Number(options?.duration) || 1680))
+		},
 		async loadRecipe() {
 			if (!this.recipeId) {
 				this.recipe = null
+				this.hasResolvedInitialRecipeLoad = true
 				return
 			}
 
 			const cachedRecipe = getCachedRecipeById(this.recipeId)
 			if (cachedRecipe) {
 				this.applyRecipe(cachedRecipe)
+				this.hasResolvedInitialRecipeLoad = true
 			}
 
 			try {
 				this.isLoadingRecipe = true
 				const recipe = await getRecipeById(this.recipeId, { preferCache: !cachedRecipe })
 				this.applyRecipe(recipe)
+				this.hasResolvedInitialRecipeLoad = true
 			} catch (error) {
 				if (!cachedRecipe) {
 					this.recipe = null
@@ -1132,6 +1214,7 @@ export default {
 				}
 			} finally {
 				this.isLoadingRecipe = false
+				this.hasResolvedInitialRecipeLoad = true
 			}
 		},
 		applyRecipe(recipe) {
@@ -1709,9 +1792,13 @@ export default {
 			try {
 				const recipe = await reparseRecipeById(this.recipeId)
 				this.applyRecipe(recipe)
-				uni.showToast({
+				this.showActionFeedback({
+					tone: 'pending',
 					title: '已加入整理队列',
-					icon: 'none'
+					description:
+						buildParseWaitHint(recipe?.parseStatus, recipe?.parseQueueAhead, recipe?.parseEstimatedWaitSeconds) ||
+						parseStatusMetaMap.pending.description,
+					duration: 1800
 				})
 			} catch (error) {
 				uni.showToast({
@@ -1742,9 +1829,13 @@ export default {
 			try {
 				const recipe = await generateRecipeFlowchartById(this.recipeId)
 				this.applyRecipe(recipe)
-				uni.showToast({
+				this.showActionFeedback({
+					tone: 'pending',
 					title: '已加入生成队列',
-					icon: 'none'
+					description:
+						buildFlowchartWaitHint(recipe?.flowchartStatus, recipe?.flowchartQueueAhead, recipe?.flowchartEstimatedWaitSeconds) ||
+						flowchartStatusMetaMap.pending.description,
+					duration: 1800
 				})
 			} catch (error) {
 				uni.showToast({
@@ -3372,6 +3463,105 @@ export default {
 
 	.editor-sheet__action-text--primary {
 		color: #ffffff;
+	}
+
+	.detail-loading {
+		padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 188rpx);
+		display: flex;
+		flex-direction: column;
+		gap: 20rpx;
+	}
+
+	.detail-loading__hero,
+	.detail-loading__card,
+	.detail-loading__section {
+		border-radius: 30rpx;
+		background: rgba(255, 253, 249, 0.96);
+		border: 1px solid rgba(100, 78, 58, 0.05);
+		box-shadow:
+			0 14rpx 30rpx rgba(70, 54, 40, 0.045),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.68);
+	}
+
+	.detail-loading__hero {
+		height: 380rpx;
+	}
+
+	.detail-loading__section,
+	.detail-loading__card {
+		padding: 28rpx;
+	}
+
+	.detail-loading__chips {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
+	.detail-loading__chip {
+		width: 116rpx;
+		height: 48rpx;
+		border-radius: 999rpx;
+	}
+
+	.detail-loading__chip--short {
+		width: 92rpx;
+	}
+
+	.detail-loading__title {
+		margin-top: 22rpx;
+		width: 58%;
+		height: 44rpx;
+		border-radius: 18rpx;
+	}
+
+	.detail-loading__card-title,
+	.detail-loading__line,
+	.detail-loading__row {
+		border-radius: 18rpx;
+	}
+
+	.detail-loading__card-title {
+		width: 32%;
+		height: 32rpx;
+	}
+
+	.detail-loading__line {
+		margin-top: 18rpx;
+		width: 100%;
+		height: 26rpx;
+	}
+
+	.detail-loading__line--short {
+		width: 72%;
+	}
+
+	.detail-loading__row {
+		margin-top: 18rpx;
+		width: 100%;
+		height: 86rpx;
+	}
+
+	.detail-loading__row--short {
+		width: 84%;
+	}
+
+	.detail-loading__pulse {
+		position: relative;
+		overflow: hidden;
+		background:
+			linear-gradient(90deg, rgba(240, 233, 225, 0.88) 0%, rgba(255, 249, 243, 0.96) 48%, rgba(240, 233, 225, 0.88) 100%);
+		background-size: 220% 100%;
+		animation: detail-loading-shimmer 1.22s ease-in-out infinite;
+	}
+
+	@keyframes detail-loading-shimmer {
+		0% {
+			background-position: 100% 50%;
+		}
+		100% {
+			background-position: 0 50%;
+		}
 	}
 
 	.missing-state {

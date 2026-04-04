@@ -387,6 +387,7 @@ export default {
 				this.navigateBackWithAction({
 					kind: 'reload',
 					kitchenId: this.currentKitchenId,
+					planDate: this.planDate,
 					message: isDraft ? '草稿已删除' : '安排已删除'
 				})
 			} catch (error) {
