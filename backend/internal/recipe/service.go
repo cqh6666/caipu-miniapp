@@ -276,7 +276,6 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID strin
 
 	current.Status = status
 	current.UpdatedBy = userID
-	current.UpdatedAt = now
 	return current, nil
 }
 

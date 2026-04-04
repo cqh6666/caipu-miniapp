@@ -229,7 +229,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 	return nil
 }
 
-func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenID int64, status string, updatedBy int64, updatedAt string) error {
+func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenID int64, status string, updatedBy int64, touchedAt string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin update status tx: %w", err)
@@ -237,10 +237,9 @@ func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenI
 
 	result, err := tx.ExecContext(
 		ctx,
-		`UPDATE recipes SET status = ?, updated_by = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+		`UPDATE recipes SET status = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL`,
 		status,
 		updatedBy,
-		updatedAt,
 		recipeID,
 	)
 	if err != nil {
@@ -258,7 +257,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenI
 		return sql.ErrNoRows
 	}
 
-	if err := bumpKitchenUpdatedAt(ctx, tx, kitchenID, updatedAt); err != nil {
+	if err := bumpKitchenUpdatedAt(ctx, tx, kitchenID, touchedAt); err != nil {
 		_ = tx.Rollback()
 		return err
 	}

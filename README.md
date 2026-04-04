@@ -629,6 +629,7 @@ Authorization: Bearer <token>
 
 用途：
 只更新菜谱状态，适合首页快速切换“想吃 / 吃过”。
+状态切换不会改写 `recipe.updated_at`，避免首页列表按更新时间排序时被轻操作打乱。
 
 请求体：
 

@@ -208,6 +208,7 @@ go run ./cmd/server -migrate-only
 - 自动补位只挑选“还没生成步骤图、做法已完整、当前不在自动解析中”的菜谱
 - 第一版自动补位不会自动重试 `failed`，也不会自动重生成已有但过期的步骤图
 - 步骤图队列状态和生成结果会更新 `flowchart_*` 字段，但不会改 `recipe.updated_at`，避免首页列表被后台任务打乱顺序
+- `PATCH /api/recipes/{recipeID}/status` 只切换 `想吃 / 吃过` 状态，不会改 `recipe.updated_at`，避免首页列表被轻操作打乱顺序
 
 当前小红书预留策略：
 
