@@ -190,12 +190,12 @@
 						<view v-if="recipe.link" class="detail-card__action" @tap="copyLink">
 							<text class="detail-card__action-text">复制</text>
 						</view>
-					</view>
-					<view v-if="recipe.link" class="link-panel">
-						<view class="detail-link-box">
-							<text class="detail-link-text" selectable>{{ recipe.link }}</text>
 						</view>
-					</view>
+						<view v-if="recipe.link" class="link-panel">
+							<view class="detail-link-box">
+								<text class="detail-link-text" selectable>{{ displayRecipeLink }}</text>
+							</view>
+						</view>
 					<text v-else class="detail-empty">暂无链接。</text>
 				</view>
 
@@ -986,6 +986,10 @@ export default {
 			}
 			const fallbackImage = String(this.recipe?.image || this.recipe?.imageUrl || '').trim()
 			return fallbackImage ? [fallbackImage] : []
+		},
+		displayRecipeLink() {
+			const rawLink = String(this.recipe?.link || '').trim()
+			return extractCopyableLink(rawLink) || rawLink
 		},
 		displayRecipeImages() {
 			const version = this.recipeImageVersion
@@ -1915,7 +1919,7 @@ export default {
 			}
 		},
 		copyLink() {
-			const link = extractCopyableLink(this.recipe?.link)
+			const link = this.displayRecipeLink
 			if (!link) {
 				uni.showToast({
 					title: '暂无链接',
@@ -3265,6 +3269,7 @@ export default {
 		position: relative;
 		width: calc((100% - 32rpx) / 3);
 		height: 176rpx;
+		box-sizing: border-box;
 		border-radius: 24rpx;
 		overflow: hidden;
 	}

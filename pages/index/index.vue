@@ -353,53 +353,54 @@
 			@submit="submitProfile"
 		></profile-sheet>
 
-	<add-recipe-sheet
-		:show="showAddSheet"
-		:draft="draft"
-		:draft-link-assist-text="draftLinkAssistText"
-		:is-link-previewing="isDraftLinkPreviewing"
-		:has-link-preview-error="!!draftLinkPreviewError"
-		:draft-title-assist-text="draftTitleAssistText"
-		:has-auto-title="!!draftAutoTitle"
-		:is-title-touched="draftTitleTouched"
-		:max-recipe-images="maxRecipeImages"
-		:meal-tabs="mealTabs"
-		:draft-status-options="draftStatusOptions"
-		:can-submit="canSubmitDraft"
-		@close="closeAddSheet"
-		@link-input="handleDraftLinkInput"
-		@title-input="handleDraftTitleInput"
-		@preview-image="previewDraftImages"
-		@remove-image="removeDraftImage"
-		@choose-images="chooseDraftImages"
-		@select-meal-type="handleDraftMealTypeSelect"
-		@select-status="handleDraftStatusSelect"
-		@note-input="handleDraftNoteInput"
-		@submit="submitDraft"
-	></add-recipe-sheet>
+		<add-recipe-sheet
+			:show="showAddSheet"
+			:draft="draft"
+			:draft-link-assist-text="draftLinkAssistText"
+			:is-link-previewing="isDraftLinkPreviewing"
+			:has-link-preview-error="!!draftLinkPreviewError"
+			:draft-title-assist-text="draftTitleAssistText"
+			:has-auto-title="!!draftAutoTitle"
+			:is-title-touched="draftTitleTouched"
+			:max-recipe-images="maxRecipeImages"
+			:meal-tabs="mealTabs"
+			:draft-status-options="draftStatusOptions"
+			:can-submit="canSubmitDraft"
+			:is-submitting="isSubmittingDraft"
+			@close="closeAddSheet"
+			@link-input="handleDraftLinkInput"
+			@title-input="handleDraftTitleInput"
+			@preview-image="previewDraftImages"
+			@remove-image="removeDraftImage"
+			@choose-images="chooseDraftImages"
+			@select-meal-type="handleDraftMealTypeSelect"
+			@select-status="handleDraftStatusSelect"
+			@note-input="handleDraftNoteInput"
+			@submit="submitDraft"
+		></add-recipe-sheet>
 
-	<action-feedback
-		:visible="recipeStatusFeedbackVisible && activeSection === 'library'"
-		:feedback-key="recipeStatusFeedbackKey"
-		:tone="recipeStatusFeedbackTone"
-		:title="recipeStatusFeedbackTitle"
-		:description="recipeStatusFeedbackRecipeTitle"
-		:show-sparkles="recipeStatusFeedbackShowSparkles"
-	></action-feedback>
+		<action-feedback
+			:visible="recipeStatusFeedbackVisible && activeSection === 'library'"
+			:feedback-key="recipeStatusFeedbackKey"
+			:tone="recipeStatusFeedbackTone"
+			:title="recipeStatusFeedbackTitle"
+			:description="recipeStatusFeedbackRecipeTitle"
+			:show-sparkles="recipeStatusFeedbackShowSparkles"
+		></action-feedback>
 
-	<random-pick-sheet
-		:show="showRandomPickSheet && !!randomPickCard"
-		:card="randomPickCard"
-		:cover-src="randomPickCoverSrc"
-		:context-text="randomPickContextText"
-		:can-reroll="randomPickCanReroll"
-		:motion-mode="randomPickMotionMode"
-		:reveal-key="randomPickRevealKey"
-		@close="closeRandomPickSheet"
-		@reroll="rerollTonightPick"
-		@open-detail="openRandomPickDetail"
-	></random-pick-sheet>
-</view>
+		<random-pick-sheet
+			:show="showRandomPickSheet && !!randomPickCard"
+			:card="randomPickCard"
+			:cover-src="randomPickCoverSrc"
+			:context-text="randomPickContextText"
+			:can-reroll="randomPickCanReroll"
+			:motion-mode="randomPickMotionMode"
+			:reveal-key="randomPickRevealKey"
+			@close="closeRandomPickSheet"
+			@reroll="rerollTonightPick"
+			@open-detail="openRandomPickDetail"
+		></random-pick-sheet>
+	</view>
 </template>
 
 <script>
@@ -497,6 +498,7 @@ export default {
 			selectedRecipeId: '',
 			showAddSheet: false,
 			draftLinkPrefillSource: '',
+			draftClipboardPrefillRequestID: 0,
 			showInviteSheet: false,
 			showInviteCodeSheet: false,
 			showProfileSheet: false,
@@ -1095,9 +1097,9 @@ export default {
 			}
 			if (this.draft.link.trim()) {
 				if (this.draftLinkPrefillSource === 'clipboard') {
-					return '已填入剪贴板内容，可直接保存或继续修改。'
+					return '已带入剪贴板分享内容，保存时会原样保留。'
 				}
-				return '已粘贴链接，系统会自动补标题。'
+				return '已粘贴来源内容，系统会自动补标题。'
 			}
 			return ''
 		}
@@ -2209,26 +2211,29 @@ export default {
 				})
 			})
 		},
-		async tryPrefillDraftLinkFromClipboard() {
-			if (!this.showAddSheet || String(this.draft.link || '').trim()) return
+		async tryAutoPrefillDraftLinkFromClipboard(requestID = 0) {
+			try {
+				const clipboardText = String(await this.readClipboardText() || '').trim()
+				const detectedLink = extractSupportedDraftLink(clipboardText)
+				if (!detectedLink) return false
+				if (!clipboardText || clipboardText === this.lastDraftLinkPrefill) return false
+				if (!this.showAddSheet || requestID !== this.draftClipboardPrefillRequestID) return false
+				if (String(this.draft.link || '').trim()) return false
 
-			const clipboardText = await this.readClipboardText()
-			if (!this.showAddSheet || String(this.draft.link || '').trim()) return
-			if (!clipboardText || clipboardText === this.lastDraftLinkPrefill) return
+				this.draft.link = clipboardText
+				this.draftLinkPrefillSource = 'clipboard'
+				this.lastDraftLinkPrefill = clipboardText
+				writeLastDraftLinkPrefill(clipboardText)
 
-			const link = extractSupportedDraftLink(clipboardText)
-			const mayContainShareLink = /https?:\/\/|www\.|bilibili|b23\.tv|bili2233\.cn|xiaohongshu|xhslink/i.test(clipboardText)
-			if (!link && !mayContainShareLink) return
-
-			this.draft.link = clipboardText
-			this.draftLinkPrefillSource = 'clipboard'
-			this.lastDraftLinkPrefill = clipboardText
-			writeLastDraftLinkPrefill(clipboardText)
-			const guessedTitle = guessDraftTitleFromShareText(clipboardText)
-			if (guessedTitle) {
-				this.applyDraftAutoTitle(guessedTitle)
+				const guessedTitle = guessDraftTitleFromShareText(clipboardText)
+				if (guessedTitle) {
+					this.applyDraftAutoTitle(guessedTitle)
+				}
+				this.scheduleDraftLinkPreview(clipboardText)
+				return true
+			} catch (_) {
+				return false
 			}
-			this.scheduleDraftLinkPreview(clipboardText)
 		},
 		clearDraftLinkPreviewState() {
 			if (this.draftLinkPreviewTimer) {
@@ -2434,13 +2439,16 @@ export default {
 				this.setRecipeStatusPending(targetRecipeId, false)
 			}
 		},
-		async openAddSheet() {
+		openAddSheet() {
 			this.resetDraftAssistState()
 			this.draft = this.createDraftFromContext()
 			this.showAddSheet = true
-			await this.tryPrefillDraftLinkFromClipboard()
+			this.draftClipboardPrefillRequestID += 1
+			this.tryAutoPrefillDraftLinkFromClipboard(this.draftClipboardPrefillRequestID)
 		},
 		closeAddSheet() {
+			if (this.isSubmittingDraft) return
+			this.draftClipboardPrefillRequestID += 1
 			this.resetDraftAssistState()
 			this.showAddSheet = false
 			this.draft = this.createDraftFromContext()
@@ -2483,42 +2491,12 @@ export default {
 				urls
 			})
 		},
-		async normalizeDraftLinkBeforeSubmit() {
-			const rawLink = String(this.draft.link || '').trim()
-			if (!rawLink) return
-
-			const platform = detectDraftLinkPlatform(rawLink)
-			const mayContainShareLink = /https?:\/\/|www\.|bilibili|b23\.tv|bili2233\.cn|xiaohongshu|xhslink/i.test(rawLink)
-			if (platform && !/\s/.test(rawLink)) return
-			if (!mayContainShareLink) return
-
-			try {
-				const result = await previewRecipeLink(rawLink)
-				const resolvedLink = String(result?.canonicalUrl || result?.link || '').trim()
-				if (resolvedLink) {
-					this.draft.link = resolvedLink
-					this.draftLinkPreviewPlatform = detectDraftLinkPlatform(resolvedLink) || platform
-				}
-
-				const previewTitle = normalizeDraftAutoTitle(result?.title || '')
-				if (previewTitle) {
-					this.applyDraftAutoTitle(previewTitle)
-				}
-			} catch (_) {
-				// 提交阶段只做静默规范化，不阻塞用户保存。
-			}
-		},
 		async submitDraft() {
 			if (!this.canSubmitDraft || this.isSubmittingDraft) return
 
 			this.isSubmittingDraft = true
-			uni.showLoading({
-				title: '保存中',
-				mask: true
-			})
 
 			try {
-				await this.normalizeDraftLinkBeforeSubmit()
 				const newRecipe = await createRecipeFromDraft(this.draft)
 				this.applyRecipes(getCachedRecipes())
 				this.selectedRecipeId = newRecipe.id
@@ -2529,9 +2507,19 @@ export default {
 				this.showAddSheet = false
 				this.resetDraftAssistState()
 				this.draft = this.createDraftFromContext()
-				uni.showToast({
-					title: '已保存',
-					icon: 'none'
+				try {
+					uni.vibrateShort({
+						type: 'light'
+					})
+				} catch (_) {
+					// Ignore unsupported vibration capabilities and keep save stable.
+				}
+				this.showLibraryActionFeedback({
+					tone: newRecipe.status === 'done' ? 'done' : 'wishlist',
+					title: newRecipe.status === 'done' ? '已保存并标记吃过' : '已加入美食库',
+					description: String(newRecipe?.title || '').trim() || '这道菜',
+					duration: newRecipe.status === 'done' ? 1680 : 1440,
+					showSparkles: newRecipe.status === 'done'
 				})
 			} catch (error) {
 				uni.showToast({
@@ -2540,7 +2528,6 @@ export default {
 				})
 			} finally {
 				this.isSubmittingDraft = false
-				uni.hideLoading()
 			}
 		},
 		async openInviteSheet() {
