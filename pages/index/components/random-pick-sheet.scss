@@ -1,0 +1,417 @@
+.random-pick-stage {
+	position: relative;
+	width: 100vw;
+	height: 100vh;
+	padding: 56rpx 40rpx;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.random-pick-stage__ambient {
+	position: absolute;
+	inset: 0;
+	background:
+		radial-gradient(circle at 24% 22%, rgba(247, 221, 190, 0.62) 0%, rgba(247, 221, 190, 0.18) 18%, rgba(247, 221, 190, 0) 38%),
+		radial-gradient(circle at 76% 26%, rgba(255, 246, 234, 0.56) 0%, rgba(255, 246, 234, 0.14) 16%, rgba(255, 246, 234, 0) 40%),
+		radial-gradient(circle at 74% 74%, rgba(214, 226, 214, 0.54) 0%, rgba(214, 226, 214, 0.12) 16%, rgba(214, 226, 214, 0) 42%),
+		linear-gradient(180deg, rgba(252, 247, 241, 0.5) 0%, rgba(246, 239, 232, 0.28) 52%, rgba(243, 242, 238, 0.16) 100%);
+	filter: saturate(1.04);
+	opacity: 0.74;
+	pointer-events: none;
+}
+
+.random-pick-shell {
+	position: relative;
+	width: 638rpx;
+	max-width: calc(100vw - 64rpx);
+	padding: 18rpx 0;
+}
+
+.random-pick-shell::before {
+	content: '';
+	position: absolute;
+	inset: 18rpx 22rpx;
+	border-radius: 40rpx;
+	background:
+		radial-gradient(circle at 22% 24%, rgba(244, 208, 166, 0.48) 0%, rgba(244, 208, 166, 0.14) 24%, rgba(244, 208, 166, 0) 52%),
+		radial-gradient(circle at 74% 78%, rgba(204, 220, 204, 0.42) 0%, rgba(204, 220, 204, 0.12) 22%, rgba(204, 220, 204, 0) 54%);
+	filter: blur(14rpx) saturate(1.04);
+	transform: rotate(-2deg) scale(0.985);
+	opacity: 0.72;
+	pointer-events: none;
+}
+
+.random-pick-shell::after {
+	content: '';
+	position: absolute;
+	left: 98rpx;
+	right: 98rpx;
+	top: 44rpx;
+	height: 120rpx;
+	border-radius: 999rpx;
+	background:
+		linear-gradient(120deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.08) 54%, rgba(255, 255, 255, 0) 100%);
+	filter: blur(12rpx);
+	opacity: 0.44;
+	pointer-events: none;
+}
+
+.random-pick-shell__glow {
+	position: absolute;
+	border-radius: 999rpx;
+	filter: blur(48rpx);
+	opacity: 0.24;
+	pointer-events: none;
+}
+
+.random-pick-shell__glow--one {
+	top: 28rpx;
+	left: 48rpx;
+	width: 162rpx;
+	height: 162rpx;
+	background: rgba(236, 200, 155, 0.3);
+}
+
+.random-pick-shell__glow--two {
+	right: 34rpx;
+	bottom: 58rpx;
+	width: 154rpx;
+	height: 154rpx;
+	background: rgba(214, 223, 208, 0.16);
+}
+
+.random-pick-sheet {
+	position: relative;
+	z-index: 1;
+	overflow: hidden;
+	padding: 22rpx;
+	border-radius: 34rpx;
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(249, 243, 236, 0.16) 100%),
+		radial-gradient(circle at top right, rgba(247, 231, 212, 0.22) 0%, rgba(247, 231, 212, 0) 40%),
+		radial-gradient(circle at bottom left, rgba(235, 241, 232, 0.16) 0%, rgba(235, 241, 232, 0) 42%);
+	border: 1px solid rgba(255, 255, 255, 0.56);
+	box-shadow:
+		0 28rpx 46rpx rgba(66, 50, 38, 0.12),
+		0 8rpx 18rpx rgba(66, 50, 38, 0.05),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.9),
+		inset 0 -1rpx 0 rgba(137, 109, 80, 0.05);
+	backdrop-filter: blur(22rpx) saturate(1.08);
+	-webkit-backdrop-filter: blur(22rpx) saturate(1.08);
+}
+
+.random-pick-sheet::before {
+	content: '';
+	position: absolute;
+	inset: 2rpx;
+	border-radius: 32rpx;
+	border: 1px solid rgba(255, 255, 255, 0.22);
+	z-index: 0;
+	pointer-events: none;
+}
+
+.random-pick-sheet::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background:
+		linear-gradient(118deg, rgba(255, 255, 255, 0.42) 3%, rgba(255, 255, 255, 0.18) 22%, rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0) 58%),
+		radial-gradient(circle at top right, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 36%);
+	z-index: 0;
+	pointer-events: none;
+}
+
+.random-pick-sheet__content {
+	display: block;
+	position: relative;
+	z-index: 1;
+	will-change: transform, opacity;
+}
+
+.random-pick-sheet__content--enter {
+	animation: random-pick-sheet-enter 280ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+
+.random-pick-sheet__content--swap {
+	animation: random-pick-sheet-swap 210ms cubic-bezier(0.22, 0.88, 0.24, 1) both;
+}
+
+.random-pick-sheet__content--enter .random-pick-sheet__hero,
+.random-pick-sheet__content--enter .random-pick-sheet__body,
+.random-pick-sheet__content--enter .random-pick-sheet__actions,
+.random-pick-sheet__content--swap .random-pick-sheet__hero,
+.random-pick-sheet__content--swap .random-pick-sheet__body,
+.random-pick-sheet__content--swap .random-pick-sheet__actions {
+	animation: random-pick-content-enter 260ms cubic-bezier(0.22, 0.88, 0.24, 1) both;
+}
+
+.random-pick-sheet__content--enter .random-pick-sheet__body,
+.random-pick-sheet__content--swap .random-pick-sheet__body {
+	animation-delay: 18ms;
+}
+
+.random-pick-sheet__content--enter .random-pick-sheet__actions,
+.random-pick-sheet__content--swap .random-pick-sheet__actions {
+	animation-delay: 34ms;
+}
+
+.random-pick-sheet__hero {
+	position: relative;
+	margin-top: 0;
+	height: 290rpx;
+	border-radius: 26rpx;
+	overflow: hidden;
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0) 42%),
+		linear-gradient(135deg, #f0e3d6 0%, #deccb9 100%);
+	box-shadow:
+		0 16rpx 26rpx rgba(67, 52, 39, 0.08),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.34);
+}
+
+.random-pick-sheet__hero::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 28%),
+		linear-gradient(180deg, rgba(40, 31, 23, 0) 46%, rgba(40, 31, 23, 0.18) 100%);
+	pointer-events: none;
+}
+
+.random-pick-sheet__hero--empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.random-pick-sheet__image {
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+
+.random-pick-sheet__placeholder {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 12rpx;
+	width: 100%;
+	height: 100%;
+}
+
+.random-pick-sheet__placeholder-icon {
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 22rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(255, 255, 255, 0.54);
+	border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.random-pick-sheet__placeholder-text {
+	font-size: 24rpx;
+	font-weight: 600;
+	color: #866c56;
+}
+
+.random-pick-sheet__body {
+	margin-top: 22rpx;
+	padding: 2rpx 8rpx 0;
+}
+
+.random-pick-sheet__context {
+	display: block;
+	font-size: 20rpx;
+	font-weight: 600;
+	line-height: 1.4;
+	letter-spacing: 0.4rpx;
+	color: #a18974;
+}
+
+.random-pick-sheet__title {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 42rpx;
+	font-weight: 700;
+	line-height: 1.18;
+	color: #2f2923;
+}
+
+.random-pick-sheet__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10rpx;
+	margin-top: 18rpx;
+}
+
+.random-pick-chip {
+	min-height: 44rpx;
+	padding: 0 16rpx;
+	border-radius: 999rpx;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(248, 242, 235, 0.12));
+	border: 1px solid rgba(255, 255, 255, 0.28);
+	box-shadow:
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.46),
+		0 6rpx 12rpx rgba(76, 60, 45, 0.03);
+	backdrop-filter: blur(12rpx);
+	-webkit-backdrop-filter: blur(12rpx);
+}
+
+.random-pick-chip--wishlist {
+	background:
+		linear-gradient(180deg, rgba(255, 246, 239, 0.34), rgba(248, 235, 224, 0.14));
+	border-color: rgba(208, 159, 122, 0.22);
+}
+
+.random-pick-chip--done {
+	background:
+		linear-gradient(180deg, rgba(243, 250, 242, 0.32), rgba(232, 241, 231, 0.14));
+	border-color: rgba(133, 159, 133, 0.2);
+}
+
+.random-pick-chip--source {
+	background:
+		linear-gradient(180deg, rgba(246, 241, 235, 0.24), rgba(237, 229, 220, 0.12));
+}
+
+.random-pick-chip__text {
+	font-size: 20rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #76695d;
+}
+
+.random-pick-sheet__summary {
+	display: -webkit-box;
+	margin-top: 18rpx;
+	font-size: 24rpx;
+	line-height: 1.7;
+	color: #5f554c;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+
+.random-pick-sheet__summary--muted {
+	color: #958879;
+}
+
+.random-pick-sheet__actions {
+	display: flex;
+	align-items: center;
+	gap: 14rpx;
+	margin-top: 28rpx;
+}
+
+.random-pick-action {
+	height: 88rpx;
+	border-radius: 24rpx;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8rpx;
+	flex: 1;
+	transform: scale(1);
+	transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+}
+
+.random-pick-action:active {
+	transform: scale(0.988);
+}
+
+.random-pick-action--ghost {
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(244, 238, 232, 0.14));
+	border: 1px solid rgba(255, 255, 255, 0.28);
+	box-shadow:
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.54),
+		0 10rpx 18rpx rgba(76, 60, 45, 0.03);
+	backdrop-filter: blur(14rpx);
+	-webkit-backdrop-filter: blur(14rpx);
+}
+
+.random-pick-action--primary {
+	background:
+		radial-gradient(circle at top left, rgba(255, 248, 239, 0.18) 0%, rgba(255, 248, 239, 0) 42%),
+		linear-gradient(135deg, #76543f 0%, #5c4333 100%);
+	box-shadow:
+		0 12rpx 20rpx rgba(78, 57, 42, 0.16),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.14);
+}
+
+.random-pick-action--disabled {
+	opacity: 0.46;
+	pointer-events: none;
+}
+
+.random-pick-action__text {
+	font-size: 24rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #715845;
+}
+
+.random-pick-action__text--primary {
+	color: #fffaf4;
+}
+
+@keyframes random-pick-sheet-enter {
+	from {
+		opacity: 0;
+		transform: translateY(10rpx) scale(0.972);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@keyframes random-pick-sheet-swap {
+	from {
+		opacity: 0.95;
+		transform: translateX(8rpx) scale(0.992);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0) scale(1);
+	}
+}
+
+@keyframes random-pick-content-enter {
+	from {
+		opacity: 0.94;
+		transform: translateY(6rpx);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.random-pick-sheet__content--enter,
+	.random-pick-sheet__content--swap,
+	.random-pick-sheet__content--enter .random-pick-sheet__hero,
+	.random-pick-sheet__content--enter .random-pick-sheet__body,
+	.random-pick-sheet__content--enter .random-pick-sheet__actions,
+	.random-pick-sheet__content--swap .random-pick-sheet__hero,
+	.random-pick-sheet__content--swap .random-pick-sheet__body,
+	.random-pick-sheet__content--swap .random-pick-sheet__actions {
+		animation: none;
+	}
+
+	.random-pick-action {
+		transition: none;
+	}
+}

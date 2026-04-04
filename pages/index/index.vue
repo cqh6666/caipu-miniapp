@@ -386,6 +386,19 @@
 		:description="recipeStatusFeedbackRecipeTitle"
 		:show-sparkles="recipeStatusFeedbackShowSparkles"
 	></action-feedback>
+
+	<random-pick-sheet
+		:show="showRandomPickSheet && !!randomPickCard"
+		:card="randomPickCard"
+		:cover-src="randomPickCoverSrc"
+		:context-text="randomPickContextText"
+		:can-reroll="randomPickCanReroll"
+		:motion-mode="randomPickMotionMode"
+		:reveal-key="randomPickRevealKey"
+		@close="closeRandomPickSheet"
+		@reroll="rerollTonightPick"
+		@open-detail="openRandomPickDetail"
+	></random-pick-sheet>
 </view>
 </template>
 
@@ -434,6 +447,7 @@ import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
 import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
 import MealOrderSuccessSheet from './components/meal-order-success-sheet.vue'
 import ProfileSheet from './components/profile-sheet.vue'
+import RandomPickSheet from './components/random-pick-sheet.vue'
 import RecipeCardItem from './components/recipe-card-item.vue'
 import {
 	addDaysFromISODate,
@@ -466,6 +480,7 @@ export default {
 		MealOrderDateSheet,
 		MealOrderSuccessSheet,
 		ProfileSheet,
+		RandomPickSheet,
 		RecipeCardItem
 	},
 	data() {
@@ -553,6 +568,12 @@ export default {
 			recipeStatusFeedbackShowSparkles: false,
 			recipeStatusFeedbackTick: 0,
 			recipeStatusFeedbackTimer: null,
+			showRandomPickSheet: false,
+			randomPickRecipeId: '',
+			randomPickContextText: '',
+			randomPickPoolRecipeIds: [],
+			randomPickMotionMode: 'enter',
+			randomPickTick: 0,
 			syncErrorMessage: '',
 			isSyncing: false,
 			isSubmittingDraft: false,
@@ -578,6 +599,7 @@ export default {
 		this.clearMealOrderDraftSyncTimer()
 		this.clearMealOrderModeMotionTimer()
 		this.clearRecipeStatusFeedback()
+		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
@@ -589,6 +611,7 @@ export default {
 		this.clearMealOrderDraftSyncTimer()
 		this.clearMealOrderModeMotionTimer()
 		this.clearRecipeStatusFeedback()
+		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
 		this.recipeCoverCacheRequestID += 1
@@ -900,6 +923,22 @@ export default {
 		recipeCards() {
 			return this.filteredRecipes.map((recipe) => buildRecipeCard(recipe, this.cachedRecipeCoverMap))
 		},
+		randomPickRecipe() {
+			return this.recipes.find((recipe) => recipe.id === this.randomPickRecipeId) || null
+		},
+		randomPickCard() {
+			if (!this.randomPickRecipe) return null
+			return buildRecipeCard(this.randomPickRecipe, this.cachedRecipeCoverMap)
+		},
+		randomPickCoverSrc() {
+			return this.randomPickCard ? this.getRecipeCardDisplayCover(this.randomPickCard) : ''
+		},
+		randomPickCanReroll() {
+			return this.randomPickPoolRecipeIds.length > 1
+		},
+		randomPickRevealKey() {
+			return `${this.randomPickRecipeId || 'idle'}:${this.randomPickTick}`
+		},
 		recipeStatusFeedbackKey() {
 			return `${this.recipeStatusFeedbackTone || 'idle'}:${this.recipeStatusFeedbackTick}`
 		},
@@ -1068,6 +1107,7 @@ export default {
 			if (next === prev) return
 			if (next !== 'library') {
 				this.clearRecipeStatusFeedback()
+				this.closeRandomPickSheet()
 			}
 		},
 		isLibraryMealOrderMode(next, prev) {
@@ -1089,6 +1129,76 @@ export default {
 			this.recipeStatusFeedbackTitle = ''
 			this.recipeStatusFeedbackRecipeTitle = ''
 			this.recipeStatusFeedbackShowSparkles = false
+		},
+		buildTonightPickPool() {
+			const visible = this.filteredRecipes.slice()
+			if (!visible.length) return []
+			if (this.activeStatus === 'all') {
+				const wishlistVisible = visible.filter((recipe) => recipe.status === 'wishlist')
+				if (wishlistVisible.length) return wishlistVisible
+			}
+			return visible
+		},
+		buildTonightPickContext(pool = []) {
+			if (!pool.length) return ''
+			if (this.hasSearchKeyword) {
+				return `根据“${this.trimmedSearchKeyword}”挑了一道`
+			}
+			if (this.activeStatus !== 'all') {
+				return `从${this.currentMealLabel}的${this.currentStatusLabel}里挑了一道`
+			}
+			if (pool.every((recipe) => recipe.status === 'wishlist')) {
+				return `先从${this.currentMealLabel}里想吃的菜里挑了一道`
+			}
+			return `从${this.currentMealLabel}里挑了一道`
+		},
+		pickTonightRecipe(pool = [], excludeRecipeId = '') {
+			const recipes = Array.isArray(pool) ? pool.filter(Boolean) : []
+			if (!recipes.length) return null
+			if (recipes.length === 1) return recipes[0]
+			const targetExcludeId = String(excludeRecipeId || '').trim()
+			const candidates = targetExcludeId ? recipes.filter((recipe) => recipe.id !== targetExcludeId) : recipes
+			const source = candidates.length ? candidates : recipes
+			return source[Math.floor(Math.random() * source.length)] || null
+		},
+		presentTonightPick(recipe = null, pool = [], contextText = '', motionMode = 'enter') {
+			if (!recipe?.id) return
+			this.randomPickRecipeId = recipe.id
+			this.randomPickPoolRecipeIds = pool.map((item) => item.id).filter(Boolean)
+			this.randomPickContextText = contextText
+			this.randomPickMotionMode = motionMode === 'swap' ? 'swap' : 'enter'
+			this.randomPickTick += 1
+			this.showRandomPickSheet = true
+			try {
+				uni.vibrateShort({
+					type: 'light'
+				})
+			} catch (_) {
+				// Ignore unsupported vibration capabilities and keep the picker path stable.
+			}
+		},
+		closeRandomPickSheet() {
+			this.showRandomPickSheet = false
+			this.randomPickRecipeId = ''
+			this.randomPickContextText = ''
+			this.randomPickPoolRecipeIds = []
+			this.randomPickMotionMode = 'enter'
+		},
+		rerollTonightPick() {
+			const pool = this.randomPickPoolRecipeIds
+				.map((recipeId) => this.recipes.find((recipe) => recipe.id === recipeId))
+				.filter(Boolean)
+			if (pool.length < 2) return
+			const picked = this.pickTonightRecipe(pool, this.randomPickRecipeId)
+			this.presentTonightPick(picked, pool, this.randomPickContextText, 'swap')
+		},
+		openRandomPickDetail(recipeId = '') {
+			const targetRecipeId = String(recipeId || this.randomPickRecipeId || '').trim()
+			if (!targetRecipeId) return
+			this.closeRandomPickSheet()
+			setTimeout(() => {
+				this.openRecipeDetail(targetRecipeId)
+			}, 140)
 		},
 		playRecipeStatusHaptic(nextStatus = 'wishlist') {
 			const vibrationType = nextStatus === 'done' ? 'medium' : 'light'
@@ -1543,20 +1653,16 @@ export default {
 			this.showMealOrderDateSheet = true
 		},
 		drawTonight() {
-			const pool = this.wishlistRecipes.length ? this.wishlistRecipes : this.recipes
+			const pool = this.buildTonightPickPool()
 			if (!pool.length) {
 				uni.showToast({
-					title: '先添加几道菜吧',
+					title: this.hasSearchKeyword || this.activeStatus !== 'all' ? '当前筛选里还没有可选菜' : '先添加几道菜吧',
 					icon: 'none'
 				})
 				return
 			}
-			const picked = pool[Math.floor(Math.random() * pool.length)]
-			this.selectedRecipeId = picked.id
-			uni.showToast({
-				title: `帮你选了：${picked.title}`,
-				icon: 'none'
-			})
+			const picked = this.pickTonightRecipe(pool)
+			this.presentTonightPick(picked, pool, this.buildTonightPickContext(pool), 'enter')
 		},
 		openMealOrderDateSheet() {
 			if (!getCurrentKitchenId()) {
