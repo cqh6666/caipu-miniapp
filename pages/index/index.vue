@@ -255,22 +255,6 @@
 			@start="startMealOrderMode"
 		></meal-order-date-sheet>
 
-		<meal-order-spotlight-sheet
-			:show="showMealOrderSpotlightSheet"
-			:record="mealOrderSpotlightRecord"
-			:eyebrow="mealOrderSpotlightDetailEyebrow"
-			:title="mealOrderSpotlightTitle"
-			:subtitle="mealOrderSpotlightDetailSubtitle"
-			:items="mealOrderSpotlightDetailItems"
-			:note="mealOrderSpotlightDetailNote"
-			:can-resume="mealOrderSpotlightCanResume"
-			@close="closeMealOrderSpotlightSheet"
-			@resume="resumeMealOrderSpotlightRecord"
-			@open-recipe="openMealOrderRecipeDetail"
-			@touchstart-sheet="handleMealOrderSpotlightTouchStart"
-			@touchend-sheet="handleMealOrderSpotlightTouchEnd"
-		></meal-order-spotlight-sheet>
-
 		<meal-order-cart-sheet
 			:show="showMealOrderCartSheet"
 			:date-text="mealOrderDateText"
@@ -292,12 +276,24 @@
 			:dish-count="mealOrderCartDishCount"
 			:items="mealOrderCartItems"
 			:note="mealOrderDraftNote"
+			:helper-text="mealOrderCheckoutHelperText"
 			:can-checkout="mealOrderCanCheckout"
 			:is-submitting="isSubmittingMealOrder"
 			@close="closeMealOrderCheckoutSheet"
 			@open-recipe="openMealOrderRecipeDetail"
 			@submit="submitMealOrder"
 		></meal-order-checkout-sheet>
+
+		<meal-order-success-sheet
+			:show="showMealOrderSuccessSheet"
+			:date-text="mealOrderSuccessDateText"
+			:dish-count="mealOrderSuccessDishCount"
+			:dish-summary="mealOrderSuccessDishSummary"
+			:note="mealOrderSuccessNote"
+			@close="closeMealOrderSuccessSheet"
+			@view-record="viewMealOrderSuccessRecord"
+			@plan-next="planNextMealOrder"
+		></meal-order-success-sheet>
 
 		<invite-sheet
 			:show="showInviteSheet"
@@ -368,7 +364,11 @@
 
 <script>
 import { appConfig } from '../../utils/app-config'
-import { listMealPlanStore, saveMealPlanDraft, submitMealPlan as submitMealPlanRequest } from '../../utils/meal-plan-api'
+import {
+	listMealPlanStore,
+	saveMealPlanDraft,
+	submitMealPlan as submitMealPlanRequest
+} from '../../utils/meal-plan-api'
 import { previewRecipeLink } from '../../utils/recipe-api'
 import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
 import { ensureUploadedImage } from '../../utils/upload-api'
@@ -404,13 +404,14 @@ import LibraryHeaderSection from './components/library-header-section.vue'
 import MealOrderCartSheet from './components/meal-order-cart-sheet.vue'
 import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
 import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
-import MealOrderSpotlightSheet from './components/meal-order-spotlight-sheet.vue'
+import MealOrderSuccessSheet from './components/meal-order-success-sheet.vue'
 import ProfileSheet from './components/profile-sheet.vue'
 import RecipeCardItem from './components/recipe-card-item.vue'
 import {
 	addDaysFromISODate,
 	buildMealOrderDishSummary,
 	buildMealPlanPayload,
+	consumePendingMealOrderAction,
 	createEmptyMealOrderStore,
 	formatMealOrderDateText,
 	formatMealOrderHeaderTitle,
@@ -434,7 +435,7 @@ export default {
 		MealOrderCartSheet,
 		MealOrderCheckoutSheet,
 		MealOrderDateSheet,
-		MealOrderSpotlightSheet,
+		MealOrderSuccessSheet,
 		ProfileSheet,
 		RecipeCardItem
 	},
@@ -456,12 +457,13 @@ export default {
 			showInviteCodeSheet: false,
 			showProfileSheet: false,
 			showMealOrderDateSheet: false,
-			showMealOrderSpotlightSheet: false,
 			showMealOrderCartSheet: false,
 			showMealOrderCheckoutSheet: false,
+			showMealOrderSuccessSheet: false,
 			isMealOrderMode: false,
 			currentKitchenId: 0,
 			mealOrderDate: '',
+			mealOrderLastSubmittedDate: '',
 			mealOrderStore: createEmptyMealOrderStore(),
 			mealOrderStoreLoadedKitchenId: 0,
 			mealOrderSpotlightIndex: 0,
@@ -623,6 +625,41 @@ export default {
 		mealOrderDateText() {
 			return formatMealOrderDateText(this.mealOrderDate)
 		},
+		mealOrderDateStatusMetaMap() {
+			const result = {}
+
+			Object.values(this.mealOrderStore?.drafts || {})
+				.map((draft) => normalizeMealOrderDraft(draft, draft?.planDate))
+				.filter((draft) => draft.planDate && draft.items.length)
+				.forEach((draft) => {
+					result[draft.planDate] = {
+						tag: '草稿中',
+						text: `已选 ${draft.items.length} 道`,
+						tone: 'draft'
+					}
+				})
+
+			;(Array.isArray(this.mealOrderStore?.submitted) ? this.mealOrderStore.submitted : [])
+				.map((record) => normalizeMealOrderRecord(record))
+				.filter(Boolean)
+				.forEach((record) => {
+					if (result[record.planDate]) {
+						result[record.planDate] = {
+							tag: '待修改',
+							text: `草稿 ${result[record.planDate].text.replace('已选 ', '')} · 原安排保留`,
+							tone: 'editing'
+						}
+						return
+					}
+					result[record.planDate] = {
+						tag: '已安排',
+						text: `已安排 ${record.items.length} 道`,
+						tone: 'submitted'
+					}
+				})
+
+			return result
+		},
 		mealOrderQuickDateOptions() {
 			const today = this.mealOrderDateStart
 			const options = [
@@ -639,7 +676,10 @@ export default {
 				})
 				.map((option) => ({
 					...option,
-					dateText: formatMealOrderDateText(option.value)
+					dateText: formatMealOrderDateText(option.value),
+					statusTag: this.mealOrderDateStatusMetaMap[option.value]?.tag || '',
+					statusText: this.mealOrderDateStatusMetaMap[option.value]?.text || '',
+					statusTone: this.mealOrderDateStatusMetaMap[option.value]?.tone || ''
 				}))
 		},
 		mealOrderCurrentDraft() {
@@ -662,7 +702,8 @@ export default {
 				return {
 					...item,
 					title,
-					mealTypeLabel
+					mealTypeLabel,
+					imageSnapshot: String(item.imageSnapshot || '').trim()
 				}
 			})
 		},
@@ -683,6 +724,9 @@ export default {
 		},
 		mealOrderFloatingActionText() {
 			return '去确认'
+		},
+		mealOrderCheckoutHelperText() {
+			return '提交后，这天菜单会立即同步给厨房成员。之后想改，我们会先带出草稿，不会直接覆盖原安排。'
 		},
 		isLibraryMealOrderMode() {
 			return this.activeSection === 'library' && this.isMealOrderMode && !!normalizeMealOrderDate(this.mealOrderDate)
@@ -751,34 +795,22 @@ export default {
 			if (total < 2) return ''
 			return `${this.mealOrderSpotlightRecordIndex + 1}/${total}`
 		},
-		mealOrderSpotlightDetailEyebrow() {
-			const record = this.mealOrderSpotlightRecord
-			if (!record) return ''
-			const prefix = record.type === 'draft' ? '草稿中' : '已安排'
-			const total = this.mealOrderSpotlightRecords.length
-			if (total < 2) return prefix
-			return `${prefix} · ${this.mealOrderSpotlightRecordIndex + 1}/${total}`
+		mealOrderSuccessRecord() {
+			return this.findMealOrderSubmittedByDate(this.mealOrderLastSubmittedDate)
 		},
-		mealOrderSpotlightDetailSubtitle() {
-			const record = this.mealOrderSpotlightRecord
-			if (!record) return ''
-			const dishCount = Array.isArray(record.items) ? record.items.length : 0
-			return `共 ${dishCount} 道菜`
+		mealOrderSuccessDateText() {
+			return formatMealOrderDateText(this.mealOrderLastSubmittedDate)
 		},
-		mealOrderSpotlightDetailItems() {
-			const record = this.mealOrderSpotlightRecord
-			return (Array.isArray(record?.items) ? record.items : []).map((item) => ({
-				...item,
-				title: String(item?.titleSnapshot || '').trim() || '未命名菜品'
-			}))
+		mealOrderSuccessDishCount() {
+			return Array.isArray(this.mealOrderSuccessRecord?.items) ? this.mealOrderSuccessRecord.items.length : 0
 		},
-		mealOrderSpotlightDetailNote() {
-			return String(this.mealOrderSpotlightRecord?.note || '').trim()
+		mealOrderSuccessDishSummary() {
+			const record = this.mealOrderSuccessRecord
+			if (!record) return '这天的菜单已经排好了。'
+			return buildMealOrderDishSummary(record.items)
 		},
-		mealOrderSpotlightCanResume() {
-			const record = this.mealOrderSpotlightRecord
-			if (!record || record.type !== 'draft') return false
-			return record.planDate >= this.mealOrderDateStart
+		mealOrderSuccessNote() {
+			return String(this.mealOrderSuccessRecord?.note || '').trim()
 		},
 		librarySummary() {
 			if (!this.currentKitchenName && this.syncErrorMessage) {
@@ -1041,7 +1073,6 @@ export default {
 			const targetSection = String(nextSection || '').trim()
 			if (!targetSection || targetSection === this.activeSection) return
 			if (!this.isMealOrderMode || this.activeSection !== 'library' || targetSection === 'library') {
-				this.showMealOrderSpotlightSheet = false
 				this.activeSection = targetSection
 				return
 			}
@@ -1053,7 +1084,6 @@ export default {
 				success: ({ confirm }) => {
 					if (!confirm) return
 					this.syncMealOrderDraft({ silent: true })
-					this.showMealOrderSpotlightSheet = false
 					this.activeSection = targetSection
 				}
 			})
@@ -1061,6 +1091,14 @@ export default {
 		applyMealOrderStore(store = createEmptyMealOrderStore()) {
 			const normalizedStore = normalizeMealOrderStore(store)
 			this.mealOrderStore = normalizedStore
+			if (
+				this.mealOrderLastSubmittedDate &&
+				!(Array.isArray(normalizedStore.submitted) ? normalizedStore.submitted : [])
+					.some((record) => normalizeMealOrderDate(record?.planDate) === this.mealOrderLastSubmittedDate)
+			) {
+				this.mealOrderLastSubmittedDate = ''
+				this.showMealOrderSuccessSheet = false
+			}
 
 			const normalizedDate = normalizeMealOrderDate(this.mealOrderDate)
 			if (normalizedDate && normalizedStore.drafts[normalizedDate]) {
@@ -1126,9 +1164,10 @@ export default {
 			this.mealOrderDate = ''
 			this.isMealOrderMode = false
 			this.showMealOrderDateSheet = false
-			this.showMealOrderSpotlightSheet = false
 			this.showMealOrderCartSheet = false
 			this.showMealOrderCheckoutSheet = false
+			this.showMealOrderSuccessSheet = false
+			this.mealOrderLastSubmittedDate = ''
 			this.mealOrderSpotlightIndex = 0
 			this.mealOrderSpotlightTouchStartX = 0
 			this.mealOrderSpotlightTouchStartY = 0
@@ -1217,6 +1256,24 @@ export default {
 				mealTypeSnapshot: String(recipe.mealType || '').trim() || 'main'
 			}
 		},
+		findMealOrderSubmittedByDate(planDate = '') {
+			const normalizedDate = normalizeMealOrderDate(planDate)
+			if (!normalizedDate) return null
+			const submitted = (Array.isArray(this.mealOrderStore?.submitted) ? this.mealOrderStore.submitted : [])
+				.map((record) => normalizeMealOrderRecord(record))
+				.filter(Boolean)
+			return submitted.find((record) => record.planDate === normalizedDate) || null
+		},
+		focusMealOrderSpotlightRecord(planDate = '', type = 'submitted') {
+			const normalizedDate = normalizeMealOrderDate(planDate)
+			if (!normalizedDate) return false
+			const targetIndex = this.mealOrderSpotlightRecords.findIndex(
+				(record) => record.planDate === normalizedDate && record.type === type
+			)
+			if (targetIndex < 0) return false
+			this.mealOrderSpotlightIndex = targetIndex
+			return true
+		},
 		mealOrderHasRecipe(recipeId = '') {
 			const targetRecipeId = String(recipeId || '').trim()
 			if (!targetRecipeId) return false
@@ -1232,7 +1289,7 @@ export default {
 				this.openMealOrderDateSheet()
 				return
 			}
-			this.showMealOrderSpotlightSheet = true
+			this.openMealOrderDetail(record)
 		},
 		handleMealOrderSpotlightTouchStart(event) {
 			const touch = event?.touches?.[0] || event?.changedTouches?.[0]
@@ -1264,14 +1321,19 @@ export default {
 			const step = direction === 'previous' ? -1 : 1
 			this.mealOrderSpotlightIndex = (this.mealOrderSpotlightRecordIndex + step + total) % total
 		},
-		closeMealOrderSpotlightSheet() {
-			this.showMealOrderSpotlightSheet = false
+		closeMealOrderSuccessSheet() {
+			this.showMealOrderSuccessSheet = false
 		},
-		resumeMealOrderSpotlightRecord() {
-			const record = this.mealOrderSpotlightRecord
-			if (!record || !this.mealOrderSpotlightCanResume) return
-			this.showMealOrderSpotlightSheet = false
-			this.startMealOrderMode(record.planDate)
+		viewMealOrderSuccessRecord() {
+			this.showMealOrderSuccessSheet = false
+			this.openMealOrderDetail({
+				planDate: this.mealOrderLastSubmittedDate,
+				type: 'submitted'
+			})
+		},
+		planNextMealOrder() {
+			this.showMealOrderSuccessSheet = false
+			this.showMealOrderDateSheet = true
 		},
 		drawTonight() {
 			const pool = this.wishlistRecipes.length ? this.wishlistRecipes : this.recipes
@@ -1297,6 +1359,7 @@ export default {
 				})
 				return
 			}
+			this.showMealOrderSuccessSheet = false
 			this.showMealOrderDateSheet = true
 		},
 		closeMealOrderDateSheet() {
@@ -1309,14 +1372,14 @@ export default {
 			this.activeSection = 'library'
 			this.isMealOrderMode = true
 			this.showMealOrderDateSheet = false
-			this.showMealOrderSpotlightSheet = false
+			this.showMealOrderSuccessSheet = false
 		},
 		exitMealOrderMode() {
 			this.syncMealOrderDraft({ silent: true })
 			this.isMealOrderMode = false
-			this.showMealOrderSpotlightSheet = false
 			this.showMealOrderCartSheet = false
 			this.showMealOrderCheckoutSheet = false
+			this.showMealOrderSuccessSheet = false
 		},
 		addMealOrderRecipe(recipe = {}) {
 			if (!this.isMealOrderMode || !this.mealOrderDate) {
@@ -1437,10 +1500,9 @@ export default {
 				this.showMealOrderCheckoutSheet = false
 				this.showMealOrderCartSheet = false
 				this.isMealOrderMode = false
-				uni.showToast({
-					title: '菜单已提交',
-					icon: 'none'
-				})
+				this.mealOrderLastSubmittedDate = this.mealOrderDate
+				this.focusMealOrderSpotlightRecord(this.mealOrderDate, 'submitted')
+				this.showMealOrderSuccessSheet = true
 			} catch (error) {
 				uni.showToast({
 					title: error?.message || '提交菜单失败',
@@ -1622,6 +1684,7 @@ export default {
 					this.refreshKitchenMembers({ kitchenId, silent: true })
 				])
 				this.applyRecipes(recipes)
+				await this.applyPendingMealOrderAction(kitchenId)
 			} catch (error) {
 				this.syncErrorMessage = getFriendlySessionErrorMessage(error)
 				this.applySession()
@@ -1636,6 +1699,26 @@ export default {
 				}
 			} finally {
 				this.isSyncing = false
+			}
+		},
+		async applyPendingMealOrderAction(kitchenId = 0) {
+			const action = consumePendingMealOrderAction()
+			if (!action) return
+			if (Number(action.kitchenId) && Number(action.kitchenId) !== Number(kitchenId)) return
+
+			if (kitchenId) {
+				await this.loadMealOrderStore({ silent: true })
+			}
+
+			if (action.kind === 'resume' && action.planDate) {
+				this.startMealOrderMode(action.planDate)
+			}
+
+			if (action.message) {
+				uni.showToast({
+					title: action.message,
+					icon: 'none'
+				})
 			}
 		},
 		memberRoleLabel(role) {
@@ -1960,6 +2043,20 @@ export default {
 			this.selectedRecipeId = recipeId
 			uni.navigateTo({
 				url: `/pages/recipe-detail/index?id=${recipeId}`
+			})
+		},
+		openMealOrderDetail(record = {}) {
+			const planDate = normalizeMealOrderDate(record?.planDate || '')
+			const type = String(record?.type || '').trim() === 'draft' ? 'draft' : 'submitted'
+			if (!planDate) {
+				uni.showToast({
+					title: '这份菜单暂时打不开',
+					icon: 'none'
+				})
+				return
+			}
+			uni.navigateTo({
+				url: `/pages/meal-plan-detail/index?planDate=${encodeURIComponent(planDate)}&type=${type}`
 			})
 		},
 		openMealOrderRecipeDetail(item = {}) {
@@ -2956,6 +3053,7 @@ export default {
 		display: flex;
 		align-items: center;
 		gap: 8rpx;
+		animation: meal-order-floating-enter 220ms ease both;
 	}
 
 	.meal-order-floating__summary {
@@ -3039,6 +3137,7 @@ export default {
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
+		transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 	}
 
 	.meal-order-floating__action--disabled {
@@ -3053,6 +3152,17 @@ export default {
 		font-weight: 700;
 		line-height: 1;
 		color: #4b3728;
+	}
+
+	@keyframes meal-order-floating-enter {
+		from {
+			opacity: 0;
+			transform: translateY(18rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	.bottom-nav {

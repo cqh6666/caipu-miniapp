@@ -2,8 +2,29 @@
 
 ## 2026-04-04
 
+### Changed
+
+- 点菜模式的“菜单详情”补齐删改闭环：
+  - 已安排菜单详情新增 `修改菜单 / 删除安排`
+  - 修改菜单不再直接改写已提交记录，而是先带出同日期草稿，再回到点菜模式继续编辑
+  - 若同日期已经存在一份草稿，则优先继续那份草稿，不覆盖已有修改
+  - 菜单草稿详情新增 `删除草稿`，避免只能回到点菜模式里清空
+- 点菜模式交互体验继续优化：
+  - 日期选择器会直接显示 `草稿中 / 已安排 / 待修改` 状态，减少试探式点击
+  - 菜单详情、购物车和确认菜单页补充缩略图、餐别信息和状态说明，回看成本更低
+  - 提交菜单后新增成功反馈面板，明确提供 `查看当天菜单 / 继续安排别天` 两个后续动作
+  - 首页菜单 spotlight 卡片与底部悬浮条补齐轻量入场动效，状态感更明显
+  - 菜单详情从预览弹层升级为独立页面，重操作不再挤在底部弹层里
+- 后端 `mealplan` 新增草稿/已提交菜单的显式管理接口：
+  - 新增从已提交菜单生成编辑草稿的接口
+  - 新增删除草稿、删除已提交菜单的接口
+- 点菜模式原型文档与后端 README 已同步更新为新的菜单详情交互口径
+
 ### Fixed
 
+- 修复点菜模式里“同日期只有备注草稿时，修改菜单会误带出空草稿”的问题：
+  - 后端现在只有在同日期草稿里已经有菜品时，才会直接继续那份草稿
+  - 若同日期只是 note-only 草稿，点击“修改菜单”会重新带出已安排菜单，避免用户误以为菜丢了
 - 修复个人资料页“提示资料已更新，但昵称和头像实际未生效”的回归问题：
   - 后端将“登录态补资料”和“用户主动改资料”拆分为两条更新策略，主动保存资料时允许替换已有的非占位昵称
   - 后端登录补资料不再用微信侧头像覆盖用户已经手动保存过的头像，只会补齐缺失头像
@@ -11,12 +32,12 @@
 
 ### Notes
 
-- 修改时间：2026-04-04 00:00 CST
-- 变更背景：个人资料弹层保存成功后，后端显式更新逻辑错误地沿用了“仅补占位昵称”的策略，导致已有昵称无法再次修改；同时前后端自动资料同步都可能把用户手动保存的头像重新覆盖为微信侧资料，造成“提示成功但界面没变”
-- 核心改动：新增后端显式资料更新分支用于处理用户主动改资料；保留原有 `EnsureProfile` 作为登录补资料逻辑，但限制为只补齐缺失头像；前端 `ensureSession` 内的自动资料同步策略同步收窄为只补缺失头像，不再覆盖已有头像
-- 影响范围：`backend/internal/auth/repository.go`、`backend/internal/auth/repository_test.go`、`backend/internal/auth/service.go`、`utils/auth.js`
-- 兼容性/风险：本次不改接口契约；已有用户下次重新保存资料后才能把历史上未生效的昵称或头像修正到最新值；前端当前仍无自动化测试，需在微信开发者工具或真机上补一次“改昵称 + 选头像 + 重新进入页面”的联调确认
-- 验证情况：已执行 `cd backend && go test ./internal/auth/...`；已执行 `git diff --check`
+- 修改时间：2026-04-04 11:59 CST
+- 变更背景：当前“菜单详情”只能查看和继续安排，已提交菜单缺少修改/删除入口，草稿删除也只能绕回点菜模式，实际体验和用户预期不一致；同时日期选择、提交成功反馈和菜单回看信息密度偏弱，用户需要反复点开确认状态，重操作继续塞在底部弹层里也不利于理解
+- 核心改动：在首页菜单详情入口补上 `修改菜单 / 删除安排 / 删除草稿` 闭环；“修改菜单”改为先从已提交菜单复制出同日期草稿，再进入现有点菜模式继续编辑，原已提交菜单会保留到用户重新提交时再覆盖；若同日期已经有草稿，则直接继续草稿，避免覆盖；同时继续优化点菜体验，在日期选择器补上 `草稿中 / 已安排 / 待修改` 状态提示，在菜单详情、购物车和确认菜单页补上缩略图、餐别和状态说明，并在提交后新增成功反馈面板与明确的下一步动作；菜单详情现已独立为 `pages/meal-plan-detail/index.vue`，首页安排卡和成功态会直接进入该页，详情页内再承载删改和继续安排动作，首页旧的菜单详情弹层实现已下线；后端新增相应 `mealplan` 管理接口与测试，并补上“note-only 草稿不拦截修改菜单”的边界修复；README 和点菜原型文档同步更新
+- 影响范围：`pages/index/index.vue`、`pages/index/meal-order.js`、`pages/index/components/library-header-section.scss`、`pages/index/components/meal-order-cart-sheet.vue`、`pages/index/components/meal-order-checkout-sheet.vue`、`pages/index/components/meal-order-date-sheet.vue`、`pages/index/components/meal-order-sheet.scss`、`pages/index/components/meal-order-success-sheet.vue`、`pages/meal-plan-detail/index.vue`、`pages.json`、`README.md`、`utils/meal-plan-api.js`、`backend/internal/app/router.go`、`backend/internal/mealplan/*`、`backend/README.md`、`docs/meal-order-mode-prototype-v1.md`
+- 兼容性/风险：本次新增了菜单管理接口，前后端需同时更新后功能才完整；“修改菜单”目前走“复制为草稿再编辑”策略，能避免误覆盖已安排菜单，但共享厨房里仍未实现更细粒度的并发冲突提示；前端当前没有自动化校验脚本，日期状态卡、小图加载、独立菜单详情页跳转和成功面板仍需在微信开发者工具或真机上补一轮完整操作流验证
+- 验证情况：已执行 `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./internal/mealplan/...`；已执行 `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./internal/app/...`；已执行 `git diff --check`；前端当前仍无可直接执行的自动化测试，尚未做 HBuilderX / 微信开发者工具实机预览
 
 ## 2026-04-03
 

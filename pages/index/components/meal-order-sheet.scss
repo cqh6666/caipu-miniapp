@@ -90,6 +90,17 @@
 	text-align: center;
 }
 
+.meal-order-date-card--draft,
+.meal-order-date-card--editing {
+	background: linear-gradient(180deg, rgba(255, 247, 239, 0.98) 0%, rgba(255, 241, 228, 0.98) 100%);
+	border-color: rgba(210, 149, 101, 0.18);
+}
+
+.meal-order-date-card--submitted {
+	background: linear-gradient(180deg, rgba(255, 250, 244, 0.98) 0%, rgba(246, 238, 229, 0.98) 100%);
+	border-color: rgba(120, 103, 86, 0.12);
+}
+
 .meal-order-date-card--active {
 	background: linear-gradient(180deg, #6d5441 0%, #584233 100%);
 	border-color: rgba(109, 84, 65, 0.5);
@@ -107,8 +118,64 @@
 	color: #7d6f63;
 }
 
+.meal-order-date-card__meta {
+	margin-top: 4rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8rpx;
+}
+
+.meal-order-date-card__badge {
+	min-height: 38rpx;
+	padding: 0 12rpx;
+	border-radius: 999rpx;
+	background: rgba(247, 232, 214, 0.9);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-date-card__badge--submitted {
+	background: rgba(239, 232, 224, 0.96);
+}
+
+.meal-order-date-card__badge--editing {
+	background: rgba(248, 226, 210, 0.96);
+}
+
+.meal-order-date-card__badge-text {
+	font-size: 20rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #8d6247;
+}
+
+.meal-order-date-card__badge--submitted .meal-order-date-card__badge-text {
+	color: #766555;
+}
+
+.meal-order-date-card__badge--editing .meal-order-date-card__badge-text {
+	color: #b0604b;
+}
+
+.meal-order-date-card__meta-text {
+	font-size: 19rpx;
+	line-height: 1.4;
+	color: #8f7f72;
+}
+
 .meal-order-date-card--active .meal-order-date-card__label,
-.meal-order-date-card--active .meal-order-date-card__date {
+.meal-order-date-card--active .meal-order-date-card__date,
+.meal-order-date-card--active .meal-order-date-card__meta-text {
+	color: #fff7ef;
+}
+
+.meal-order-date-card--active .meal-order-date-card__badge {
+	background: rgba(255, 247, 237, 0.18);
+}
+
+.meal-order-date-card--active .meal-order-date-card__badge-text {
 	color: #fff7ef;
 }
 
@@ -240,6 +307,44 @@
 	color: #b0a59a;
 }
 
+.meal-order-sheet__notice {
+	margin-top: 16rpx;
+	padding: 16rpx 18rpx;
+	border-radius: 18rpx;
+	background: rgba(255, 250, 244, 0.94);
+	border: 1px solid rgba(203, 162, 126, 0.16);
+	display: flex;
+	align-items: flex-start;
+	gap: 10rpx;
+}
+
+.meal-order-sheet__notice--accent,
+.meal-order-sheet__notice--editing {
+	background: rgba(255, 244, 237, 0.96);
+	border-color: rgba(190, 109, 82, 0.16);
+}
+
+.meal-order-sheet__notice--submitted {
+	background: rgba(252, 248, 243, 0.96);
+	border-color: rgba(126, 112, 95, 0.12);
+}
+
+.meal-order-sheet__notice--draft {
+	background: rgba(255, 249, 241, 0.96);
+	border-color: rgba(203, 162, 126, 0.18);
+}
+
+.meal-order-sheet__notice-icon {
+	margin-top: 2rpx;
+	flex-shrink: 0;
+}
+
+.meal-order-sheet__notice-text {
+	font-size: 22rpx;
+	line-height: 1.6;
+	color: #755f4e;
+}
+
 .meal-order-checkout-note {
 	margin-top: 12rpx;
 	padding: 16rpx;
@@ -261,6 +366,53 @@
 	font-size: 23rpx;
 	line-height: 1.6;
 	color: #4f443a;
+}
+
+.meal-order-card-thumb {
+	width: 84rpx;
+	height: 84rpx;
+	border-radius: 18rpx;
+	background: rgba(245, 236, 227, 0.9);
+	border: 1px solid rgba(91, 74, 59, 0.06);
+	box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.82);
+	overflow: hidden;
+	flex-shrink: 0;
+}
+
+.meal-order-card-thumb__image,
+.meal-order-card-thumb__placeholder {
+	width: 100%;
+	height: 100%;
+}
+
+.meal-order-card-thumb__image {
+	display: block;
+}
+
+.meal-order-card-thumb__placeholder {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-card-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10rpx;
+	margin-top: 8rpx;
+}
+
+.meal-order-card-meta__text {
+	font-size: 20rpx;
+	line-height: 1.2;
+	color: #8b7b6e;
+}
+
+.meal-order-checkout-item__main {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
 }
 
 .meal-order-sheet__footer {
@@ -293,8 +445,14 @@
 	box-shadow: 0 12rpx 20rpx rgba(91, 74, 59, 0.16);
 }
 
+.sheet-action--danger {
+	background: #fff6f2;
+	border: 1px solid rgba(181, 91, 74, 0.16);
+}
+
 .sheet-action--disabled {
 	background: #d9d1c8;
+	border-color: transparent;
 	box-shadow: none;
 	pointer-events: none;
 }
@@ -309,6 +467,96 @@
 	color: #ffffff;
 }
 
+.sheet-action__text--danger {
+	color: #b55b4a;
+}
+
 .sheet-action--disabled .sheet-action__text--primary {
 	opacity: 0.76;
+}
+
+.sheet-action--disabled .sheet-action__text--danger,
+.sheet-action--disabled .sheet-action__text {
+	opacity: 0.76;
+}
+
+.meal-order-sheet--success {
+	background:
+		radial-gradient(circle at top right, rgba(255, 227, 200, 0.72) 0%, rgba(255, 227, 200, 0) 34%),
+		#f8f4ee;
+}
+
+.meal-order-success-hero {
+	margin-top: 18rpx;
+	padding: 28rpx 24rpx;
+	border-radius: 24rpx;
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0) 40%),
+		linear-gradient(145deg, #f3d7bf 0%, #e8c3a7 100%);
+	border: 1px solid rgba(190, 129, 82, 0.14);
+	box-shadow:
+		0 14rpx 26rpx rgba(97, 70, 47, 0.08),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.7);
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 12rpx;
+}
+
+.meal-order-success-hero__icon {
+	width: 60rpx;
+	height: 60rpx;
+	border-radius: 18rpx;
+	background: linear-gradient(180deg, #6f8c62 0%, #5f7a54 100%);
+	box-shadow: 0 10rpx 18rpx rgba(72, 96, 58, 0.18);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-success-hero__title {
+	font-size: 30rpx;
+	font-weight: 700;
+	line-height: 1.32;
+	color: #34281f;
+}
+
+.meal-order-success-hero__desc {
+	font-size: 23rpx;
+	line-height: 1.6;
+	color: #6f5948;
+}
+
+.meal-order-success-card {
+	margin-top: 14rpx;
+	padding: 20rpx 18rpx;
+	border-radius: 20rpx;
+	background: rgba(255, 255, 255, 0.92);
+	border: 1px solid rgba(91, 74, 59, 0.06);
+	box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+}
+
+.meal-order-success-card__label {
+	display: block;
+	font-size: 21rpx;
+	font-weight: 700;
+	line-height: 1.2;
+	color: #9c8067;
+}
+
+.meal-order-success-card__summary {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 25rpx;
+	font-weight: 700;
+	line-height: 1.5;
+	color: #2f2923;
+}
+
+.meal-order-success-card__note {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 22rpx;
+	line-height: 1.6;
+	color: #7c6d60;
 }

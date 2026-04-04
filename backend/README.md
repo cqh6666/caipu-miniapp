@@ -117,6 +117,12 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/link-parsers/bilibili`
 - `POST /api/link-parsers/xiaohongshu`
 - `POST /api/link-parsers/preview`
+- `GET /api/kitchens/{kitchenID}/meal-plans`
+- `PUT /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft`
+- `DELETE /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft`
+- `POST /api/kitchens/{kitchenID}/meal-plans/{planDate}/submit`
+- `POST /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft-from-submitted`
+- `DELETE /api/kitchens/{kitchenID}/meal-plans/{planDate}/submitted`
 - `GET /api/kitchens/{kitchenID}/recipes`
 - `POST /api/kitchens/{kitchenID}/recipes`
 - `GET /api/recipes/{recipeID}`

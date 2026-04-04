@@ -117,6 +117,103 @@ func (s *Service) Submit(ctx context.Context, userID, kitchenID int64, planDate 
 	return s.ListStoreByKitchenID(ctx, userID, kitchenID)
 }
 
+func (s *Service) CreateDraftFromSubmitted(ctx context.Context, userID, kitchenID int64, planDate string) (Store, error) {
+	if err := s.kitchen.EnsureMember(ctx, userID, kitchenID); err != nil {
+		return Store{}, err
+	}
+
+	normalizedDate, err := normalizePlanDate(planDate)
+	if err != nil {
+		return Store{}, err
+	}
+
+	draft, draftExists, err := s.repo.GetByKitchenDateStatus(ctx, kitchenID, normalizedDate, StatusDraft)
+	if err != nil {
+		return Store{}, err
+	}
+	// A note-only draft is not surfaced by the current UI as an editable menu draft.
+	// Keep the submitted dishes as the source of truth in "修改菜单" so users don't
+	// land in an apparently empty draft.
+	if draftExists && len(draft.Items) > 0 {
+		return s.ListStoreByKitchenID(ctx, userID, kitchenID)
+	}
+
+	submitted, submittedExists, err := s.repo.GetByKitchenDateStatus(ctx, kitchenID, normalizedDate, StatusSubmitted)
+	if err != nil {
+		return Store{}, err
+	}
+	if !submittedExists {
+		return Store{}, common.NewAppError(common.CodeNotFound, "meal plan not found", http.StatusNotFound)
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	nextDraft := Plan{
+		KitchenID: kitchenID,
+		PlanDate:  normalizedDate,
+		Status:    StatusDraft,
+		Note:      submitted.Note,
+		Items:     clonePlanItems(submitted.Items),
+		CreatedBy: userID,
+		UpdatedBy: userID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := s.repo.ReplaceDraft(ctx, nextDraft, now); err != nil {
+		return Store{}, err
+	}
+
+	return s.ListStoreByKitchenID(ctx, userID, kitchenID)
+}
+
+func (s *Service) DeleteDraft(ctx context.Context, userID, kitchenID int64, planDate string) (Store, error) {
+	if err := s.kitchen.EnsureMember(ctx, userID, kitchenID); err != nil {
+		return Store{}, err
+	}
+
+	normalizedDate, err := normalizePlanDate(planDate)
+	if err != nil {
+		return Store{}, err
+	}
+
+	_, err = s.repo.DeleteByKitchenDateStatus(
+		ctx,
+		kitchenID,
+		normalizedDate,
+		StatusDraft,
+		time.Now().Format(time.RFC3339),
+	)
+	if err != nil {
+		return Store{}, err
+	}
+
+	return s.ListStoreByKitchenID(ctx, userID, kitchenID)
+}
+
+func (s *Service) DeleteSubmitted(ctx context.Context, userID, kitchenID int64, planDate string) (Store, error) {
+	if err := s.kitchen.EnsureMember(ctx, userID, kitchenID); err != nil {
+		return Store{}, err
+	}
+
+	normalizedDate, err := normalizePlanDate(planDate)
+	if err != nil {
+		return Store{}, err
+	}
+
+	_, err = s.repo.DeleteByKitchenDateStatus(
+		ctx,
+		kitchenID,
+		normalizedDate,
+		StatusSubmitted,
+		time.Now().Format(time.RFC3339),
+	)
+	if err != nil {
+		return Store{}, err
+	}
+
+	return s.ListStoreByKitchenID(ctx, userID, kitchenID)
+}
+
 func (s *Service) ensureRecipesBelongToKitchen(ctx context.Context, kitchenID int64, items []Item) error {
 	if len(items) == 0 {
 		return nil
@@ -240,4 +337,19 @@ func groupPlansAsStore(plans []Plan) Store {
 	})
 
 	return store
+}
+
+func clonePlanItems(items []Item) []Item {
+	cloned := make([]Item, 0, len(items))
+	for index, item := range items {
+		cloned = append(cloned, Item{
+			RecipeID:         item.RecipeID,
+			Quantity:         item.Quantity,
+			MealTypeSnapshot: item.MealTypeSnapshot,
+			TitleSnapshot:    item.TitleSnapshot,
+			ImageSnapshot:    item.ImageSnapshot,
+			Sort:             index,
+		})
+	}
+	return cloned
 }

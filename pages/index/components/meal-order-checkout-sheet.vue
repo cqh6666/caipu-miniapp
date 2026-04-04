@@ -18,6 +18,11 @@
 				</view>
 			</view>
 
+			<view v-if="helperText" class="meal-order-sheet__notice meal-order-sheet__notice--accent">
+				<up-icon class="meal-order-sheet__notice-icon" name="info-circle" size="14" color="#b56f57"></up-icon>
+				<text class="meal-order-sheet__notice-text">{{ helperText }}</text>
+			</view>
+
 			<scroll-view class="meal-order-cart-list" scroll-y>
 				<view v-if="items.length" class="meal-order-checkout-list">
 					<view
@@ -27,7 +32,24 @@
 						hover-class="meal-order-checkout-item--hover"
 						@tap="$emit('open-recipe', item)"
 					>
-						<text class="meal-order-checkout-item__title">{{ item.title }}</text>
+						<view class="meal-order-card-thumb">
+							<image
+								v-if="item.imageSnapshot"
+								class="meal-order-card-thumb__image"
+								:src="item.imageSnapshot"
+								mode="aspectFill"
+							></image>
+							<view v-else class="meal-order-card-thumb__placeholder">
+								<up-icon name="photo" size="18" color="#b69d86"></up-icon>
+							</view>
+						</view>
+						<view class="meal-order-checkout-item__main">
+							<text class="meal-order-checkout-item__title">{{ item.title }}</text>
+							<view class="meal-order-card-meta">
+								<text v-if="item.mealTypeLabel" class="meal-order-card-meta__text">{{ item.mealTypeLabel }}</text>
+								<text v-if="item.quantity > 1" class="meal-order-card-meta__text">x{{ item.quantity }}</text>
+							</view>
+						</view>
 						<up-icon class="meal-order-checkout-item__chevron" name="arrow-right" size="14" color="#9d8c7a"></up-icon>
 					</view>
 				</view>
@@ -80,6 +102,10 @@ export default {
 			default: () => []
 		},
 		note: {
+			type: String,
+			default: ''
+		},
+		helperText: {
 			type: String,
 			default: ''
 		},

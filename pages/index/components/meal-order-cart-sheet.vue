@@ -27,8 +27,23 @@
 						hover-class="meal-order-cart-item--hover"
 						@tap="$emit('open-recipe', item)"
 					>
+						<view class="meal-order-card-thumb">
+							<image
+								v-if="item.imageSnapshot"
+								class="meal-order-card-thumb__image"
+								:src="item.imageSnapshot"
+								mode="aspectFill"
+							></image>
+							<view v-else class="meal-order-card-thumb__placeholder">
+								<up-icon name="photo" size="18" color="#b69d86"></up-icon>
+							</view>
+						</view>
 						<view class="meal-order-cart-item__main">
 							<text class="meal-order-cart-item__title">{{ item.title }}</text>
+							<view class="meal-order-card-meta">
+								<text v-if="item.mealTypeLabel" class="meal-order-card-meta__text">{{ item.mealTypeLabel }}</text>
+								<text v-if="item.quantity > 1" class="meal-order-card-meta__text">x{{ item.quantity }}</text>
+							</view>
 						</view>
 						<view class="meal-order-cart-item__action" @tap.stop="$emit('remove-recipe', item.recipeId)">
 							<text class="meal-order-cart-item__action-text">移出</text>

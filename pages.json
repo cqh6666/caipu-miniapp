@@ -21,6 +21,12 @@
 			}
 		},
 		{
+			"path": "pages/meal-plan-detail/index",
+			"style": {
+				"navigationBarTitleText": "菜单详情"
+			}
+		},
+		{
 			"path": "pages/invite/index",
 			"style": {
 				"navigationBarTitleText": "加入厨房"

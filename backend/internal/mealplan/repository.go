@@ -3,6 +3,7 @@ package mealplan
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -70,6 +71,48 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64) ([]Pl
 	return plans, nil
 }
 
+func (r *Repository) GetByKitchenDateStatus(ctx context.Context, kitchenID int64, planDate, status string) (Plan, bool, error) {
+	row := r.db.QueryRowContext(
+		ctx,
+		`SELECT id, kitchen_id, plan_date, status, COALESCE(note, ''), created_by, updated_by,
+		        COALESCE(submitted_by, 0), created_at, updated_at, COALESCE(submitted_at, '')
+		   FROM meal_plans
+		  WHERE kitchen_id = ? AND plan_date = ? AND status = ?
+		  LIMIT 1`,
+		kitchenID,
+		planDate,
+		status,
+	)
+
+	var plan Plan
+	if err := row.Scan(
+		&plan.ID,
+		&plan.KitchenID,
+		&plan.PlanDate,
+		&plan.Status,
+		&plan.Note,
+		&plan.CreatedBy,
+		&plan.UpdatedBy,
+		&plan.SubmittedBy,
+		&plan.CreatedAt,
+		&plan.UpdatedAt,
+		&plan.SubmittedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Plan{}, false, nil
+		}
+		return Plan{}, false, fmt.Errorf("get meal plan by date and status: %w", err)
+	}
+
+	itemsByPlanID, err := r.listItemsByPlanIDs(ctx, []int64{plan.ID})
+	if err != nil {
+		return Plan{}, false, err
+	}
+	plan.Items = itemsByPlanID[plan.ID]
+
+	return plan, true, nil
+}
+
 func (r *Repository) CountRecipesByKitchenID(ctx context.Context, kitchenID int64, recipeIDs []string) (int, error) {
 	if len(recipeIDs) == 0 {
 		return 0, nil
@@ -104,7 +147,7 @@ func (r *Repository) ReplaceDraft(ctx context.Context, plan Plan, touchedAt stri
 		return fmt.Errorf("begin replace meal draft tx: %w", err)
 	}
 
-	if err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusDraft); err != nil {
+	if _, err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusDraft); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -134,7 +177,7 @@ func (r *Repository) ReplaceSubmitted(ctx context.Context, plan Plan, touchedAt 
 		return fmt.Errorf("begin replace submitted meal plan tx: %w", err)
 	}
 
-	if err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusSubmitted); err != nil {
+	if _, err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusSubmitted); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -142,7 +185,7 @@ func (r *Repository) ReplaceSubmitted(ctx context.Context, plan Plan, touchedAt 
 		_ = tx.Rollback()
 		return err
 	}
-	if err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusDraft); err != nil {
+	if _, err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusDraft); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -156,6 +199,33 @@ func (r *Repository) ReplaceSubmitted(ctx context.Context, plan Plan, touchedAt 
 	}
 
 	return nil
+}
+
+func (r *Repository) DeleteByKitchenDateStatus(ctx context.Context, kitchenID int64, planDate, status, touchedAt string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin delete meal plan tx: %w", err)
+	}
+
+	deletedCount, err := deletePlanByKitchenDateStatusTx(ctx, tx, kitchenID, planDate, status)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	if deletedCount == 0 {
+		_ = tx.Rollback()
+		return false, nil
+	}
+
+	if err := bumpKitchenUpdatedAt(ctx, tx, kitchenID, touchedAt); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit delete meal plan: %w", err)
+	}
+
+	return true, nil
 }
 
 func (r *Repository) listItemsByPlanIDs(ctx context.Context, planIDs []int64) (map[int64][]Item, error) {
@@ -256,7 +326,7 @@ func insertPlanTx(ctx context.Context, tx *sql.Tx, plan Plan) (int64, error) {
 	return planID, nil
 }
 
-func deletePlanByKitchenDateStatusTx(ctx context.Context, tx *sql.Tx, kitchenID int64, planDate, status string) error {
+func deletePlanByKitchenDateStatusTx(ctx context.Context, tx *sql.Tx, kitchenID int64, planDate, status string) (int, error) {
 	rows, err := tx.QueryContext(
 		ctx,
 		`SELECT id FROM meal_plans WHERE kitchen_id = ? AND plan_date = ? AND status = ?`,
@@ -265,7 +335,7 @@ func deletePlanByKitchenDateStatusTx(ctx context.Context, tx *sql.Tx, kitchenID 
 		status,
 	)
 	if err != nil {
-		return fmt.Errorf("query existing meal plans: %w", err)
+		return 0, fmt.Errorf("query existing meal plans: %w", err)
 	}
 	defer rows.Close()
 
@@ -273,24 +343,24 @@ func deletePlanByKitchenDateStatusTx(ctx context.Context, tx *sql.Tx, kitchenID 
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			return fmt.Errorf("scan existing meal plan id: %w", err)
+			return 0, fmt.Errorf("scan existing meal plan id: %w", err)
 		}
 		planIDs = append(planIDs, id)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate existing meal plan ids: %w", err)
+		return 0, fmt.Errorf("iterate existing meal plan ids: %w", err)
 	}
 
 	for _, id := range planIDs {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM meal_plan_items WHERE plan_id = ?`, id); err != nil {
-			return fmt.Errorf("delete meal plan items: %w", err)
+			return 0, fmt.Errorf("delete meal plan items: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM meal_plans WHERE id = ?`, id); err != nil {
-			return fmt.Errorf("delete meal plan: %w", err)
+			return 0, fmt.Errorf("delete meal plan: %w", err)
 		}
 	}
 
-	return nil
+	return len(planIDs), nil
 }
 
 func bumpKitchenUpdatedAt(ctx context.Context, tx *sql.Tx, kitchenID int64, updatedAt string) error {

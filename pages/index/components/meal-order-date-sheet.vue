@@ -23,11 +23,23 @@
 					v-for="option in quickDateOptions"
 					:key="option.value"
 					class="meal-order-date-card"
-					:class="{ 'meal-order-date-card--active': option.value === pickerValue }"
+					:class="[
+						{ 'meal-order-date-card--active': option.value === pickerValue },
+						option.statusTone ? `meal-order-date-card--${option.statusTone}` : ''
+					]"
 					@tap="$emit('start', option.value)"
 				>
 					<text class="meal-order-date-card__label">{{ option.label }}</text>
 					<text class="meal-order-date-card__date">{{ option.dateText }}</text>
+					<view v-if="option.statusTag" class="meal-order-date-card__meta">
+						<view
+							class="meal-order-date-card__badge"
+							:class="option.statusTone ? `meal-order-date-card__badge--${option.statusTone}` : ''"
+						>
+							<text class="meal-order-date-card__badge-text">{{ option.statusTag }}</text>
+						</view>
+						<text v-if="option.statusText" class="meal-order-date-card__meta-text">{{ option.statusText }}</text>
+					</view>
 				</view>
 			</view>
 

@@ -29,3 +29,24 @@ export function submitMealPlan(kitchenId, planDate, payload = {}) {
 		data: payload
 	}).then((data) => normalizeStore(data?.store))
 }
+
+export function deleteMealPlanDraft(kitchenId, planDate) {
+	return request({
+		url: `/caipu-api/kitchens/${kitchenId}/meal-plans/${encodeURIComponent(planDate)}/draft`,
+		method: 'DELETE'
+	}).then((data) => normalizeStore(data?.store))
+}
+
+export function createMealPlanDraftFromSubmitted(kitchenId, planDate) {
+	return request({
+		url: `/caipu-api/kitchens/${kitchenId}/meal-plans/${encodeURIComponent(planDate)}/draft-from-submitted`,
+		method: 'POST'
+	}).then((data) => normalizeStore(data?.store))
+}
+
+export function deleteSubmittedMealPlan(kitchenId, planDate) {
+	return request({
+		url: `/caipu-api/kitchens/${kitchenId}/meal-plans/${encodeURIComponent(planDate)}/submitted`,
+		method: 'DELETE'
+	}).then((data) => normalizeStore(data?.store))
+}

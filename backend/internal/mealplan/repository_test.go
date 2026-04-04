@@ -111,6 +111,52 @@ VALUES
 	}
 }
 
+func TestRepositoryGetByKitchenDateStatusAndDeleteByKitchenDateStatus(t *testing.T) {
+	db := openMealPlanTestDB(t)
+	defer db.Close()
+
+	if _, err := db.Exec(`
+INSERT INTO meal_plans (id, kitchen_id, plan_date, status, note, created_by, updated_by, submitted_by, created_at, updated_at, submitted_at)
+VALUES
+  (1, 1, '2026-03-30', 'submitted', '晚饭安排', 7, 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z');
+INSERT INTO meal_plan_items (plan_id, recipe_id, quantity, meal_type_snapshot, title_snapshot, image_snapshot, sort_index, created_at, updated_at)
+VALUES
+  (1, 'rec_a', 1, 'main', '番茄炒蛋', '', 0, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z');
+`); err != nil {
+		t.Fatalf("seed meal plans error = %v", err)
+	}
+
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	plan, ok, err := repo.GetByKitchenDateStatus(ctx, 1, "2026-03-30", StatusSubmitted)
+	if err != nil {
+		t.Fatalf("GetByKitchenDateStatus() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("GetByKitchenDateStatus() ok = false, want true")
+	}
+	if got, want := len(plan.Items), 1; got != want {
+		t.Fatalf("len(plan.Items) = %d, want %d", got, want)
+	}
+
+	deleted, err := repo.DeleteByKitchenDateStatus(ctx, 1, "2026-03-30", StatusSubmitted, "2026-03-26T10:00:00Z")
+	if err != nil {
+		t.Fatalf("DeleteByKitchenDateStatus() error = %v", err)
+	}
+	if !deleted {
+		t.Fatalf("DeleteByKitchenDateStatus() deleted = false, want true")
+	}
+
+	_, ok, err = repo.GetByKitchenDateStatus(ctx, 1, "2026-03-30", StatusSubmitted)
+	if err != nil {
+		t.Fatalf("GetByKitchenDateStatus() after delete error = %v", err)
+	}
+	if ok {
+		t.Fatalf("GetByKitchenDateStatus() after delete ok = true, want false")
+	}
+}
+
 func TestRepositoryCountRecipesByKitchenID(t *testing.T) {
 	db := openMealPlanTestDB(t)
 	defer db.Close()
@@ -152,6 +198,13 @@ CREATE TABLE kitchens (
   owner_user_id INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE kitchen_members (
+  kitchen_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  joined_at TEXT NOT NULL
 );
 
 CREATE TABLE recipes (
@@ -200,6 +253,11 @@ INSERT INTO kitchens (id, name, owner_user_id, created_at, updated_at)
 VALUES
   (1, '测试厨房', 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
   (2, '别的厨房', 8, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z');
+
+INSERT INTO kitchen_members (kitchen_id, user_id, role, joined_at)
+VALUES
+  (1, 7, 'owner', '2026-03-24T00:00:00Z'),
+  (2, 8, 'owner', '2026-03-24T00:00:00Z');
 `); err != nil {
 		_ = db.Close()
 		t.Fatalf("create meal plan tables error = %v", err)

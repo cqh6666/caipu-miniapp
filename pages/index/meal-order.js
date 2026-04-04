@@ -1,4 +1,5 @@
 const mealOrderWeekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const mealOrderPendingActionStorageKey = 'caipu-miniapp-meal-order-pending-action'
 
 function padDateNumber(value) {
 	return String(Number(value) || 0).padStart(2, '0')
@@ -164,4 +165,41 @@ export function buildMealOrderDishSummary(items = []) {
 		.slice(0, 3)
 	if (!names.length) return '还没有菜'
 	return names.join(' / ')
+}
+
+function normalizePendingMealOrderAction(raw = {}) {
+	const source = raw && typeof raw === 'object' ? raw : {}
+	const kind = String(source.kind || '').trim()
+	if (!kind) return null
+
+	const normalized = {
+		kind,
+		kitchenId: Math.max(0, Number(source.kitchenId) || 0),
+		planDate: normalizeMealOrderDate(source.planDate || ''),
+		message: String(source.message || '').trim()
+	}
+
+	if (normalized.kind === 'resume' && !normalized.planDate) {
+		return null
+	}
+	if (!['reload', 'resume'].includes(normalized.kind)) {
+		return null
+	}
+
+	return normalized
+}
+
+export function writePendingMealOrderAction(raw = {}) {
+	const action = normalizePendingMealOrderAction(raw)
+	if (!action) {
+		uni.removeStorageSync(mealOrderPendingActionStorageKey)
+		return
+	}
+	uni.setStorageSync(mealOrderPendingActionStorageKey, action)
+}
+
+export function consumePendingMealOrderAction() {
+	const action = normalizePendingMealOrderAction(uni.getStorageSync(mealOrderPendingActionStorageKey))
+	uni.removeStorageSync(mealOrderPendingActionStorageKey)
+	return action
 }
