@@ -1310,15 +1310,36 @@ func truncateString(value string, maxRunes int) string {
 func resolveAutoParseImages(current Recipe, draft Recipe) (string, []string) {
 	currentImageURL := strings.TrimSpace(current.ImageURL)
 	currentImageURLs := current.ImageURLs
-	if len(currentImageURLs) > 0 || currentImageURL != "" {
-		if len(currentImageURLs) == 0 && currentImageURL != "" {
-			return currentImageURL, []string{currentImageURL}
-		}
-		return currentImageURL, currentImageURLs
+	if len(currentImageURLs) == 0 && currentImageURL != "" {
+		currentImageURLs = []string{currentImageURL}
 	}
 
 	draftImageURLs := cleanRecipeImageURLs(append(draft.ImageURLs, strings.TrimSpace(draft.ImageURL)))
-	return firstImageURL(draftImageURLs), draftImageURLs
+	mergedImageURLs := mergeRecipeImageURLs(currentImageURLs, draftImageURLs)
+	return firstImageURL(mergedImageURLs), mergedImageURLs
+}
+
+func mergeRecipeImageURLs(groups ...[]string) []string {
+	items := make([]string, 0, maxRecipeImages)
+	seen := make(map[string]struct{}, maxRecipeImages)
+	for _, group := range groups {
+		for _, value := range group {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			if _, exists := seen[value]; exists {
+				continue
+			}
+			seen[value] = struct{}{}
+			items = append(items, value)
+			if len(items) >= maxRecipeImages {
+				return items
+			}
+		}
+	}
+
+	return items
 }
 
 func cleanRecipeImageURLs(values []string) []string {
