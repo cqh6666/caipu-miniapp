@@ -36,7 +36,8 @@
 		<view
 			v-if="!isLibraryMealOrderMode"
 			class="meal-order-spotlight"
-			:class="{ 'meal-order-spotlight--empty': !hasMealOrderSpotlightRecord }"
+			:key="spotlightMotionKey"
+			:class="[spotlightMotionClass, { 'meal-order-spotlight--empty': !hasMealOrderSpotlightRecord }]"
 			@tap="$emit('spotlight-tap')"
 			@touchstart="$emit('spotlight-touchstart', $event)"
 			@touchend="$emit('spotlight-touchend', $event)"
@@ -84,6 +85,30 @@ export default {
 		mealOrderSpotlightMetaText: {
 			type: String,
 			default: ''
+		},
+		mealOrderSpotlightMotionDirection: {
+			type: String,
+			default: ''
+		},
+		mealOrderSpotlightMotionTick: {
+			type: Number,
+			default: 0
+		}
+	},
+	computed: {
+		spotlightMotionClass() {
+			if (!this.mealOrderSpotlightMotionTick) return ''
+			return this.mealOrderSpotlightMotionDirection === 'previous'
+				? 'meal-order-spotlight--motion-previous'
+				: 'meal-order-spotlight--motion-next'
+		},
+		spotlightMotionKey() {
+			return [
+				this.mealOrderSpotlightMotionDirection || 'idle',
+				this.mealOrderSpotlightMotionTick,
+				this.mealOrderSpotlightTitle,
+				this.mealOrderSpotlightMetaText
+			].join(':')
 		}
 	},
 	emits: [
