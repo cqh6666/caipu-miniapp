@@ -27,9 +27,6 @@
 				<up-icon name="checkmark" size="10" color="#fff9f1"></up-icon>
 				<text class="recipe-card__selected-badge-text">已选</text>
 			</view>
-			<view v-if="card.isPinned" class="recipe-card__pin-badge recipe-card__pin-badge--media">
-				<text class="recipe-card__pin-badge-text recipe-card__pin-badge-text--media">置顶</text>
-			</view>
 			<view v-if="card.sourceBadge && !isLibraryMealOrderMode" class="recipe-card__source-badge">
 				<text class="recipe-card__source-badge-text">{{ card.sourceBadge }}</text>
 			</view>
@@ -40,7 +37,9 @@
 		<view class="recipe-card__body">
 			<view class="recipe-card__top">
 				<view class="recipe-card__title-wrap">
-					<text v-if="!isLibraryMealOrderMode" class="recipe-card__eyebrow">{{ card.infoLine }}</text>
+					<view v-if="!isLibraryMealOrderMode" class="recipe-card__meta-row">
+						<text class="recipe-card__eyebrow">{{ card.infoLine }}</text>
+					</view>
 					<text class="recipe-card__title">{{ card.title }}</text>
 				</view>
 				<view

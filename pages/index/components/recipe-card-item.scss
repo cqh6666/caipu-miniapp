@@ -1,4 +1,5 @@
 .recipe-card {
+	position: relative;
 	display: flex;
 	align-items: stretch;
 	gap: 18rpx;
@@ -12,6 +13,32 @@
 	transform: scale(1);
 	transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 	will-change: transform, opacity;
+}
+
+.recipe-card::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	right: 22rpx;
+	width: 18rpx;
+	height: 26rpx;
+	border-radius: 0 0 8rpx 8rpx;
+	background: linear-gradient(
+		180deg,
+		rgba(221, 191, 142, 0.92) 0%,
+		rgba(202, 160, 98, 0.92) 46%,
+		rgba(176, 131, 76, 0.94) 100%
+	);
+	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
+	box-shadow:
+		0 5rpx 8rpx rgba(133, 99, 54, 0.08),
+		inset 0 1rpx 0 rgba(255, 247, 232, 0.42);
+	opacity: 0;
+	transform: translateY(-4rpx) scaleY(0.86);
+	transform-origin: top;
+	transition: opacity 0.18s ease, transform 0.18s ease;
+	pointer-events: none;
+	z-index: 3;
 }
 
 .recipe-card:active {
@@ -62,8 +89,13 @@
 }
 
 .recipe-card--pinned {
-	border-color: rgba(186, 145, 81, 0.16);
-	box-shadow: 0 10rpx 24rpx rgba(111, 85, 45, 0.08);
+	border-color: rgba(186, 145, 81, 0.12);
+	box-shadow: 0 12rpx 24rpx rgba(98, 74, 44, 0.06);
+}
+
+.recipe-card--pinned::before {
+	opacity: 1;
+	transform: translateY(0) scaleY(1);
 }
 
 .recipe-card--status-wishlist {
@@ -274,46 +306,24 @@
 	gap: 6rpx;
 }
 
+.recipe-card__meta-row {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}
+
 .recipe-card__eyebrow {
 	display: block;
+	flex: 1;
+	min-width: 0;
 	font-size: 19rpx;
 	font-weight: 700;
 	line-height: 1.2;
 	letter-spacing: 0.6rpx;
 	color: #a08975;
-}
-
-.recipe-card__pin-badge {
-	flex-shrink: 0;
-	padding: 5rpx 10rpx;
-	border-radius: 999rpx;
-	background: rgba(201, 157, 91, 0.13);
-	border: 1px solid rgba(201, 157, 91, 0.18);
-}
-
-.recipe-card__pin-badge--media {
-	position: absolute;
-	top: 10rpx;
-	right: 10rpx;
-	margin-top: 0;
-	padding: 8rpx 10rpx;
-	background: rgba(61, 46, 34, 0.62);
-	border-color: rgba(255, 247, 238, 0.16);
-	backdrop-filter: blur(10rpx);
-	box-shadow: 0 6rpx 12rpx rgba(18, 12, 8, 0.1);
-	z-index: 2;
-}
-
-.recipe-card__pin-badge-text {
-	display: block;
-	font-size: 18rpx;
-	font-weight: 700;
-	line-height: 1;
-	color: #9a7343;
-}
-
-.recipe-card__pin-badge-text--media {
-	color: #fff6ee;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .recipe-card__title {
