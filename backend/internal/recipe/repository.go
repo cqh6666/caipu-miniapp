@@ -19,7 +19,7 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filter ListFilter) ([]Recipe, error) {
 	query := `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -74,7 +74,7 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 
 func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -127,7 +127,14 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		return Recipe{}, fmt.Errorf("begin update recipe tx: %w", err)
 	}
 
-	imageURLsJSON, err := marshalImageURLs(item.ImageURLs)
+	imageMetas := normalizeRecipeImageMetas(item.ImageURLs, item.ImageMetas)
+	imageURLs := recipeImageURLsFromMetas(imageMetas)
+	imageURLsJSON, err := marshalImageURLs(imageURLs)
+	if err != nil {
+		_ = tx.Rollback()
+		return Recipe{}, err
+	}
+	imageMetaJSON, err := marshalImageMetas(imageMetas)
 	if err != nil {
 		_ = tx.Rollback()
 		return Recipe{}, err
@@ -142,18 +149,19 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-	SET title = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, meal_type = ?, status = ?, note = ?,
+	SET title = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, meal_type = ?, status = ?, note = ?,
 	    ingredients_json = ?, steps_json = ?, flowchart_image_url = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
 	    flowchart_status = ?, flowchart_error = ?, flowchart_requested_at = ?, flowchart_finished_at = ?,
 	    parse_status = ?, parse_source = ?, parse_error = ?,
 	    parse_requested_at = ?, parse_finished_at = ?, parsed_content_edited = ?, pinned_at = ?, updated_by = ?, updated_at = ?
-	WHERE id = ? AND deleted_at IS NULL`,
+WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
 		nullableString(item.Ingredient),
 		nonNullableTrimmedString(item.Summary),
 		nullableString(item.Link),
-		nullableString(item.ImageURL),
+		nullableString(firstImageURL(imageURLs)),
 		imageURLsJSON,
+		imageMetaJSON,
 		item.MealType,
 		item.Status,
 		nullableString(item.Note),
@@ -359,7 +367,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 
 func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -431,7 +439,7 @@ func (r *Repository) CountProcessingAutoParse(ctx context.Context) (int, error) 
 
 func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -475,7 +483,7 @@ LIMIT ?`
 
 func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -523,7 +531,7 @@ LIMIT ?`
 
 func (r *Repository) ListPendingFlowcharts(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -598,7 +606,7 @@ func (r *Repository) CountProcessingFlowcharts(ctx context.Context) (int, error)
 
 func (r *Repository) ListAutoFlowchartCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -828,9 +836,14 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 		_ = tx.Rollback()
 		return err
 	}
-	imageURLValue, imageURLsValue := resolveAutoParseImages(current, draft)
+	imageURLValue, imageURLsValue, imageMetasValue := resolveAutoParseImages(current, draft)
 
 	imageURLsJSON, err := marshalImageURLs(imageURLsValue)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	imageMetaJSON, err := marshalImageMetas(imageMetasValue)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -845,13 +858,14 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, ingredients_json = ?, steps_json = ?,
+SET ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, ingredients_json = ?, steps_json = ?,
     parse_status = ?, parse_source = ?, parse_error = '', parse_finished_at = ?, parsed_content_edited = 0, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(ingredientValue),
 		nonNullableTrimmedString(summaryValue),
 		nullableString(imageURLValue),
 		imageURLsJSON,
+		imageMetaJSON,
 		ingredientsJSON,
 		stepsJSON,
 		ParseStatusDone,
@@ -968,7 +982,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 	return nil
 }
 
-func (r *Repository) ApplyMirroredImages(ctx context.Context, recipeID string, oldImages, newImages []string, updatedAt string) (bool, error) {
+func (r *Repository) ApplyMirroredImages(ctx context.Context, recipeID string, oldImages []string, newMetas []RecipeImageMeta, updatedAt string) (bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin apply mirrored images tx: %w", err)
@@ -981,18 +995,21 @@ func (r *Repository) ApplyMirroredImages(ctx context.Context, recipeID string, o
 	}
 
 	expectedOld := cleanRecipeImageURLs(oldImages)
-	currentImages := cleanRecipeImageURLs(current.ImageURLs)
-	if len(currentImages) == 0 && strings.TrimSpace(current.ImageURL) != "" {
-		currentImages = []string{strings.TrimSpace(current.ImageURL)}
-	}
+	currentImages := recipeImageURLsFromItem(current)
 	if !imageSlicesEqual(currentImages, expectedOld) {
 		_ = tx.Rollback()
 		return false, nil
 	}
 
-	nextImages := cleanRecipeImageURLs(newImages)
+	nextMetas := normalizeRecipeImageMetas(recipeImageURLsFromMetas(newMetas), newMetas)
+	nextImages := recipeImageURLsFromMetas(nextMetas)
 	nextImageURL := firstImageURL(nextImages)
 	imageURLsJSON, err := marshalImageURLs(nextImages)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	imageMetaJSON, err := marshalImageMetas(nextMetas)
 	if err != nil {
 		_ = tx.Rollback()
 		return false, err
@@ -1001,10 +1018,11 @@ func (r *Repository) ApplyMirroredImages(ctx context.Context, recipeID string, o
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET image_url = ?, image_urls_json = ?, updated_at = ?
+SET image_url = ?, image_urls_json = ?, image_meta_json = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(nextImageURL),
 		imageURLsJSON,
+		imageMetaJSON,
 		updatedAt,
 		recipeID,
 	)
@@ -1043,6 +1061,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 	var (
 		item                Recipe
 		imageURLsJSON       string
+		imageMetaJSON       string
 		ingredientsJSON     string
 		stepsJSON           string
 		parsedContentEdited int
@@ -1057,6 +1076,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.Link,
 		&item.ImageURL,
 		&imageURLsJSON,
+		&imageMetaJSON,
 		&item.FlowchartImageURL,
 		&item.FlowchartUpdatedAt,
 		&item.FlowchartSourceHash,
@@ -1089,18 +1109,21 @@ func scanRecipe(s scanner) (Recipe, error) {
 	if err != nil {
 		return Recipe{}, err
 	}
+	imageMetas, err := unmarshalImageMetas(imageMetaJSON)
+	if err != nil {
+		return Recipe{}, err
+	}
 	parsedContent, err := unmarshalParsedContent(ingredientsJSON, stepsJSON)
 	if err != nil {
 		return Recipe{}, err
 	}
 
-	item.ImageURLs = imageURLs
-	if len(item.ImageURLs) == 0 && strings.TrimSpace(item.ImageURL) != "" {
-		item.ImageURLs = []string{strings.TrimSpace(item.ImageURL)}
+	if len(imageURLs) == 0 && strings.TrimSpace(item.ImageURL) != "" {
+		imageURLs = []string{strings.TrimSpace(item.ImageURL)}
 	}
-	if strings.TrimSpace(item.ImageURL) == "" {
-		item.ImageURL = firstImageURL(imageURLs)
-	}
+	item.ImageMetas = normalizeRecipeImageMetas(imageURLs, imageMetas)
+	item.ImageURLs = recipeImageURLsFromMetas(item.ImageMetas)
+	item.ImageURL = firstImageURL(item.ImageURLs)
 	item.ParsedContentEdited = parsedContentEdited != 0
 	item.ParsedContent = normalizeParsedContent(parsedContent, item.MealType, item.Title, item.Ingredient)
 	item.FlowchartStale = strings.TrimSpace(item.FlowchartImageURL) != "" && strings.TrimSpace(item.FlowchartSourceHash) != buildFlowchartSourceHash(item)
@@ -1108,7 +1131,13 @@ func scanRecipe(s scanner) (Recipe, error) {
 }
 
 func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
-	imageURLsJSON, err := marshalImageURLs(item.ImageURLs)
+	imageMetas := normalizeRecipeImageMetas(item.ImageURLs, item.ImageMetas)
+	imageURLs := recipeImageURLsFromMetas(imageMetas)
+	imageURLsJSON, err := marshalImageURLs(imageURLs)
+	if err != nil {
+		return err
+	}
+	imageMetaJSON, err := marshalImageMetas(imageMetas)
 	if err != nil {
 		return err
 	}
@@ -1121,20 +1150,21 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO recipes (
-	id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, meal_type, status, note,
+	id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, image_meta_json, meal_type, status, note,
 	ingredients_json, steps_json, flowchart_image_url, flowchart_updated_at, flowchart_source_hash,
 	flowchart_status, flowchart_error, flowchart_requested_at, flowchart_finished_at,
 	parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at, parsed_content_edited,
 	pinned_at, created_by, updated_by, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
 		nullableString(item.Ingredient),
 		nonNullableTrimmedString(item.Summary),
 		nullableString(item.Link),
-		nullableString(item.ImageURL),
+		nullableString(firstImageURL(imageURLs)),
 		imageURLsJSON,
+		imageMetaJSON,
 		item.MealType,
 		item.Status,
 		nullableString(item.Note),
@@ -1167,7 +1197,7 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 
 func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
@@ -1241,6 +1271,20 @@ func marshalImageURLs(imageURLs []string) (string, error) {
 	return string(encoded), nil
 }
 
+func marshalImageMetas(imageMetas []RecipeImageMeta) (string, error) {
+	imageMetas = normalizeRecipeImageMetas(recipeImageURLsFromMetas(imageMetas), imageMetas)
+	if len(imageMetas) == 0 {
+		return "[]", nil
+	}
+
+	encoded, err := json.Marshal(imageMetas)
+	if err != nil {
+		return "", fmt.Errorf("marshal image metas: %w", err)
+	}
+
+	return string(encoded), nil
+}
+
 func unmarshalImageURLs(imageURLsJSON string) ([]string, error) {
 	if strings.TrimSpace(imageURLsJSON) == "" {
 		return []string{}, nil
@@ -1252,6 +1296,19 @@ func unmarshalImageURLs(imageURLsJSON string) ([]string, error) {
 	}
 
 	return imageURLs, nil
+}
+
+func unmarshalImageMetas(imageMetaJSON string) ([]RecipeImageMeta, error) {
+	if strings.TrimSpace(imageMetaJSON) == "" {
+		return []RecipeImageMeta{}, nil
+	}
+
+	var imageMetas []RecipeImageMeta
+	if err := json.Unmarshal([]byte(imageMetaJSON), &imageMetas); err != nil {
+		return nil, fmt.Errorf("unmarshal image metas: %w", err)
+	}
+
+	return imageMetas, nil
 }
 
 func unmarshalParsedContent(ingredientsJSON, stepsJSON string) (ParsedContent, error) {
@@ -1307,16 +1364,29 @@ func truncateString(value string, maxRunes int) string {
 	return string(runes[:maxRunes])
 }
 
-func resolveAutoParseImages(current Recipe, draft Recipe) (string, []string) {
-	currentImageURL := strings.TrimSpace(current.ImageURL)
-	currentImageURLs := current.ImageURLs
-	if len(currentImageURLs) == 0 && currentImageURL != "" {
-		currentImageURLs = []string{currentImageURL}
+func resolveAutoParseImages(current Recipe, draft Recipe) (string, []string, []RecipeImageMeta) {
+	currentMetas := recipeImageMetasFromItem(current)
+	items := make([]RecipeImageMeta, 0, len(currentMetas)+len(draft.ImageURLs))
+	for _, meta := range currentMetas {
+		if normalizeRecipeImageSource(meta.SourceType) == RecipeImageSourceParsed {
+			continue
+		}
+		items = append(items, meta)
 	}
 
-	draftImageURLs := cleanRecipeImageURLs(append(draft.ImageURLs, strings.TrimSpace(draft.ImageURL)))
-	mergedImageURLs := mergeRecipeImageURLs(currentImageURLs, draftImageURLs)
-	return firstImageURL(mergedImageURLs), mergedImageURLs
+	sourceLink := strings.TrimSpace(current.Link)
+	for _, imageURL := range recipeImageURLsFromItem(draft) {
+		items = append(items, RecipeImageMeta{
+			URL:        imageURL,
+			SourceType: RecipeImageSourceParsed,
+			OriginURL:  imageURL,
+			SourceLink: sourceLink,
+		})
+	}
+
+	imageMetas := dedupeRecipeImageMetas(items)
+	imageURLs := recipeImageURLsFromMetas(imageMetas)
+	return firstImageURL(imageURLs), imageURLs, imageMetas
 }
 
 func mergeRecipeImageURLs(groups ...[]string) []string {

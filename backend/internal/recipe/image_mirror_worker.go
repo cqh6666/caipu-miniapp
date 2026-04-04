@@ -113,8 +113,9 @@ func (w *ImageMirrorWorker) processOne(parent context.Context, item Recipe) erro
 	ctx, cancel := context.WithTimeout(parent, defaultImageMirrorJobTimeout)
 	defer cancel()
 
-	original := cleanRecipeImageURLs(item.ImageURLs)
-	mirrored, changed, err := mirrorRecipeImages(ctx, original, w.upload)
+	original := recipeImageURLsFromItem(item)
+	currentMetas := fillManagedImageHashes(recipeImageMetasFromItem(item), w.upload)
+	mirrored, changed, err := mirrorRecipeImages(ctx, currentMetas, w.upload)
 	if err != nil {
 		return err
 	}
@@ -137,34 +138,46 @@ func needsImageMirroring(item Recipe, uploadService *upload.Service) bool {
 		return false
 	}
 
-	for _, imageURL := range cleanRecipeImageURLs(item.ImageURLs) {
-		if !uploadService.IsManagedImageURL(imageURL) && isRemoteImageURL(imageURL) {
+	for _, meta := range recipeImageMetasFromItem(item) {
+		if !uploadService.IsManagedImageURL(meta.URL) && isRemoteImageURL(meta.URL) {
 			return true
 		}
 	}
 	return false
 }
 
-func mirrorRecipeImages(ctx context.Context, imageURLs []string, uploadService *upload.Service) ([]string, bool, error) {
-	next := make([]string, 0, len(imageURLs))
+func mirrorRecipeImages(ctx context.Context, imageMetas []RecipeImageMeta, uploadService *upload.Service) ([]RecipeImageMeta, bool, error) {
+	current := fillManagedImageHashes(imageMetas, uploadService)
+	next := make([]RecipeImageMeta, 0, len(current))
 	changed := false
 
-	for _, imageURL := range cleanRecipeImageURLs(imageURLs) {
-		if uploadService.IsManagedImageURL(imageURL) || !isRemoteImageURL(imageURL) {
-			next = append(next, imageURL)
+	for _, meta := range current {
+		if uploadService.IsManagedImageURL(meta.URL) || !isRemoteImageURL(meta.URL) {
+			next = append(next, meta)
 			continue
 		}
 
-		image, err := uploadService.SaveRemoteImage(ctx, imageURL)
+		image, err := uploadService.SaveRemoteImage(ctx, meta.URL)
 		if err != nil {
 			return nil, false, err
 		}
 
-		next = append(next, strings.TrimSpace(image.URL))
+		mirrored := meta
+		if strings.TrimSpace(mirrored.OriginURL) == "" {
+			mirrored.OriginURL = strings.TrimSpace(meta.URL)
+		}
+		mirrored.URL = strings.TrimSpace(image.URL)
+		mirrored.ContentHash = normalizeRecipeImageContentHash(image.ContentHash)
+		next = append(next, mirrored)
 		changed = true
 	}
 
-	return cleanRecipeImageURLs(next), changed, nil
+	next = dedupeRecipeImageMetas(next)
+	if !recipeImageMetasEqual(current, next) {
+		changed = true
+	}
+
+	return next, changed, nil
 }
 
 func isRemoteImageURL(value string) bool {

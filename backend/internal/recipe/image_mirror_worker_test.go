@@ -33,18 +33,33 @@ func TestNeedsImageMirroring(t *testing.T) {
 func TestMirrorRecipeImagesDownloadsRemoteAssets(t *testing.T) {
 	t.Parallel()
 
+	payload := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00})
+		_, _ = w.Write(payload)
 	}))
 	defer server.Close()
 
 	uploadDir := t.TempDir()
 	uploadService := upload.NewService(uploadDir, "", 10)
 
-	mirrored, changed, err := mirrorRecipeImages(context.Background(), []string{
-		server.URL + "/cover.png",
-		"/uploads/2026/03/existing.jpg",
+	existing, err := uploadService.SaveRemoteImage(context.Background(), server.URL+"/existing.png")
+	if err != nil {
+		t.Fatalf("SaveRemoteImage(existing) error = %v", err)
+	}
+
+	mirrored, changed, err := mirrorRecipeImages(context.Background(), []RecipeImageMeta{
+		{
+			URL:        server.URL + "/cover.png",
+			SourceType: RecipeImageSourceParsed,
+			OriginURL:  server.URL + "/cover.png",
+		},
+		{
+			URL:         existing.URL,
+			SourceType:  RecipeImageSourceUser,
+			OriginURL:   existing.URL,
+			ContentHash: existing.ContentHash,
+		},
 	}, uploadService)
 	if err != nil {
 		t.Fatalf("mirrorRecipeImages returned error: %v", err)
@@ -52,14 +67,17 @@ func TestMirrorRecipeImagesDownloadsRemoteAssets(t *testing.T) {
 	if !changed {
 		t.Fatal("mirrorRecipeImages should report changes")
 	}
-	if got, want := len(mirrored), 2; got != want {
+	if got, want := len(mirrored), 1; got != want {
 		t.Fatalf("len(mirrored) = %d, want %d", got, want)
 	}
-	if !strings.HasPrefix(mirrored[0], "/uploads/") {
-		t.Fatalf("mirrored[0] = %q, want local uploads url", mirrored[0])
+	if !strings.HasPrefix(mirrored[0].URL, "/uploads/") {
+		t.Fatalf("mirrored[0].URL = %q, want local uploads url", mirrored[0].URL)
 	}
-	if mirrored[1] != "/uploads/2026/03/existing.jpg" {
-		t.Fatalf("mirrored[1] = %q", mirrored[1])
+	if got, want := mirrored[0].SourceType, RecipeImageSourceUser; got != want {
+		t.Fatalf("mirrored[0].SourceType = %q, want %q", got, want)
+	}
+	if got, want := mirrored[0].ContentHash, existing.ContentHash; got != want {
+		t.Fatalf("mirrored[0].ContentHash = %q, want %q", got, want)
 	}
 
 	foundFile := false

@@ -13,6 +13,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
 
 var (
@@ -35,6 +36,7 @@ const (
 type Service struct {
 	repo              *Repository
 	kitchen           *kitchen.Service
+	upload            *upload.Service
 	flowchart         *FlowchartGenerator
 	flowchartEnabled  bool
 	autoParseEstimate queueEstimateConfig
@@ -44,6 +46,7 @@ type Service struct {
 type ServiceOptions struct {
 	Repo               *Repository
 	KitchenService     *kitchen.Service
+	UploadService      *upload.Service
 	Flowchart          *FlowchartGenerator
 	FlowchartEnabled   bool
 	AutoParseEnabled   bool
@@ -57,6 +60,7 @@ func NewService(opts ServiceOptions) *Service {
 	return &Service{
 		repo:             opts.Repo,
 		kitchen:          opts.KitchenService,
+		upload:           opts.UploadService,
 		flowchart:        opts.Flowchart,
 		flowchartEnabled: opts.FlowchartEnabled,
 		autoParseEstimate: queueEstimateConfig{
@@ -116,6 +120,9 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 	item.UpdatedBy = userID
 	item.CreatedAt = now
 	item.UpdatedAt = now
+	item.ImageMetas = buildSubmittedImageMetas(item.ImageURLs, Recipe{}, s.upload)
+	item.ImageURLs = recipeImageURLsFromMetas(item.ImageMetas)
+	item.ImageURL = firstImageURL(item.ImageURLs)
 	applyCreateParseState(&item, req, now)
 	item.ParsedContentEdited = resolveCreateParsedContentEditedState(item, req)
 
@@ -172,6 +179,9 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	next.CreatedAt = current.CreatedAt
 	next.UpdatedBy = userID
 	next.UpdatedAt = time.Now().Format(time.RFC3339)
+	next.ImageMetas = buildSubmittedImageMetas(next.ImageURLs, current, s.upload)
+	next.ImageURLs = recipeImageURLsFromMetas(next.ImageMetas)
+	next.ImageURL = firstImageURL(next.ImageURLs)
 	applyUpdateParseState(&next, current, req, next.UpdatedAt)
 	next.ParsedContentEdited = resolveUpdateParsedContentEditedState(current, next, req)
 

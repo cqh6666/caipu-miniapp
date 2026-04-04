@@ -3,6 +3,8 @@ package upload
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,6 +123,26 @@ func (s *Service) IsManagedImageURL(raw string) bool {
 	return strings.HasPrefix(strings.TrimSpace(parsed.Path), "/uploads/")
 }
 
+func (s *Service) ManagedImageContentHash(raw string) (string, error) {
+	absolutePath, err := s.managedImagePath(raw)
+	if err != nil {
+		return "", err
+	}
+
+	file, err := os.Open(absolutePath)
+	if err != nil {
+		return "", fmt.Errorf("open managed image: %w", err)
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", fmt.Errorf("hash managed image: %w", err)
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
 func (s *Service) saveImageReader(requestBaseURL string, file readSeekCloser, contentType string) (Image, error) {
 	extension, ok := allowedImageTypes[strings.TrimSpace(contentType)]
 	if !ok {
@@ -147,13 +169,15 @@ func (s *Service) saveImageReader(requestBaseURL string, file readSeekCloser, co
 	}
 	defer dst.Close()
 
-	if _, err := io.Copy(dst, file); err != nil {
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(dst, hasher), file); err != nil {
 		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("save upload file: %w", err))
 	}
 
 	relativePath := "/" + strings.TrimLeft(filepath.ToSlash(filepath.Join(relativeDir, fileName)), "/")
 	return Image{
-		URL: buildPublicURL(s.publicBaseURL, requestBaseURL, relativePath),
+		URL:         buildPublicURL(s.publicBaseURL, requestBaseURL, relativePath),
+		ContentHash: hex.EncodeToString(hasher.Sum(nil)),
 	}, nil
 }
 
@@ -164,6 +188,33 @@ func buildPublicURL(publicBaseURL string, requestBaseURL string, relativePath st
 	}
 
 	return base + relativePath
+}
+
+func (s *Service) managedImagePath(raw string) (string, error) {
+	parsedPath := strings.TrimSpace(raw)
+	if parsedPath == "" {
+		return "", fmt.Errorf("managed image url is required")
+	}
+
+	if parsed, err := url.Parse(parsedPath); err == nil && strings.TrimSpace(parsed.Path) != "" {
+		parsedPath = parsed.Path
+	}
+
+	parsedPath = strings.TrimSpace(parsedPath)
+	if !strings.HasPrefix(parsedPath, "/uploads/") {
+		return "", fmt.Errorf("image url is not managed by uploads")
+	}
+
+	relativePath := strings.TrimPrefix(parsedPath, "/uploads/")
+	relativePath = filepath.Clean(filepath.FromSlash(relativePath))
+	if relativePath == "." || relativePath == "" {
+		return "", fmt.Errorf("managed image path is invalid")
+	}
+	if strings.HasPrefix(relativePath, "..") {
+		return "", fmt.Errorf("managed image path escapes upload dir")
+	}
+
+	return filepath.Join(s.uploadDir, relativePath), nil
 }
 
 type multipartFile interface {

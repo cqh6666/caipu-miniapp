@@ -103,6 +103,7 @@ func New(cfg config.Config) (*App, error) {
 	recipeService := recipe.NewService(recipe.ServiceOptions{
 		Repo:               recipeRepo,
 		KitchenService:     kitchenService,
+		UploadService:      uploadService,
 		Flowchart:          recipeFlowchart,
 		FlowchartEnabled:   cfg.RecipeFlowchartEnabled,
 		AutoParseEnabled:   cfg.RecipeAutoParseEnabled,

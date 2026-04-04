@@ -108,6 +108,7 @@ CREATE TABLE recipes (
   link TEXT NOT NULL DEFAULT '',
   image_url TEXT NOT NULL DEFAULT '',
   image_urls_json TEXT NOT NULL DEFAULT '[]',
+  image_meta_json TEXT NOT NULL DEFAULT '[]',
   flowchart_image_url TEXT NOT NULL DEFAULT '',
   flowchart_updated_at TEXT,
   flowchart_source_hash TEXT NOT NULL DEFAULT '',
