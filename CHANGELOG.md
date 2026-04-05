@@ -1,5 +1,25 @@
 # Project Changelog
 
+## 2026-04-05
+
+### Changed
+
+- 微信好友聊天里的邀请分享卡片升级为“后端动态生成封面图”：
+  - 后端新增 `GET /api/invites/{token}/share-image`，会按邀请信息实时生成暖白纸感的邀请卡封面
+  - 分享图现在会动态带出 `厨房名 / 邀请人 / 当前成员数 / 剩余名额 / 有效期 / 邀请码`
+  - 前端邀请分享优先使用后端返回的 `shareImageUrl`，并在分享时附带时间戳参数降低微信旧图缓存命中概率
+  - 分享标题继续收口为更短的邀请式文案，减少聊天卡片里折成两行的概率
+  - 仍保留本地静态封面作为兜底，避免前后端未同时部署时分享卡片直接失效
+
+### Notes
+
+- 修改时间：2026-04-05 23:29 CST
+- 变更背景：当前“发送给微信好友”未设置专用封面图，微信会直接截取当前厨房页作为聊天预览，信息噪音偏高，也容易把标题挤成两行
+- 核心改动：将“邀请成员 -> 发送给微信好友”从固定静态封面升级为后端实时生成的邀请卡图片，并为邀请接口补充 `shareImageUrl`；分享图视觉收口为暖白纸感、深棕标题、绿色信任状态的简洁高级风格，避免继续把厨房页截图直接暴露在聊天卡片里
+- 影响范围：`backend/internal/invite/*`、`backend/internal/kitchen/*`、`backend/internal/app/*`、`backend/internal/config/config.go`、`backend/README.md`、`pages/index/index.vue`、`utils/kitchen-api.js`、`README.md`、`static/invite-share-cover.png`
+- 兼容性/风险：新增动态分享图依赖可用中文字体；后端默认会尝试读取系统字体，若线上环境没有可用字体，需要补配 `INVITE_SHARE_FONT_PATH` / `INVITE_SHARE_FONT_BOLD_PATH`；微信聊天卡片仍存在客户端缓存，若旧图未刷新，通常需要重新发送一次邀请消息验证
+- 验证情况：已执行 `cd backend && go test ./...`；已完成分享图静态设计自检、前端分享链路代码自检与 `git diff --check`；尚未在微信真机聊天窗口里重新发送邀请做实测
+
 ## 2026-04-04
 
 ### Changed

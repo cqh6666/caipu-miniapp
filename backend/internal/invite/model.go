@@ -27,6 +27,7 @@ type Invite struct {
 	ExpiresAt     string  `json:"expiresAt"`
 	CreatedAt     string  `json:"createdAt"`
 	SharePath     string  `json:"sharePath"`
+	ShareImageURL string  `json:"shareImageUrl"`
 	Inviter       Inviter `json:"inviter"`
 }
 

@@ -84,6 +84,27 @@ func (h *Handler) PreviewByCode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ShareImage(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(chi.URLParam(r, "token"))
+	if token == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite token is required", http.StatusBadRequest))
+		return
+	}
+
+	imageBytes, err := h.service.ShareImage(r.Context(), token)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(imageBytes)
+}
+
 func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 	userID, ok := common.CurrentUserID(r.Context())
 	if !ok {

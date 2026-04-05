@@ -8,6 +8,15 @@ function normalizeKitchenMember(member = {}) {
 	}
 }
 
+function normalizeInvite(invite = {}) {
+	if (!invite || typeof invite !== 'object') return null
+
+	return {
+		...invite,
+		shareImageUrl: resolveAssetURL(invite?.shareImageUrl || '')
+	}
+}
+
 export function normalizeInviteCode(code = '') {
 	return String(code).trim().toUpperCase().replace(/[\s-]+/g, '')
 }
@@ -30,7 +39,7 @@ export function createKitchenInvite(kitchenId, payload = {}) {
 		url: `/caipu-api/kitchens/${kitchenId}/invites`,
 		method: 'POST',
 		data: payload
-	}).then((data) => data?.invite || null)
+	}).then((data) => normalizeInvite(data?.invite || null))
 }
 
 export function updateKitchen(kitchenId, payload = {}) {
@@ -46,7 +55,7 @@ export function previewInvite(token) {
 		url: `/caipu-api/invites/${token}`,
 		method: 'GET',
 		auth: false
-	}).then((data) => data?.invite || null)
+	}).then((data) => normalizeInvite(data?.invite || null))
 }
 
 export function previewInviteByCode(code) {
@@ -55,7 +64,7 @@ export function previewInviteByCode(code) {
 		url: `/caipu-api/invite-codes/${encodeURIComponent(normalized)}`,
 		method: 'GET',
 		auth: false
-	}).then((data) => data?.invite || null)
+	}).then((data) => normalizeInvite(data?.invite || null))
 }
 
 export function acceptInvite(token) {
@@ -63,7 +72,10 @@ export function acceptInvite(token) {
 		url: `/caipu-api/invites/${token}/accept`,
 		method: 'POST',
 		data: {}
-	})
+	}).then((data) => ({
+		...data,
+		invite: normalizeInvite(data?.invite || null)
+	}))
 }
 
 export function acceptInviteByCode(code) {
@@ -72,5 +84,8 @@ export function acceptInviteByCode(code) {
 		url: `/caipu-api/invite-codes/${encodeURIComponent(normalized)}/accept`,
 		method: 'POST',
 		data: {}
-	})
+	}).then((data) => ({
+		...data,
+		invite: normalizeInvite(data?.invite || null)
+	}))
 }

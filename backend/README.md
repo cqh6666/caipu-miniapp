@@ -63,6 +63,8 @@ go run ./cmd/server
 - `LINKPARSE_SIDECAR_BASE_URL`
 - `LINKPARSE_SIDECAR_TIMEOUT_SECONDS`
 - `LINKPARSE_SIDECAR_API_KEY`
+- `INVITE_SHARE_FONT_PATH`
+- `INVITE_SHARE_FONT_BOLD_PATH`
 
 应用级 B 站配置页访问控制：
 
@@ -112,6 +114,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/kitchens`
 - `GET /api/kitchens/{kitchenID}/members`
 - `GET /api/invites/{token}`
+- `GET /api/invites/{token}/share-image`
 - `POST /api/kitchens/{kitchenID}/invites`
 - `POST /api/invites/{token}/accept`
 - `POST /api/link-parsers/bilibili`
@@ -180,7 +183,11 @@ go run ./cmd/server -migrate-only
 - 厨房成员可以创建邀请链接
 - 默认 `72` 小时过期，默认最多使用 `10` 次
 - `GET /api/invites/{token}` 可在登录前预览邀请
+- `GET /api/invites/{token}/share-image` 会按邀请信息动态生成分享卡封面，适合给小程序 `onShareAppMessage.imageUrl` 直接使用
 - 同一用户重复接受同一厨房邀请时会幂等返回 `alreadyMember=true`
+- 动态分享图默认会尝试读取系统中文字体；若线上环境没有可用中文字体，可显式配置：
+  - `INVITE_SHARE_FONT_PATH`
+  - `INVITE_SHARE_FONT_BOLD_PATH`
 
 当前上传策略：
 

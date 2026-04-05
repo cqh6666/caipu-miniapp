@@ -468,6 +468,38 @@ import {
 import { buildRecipeCard, buildRecipeCoverVersion, buildRecipeSearchText, extractRecipeImages } from './recipe-card'
 import { readLastDraftLinkPrefill, readRecentSearches, writeLastDraftLinkPrefill, writeRecentSearches } from './storage'
 
+const inviteShareFallbackImageUrl = '/static/invite-share-cover.png'
+
+function shortenInviteShareText(value = '', maxLength = 10) {
+	const text = String(value || '').trim()
+	if (!text) return ''
+	if (text.length <= maxLength) return text
+	return `${text.slice(0, maxLength)}...`
+}
+
+function buildInviteShareTitle(invite = {}, fallbackKitchenName = '') {
+	const inviterName = shortenInviteShareText(invite?.inviter?.nickname || '', 6)
+	const kitchenName = shortenInviteShareText(invite?.kitchenName || fallbackKitchenName, 10)
+
+	if (inviterName && kitchenName) {
+		return `${inviterName}邀你加入「${kitchenName}」`
+	}
+	if (kitchenName) {
+		return `邀请你加入「${kitchenName}」`
+	}
+	return '邀请你加入共享厨房'
+}
+
+function buildInviteShareImageURL(invite = {}) {
+	const raw = String(invite?.shareImageUrl || '').trim()
+	if (!raw) {
+		return inviteShareFallbackImageUrl
+	}
+	const target = raw
+	const separator = target.includes('?') ? '&' : '?'
+	return `${target}${separator}ts=${Date.now()}`
+}
+
 export default {
 	components: {
 		ActionFeedback,
@@ -621,8 +653,9 @@ export default {
 	onShareAppMessage(res) {
 		if (res?.from === 'button' && this.activeInvite?.sharePath) {
 			return {
-				title: `${this.currentKitchenName || '这间厨房'} 邀请你一起维护菜单`,
-				path: this.activeInvite.sharePath
+				title: buildInviteShareTitle(this.activeInvite, this.currentKitchenName),
+				path: this.activeInvite.sharePath,
+				imageUrl: buildInviteShareImageURL(this.activeInvite)
 			}
 		}
 

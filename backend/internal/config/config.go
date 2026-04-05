@@ -52,6 +52,8 @@ type Config struct {
 	UploadMaxImageMB           int64
 	InviteDefaultExpireHours   int
 	InviteDefaultMaxUses       int
+	InviteShareFontPath        string
+	InviteShareFontBoldPath    string
 	RecipeAutoParseEnabled     bool
 	RecipeAutoParseInterval    int
 	RecipeAutoParseBatchSize   int
@@ -109,6 +111,8 @@ func Load() (Config, error) {
 		UploadMaxImageMB:           int64(getInt("UPLOAD_MAX_IMAGE_MB", 10)),
 		InviteDefaultExpireHours:   getInt("INVITE_DEFAULT_EXPIRE_HOURS", 72),
 		InviteDefaultMaxUses:       getInt("INVITE_DEFAULT_MAX_USES", 10),
+		InviteShareFontPath:        strings.TrimSpace(os.Getenv("INVITE_SHARE_FONT_PATH")),
+		InviteShareFontBoldPath:    strings.TrimSpace(os.Getenv("INVITE_SHARE_FONT_BOLD_PATH")),
 		RecipeAutoParseEnabled:     getBool("RECIPE_AUTO_PARSE_ENABLED", true),
 		RecipeAutoParseInterval:    getInt("RECIPE_AUTO_PARSE_INTERVAL_SECONDS", 30),
 		RecipeAutoParseBatchSize:   getInt("RECIPE_AUTO_PARSE_BATCH_SIZE", 3),

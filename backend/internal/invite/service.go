@@ -29,9 +29,10 @@ type Service struct {
 	kitchen            *kitchen.Service
 	defaultExpireHours int
 	defaultMaxUses     int
+	shareImageRenderer *ShareImageRenderer
 }
 
-func NewService(repo *Repository, kitchenService *kitchen.Service, defaultExpireHours, defaultMaxUses int) *Service {
+func NewService(repo *Repository, kitchenService *kitchen.Service, defaultExpireHours, defaultMaxUses int, shareImageRenderer *ShareImageRenderer) *Service {
 	if defaultExpireHours <= 0 {
 		defaultExpireHours = 72
 	}
@@ -44,6 +45,7 @@ func NewService(repo *Repository, kitchenService *kitchen.Service, defaultExpire
 		kitchen:            kitchenService,
 		defaultExpireHours: defaultExpireHours,
 		defaultMaxUses:     defaultMaxUses,
+		shareImageRenderer: shareImageRenderer,
 	}
 }
 
@@ -82,7 +84,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 		return Invite{}, err
 	}
 
-	return toInvite(record), nil
+	return s.decorateInvite(toInvite(record)), nil
 }
 
 func (s *Service) Preview(ctx context.Context, token string) (Invite, error) {
@@ -91,7 +93,7 @@ func (s *Service) Preview(ctx context.Context, token string) (Invite, error) {
 		return Invite{}, err
 	}
 
-	return toInvite(record), nil
+	return s.decorateInvite(toInvite(record)), nil
 }
 
 func (s *Service) PreviewByCode(ctx context.Context, code string) (Invite, error) {
@@ -100,7 +102,7 @@ func (s *Service) PreviewByCode(ctx context.Context, code string) (Invite, error
 		return Invite{}, err
 	}
 
-	return toInvite(record), nil
+	return s.decorateInvite(toInvite(record)), nil
 }
 
 func (s *Service) Accept(ctx context.Context, userID int64, token string) (AcceptResult, error) {
@@ -119,6 +121,51 @@ func (s *Service) AcceptByCode(ctx context.Context, userID int64, code string) (
 	}
 
 	return s.acceptRecord(ctx, userID, record)
+}
+
+func (s *Service) ShareImage(ctx context.Context, token string) ([]byte, error) {
+	record, err := s.findByToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if s.shareImageRenderer == nil {
+		return nil, common.ErrInternal.WithErr(fmt.Errorf("share image renderer is not configured"))
+	}
+
+	memberCount, err := s.kitchen.CountMembers(ctx, record.KitchenID)
+	if err != nil {
+		return nil, fmt.Errorf("count kitchen members: %w", err)
+	}
+
+	status, err := effectiveStatus(record)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.shareImageRenderer.Render(ShareImageData{
+		KitchenName:   record.KitchenName,
+		InviterName:   profile.DisplayName(record.InviterNickname, record.InviterUserID, ""),
+		InviteCode:    record.Code,
+		Status:        status,
+		MemberCount:   memberCount,
+		RemainingUses: max(record.MaxUses-record.UsedCount, 0),
+		ExpiresAt:     record.ExpiresAt,
+	})
+}
+
+func (s *Service) decorateInvite(item Invite) Invite {
+	if s.shareImageRenderer == nil {
+		return item
+	}
+	if _, err := s.shareImageRenderer.face(false, 24); err != nil {
+		return item
+	}
+	if _, err := s.shareImageRenderer.face(true, 24); err != nil {
+		return item
+	}
+
+	item.ShareImageURL = "/api/invites/" + url.QueryEscape(item.Token) + "/share-image"
+	return item
 }
 
 func (s *Service) acceptRecord(ctx context.Context, userID int64, record inviteRecord) (AcceptResult, error) {
@@ -154,7 +201,7 @@ func (s *Service) acceptRecord(ctx context.Context, userID int64, record inviteR
 	}
 
 	return AcceptResult{
-		Invite: toInvite(record),
+		Invite: s.decorateInvite(toInvite(record)),
 		Kitchen: kitchen.Summary{
 			ID:   result.KitchenID,
 			Name: result.KitchenName,

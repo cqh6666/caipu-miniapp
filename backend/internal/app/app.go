@@ -58,7 +58,14 @@ func New(cfg config.Config) (*App, error) {
 	var appSettingsService *appsettings.Service
 
 	inviteRepo := invite.NewRepository(dbConn)
-	inviteService := invite.NewService(inviteRepo, kitchenService, cfg.InviteDefaultExpireHours, cfg.InviteDefaultMaxUses)
+	inviteShareImageRenderer := invite.NewShareImageRenderer(cfg.InviteShareFontPath, cfg.InviteShareFontBoldPath)
+	inviteService := invite.NewService(
+		inviteRepo,
+		kitchenService,
+		cfg.InviteDefaultExpireHours,
+		cfg.InviteDefaultMaxUses,
+		inviteShareImageRenderer,
+	)
 	inviteHandler := invite.NewHandler(inviteService)
 
 	recipeRepo := recipe.NewRepository(dbConn)

@@ -101,6 +101,19 @@ ORDER BY
 	return items, nil
 }
 
+func (r *Repository) CountMembers(ctx context.Context, kitchenID int64) (int, error) {
+	var count int
+	if err := r.db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(1) FROM kitchen_members WHERE kitchen_id = ?`,
+		kitchenID,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count kitchen members: %w", err)
+	}
+
+	return count, nil
+}
+
 func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, name string, nameSource string) (Summary, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

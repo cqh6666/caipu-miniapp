@@ -39,6 +39,10 @@ func (s *Service) ListMembers(ctx context.Context, userID, kitchenID int64) ([]M
 	return items, nil
 }
 
+func (s *Service) CountMembers(ctx context.Context, kitchenID int64) (int, error) {
+	return s.repo.CountMembers(ctx, kitchenID)
+}
+
 func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64, nickname, openID string) (Summary, error) {
 	items, err := s.repo.ListByUserID(ctx, userID)
 	if err != nil {
