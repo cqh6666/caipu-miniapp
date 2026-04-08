@@ -4,6 +4,22 @@
 
 ### Added
 
+- 新增后台管理平台、AI 可观测性与动态配置中心设计文档：
+  - 根目录新增 `docs/admin-console-ai-observability-design.md`
+  - 文档明确一期以“应用内埋点 + SQLite + 独立轻量后台”为主路线，不直接以 `Grafana` 作为主后台系统
+  - 文档补充了 `ai_job_runs`、`ai_call_logs`、`app_runtime_settings`、`app_setting_audits` 的建议表结构、后台 API、页面信息架构、动态配置边界与分阶段实施方案
+
+### Notes
+
+- 修改时间：2026-04-08 22:09 CST
+- 变更背景：当前后端已经具备自动解析、流程图生成、标题精修与隐藏设置页等能力，但仍缺少统一的 AI 调用成功率统计、失败追踪、在线配置与 PC 后台管理方案；为了后续开发时减少反复讨论，需要先把管理后台、AI 可观测性和动态配置中心的整体设计沉淀成项目内正式文档
+- 核心改动：新增一份独立设计文档，结合仓库现状给出后台系统推荐落位、模块拆分、数据模型、API 清单、配置热更新边界、前后端技术选型和三阶段排期；方案明确建议在现有 `Go + chi + SQLite` 基础上扩展 `appsettings` 与新增 `audit/admin/admin-web` 模块，一期先实现应用内自管埋点和轻量后台，二期再评估接入 `OpenTelemetry + Grafana`
+- 影响范围：`docs/admin-console-ai-observability-design.md`、`CHANGELOG.md`
+- 兼容性/风险：本次仅新增设计文档，不涉及运行时代码和接口行为变更；文档里的动态配置、后台认证与埋点口径仍需在正式开发阶段结合实现细节再做一次收口，尤其要避免把“任务成功率”和“API 成功率”混为一谈，以及避免在 SQLite 中无节制存储大体积请求响应内容
+- 验证情况：已结合当前仓库中的 `backend/internal/config`、`backend/internal/appsettings`、`backend/internal/app`、`pages/app-settings` 等现有实现做方案对齐；已完成文档内容与项目现状的一致性静态自检；本次未涉及代码执行和接口联调
+
+### Added
+
 - 新增微信小程序命令行自动预览能力：
   - 根目录新增 `scripts/wx-auto-preview.sh`，支持在 macOS 上自动查找 HBuilderX 与微信开发者工具 CLI，并串起“编译 -> 打开项目 -> auto-preview”
   - 新增独立说明文档 `docs/wechat-auto-preview.md`，整理前置条件、参数、环境变量和常见排查方式
