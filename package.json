@@ -4,7 +4,9 @@
   "description": "一个基于 `uni-app` 的微信小程序项目，当前仓库处于初始化阶段，默认页面仍是模板页。",
   "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "wx:auto-preview": "bash scripts/wx-auto-preview.sh",
+    "wx:auto-preview:skip-compile": "bash scripts/wx-auto-preview.sh --skip-compile"
   },
   "repository": {
     "type": "git",

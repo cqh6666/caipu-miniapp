@@ -61,6 +61,15 @@
 2. 打开目录：`unpackage/dist/dev/mp-weixin`
 3. 在微信开发者工具中导入并运行
 
+### 命令行自动预览
+
+- 项目已提供微信小程序自动预览脚本，可在 macOS 上串起
+  `HBuilderX 编译 -> 微信开发者工具自动预览`
+- 常用命令：
+  - `npm run wx:auto-preview`
+  - `npm run wx:auto-preview:skip-compile`
+- 独立说明文档见 `docs/wechat-auto-preview.md`
+
 ## 项目结构
 
 ```text
