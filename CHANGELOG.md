@@ -2,6 +2,22 @@
 
 ## 2026-04-08
 
+### Changed
+
+- 后台管理平台前端补齐“兼容现网 nginx 前缀且不影响 Hapi 根站点”的发布口径：
+  - `admin-web` 的后台接口路径改为相对 `VITE_API_BASE` 组装，不再把 `/api` 前缀写死在页面代码里
+  - 新增 `admin-web/.env.development` 与 `admin-web/.env.production`，默认分别对接本地 `/api` 与现网 `/caipu-api`
+  - 这样线上只需新增 `/admin/` 静态托管即可，不必把现有 `location /` 从 Hapi 服务切走，也不必额外改造现网 `/caipu-api` 约定
+
+### Notes
+
+- 修改时间：2026-04-08 23:31 CST
+- 变更背景：现网域名根路径已经由 Hapi 服务承接，微信小程序接口又沿用了 `/caipu-api`、`/caipu-uploads` 这套自定义 nginx 前缀；如果后台管理平台继续写死 `/api/admin/*`，上线时就需要额外改 nginx 的 `/api` 路由，容易误伤现有 Hapi 站点
+- 核心改动：将后台前端请求前缀收口为 `VITE_API_BASE + /admin/...` 的组合，并把开发/生产环境默认值分别固化为 `/api` 与 `/caipu-api`；这样本地开发仍走 Vite 代理，线上生产则直接复用现有后端前缀
+- 影响范围：`admin-web/src/api/admin.ts`、`admin-web/.env.development`、`admin-web/.env.production`、`README.md`、`CHANGELOG.md`
+- 兼容性/风险：本次方案默认现网继续保留 `/caipu-api -> backend /api` 的 nginx 转发；如果后续要把现网统一收口回标准 `/api`，只需同步调整生产环境 `VITE_API_BASE` 或 nginx 映射，不影响 Hapi 根站点
+- 验证情况：已完成代码级配置自检；后续将通过本机构建、nginx `/admin/` 静态托管和后台鉴权接口连通性验证确认最终上线链路
+
 ### Added
 
 - 新增后台管理平台、AI 可观测性与动态配置中心 MVP 实现：

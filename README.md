@@ -83,6 +83,9 @@
 - 生产构建：
   - `npm run admin:build`
 - 后台默认通过同域 `https://你的域名/admin/` 访问
+- 后台 API 前缀通过 `VITE_API_BASE` 适配：
+  - 本地开发默认走 `/api`
+  - 当前生产构建默认走 `/caipu-api`，兼容现网 nginx 前缀，不影响根路径上的其他站点服务
 - 后台依赖独立环境变量账号：
   - `ADMIN_USERNAME`
   - `ADMIN_PASSWORD_HASH`
@@ -131,6 +134,7 @@
 - `utils/auth.js` 负责登录态恢复、空间上下文和 token 持久化
 - `utils/recipe-store.js` 负责菜品数据归一化、本地缓存和远端同步
 - `admin-web/` 是独立的 Vue 3 + Vite 后台工程，默认构建到 `/admin/`
+- `admin-web/.env.development` 与 `admin-web/.env.production` 分别约定后台 API 前缀
 - `unpackage/` 是构建产物目录，默认不纳入 Git 管理
 
 正式微信登录切换说明：
