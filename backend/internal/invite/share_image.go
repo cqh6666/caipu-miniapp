@@ -103,8 +103,9 @@ func (r *ShareImageRenderer) Render(data ShareImageData) ([]byte, error) {
 
 	titleLines := wrapText(mustFace(r.face(true, 70)), safeFallback(data.KitchenName, "这间共享厨房"), 2, 760)
 	titleY := cardRect.Min.Y + 238
+	titleLineHeight := 82
 	for index, line := range titleLines {
-		drawText(canvas, cardRect.Min.X+56, titleY+index*82, line, mustFace(r.face(true, 70)), shareImageTextPrimary)
+		drawText(canvas, cardRect.Min.X+56, titleY+index*titleLineHeight, line, mustFace(r.face(true, 70)), shareImageTextPrimary)
 	}
 
 	inviteHint := buildInviteHeroLine(data.InviterName)
@@ -117,16 +118,23 @@ func (r *ShareImageRenderer) Render(data ShareImageData) ([]byte, error) {
 		shareImageTextSoft,
 	)
 
+	summaryY := cardRect.Min.Y + 358 + max(len(titleLines)-1, 0)*72
 	drawText(
 		canvas,
 		cardRect.Min.X+56,
-		cardRect.Min.Y+448,
-		"一起维护菜单、想吃和吃过",
-		mustFace(r.face(false, 30)),
+		summaryY,
+		"一起维护菜单，想吃和吃过都会同步。",
+		mustFace(r.face(false, 28)),
 		shareImageTextMuted,
 	)
 
-	panelRect := image.Rect(cardRect.Min.X+42, cardRect.Min.Y+548, cardRect.Max.X-42, cardRect.Min.Y+652)
+	chipY := summaryY + 34
+	drawMiniChip(canvas, image.Rect(cardRect.Min.X+56, chipY, cardRect.Min.X+192, chipY+42), "共享菜谱", shareImageChipWarm, shareImageChipWarmText, mustFace(r.face(true, 20)))
+	drawMiniChip(canvas, image.Rect(cardRect.Min.X+206, chipY, cardRect.Min.X+342, chipY+42), "同步菜单", shareImageChipWarm, shareImageChipWarmText, mustFace(r.face(true, 20)))
+	drawMiniChip(canvas, image.Rect(cardRect.Min.X+356, chipY, cardRect.Min.X+520, chipY+42), "一起做决定", shareImageChipGreen, shareImageChipGreenText, mustFace(r.face(true, 20)))
+
+	panelTop := chipY + 60
+	panelRect := image.Rect(cardRect.Min.X+42, panelTop, cardRect.Max.X-42, panelTop+104)
 	fillRoundedRect(canvas, panelRect, 28, shareImagePanelBackground)
 	strokeRoundedRect(canvas, panelRect, 28, 2, shareImagePanelBorder, shareImagePanelBackground)
 
