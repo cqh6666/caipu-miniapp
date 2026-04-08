@@ -5,7 +5,7 @@
 				<view class="kitchen-card__header">
 					<view class="kitchen-card__badge">
 						<up-icon name="grid-fill" size="12" color="#5b4a3b"></up-icon>
-						<text class="kitchen-card__badge-text">当前厨房</text>
+						<text class="kitchen-card__badge-text">当前空间</text>
 					</view>
 					<view class="kitchen-card__switch">
 						<text class="kitchen-card__switch-text">{{ canSwitchKitchen ? '切换' : kitchenConnectionLabel }}</text>
@@ -35,7 +35,7 @@
 					</view>
 					<view v-if="canSwitchKitchen" class="kitchen-card__tag">
 						<text class="kitchen-card__tag-value">{{ kitchenOptionsCount }}</text>
-						<text class="kitchen-card__tag-label">厨房</text>
+						<text class="kitchen-card__tag-label">空间</text>
 					</view>
 				</view>
 			</view>
@@ -56,7 +56,7 @@
 		<view class="member-panel">
 			<view class="member-panel__header">
 				<view class="member-panel__heading">
-					<text class="member-panel__title">厨房成员</text>
+					<text class="member-panel__title">空间成员</text>
 					<text class="member-panel__desc">与你共同维护菜单的人</text>
 				</view>
 				<view class="member-panel__aside">
@@ -101,7 +101,7 @@
 
 			<view v-else class="soft-empty soft-empty--inline member-panel__empty">
 				<text class="soft-empty__text">
-					{{ isLoadingKitchenMembers ? '正在获取成员信息...' : '这间厨房暂时只有你，邀请好友后会显示在这里。' }}
+					{{ isLoadingKitchenMembers ? '正在获取成员信息...' : '这个空间暂时只有你，邀请好友后会显示在这里。' }}
 				</text>
 			</view>
 

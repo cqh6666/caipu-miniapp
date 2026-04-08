@@ -3,7 +3,7 @@
 		<view class="about-card">
 			<view class="about-card__header">
 				<text class="about-card__title" @longpress="openHiddenDebugActions">关于我们</text>
-				<text class="about-card__desc">一份给家庭和小团队共用的数字厨房。</text>
+				<text class="about-card__desc">一份给家庭和小团队共用的数字空间。</text>
 			</view>
 
 			<text class="about-card__body">

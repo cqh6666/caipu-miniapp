@@ -259,7 +259,7 @@
 						:color="activeSection === 'kitchen' ? '#5b4a3b' : '#9a8d80'"
 					></up-icon>
 				</view>
-				<text class="nav-item__label">厨房</text>
+				<text class="nav-item__label">空间</text>
 			</view>
 		</view>
 
@@ -470,6 +470,10 @@ import { readLastDraftLinkPrefill, readRecentSearches, writeLastDraftLinkPrefill
 
 const inviteShareFallbackImageUrl = '/static/invite-share-cover.png'
 
+function replaceKitchenLabel(value = '') {
+	return String(value || '').replace(/厨房/g, '空间')
+}
+
 function shortenInviteShareText(value = '', maxLength = 10) {
 	const text = String(value || '').trim()
 	if (!text) return ''
@@ -478,12 +482,12 @@ function shortenInviteShareText(value = '', maxLength = 10) {
 }
 
 function buildInviteShareTitle(invite = {}, fallbackKitchenName = '') {
-	const kitchenName = shortenInviteShareText(invite?.kitchenName || fallbackKitchenName, 8)
+	const kitchenName = shortenInviteShareText(replaceKitchenLabel(invite?.kitchenName || fallbackKitchenName), 8)
 
 	if (kitchenName) {
 		return `邀请你加入「${kitchenName}」`
 	}
-	return '邀请你加入共享厨房'
+	return '邀请你加入共享空间'
 }
 
 function buildInviteShareImageURL(invite = {}) {
@@ -656,7 +660,7 @@ export default {
 		}
 
 		return {
-			title: '来看看我们的数字厨房',
+			title: '来看看我们的数字空间',
 			path: '/pages/index/index'
 		}
 	},
@@ -689,7 +693,10 @@ export default {
 			return this.isKitchenConnected ? '已连接' : '未连接'
 		},
 		currentKitchenDisplayName() {
-			return this.currentKitchenName || (this.isSyncing ? '正在获取厨房信息' : this.syncErrorMessage || '暂时无法连接厨房')
+			if (this.currentKitchenName) {
+				return replaceKitchenLabel(this.currentKitchenName)
+			}
+			return this.isSyncing ? '正在获取空间信息' : replaceKitchenLabel(this.syncErrorMessage || '暂时无法连接空间')
 		},
 		currentKitchenRoleLabel() {
 			if (this.currentKitchenRole === 'owner') return '创建者'
@@ -699,11 +706,11 @@ export default {
 		},
 		currentKitchenMetaText() {
 			if (!this.currentKitchenName) {
-				return this.isSyncing ? '正在同步厨房信息' : this.syncErrorMessage || '创建或加入一个厨房后，会显示在这里。'
+				return this.isSyncing ? '正在同步空间信息' : replaceKitchenLabel(this.syncErrorMessage || '创建或加入一个空间后，会显示在这里。')
 			}
 
 			if (this.canSwitchKitchen) {
-				return '点击这张卡片，可以切换到其他厨房。'
+				return '点击这张卡片，可以切换到其他空间。'
 			}
 			return '邀请成员后，大家会看到同一份菜单。'
 		},
@@ -826,7 +833,7 @@ export default {
 			return '去确认'
 		},
 		mealOrderCheckoutHelperText() {
-			return '提交后，这天菜单会立即同步给厨房成员。之后想改，我们会先带出草稿，不会直接覆盖原安排。'
+			return '提交后，这天菜单会立即同步给空间成员。之后想改，我们会先带出草稿，不会直接覆盖原安排。'
 		},
 		isLibraryMealOrderMode() {
 			return this.activeSection === 'library' && this.isMealOrderMode && !!normalizeMealOrderDate(this.mealOrderDate)
@@ -1037,7 +1044,7 @@ export default {
 			if (!this.currentKitchenName) {
 				return '发给朋友后，对方输入邀请码即可加入。'
 			}
-			return `邀请朋友加入「${this.currentKitchenName}」`
+			return `邀请朋友加入「${replaceKitchenLabel(this.currentKitchenName)}」`
 		},
 		showInviteShareAction() {
 			return !!appConfig.inviteShareEnabled
@@ -1075,8 +1082,8 @@ export default {
 		},
 		profileSheetSubtitle() {
 			return this.profileSheetMode === 'edit'
-				? '修改头像和昵称后，厨房成员会更容易认出你。'
-				: '设置头像和昵称后，厨房成员会更容易认出你。'
+				? '修改头像和昵称后，空间成员会更容易认出你。'
+				: '设置头像和昵称后，空间成员会更容易认出你。'
 		},
 		profileSheetSecondaryActionText() {
 			return this.profileSheetMode === 'edit' ? '取消' : '暂不设置'
@@ -1698,7 +1705,7 @@ export default {
 		openMealOrderDateSheet() {
 			if (!getCurrentKitchenId()) {
 				uni.showToast({
-					title: '请先完成厨房同步',
+					title: '请先完成空间同步',
 					icon: 'none'
 				})
 				return
@@ -2085,9 +2092,9 @@ export default {
 		},
 		memberMemberDescription(member = {}) {
 			if (member.isCurrentUser) {
-				return '你正在维护这间厨房。'
+				return '你正在维护这个空间。'
 			}
-			return '已加入这间共享厨房。'
+			return '已加入这个共享空间。'
 		},
 		handleMemberCardTap(member = {}) {
 			if (!member.isCurrentUser || !this.currentUser?.id) return
@@ -2566,7 +2573,7 @@ export default {
 
 			if (!getCurrentKitchenId()) {
 				uni.showToast({
-					title: '还没拿到厨房信息',
+					title: '还没拿到空间信息',
 					icon: 'none'
 				})
 				return
@@ -2596,7 +2603,7 @@ export default {
 		openKitchenNameSheet() {
 			if (!getCurrentKitchenId()) {
 				uni.showToast({
-					title: '还没拿到厨房信息',
+					title: '还没拿到空间信息',
 					icon: 'none'
 				})
 				return
@@ -2608,10 +2615,10 @@ export default {
 			if (this.isSubmittingKitchenName) return
 
 			uni.showModal({
-				title: '修改厨房名',
+				title: '修改空间名',
 				editable: true,
 				content: this.currentKitchenName || '',
-				placeholderText: '输入厨房名称',
+				placeholderText: '输入空间名称',
 				confirmText: '保存',
 				cancelText: '取消',
 				success: async (result) => {
@@ -2632,7 +2639,7 @@ export default {
 					name: nextName
 				})
 				if (!kitchen) {
-					throw new Error('修改厨房名失败')
+					throw new Error('修改空间名失败')
 				}
 
 				const currentInvite = this.activeInvite
@@ -2645,12 +2652,12 @@ export default {
 					}
 				}
 				uni.showToast({
-					title: '厨房名已更新',
+					title: '空间名已更新',
 					icon: 'none'
 				})
 			} catch (error) {
 				uni.showToast({
-					title: error?.message || '修改厨房名失败',
+					title: error?.message || '修改空间名失败',
 					icon: 'none'
 				})
 			} finally {
@@ -2739,7 +2746,7 @@ export default {
 			if (!this.kitchenOptions.length) return
 			if (this.kitchenOptions.length <= 1) {
 				uni.showToast({
-					title: '当前只有一个厨房',
+					title: '当前只有一个空间',
 					icon: 'none'
 				})
 				return
