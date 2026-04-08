@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	fallbackKitchenName = "我的厨房"
+	fallbackKitchenName = "我的空间"
 	nameSourceAuto      = "auto"
 	nameSourceCustom    = "custom"
 )
@@ -18,7 +18,7 @@ func buildAutoKitchenName(ownerNickname string, ownerUserID int64, ownerOpenID s
 		return fallbackKitchenName
 	}
 
-	return displayName + "的厨房"
+	return displayName + "的空间"
 }
 
 func normalizeNameSource(value string) string {

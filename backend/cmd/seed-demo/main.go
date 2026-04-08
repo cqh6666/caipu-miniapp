@@ -72,22 +72,22 @@ func seedDemoData(ctx context.Context, dbConn *sql.DB) error {
 		return err
 	}
 
-	aliceKitchenID, err := ensureKitchen(ctx, tx, aliceID, "我们的厨房")
+	aliceKitchenID, err := ensureKitchen(ctx, tx, aliceID, "我们的空间")
 	if err != nil {
 		return err
 	}
 
-	weekendKitchenID, err := ensureKitchen(ctx, tx, aliceID, "周末厨房")
+	weekendKitchenID, err := ensureKitchen(ctx, tx, aliceID, "周末空间")
 	if err != nil {
 		return err
 	}
 
-	recipeUserKitchenID, err := ensureKitchen(ctx, tx, recipeUserID, "我们的厨房")
+	recipeUserKitchenID, err := ensureKitchen(ctx, tx, recipeUserID, "我们的空间")
 	if err != nil {
 		return err
 	}
 
-	sharedKitchenID, err := ensureKitchen(ctx, tx, aliceID, "联调试吃厨房")
+	sharedKitchenID, err := ensureKitchen(ctx, tx, aliceID, "联调试吃空间")
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func seedDemoData(ctx context.Context, dbConn *sql.DB) error {
 			Link:        "https://example.com/recipes/tomato-egg-beef",
 			MealType:    "main",
 			Status:      "wishlist",
-			Note:        "共享厨房主菜样例之一。",
+			Note:        "共享空间主菜样例之一。",
 			Ingredients: []string{"牛里脊 250g", "番茄 2个", "鸡蛋 3个", "生抽 1勺"},
 			Steps:       []string{"牛肉切片后简单腌制。", "番茄炒软出汁，鸡蛋单独炒到半熟。", "三者回锅快速翻炒。"},
 			CreatedBy:   aliceID,
@@ -220,7 +220,7 @@ func seedDemoData(ctx context.Context, dbConn *sql.DB) error {
 			Link:        "https://example.com/recipes/teriyaki-salmon-bowl",
 			MealType:    "main",
 			Status:      "done",
-			Note:        "共享厨房主菜样例之二。",
+			Note:        "共享空间主菜样例之二。",
 			Ingredients: []string{"三文鱼 2块", "照烧汁 2勺", "西兰花 半颗", "米饭 1碗"},
 			Steps:       []string{"三文鱼煎到两面上色。", "淋照烧汁收浓。", "搭配焯好的西兰花和热米饭。"},
 			CreatedBy:   recipeUserID,

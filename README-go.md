@@ -5,7 +5,7 @@
 适用范围：
 
 - 当前前端为 `uni-app` 微信小程序
-- 业务目标为“共享厨房”模式
+- 业务目标为“共享空间”模式
 - 后端部署在自有云服务器
 - 第一版数据库使用 `SQLite`
 - 第一版暂不深挖高并发、复杂冲突合并、消息推送
@@ -15,8 +15,8 @@
 ### 1.1 本期目标
 
 - 支持微信小程序登录
-- 支持用户创建和加入厨房
-- 支持不同微信号共享同一个厨房
+- 支持用户创建和加入空间
+- 支持不同微信号共享同一个空间
 - 支持菜谱的增删改查和状态切换
 - 支持菜品图片上传
 - 支持本地部署、低运维成本、后续可平滑演进
@@ -59,7 +59,7 @@
 
 - 单机部署简单
 - 不需要单独维护数据库服务
-- 对当前共享厨房场景完全够用
+- 对当前共享空间场景完全够用
 - 方便备份、迁移和本地开发
 - 后续可以通过 repository 层平滑替换底层数据库
 
@@ -89,19 +89,19 @@ flowchart LR
 - `User`
   - 一个微信用户对应一条用户记录
 - `Kitchen`
-  - 一个共享厨房
+  - 一个共享空间
 - `KitchenMember`
-  - 用户和厨房之间的成员关系
+  - 用户和空间之间的成员关系
 - `KitchenInvite`
   - 邀请链接令牌
 - `Recipe`
-  - 某个厨房下的一道菜
+  - 某个空间下的一道菜
 
 ### 4.2 当前不做的能力
 
 - 实时协同编辑
 - 聊天、评论、通知中心
-- 群 ID 自动绑定厨房
+- 群 ID 自动绑定空间
 - 图片审核
 - 后台管理系统
 - 多环境复杂发布流水线
@@ -216,16 +216,16 @@ backend/
 
 ### 6.4 `internal/kitchen`
 
-- 厨房创建
-- 厨房列表查询
-- 当前用户与厨房关系校验
+- 空间创建
+- 空间列表查询
+- 当前用户与空间关系校验
 - 成员概要信息输出
 
 ### 6.5 `internal/invite`
 
 - 生成邀请 token
 - 邀请预览
-- 接受邀请加入厨房
+- 接受邀请加入空间
 - 校验使用次数和过期时间
 
 ### 6.6 `internal/recipe`
@@ -374,7 +374,7 @@ type Config struct {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | 主键 |
-| `name` | `TEXT NOT NULL` | 厨房名称 |
+| `name` | `TEXT NOT NULL` | 空间名称 |
 | `owner_user_id` | `INTEGER NOT NULL` | 创建者 |
 | `created_at` | `TEXT NOT NULL` | 创建时间 |
 | `updated_at` | `TEXT NOT NULL` | 更新时间 |
@@ -384,7 +384,7 @@ type Config struct {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | 主键 |
-| `kitchen_id` | `INTEGER NOT NULL` | 厨房 ID |
+| `kitchen_id` | `INTEGER NOT NULL` | 空间 ID |
 | `user_id` | `INTEGER NOT NULL` | 用户 ID |
 | `role` | `TEXT NOT NULL` | `owner` / `admin` / `member` |
 | `joined_at` | `TEXT NOT NULL` | 加入时间 |
@@ -398,7 +398,7 @@ type Config struct {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | 主键 |
-| `kitchen_id` | `INTEGER NOT NULL` | 厨房 ID |
+| `kitchen_id` | `INTEGER NOT NULL` | 空间 ID |
 | `inviter_user_id` | `INTEGER NOT NULL` | 邀请人 |
 | `token` | `TEXT NOT NULL UNIQUE` | 邀请 token |
 | `status` | `TEXT NOT NULL` | `active` / `used` / `expired` / `revoked` |
@@ -412,7 +412,7 @@ type Config struct {
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `TEXT PRIMARY KEY` | 菜谱 ID |
-| `kitchen_id` | `INTEGER NOT NULL` | 所属厨房 |
+| `kitchen_id` | `INTEGER NOT NULL` | 所属空间 |
 | `title` | `TEXT NOT NULL` | 菜名 |
 | `ingredient` | `TEXT` | 主要食材 |
 | `link` | `TEXT` | 外部链接 |
@@ -479,9 +479,9 @@ PRAGMA synchronous = NORMAL;
 3. 后端调用微信 `code2session`
 4. 拿到 `openid`
 5. 查找或创建用户
-6. 若该用户还没有厨房，则创建一个默认厨房并写入 `kitchen_members`
+6. 若该用户还没有空间，则创建一个默认空间并写入 `kitchen_members`
 7. 签发应用侧 token
-8. 返回 token、用户信息、厨房列表、当前厨房 ID
+8. 返回 token、用户信息、空间列表、当前空间 ID
 
 ### 11.2 Token 方案
 
@@ -516,7 +516,7 @@ func CurrentUserID(ctx context.Context) int64
 ### 12.1 角色
 
 - `owner`
-  - 创建厨房者
+  - 创建空间者
   - 默认拥有全部权限
 - `admin`
   - 预留
@@ -526,10 +526,10 @@ func CurrentUserID(ctx context.Context) int64
 
 ### 12.2 第一版权限约束
 
-- 登录用户只能访问自己加入的厨房
-- 只有厨房成员可以查询该厨房下的菜谱
-- 只有厨房成员可以创建邀请
-- 只有加入该厨房的成员才能修改和删除该厨房的菜谱
+- 登录用户只能访问自己加入的空间
+- 只有空间成员可以查询该空间下的菜谱
+- 只有空间成员可以创建邀请
+- 只有加入该空间的成员才能修改和删除该空间的菜谱
 
 ### 12.3 权限实现方式
 
@@ -605,7 +605,7 @@ func CurrentUserID(ctx context.Context) int64
     "kitchens": [
       {
         "id": 1,
-        "name": "我们的厨房",
+        "name": "海哥的空间",
         "role": "owner"
       }
     ]
@@ -613,11 +613,11 @@ func CurrentUserID(ctx context.Context) int64
 }
 ```
 
-### 13.3 厨房
+### 13.3 空间
 
 #### `GET /api/kitchens`
 
-返回当前用户加入的厨房列表。
+返回当前用户加入的空间列表。
 
 #### `POST /api/kitchens`
 
@@ -625,13 +625,13 @@ func CurrentUserID(ctx context.Context) int64
 
 ```json
 {
-  "name": "周末厨房"
+  "name": "周末空间"
 }
 ```
 
 #### `GET /api/kitchens/{id}`
 
-返回厨房详情和成员摘要。
+返回空间详情和成员摘要。
 
 ### 13.4 邀请
 
@@ -664,14 +664,14 @@ func CurrentUserID(ctx context.Context) int64
 
 返回邀请预览：
 
-- 厨房名
+- 空间名
 - 邀请人
 - 是否过期
 - 是否还能使用
 
 #### `POST /api/invites/{token}/accept`
 
-当前登录用户接受邀请并加入厨房。
+当前登录用户接受邀请并加入空间。
 
 ### 13.5 菜谱
 
@@ -683,7 +683,7 @@ func CurrentUserID(ctx context.Context) int64
 - `status`
 - `keyword`
 
-返回该厨房下的菜谱列表。
+返回该空间下的菜谱列表。
 
 #### `POST /api/kitchens/{id}/recipes`
 
@@ -833,10 +833,10 @@ type RecipeResponse struct {
 
 Service 负责核心业务逻辑，例如：
 
-- 登录时自动创建默认厨房
-- 创建厨房时自动创建成员关系
+- 登录时自动创建默认空间
+- 创建空间时自动创建成员关系
 - 接受邀请时校验是否过期、是否已加入、是否超过次数
-- 创建菜谱时校验厨房权限和字段合法性
+- 创建菜谱时校验空间权限和字段合法性
 - 删除菜谱时执行软删除
 
 如果某个操作跨多张表，优先在 service 中开启事务。
@@ -961,7 +961,7 @@ type AppError struct {
 6. 实现 `healthz`
 7. 接上数据库初始化
 8. 接上微信登录接口
-9. 再逐步实现厨房、邀请、菜谱、上传
+9. 再逐步实现空间、邀请、菜谱、上传
 
 ### 22.2 推荐启动顺序
 
@@ -993,7 +993,7 @@ healthz
 ### 23.3 handler / integration 测试
 
 - 使用 `httptest`
-- 跑登录、建厨房、加邀请、建菜谱等主流程
+- 跑登录、建空间、加邀请、建菜谱等主流程
 
 ## 24. 安全与合规
 
@@ -1056,11 +1056,11 @@ healthz
 - SQLite 初始化
 - 路由和中间件
 
-### M2：身份与厨房
+### M2：身份与空间
 
 - 微信登录
-- 自动创建默认厨房
-- 厨房列表和详情
+- 自动创建默认空间
+- 空间列表和详情
 
 ### M3：共享与邀请
 
@@ -1118,8 +1118,8 @@ backend/
 这套后端起步方案的重点不是“把 Go 工程做得多炫”，而是先把这些事做稳：
 
 - 用户能登录
-- 能看到自己的厨房
-- 能通过邀请加入别人的厨房
+- 能看到自己的空间
+- 能通过邀请加入别人的空间
 - 能一起维护共享菜谱
 - 数据能长期保存
 - 后端结构不会在第二周就乱掉
@@ -1129,4 +1129,4 @@ backend/
 1. 先按本文件创建 `backend/` 目录骨架
 2. 落 `001_init.sql`
 3. 实现 `healthz + login`
-4. 再往厨房、邀请、菜谱逐步推进
+4. 再往空间、邀请、菜谱逐步推进

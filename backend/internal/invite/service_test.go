@@ -52,6 +52,18 @@ func TestFormatInviteCode(t *testing.T) {
 	}
 }
 
+func TestBuildInviteHeroLineUsesSpaceCopy(t *testing.T) {
+	if got, want := buildInviteHeroLine("海哥"), "海哥 发来一份共享空间邀请"; got != want {
+		t.Fatalf("buildInviteHeroLine() = %q, want %q", got, want)
+	}
+}
+
+func TestReplaceKitchenLabel(t *testing.T) {
+	if got, want := replaceKitchenLabel("海哥的厨房"), "海哥的空间"; got != want {
+		t.Fatalf("replaceKitchenLabel() = %q, want %q", got, want)
+	}
+}
+
 func TestShareImageRendererRender(t *testing.T) {
 	renderer := NewShareImageRenderer("", "")
 	if _, err := renderer.face(false, 24); err != nil {

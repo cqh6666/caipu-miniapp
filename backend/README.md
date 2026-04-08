@@ -15,9 +15,9 @@
 技术评估结论：
 
 - 当前阶段前后端放在一个仓库、后端独立放到 `backend/` 目录最合适
-- `Go + chi + SQLite` 足够覆盖共享厨房第一版需求
+- `Go + chi + SQLite` 足够覆盖共享空间第一版需求
 - `SQLite` 采用 `WAL` 和 `busy_timeout`，并将 `MaxOpenConns` 设为 `1`，优先保证稳定性
-- 先把配置、迁移、路由、健康检查和数据库底座跑通，再逐步加登录、厨房、邀请、菜谱模块
+- 先把配置、迁移、路由、健康检查和数据库底座跑通，再逐步加登录、空间、邀请、菜谱模块
 
 本地启动：
 
@@ -89,7 +89,7 @@ cd backend
 go run ./cmd/seed-demo
 ```
 
-这会确保本地数据库里存在两个开发用户 `alice` / `recipe-user`，并生成一个共享厨房 `联调试吃厨房` 以及多条早餐、正餐、想吃、吃过样例数据，方便直接联调前端。
+这会确保本地数据库里存在两个开发用户 `alice` / `recipe-user`，并生成一个共享空间 `联调试吃空间` 以及多条早餐、正餐、想吃、吃过样例数据，方便直接联调前端。
 
 B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bilibili-link-parser-poc.md)
 
@@ -180,11 +180,11 @@ go run ./cmd/server -migrate-only
 
 当前邀请策略：
 
-- 厨房成员可以创建邀请链接
+- 空间成员可以创建邀请链接
 - 默认 `72` 小时过期，默认最多使用 `10` 次
 - `GET /api/invites/{token}` 可在登录前预览邀请
 - `GET /api/invites/{token}/share-image` 会按邀请信息动态生成分享卡封面，适合给小程序 `onShareAppMessage.imageUrl` 直接使用
-- 同一用户重复接受同一厨房邀请时会幂等返回 `alreadyMember=true`
+- 同一用户重复接受同一空间邀请时会幂等返回 `alreadyMember=true`
 - 动态分享图默认会尝试读取系统中文字体；若线上环境没有可用中文字体，可显式配置：
   - `INVITE_SHARE_FONT_PATH`
   - `INVITE_SHARE_FONT_BOLD_PATH`

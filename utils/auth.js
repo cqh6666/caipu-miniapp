@@ -11,7 +11,7 @@ const PLACEHOLDER_NICKNAMES = new Set(['微信用户', 'wechat user'])
 function normalizeKitchen(kitchen = {}) {
 	return {
 		id: Number(kitchen.id) || 0,
-		name: kitchen.name || '我的厨房',
+		name: kitchen.name || '我的空间',
 		role: kitchen.role || 'member'
 	}
 }

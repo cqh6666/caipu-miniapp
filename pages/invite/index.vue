@@ -4,11 +4,11 @@
 			<view v-if="isLoading" class="invite-card invite-card--loading">
 				<up-icon name="reload" size="26" color="#8c7e72"></up-icon>
 				<text class="invite-loading__title">正在获取邀请信息</text>
-				<text class="invite-loading__desc">稍等一下，我们先确认这个厨房邀请是否可用。</text>
+				<text class="invite-loading__desc">稍等一下，我们先确认这个空间邀请是否可用。</text>
 			</view>
 
 			<view v-else-if="errorMessage" class="invite-card">
-				<view class="invite-badge">共享厨房邀请</view>
+				<view class="invite-badge">共享空间邀请</view>
 				<text class="invite-title">没能打开这份邀请</text>
 				<text class="invite-description">{{ errorMessage }}</text>
 				<view class="invite-actions invite-actions--stack">
@@ -22,14 +22,14 @@
 			</view>
 
 			<view v-else class="invite-card">
-				<view class="invite-badge">共享厨房邀请</view>
+				<view class="invite-badge">共享空间邀请</view>
 				<text class="invite-title">{{ inviteTitle }}</text>
 				<text class="invite-description">{{ inviteDescription }}</text>
 
 				<view class="invite-summary">
 					<view class="invite-summary__item">
-						<text class="invite-summary__label">厨房名称</text>
-						<text class="invite-summary__value">{{ invite?.kitchenName || '未命名厨房' }}</text>
+						<text class="invite-summary__label">空间名称</text>
+						<text class="invite-summary__value">{{ inviteDisplayName || '未命名空间' }}</text>
 					</view>
 					<view class="invite-summary__item">
 						<text class="invite-summary__label">邀请人</text>
@@ -82,6 +82,10 @@ const inviteStatusLabelMap = {
 	revoked: '已失效'
 }
 
+function replaceKitchenLabel(value = '') {
+	return String(value || '').replace(/厨房/g, '空间')
+}
+
 export default {
 	data() {
 		return {
@@ -99,8 +103,11 @@ export default {
 		inviteStatus() {
 			return this.invite?.status || ''
 		},
+		inviteDisplayName() {
+			return replaceKitchenLabel(this.invite?.kitchenName || '')
+		},
 		inviterName() {
-			return this.invite?.inviter?.nickname || '厨房成员'
+			return this.invite?.inviter?.nickname || '空间成员'
 		},
 		inviteExpiryText() {
 			return this.formatDateTime(this.invite?.expiresAt)
@@ -122,19 +129,19 @@ export default {
 		},
 		inviteTitle() {
 			if (this.hasAccepted) {
-				return `已加入 ${this.invite?.kitchenName || '这个厨房'}`
+				return `已加入 ${this.inviteDisplayName || '这个空间'}`
 			}
 			if (this.alreadyMember) {
-				return `你已经在 ${this.invite?.kitchenName || '这个厨房'}`
+				return `你已经在 ${this.inviteDisplayName || '这个空间'}`
 			}
 			if (this.isInviteUnavailable) {
-				return `${this.invite?.kitchenName || '这份邀请'} 当前不可加入`
+				return `${this.inviteDisplayName || '这份邀请'} 当前不可加入`
 			}
 			return `${this.inviterName} 邀请你加入`
 		},
 		inviteDescription() {
 			if (this.hasAccepted) {
-				return '现在你们可以一起维护这份菜单了，进入厨房就能看到同一份菜谱。'
+				return '现在你们可以一起维护这份菜单了，进入空间就能看到同一份菜谱。'
 			}
 			if (this.alreadyMember) {
 				return '这说明你之前已经加入过，不用重复操作，直接进入就可以。'
@@ -142,25 +149,25 @@ export default {
 			if (this.isInviteUnavailable) {
 				return `当前状态：${inviteStatusLabelMap[this.inviteStatus] || '不可用'}。你可以让邀请人重新发一份新的邀请。`
 			}
-			return '加入后你会把这间厨房加入自己的列表，后续可以和对方一起维护菜谱。'
+			return '加入后你会把这个空间加入自己的列表，后续可以和对方一起维护菜谱。'
 		},
 		inviteNoticeText() {
 			if (this.hasAccepted) {
-				return '系统已经帮你切到这间厨房，点下面按钮就能直接进入。'
+				return '系统已经帮你切到这个空间，点下面按钮就能直接进入。'
 			}
 			if (this.alreadyMember) {
-				return '你已经是这间厨房的成员了，直接进入就好。'
+				return '你已经是这个空间的成员了，直接进入就好。'
 			}
 			if (this.isInviteUnavailable) {
 				return '这份邀请已经不能再使用了，需要让对方重新发一个新的。'
 			}
-			return '加入后你的原有厨房不会丢，你仍然可以在厨房页里自由切换。'
+			return '加入后你的原有空间不会丢，你仍然可以在空间页里自由切换。'
 		},
 		primaryActionText() {
 			if (this.isLoading) return '加载中'
 			if (this.isInviteUnavailable || this.errorMessage) return '返回首页'
-			if (this.hasAccepted || this.alreadyMember) return '进入这个厨房'
-			return this.isAccepting ? '加入中...' : '加入这个厨房'
+			if (this.hasAccepted || this.alreadyMember) return '进入这个空间'
+			return this.isAccepting ? '加入中...' : '加入这个空间'
 		},
 		showSecondaryAction() {
 			return !this.errorMessage && !this.isInviteUnavailable && !this.hasAccepted && !this.alreadyMember
@@ -176,7 +183,7 @@ export default {
 	methods: {
 		async initializePage() {
 			if (!this.token && !this.code) {
-				this.errorMessage = '缺少邀请参数，无法判断你要加入哪一个厨房。'
+				this.errorMessage = '缺少邀请参数，无法判断你要加入哪一个空间。'
 				this.isLoading = false
 				return
 			}
@@ -236,7 +243,7 @@ export default {
 				})
 				this.hasAccepted = true
 				uni.showToast({
-					title: result?.alreadyMember ? '已经在这个厨房里了' : '已加入厨房',
+					title: result?.alreadyMember ? '已经在这个空间里了' : '已加入空间',
 					icon: 'none'
 				})
 			} catch (error) {

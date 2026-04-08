@@ -93,7 +93,7 @@ func (r *ShareImageRenderer) Render(data ShareImageData) ([]byte, error) {
 
 	appChipRect := image.Rect(cardRect.Min.X+56, cardRect.Min.Y+58, cardRect.Min.X+276, cardRect.Min.Y+102)
 	fillRoundedRect(canvas, appChipRect, 22, shareImageChipWarm)
-	drawText(canvas, appChipRect.Min.X+24, appChipRect.Min.Y+31, "共享厨房邀请", mustFace(r.face(false, 22)), shareImageChipWarmText)
+	drawText(canvas, appChipRect.Min.X+24, appChipRect.Min.Y+31, "共享空间邀请", mustFace(r.face(false, 22)), shareImageChipWarmText)
 
 	statusLabel, statusBg, statusText := buildStatusVisual(data.Status)
 	statusWidth := max(132, measureTextWidth(mustFace(r.face(true, 20)), statusLabel)+42)
@@ -101,7 +101,7 @@ func (r *ShareImageRenderer) Render(data ShareImageData) ([]byte, error) {
 	fillRoundedRect(canvas, statusRect, 22, statusBg)
 	drawCenteredText(canvas, statusRect, statusLabel, mustFace(r.face(true, 20)), statusText)
 
-	titleLines := wrapText(mustFace(r.face(true, 70)), safeFallback(data.KitchenName, "这间共享厨房"), 2, 760)
+	titleLines := wrapText(mustFace(r.face(true, 70)), safeFallback(replaceKitchenLabel(data.KitchenName), "这间共享空间"), 2, 760)
 	titleY := cardRect.Min.Y + 238
 	titleLineHeight := 82
 	for index, line := range titleLines {
@@ -332,10 +332,14 @@ func buildInviteMetaLine(data ShareImageData) string {
 func buildInviteHeroLine(inviterName string) string {
 	inviterName = strings.TrimSpace(inviterName)
 	if inviterName == "" {
-		return "一份共享厨房邀请"
+		return "一份共享空间邀请"
 	}
 
-	return inviterName + " 发来一份共享厨房邀请"
+	return inviterName + " 发来一份共享空间邀请"
+}
+
+func replaceKitchenLabel(value string) string {
+	return strings.ReplaceAll(strings.TrimSpace(value), "厨房", "空间")
 }
 
 func inviterInitial(name string) string {

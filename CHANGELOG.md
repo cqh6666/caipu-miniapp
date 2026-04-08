@@ -49,6 +49,54 @@
 - 兼容性/风险：本次只统一了首页相关和品牌描述的前端展示文案，技术命名与后端接口仍保留 `kitchen` 口径；其他未纳入本轮的页面或分享图若仍使用旧文案，后续需再做一轮全链路收口
 - 验证情况：已执行 `git diff --check`；已通过代码搜索复核首页模块、导航标题、关于页与 README 的相关文案替换范围；当前仓库无可直接执行的前端自动化测试，尚未做微信开发者工具或真机视觉验收
 
+### Changed
+
+- 邀请页与后端邀请链路继续统一为“空间”口径：
+  - 邀请页标题、摘要标签、按钮文案、成功提示和说明文案从“厨房”改为“空间”
+  - 邀请页展示名称现在会把已有名称里的“厨房”替换成“空间”，避免落地页和首页口径不一致
+  - 后端动态分享图与邀请提示语从“共享厨房邀请”改为“共享空间邀请”
+  - 后端自动生成的默认名称从“我的厨房 / XX的厨房”改为“我的空间 / XX的空间”
+
+### Notes
+
+- 修改时间：2026-04-08 21:33 CST
+- 变更背景：首页模块已经切成“空间”，但邀请落地页、后端分享图和后端默认命名仍沿用“厨房”，会导致用户在分享链路里看到混合口径
+- 核心改动：前端邀请页补充展示层替换逻辑，把邀请名称里的“厨房”统一显示为“空间”；后端分享图标题、兜底文案和默认自动命名同步切到“空间”，让新老数据在邀请链路里都尽量保持一致
+- 影响范围：`pages.json`、`pages/invite/index.vue`、`backend/internal/invite/share_image.go`、`backend/internal/invite/service_test.go`、`backend/internal/kitchen/name.go`、`backend/internal/kitchen/name_test.go`、`README.md`
+- 兼容性/风险：本次仍然只调整展示文案和默认命名策略，不改动后端 `kitchen` 实体、接口字段和数据库结构；历史自定义名称若包含“厨房”，当前仅在首页和邀请页/分享图展示层替换为“空间”，其他未纳入本轮的页面后续仍可能需要继续收口
+- 验证情况：已执行 `gofmt -w backend/internal/kitchen/name.go backend/internal/kitchen/name_test.go backend/internal/invite/share_image.go backend/internal/invite/service_test.go`；已执行 `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./internal/invite ./internal/kitchen`；已执行 `git diff --check`；尝试使用 `@vue/compiler-sfc` 解析 `pages/invite/index.vue`，但当前仓库本地未安装该依赖，暂未完成这一步前端 SFC 自动校验
+
+### Changed
+
+- 补齐“空间”改名后的残留文案：
+  - 会话层厨房名兜底从“我的厨房”改为“我的空间”
+  - 菜单安排成功反馈与菜单详情页里剩余的“厨房 / 厨房成员”提示统一改为“空间 / 空间成员”
+
+### Notes
+
+- 修改时间：2026-04-08 21:44 CST
+- 变更背景：review 发现菜单安排成功反馈、菜单详情页和前端 session fallback 仍会露出“厨房”旧文案，导致“空间”口径没有真正跑通
+- 核心改动：补齐前端会话归一化层和点菜后续链路里的残留文案，让用户从首页进入空间、安排菜单、查看详情这一整段路径都保持统一口径
+- 影响范围：`utils/auth.js`、`pages/index/components/meal-order-success-sheet.vue`、`pages/meal-plan-detail/index.vue`
+- 兼容性/风险：本次只做前端展示文案收口，不涉及接口契约和数据结构；仓库内其他未纳入本轮的历史文档或更远链路仍可能残留“厨房”字样，后续若要全仓统一还需要继续清扫
+- 验证情况：已执行 `git diff --check`；已通过代码搜索确认 `utils/auth.js`、`pages/index/components/meal-order-success-sheet.vue`、`pages/meal-plan-detail/index.vue` 中本轮涉及的 `我的厨房 / 厨房 / 厨房成员` 残留文案已清理
+
+### Changed
+
+- 文档与联调样例继续统一为“空间”口径：
+  - 主 README、Go 后端启动文档、后端 README、微信登录清单和点菜模式原型文档里的“厨房”概念文案统一改为“空间”
+  - `seed-demo` 里的默认空间名与共享样例备注同步改成“空间”口径，避免本地联调时再次出现旧词
+  - 文档示例值和说明文字已按当前实现收口，但保留 `kitchenId`、`/api/kitchens`、`kitchen_id` 等真实接口字段和路径不变
+
+### Notes
+
+- 修改时间：2026-04-08 21:46 CST
+- 变更背景：运行时代码已经基本统一为“空间”，但仓库内主文档、联调说明和本地种子数据仍大量保留“厨房”，容易让新接手的人、测试同学或本地联调环境继续看到旧口径
+- 核心改动：集中收口概念说明、操作清单与示例数据名称，让“空间”成为当前仓库对外的统一产品语言，同时保留后端真实实体名和接口字段名，避免文档统一时误导实现契约
+- 影响范围：`README.md`、`README-go.md`、`backend/README.md`、`docs/wechat-login-checklist.md`、`docs/meal-order-mode-prototype-v1.md`、`backend/cmd/seed-demo/main.go`
+- 兼容性/风险：本次主要影响文档与本地演示数据；若已有依赖旧样例名的截图、录屏或人工测试脚本，后续需要同步更新；历史 migration 与数据库字段名本轮未动，仍保留 `kitchen` 术语以兼容现有数据结构
+- 验证情况：已执行 `gofmt -w backend/cmd/seed-demo/main.go`；已执行 `git diff --check`；已通过代码搜索确认 `README.md`、`README-go.md`、`backend/README.md`、`docs/wechat-login-checklist.md`、`docs/meal-order-mode-prototype-v1.md`、`backend/cmd/seed-demo/main.go` 中已无本轮范围内的“厨房”残留文案
+
 ## 2026-04-05
 
 ### Changed

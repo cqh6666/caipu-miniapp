@@ -233,14 +233,14 @@ export default {
 			if (!this.record) return ''
 			if (this.record.type === 'draft') {
 				if (this.siblingSubmitted) {
-					return '这份草稿还没重新提交，当前厨房成员看到的仍然是之前已安排好的菜单。'
+					return '这份草稿还没重新提交，当前空间成员看到的仍然是之前已安排好的菜单。'
 				}
 				return '这份草稿还没同步成正式安排，改好后重新提交，这天菜单才会更新。'
 			}
 			if (this.hasSiblingDraft) {
-				return '这天已经有一份待提交草稿。重新提交前，当前已安排菜单仍然对厨房成员生效。'
+				return '这天已经有一份待提交草稿。重新提交前，当前已安排菜单仍然对空间成员生效。'
 			}
-			return '这份菜单已经对厨房成员可见。点“修改菜单”时，我们会先带出一份草稿给你继续改。'
+			return '这份菜单已经对空间成员可见。点“修改菜单”时，我们会先带出一份草稿给你继续改。'
 		},
 		noticeTone() {
 			if (!this.record) return ''
@@ -255,13 +255,13 @@ export default {
 				return text ? `最近修改于 ${text}` : '草稿会在你重新提交前一直保留'
 			}
 			const text = formatActionTimeText(this.record.submittedAt)
-			return text ? `已在 ${text} 同步到这间厨房` : '这份安排已经同步给这间厨房'
+			return text ? `已在 ${text} 同步到这个空间` : '这份安排已经同步给这个空间'
 		},
 		emptyDescription() {
 			if (this.isLoading) {
 				return '正在整理这天的菜单记录。'
 			}
-			return this.errorMessage || '可能这份菜单已经被删除，或者你当前不在对应厨房里。'
+			return this.errorMessage || '可能这份菜单已经被删除，或者你当前不在对应空间里。'
 		}
 	},
 	onLoad(options) {
@@ -286,7 +286,7 @@ export default {
 				await ensureSession()
 				const kitchenId = Number(getCurrentKitchenId()) || 0
 				if (!kitchenId) {
-					throw new Error('请先进入一个厨房')
+					throw new Error('请先进入一个空间')
 				}
 				this.currentKitchenId = kitchenId
 				const store = normalizeMealOrderStore(await listMealPlanStore(kitchenId))
@@ -363,7 +363,7 @@ export default {
 			const title = isDraft ? '删除草稿' : '删除安排'
 			const content = isDraft
 				? '删除这份菜单草稿后，需要重新安排。确认删除吗？'
-				: '删除这天已经安排好的菜单后，厨房成员都会看不到。确认删除吗？'
+				: '删除这天已经安排好的菜单后，空间成员都会看不到。确认删除吗？'
 
 			uni.showModal({
 				title,

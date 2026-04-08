@@ -29,7 +29,7 @@
 		{
 			"path": "pages/invite/index",
 			"style": {
-				"navigationBarTitleText": "加入厨房"
+				"navigationBarTitleText": "加入空间"
 			}
 		},
 		{

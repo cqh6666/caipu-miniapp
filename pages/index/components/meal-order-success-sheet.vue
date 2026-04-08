@@ -22,7 +22,7 @@
 				<view class="meal-order-success-hero__icon">
 					<up-icon name="checkmark" size="22" color="#ffffff"></up-icon>
 				</view>
-				<text class="meal-order-success-hero__title">安排已同步到这间厨房</text>
+				<text class="meal-order-success-hero__title">安排已同步到这个空间</text>
 				<text class="meal-order-success-hero__desc">后面如果想改，我们会先带出草稿，不会直接覆盖原安排。</text>
 			</view>
 
