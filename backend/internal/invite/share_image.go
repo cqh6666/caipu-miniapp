@@ -26,20 +26,22 @@ const (
 )
 
 var (
-	shareImageBackground     = rgbaHex(0xF7F1EA, 255)
-	shareImageCardBackground = rgbaHex(0xFFFDF9, 255)
-	shareImageCardBorder     = rgbaHex(0xE6DACD, 255)
-	shareImageShadowColor    = rgbaHex(0x6F5645, 18)
-	shareImageTextPrimary    = rgbaHex(0x2F2822, 255)
-	shareImageTextMuted      = rgbaHex(0x8B7A6B, 255)
-	shareImageChipWarm       = rgbaHex(0xF2E8DD, 255)
-	shareImageChipWarmText   = rgbaHex(0x89624A, 255)
-	shareImageChipGreen      = rgbaHex(0xE8F0E8, 255)
-	shareImageChipGreenText  = rgbaHex(0x5E7A65, 255)
-	shareImageFooterDark     = rgbaHex(0x4B392F, 255)
-	shareImageFooterText     = rgbaHex(0xFFF9F3, 255)
-	shareImageDangerBg       = rgbaHex(0xFAE8DF, 255)
-	shareImageDangerText     = rgbaHex(0xA15F39, 255)
+	shareImageBackground      = rgbaHex(0xF7F1EA, 255)
+	shareImageCardBackground  = rgbaHex(0xFFFDF9, 255)
+	shareImageCardBorder      = rgbaHex(0xE6DACD, 255)
+	shareImageShadowColor     = rgbaHex(0x6F5645, 18)
+	shareImagePanelBackground = rgbaHex(0xF8F1E8, 255)
+	shareImagePanelBorder     = rgbaHex(0xE7DBCE, 255)
+	shareImageTextPrimary     = rgbaHex(0x2F2822, 255)
+	shareImageTextMuted       = rgbaHex(0x8B7A6B, 255)
+	shareImageChipWarm        = rgbaHex(0xF2E8DD, 255)
+	shareImageChipWarmText    = rgbaHex(0x89624A, 255)
+	shareImageChipGreen       = rgbaHex(0xE8F0E8, 255)
+	shareImageChipGreenText   = rgbaHex(0x5E7A65, 255)
+	shareImageFooterDark      = rgbaHex(0x4B392F, 255)
+	shareImageFooterText      = rgbaHex(0xFFF9F3, 255)
+	shareImageDangerBg        = rgbaHex(0xFAE8DF, 255)
+	shareImageDangerText      = rgbaHex(0xA15F39, 255)
 )
 
 type ShareImageRenderer struct {
@@ -92,7 +94,7 @@ func (r *ShareImageRenderer) Render(data ShareImageData) ([]byte, error) {
 
 	appChipRect := image.Rect(cardRect.Min.X+56, cardRect.Min.Y+54, cardRect.Min.X+336, cardRect.Min.Y+104)
 	fillRoundedRect(canvas, appChipRect, 25, shareImageChipWarm)
-	drawText(canvas, appChipRect.Min.X+28, appChipRect.Min.Y+35, "我们的数字厨房", mustFace(r.face(false, 24)), shareImageChipWarmText)
+	drawText(canvas, appChipRect.Min.X+28, appChipRect.Min.Y+35, "共享厨房邀请", mustFace(r.face(false, 24)), shareImageChipWarmText)
 
 	statusLabel, statusBg, statusText := buildStatusVisual(data.Status)
 	statusWidth := max(176, measureTextWidth(mustFace(r.face(true, 22)), statusLabel)+50)
@@ -100,50 +102,50 @@ func (r *ShareImageRenderer) Render(data ShareImageData) ([]byte, error) {
 	fillRoundedRect(canvas, statusRect, 25, statusBg)
 	drawCenteredText(canvas, statusRect, statusLabel, mustFace(r.face(true, 22)), statusText)
 
-	avatarRect := image.Rect(cardRect.Min.X+56, cardRect.Min.Y+144, cardRect.Min.X+140, cardRect.Min.Y+228)
-	fillRoundedRect(canvas, avatarRect, 28, shareImageChipWarm)
-	drawCenteredText(canvas, avatarRect, inviterInitial(data.InviterName), mustFace(r.face(true, 34)), shareImageChipWarmText)
+	avatarRect := image.Rect(cardRect.Min.X+56, cardRect.Min.Y+146, cardRect.Min.X+132, cardRect.Min.Y+222)
+	fillRoundedRect(canvas, avatarRect, 26, shareImageChipWarm)
+	drawCenteredText(canvas, avatarRect, inviterInitial(data.InviterName), mustFace(r.face(true, 32)), shareImageChipWarmText)
 
 	inviterLine := fmt.Sprintf("%s 邀请你加入", safeFallback(data.InviterName, "厨房成员"))
-	drawText(canvas, cardRect.Min.X+166, cardRect.Min.Y+188, inviterLine, mustFace(r.face(true, 34)), shareImageChipWarmText)
+	drawText(canvas, cardRect.Min.X+154, cardRect.Min.Y+192, inviterLine, mustFace(r.face(true, 34)), shareImageChipWarmText)
 
-	titleLines := wrapText(mustFace(r.face(true, 66)), safeFallback(data.KitchenName, "这间共享厨房"), 2, 620)
-	titleY := cardRect.Min.Y + 292
+	titleLines := wrapText(mustFace(r.face(true, 64)), safeFallback(data.KitchenName, "这间共享厨房"), 2, 760)
+	titleY := cardRect.Min.Y + 286
 	for index, line := range titleLines {
-		drawText(canvas, cardRect.Min.X+56, titleY+index*82, line, mustFace(r.face(true, 66)), shareImageTextPrimary)
+		drawText(canvas, cardRect.Min.X+56, titleY+index*78, line, mustFace(r.face(true, 64)), shareImageTextPrimary)
 	}
 
 	drawText(
 		canvas,
 		cardRect.Min.X+56,
-		cardRect.Min.Y+444,
-		"一起维护菜单，同步想吃和吃过",
-		mustFace(r.face(false, 30)),
-		shareImageTextMuted,
-	)
-	drawText(
-		canvas,
-		cardRect.Min.X+56,
-		cardRect.Min.Y+492,
-		"加入后可查看同一份菜谱、菜单安排和厨房成员。",
-		mustFace(r.face(false, 24)),
+		cardRect.Min.Y+446,
+		"一起维护菜单，想吃和吃过会自动同步。",
+		mustFace(r.face(false, 28)),
 		shareImageTextMuted,
 	)
 
-	chipY := cardRect.Min.Y + 540
-	drawMiniChip(canvas, image.Rect(cardRect.Min.X+56, chipY, cardRect.Min.X+196, chipY+48), "同步菜单", shareImageChipWarm, shareImageChipWarmText, mustFace(r.face(true, 22)))
-	drawMiniChip(canvas, image.Rect(cardRect.Min.X+210, chipY, cardRect.Min.X+350, chipY+48), "共享菜谱", shareImageChipWarm, shareImageChipWarmText, mustFace(r.face(true, 22)))
-	drawMiniChip(canvas, image.Rect(cardRect.Min.X+364, chipY, cardRect.Min.X+504, chipY+48), "自由切换", shareImageChipGreen, shareImageChipGreenText, mustFace(r.face(true, 22)))
+	chipY := cardRect.Min.Y + 490
+	drawMiniChip(canvas, image.Rect(cardRect.Min.X+56, chipY, cardRect.Min.X+196, chipY+46), "共享菜谱", shareImageChipWarm, shareImageChipWarmText, mustFace(r.face(true, 22)))
+	drawMiniChip(canvas, image.Rect(cardRect.Min.X+210, chipY, cardRect.Min.X+350, chipY+46), "同步菜单", shareImageChipWarm, shareImageChipWarmText, mustFace(r.face(true, 22)))
+	drawMiniChip(canvas, image.Rect(cardRect.Min.X+364, chipY, cardRect.Min.X+536, chipY+46), "一起维护厨房", shareImageChipGreen, shareImageChipGreenText, mustFace(r.face(true, 22)))
 
-	panelRect := image.Rect(cardRect.Min.X+42, cardRect.Min.Y+612, cardRect.Max.X-42, cardRect.Min.Y+760)
-	fillRoundedRect(canvas, panelRect, 32, rgbaHex(0xF8F1E8, 255))
-	strokeRoundedRect(canvas, panelRect, 32, 2, rgbaHex(0xE7DBCE, 255), rgbaHex(0xF8F1E8, 255))
+	panelRect := image.Rect(cardRect.Min.X+42, cardRect.Min.Y+560, cardRect.Max.X-42, cardRect.Min.Y+638)
+	fillRoundedRect(canvas, panelRect, 32, shareImagePanelBackground)
+	strokeRoundedRect(canvas, panelRect, 32, 2, shareImagePanelBorder, shareImagePanelBackground)
 
-	drawMetricCard(canvas, image.Rect(panelRect.Min.X+26, panelRect.Min.Y+22, panelRect.Min.X+214, panelRect.Max.Y-22), "当前成员", fmt.Sprintf("%d", max(data.MemberCount, 1)), "位成员", mustFace(r.face(true, 40)), mustFace(r.face(false, 22)))
-	drawMetricCard(canvas, image.Rect(panelRect.Min.X+232, panelRect.Min.Y+22, panelRect.Min.X+420, panelRect.Max.Y-22), "剩余名额", fmt.Sprintf("%d", max(data.RemainingUses, 0)), "位可加入", mustFace(r.face(true, 40)), mustFace(r.face(false, 22)))
-	drawMetricCard(canvas, image.Rect(panelRect.Min.X+438, panelRect.Min.Y+22, panelRect.Max.X-26, panelRect.Max.Y-22), "有效期", formatShareExpiryText(data.ExpiresAt, data.Status), buildFooterMeta(data.Status), mustFace(r.face(true, 34)), mustFace(r.face(false, 20)))
+	actionLabel, actionBg, actionText := buildInviteActionVisual(data.Status)
+	actionWidth := max(164, measureTextWidth(mustFace(r.face(true, 22)), actionLabel)+46)
+	actionRect := image.Rect(panelRect.Max.X-actionWidth-20, panelRect.Min.Y+18, panelRect.Max.X-20, panelRect.Min.Y+60)
+	fillRoundedRect(canvas, actionRect, 21, actionBg)
+	drawCenteredText(canvas, actionRect, actionLabel, mustFace(r.face(true, 22)), actionText)
 
-	footerRect := image.Rect(cardRect.Min.X+42, cardRect.Max.Y-74, cardRect.Max.X-42, cardRect.Max.Y-14)
+	calloutTextMaxWidth := max(actionRect.Min.X-panelRect.Min.X-56, 160)
+	calloutTitle := ellipsizeText(mustFace(r.face(true, 32)), buildInviteCalloutTitle(data.Status), calloutTextMaxWidth)
+	calloutMeta := ellipsizeText(mustFace(r.face(false, 22)), buildInviteMetaLine(data), calloutTextMaxWidth)
+	drawText(canvas, panelRect.Min.X+26, panelRect.Min.Y+36, calloutTitle, mustFace(r.face(true, 32)), shareImageTextPrimary)
+	drawText(canvas, panelRect.Min.X+26, panelRect.Min.Y+68, calloutMeta, mustFace(r.face(false, 22)), shareImageTextMuted)
+
+	footerRect := image.Rect(cardRect.Min.X+42, cardRect.Max.Y-66, cardRect.Max.X-42, cardRect.Max.Y-18)
 	fillRoundedRect(canvas, footerRect, 30, shareImageFooterDark)
 	footerText := fmt.Sprintf("邀请码 %s", formatInviteCode(safeFallback(data.InviteCode, "---- ----")))
 	drawCenteredText(canvas, footerRect, footerText, mustFace(r.face(true, 30)), shareImageFooterText)
@@ -303,6 +305,47 @@ func buildFooterMeta(status string) string {
 		return "邀请已失效"
 	default:
 		return "打开后即可加入"
+	}
+}
+
+func buildInviteCalloutTitle(status string) string {
+	switch strings.TrimSpace(status) {
+	case statusExpired:
+		return "这份邀请已经过期"
+	case statusUsedUp:
+		return "这份邀请的名额已满"
+	case statusRevoked:
+		return "这份邀请已失效"
+	default:
+		return "打开卡片即可加入"
+	}
+}
+
+func buildInviteActionVisual(status string) (label string, background color.Color, foreground color.Color) {
+	switch strings.TrimSpace(status) {
+	case statusExpired:
+		return "请重发", shareImageDangerBg, shareImageDangerText
+	case statusUsedUp:
+		return "名额已满", shareImageDangerBg, shareImageDangerText
+	case statusRevoked:
+		return "已失效", shareImageDangerBg, shareImageDangerText
+	default:
+		return "立即加入", shareImageChipGreen, shareImageChipGreenText
+	}
+}
+
+func buildInviteMetaLine(data ShareImageData) string {
+	memberCount := max(data.MemberCount, 1)
+
+	switch strings.TrimSpace(data.Status) {
+	case statusExpired, statusUsedUp, statusRevoked:
+		return fmt.Sprintf("%d 位成员 · %s", memberCount, buildFooterMeta(data.Status))
+	default:
+		parts := []string{fmt.Sprintf("%d 位成员", memberCount), fmt.Sprintf("还可加入 %d 人", max(data.RemainingUses, 0))}
+		if expiryText := formatShareExpiryText(data.ExpiresAt, ""); expiryText != "--" {
+			parts = append(parts, expiryText+" 前有效")
+		}
+		return strings.Join(parts, " · ")
 	}
 }
 
