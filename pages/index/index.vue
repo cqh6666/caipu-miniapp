@@ -478,10 +478,10 @@ function shortenInviteShareText(value = '', maxLength = 10) {
 }
 
 function buildInviteShareTitle(invite = {}, fallbackKitchenName = '') {
-	const kitchenName = shortenInviteShareText(invite?.kitchenName || fallbackKitchenName, 10)
+	const kitchenName = shortenInviteShareText(invite?.kitchenName || fallbackKitchenName, 8)
 
 	if (kitchenName) {
-		return `加入「${kitchenName}」一起维护菜单`
+		return `邀请你加入「${kitchenName}」`
 	}
 	return '邀请你加入共享厨房'
 }
