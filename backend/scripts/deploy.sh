@@ -13,6 +13,9 @@ GOARCH_TARGET="${GOARCH_TARGET:-amd64}"
 APP_PORT="${APP_PORT:-8080}"
 HEALTHCHECK_PATH="${HEALTHCHECK_PATH:-/healthz}"
 ENV_FILE="${ENV_FILE:-}"
+ADMIN_WEB_SOURCE_DIR="${ADMIN_WEB_SOURCE_DIR:-../admin-web}"
+ADMIN_WEB_REMOTE_DIR="${ADMIN_WEB_REMOTE_DIR:-/opt/caipu-miniapp/admin-web}"
+BUILD_ADMIN_WEB="${BUILD_ADMIN_WEB:-1}"
 REMOTE_TMP_DIR="${APP_DIR}/.deploy-tmp"
 
 if [[ -z "$SERVER_HOST" ]]; then
@@ -25,12 +28,27 @@ mkdir -p dist
 echo "==> building ${BINARY_NAME} for ${GOOS_TARGET}/${GOARCH_TARGET}"
 CGO_ENABLED=0 GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" go build -o "dist/${BINARY_NAME}" ./cmd/server
 
+if [[ "$BUILD_ADMIN_WEB" == "1" ]]; then
+  if [[ ! -d "$ADMIN_WEB_SOURCE_DIR" ]]; then
+    echo "ADMIN_WEB_SOURCE_DIR not found: $ADMIN_WEB_SOURCE_DIR" >&2
+    exit 1
+  fi
+
+  echo "==> building admin-web"
+  ../scripts/build-admin-web.sh
+fi
+
 echo "==> preparing remote staging directory"
-ssh "$SERVER_HOST" "rm -rf '$REMOTE_TMP_DIR' && mkdir -p '$REMOTE_TMP_DIR' '$APP_DIR/data/uploads'"
+ssh "$SERVER_HOST" "rm -rf '$REMOTE_TMP_DIR' && mkdir -p '$REMOTE_TMP_DIR' '$APP_DIR/data/uploads' '$ADMIN_WEB_REMOTE_DIR'"
 
 echo "==> uploading binary and migrations"
 scp "dist/${BINARY_NAME}" "$SERVER_HOST:$REMOTE_TMP_DIR/$BINARY_NAME"
 scp -r migrations "$SERVER_HOST:$REMOTE_TMP_DIR/"
+
+if [[ "$BUILD_ADMIN_WEB" == "1" ]]; then
+  echo "==> uploading admin-web dist"
+  scp -r "$ADMIN_WEB_SOURCE_DIR/dist" "$SERVER_HOST:$REMOTE_TMP_DIR/admin-web-dist"
+fi
 
 if [[ -n "$ENV_FILE" ]]; then
   if [[ ! -f "$ENV_FILE" ]]; then
@@ -43,7 +61,7 @@ if [[ -n "$ENV_FILE" ]]; then
 fi
 
 echo "==> moving release into place"
-ssh "$SERVER_HOST" "mkdir -p '$APP_DIR' '$APP_DIR/data/uploads' && rm -rf '$APP_DIR/migrations' && mv '$REMOTE_TMP_DIR/migrations' '$APP_DIR/migrations' && mv '$REMOTE_TMP_DIR/$BINARY_NAME' '$APP_DIR/$BINARY_NAME' && if [ -f '$REMOTE_TMP_DIR/.env' ]; then mv '$REMOTE_TMP_DIR/.env' '$APP_DIR/.env' && chmod 600 '$APP_DIR/.env'; fi && rm -rf '$REMOTE_TMP_DIR'"
+ssh "$SERVER_HOST" "mkdir -p '$APP_DIR' '$APP_DIR/data/uploads' '$ADMIN_WEB_REMOTE_DIR' && rm -rf '$APP_DIR/migrations' && mv '$REMOTE_TMP_DIR/migrations' '$APP_DIR/migrations' && mv '$REMOTE_TMP_DIR/$BINARY_NAME' '$APP_DIR/$BINARY_NAME' && if [ -d '$REMOTE_TMP_DIR/admin-web-dist' ]; then rm -rf '$ADMIN_WEB_REMOTE_DIR/dist' && mv '$REMOTE_TMP_DIR/admin-web-dist' '$ADMIN_WEB_REMOTE_DIR/dist'; fi && if [ -f '$REMOTE_TMP_DIR/.env' ]; then mv '$REMOTE_TMP_DIR/.env' '$APP_DIR/.env' && chmod 600 '$APP_DIR/.env'; fi && rm -rf '$REMOTE_TMP_DIR'"
 
 echo "==> running migrations"
 ssh "$SERVER_HOST" "cd '$APP_DIR' && ./'$BINARY_NAME' -migrate-only"

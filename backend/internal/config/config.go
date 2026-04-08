@@ -16,6 +16,9 @@ type Config struct {
 	AppAddr                    string
 	AppEnvFile                 string
 	LogLevel                   string
+	AdminUsername              string
+	AdminPasswordHash          string
+	AdminJWTSecret             string
 	AdminOpenIDs               []string
 	AppSettingsAccessMode      string
 	AppSettingsAllowedOpenIDs  []string
@@ -75,6 +78,9 @@ func Load() (Config, error) {
 		AppAddr:                    getEnv("APP_ADDR", ":8080"),
 		AppEnvFile:                 os.Getenv("APP_ENV_FILE"),
 		LogLevel:                   getEnv("LOG_LEVEL", "info"),
+		AdminUsername:              strings.TrimSpace(os.Getenv("ADMIN_USERNAME")),
+		AdminPasswordHash:          strings.TrimSpace(os.Getenv("ADMIN_PASSWORD_HASH")),
+		AdminJWTSecret:             strings.TrimSpace(os.Getenv("ADMIN_JWT_SECRET")),
 		AdminOpenIDs:               splitCSV(os.Getenv("APP_ADMIN_OPENIDS")),
 		AppSettingsAccessMode:      strings.TrimSpace(strings.ToLower(getEnv("APP_SETTINGS_ACCESS_MODE", "all"))),
 		AppSettingsAllowedOpenIDs:  splitCSV(os.Getenv("APP_SETTINGS_ALLOWED_OPENIDS")),
@@ -195,6 +201,10 @@ func Load() (Config, error) {
 
 	if cfg.CredentialsSecret == "" {
 		cfg.CredentialsSecret = cfg.JWTSecret
+	}
+
+	if cfg.AdminJWTSecret == "" {
+		cfg.AdminJWTSecret = cfg.JWTSecret
 	}
 
 	if cfg.AIFlowchartBaseURL == "" {

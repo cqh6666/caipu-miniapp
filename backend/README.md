@@ -11,6 +11,7 @@
 - 迁移：启动时自动执行 `migrations/*.sql`
 - 健康检查：`GET /healthz`、`GET /api/healthz`
 - 已实现首批业务闭环：`auth + kitchens + invite + recipe + upload`
+- 已新增后台能力：`/api/admin/* + AI 审计日志 + 运行时配置中心`
 
 技术评估结论：
 
@@ -39,6 +40,9 @@ go run ./cmd/server
 - `APP_SETTINGS_ACCESS_MODE`
 - `APP_ADMIN_OPENIDS`
 - `APP_SETTINGS_ALLOWED_OPENIDS`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD_HASH`
+- `ADMIN_JWT_SECRET`
 - `AI_BASE_URL`
 - `AI_API_KEY`
 - `AI_MODEL`
@@ -105,6 +109,19 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 
 - `GET /healthz`
 - `GET /api/healthz`
+- `POST /api/admin/auth/login`
+- `POST /api/admin/auth/logout`
+- `GET /api/admin/auth/me`
+- `GET /api/admin/dashboard/overview`
+- `GET /api/admin/dashboard/failures`
+- `GET /api/admin/dashboard/trends`
+- `GET /api/admin/ai/jobs`
+- `GET /api/admin/ai/jobs/{id}`
+- `GET /api/admin/ai/calls`
+- `GET /api/admin/runtime-settings`
+- `PUT /api/admin/runtime-settings/groups/{group}`
+- `POST /api/admin/runtime-settings/groups/{group}/test`
+- `GET /api/admin/runtime-settings/audits`
 - `POST /api/auth/wechat/login`
 - `GET /api/auth/me`
 - `GET /api/app-settings/bilibili-session`
@@ -207,6 +224,17 @@ go run ./cmd/server -migrate-only
 - 成功后会自动补齐 `ingredient`、`parsedContent.ingredients`、`parsedContent.steps`
 - 失败后会保留 `parseStatus=failed` 和 `parseError`
 - 可通过 `POST /api/recipes/{recipeID}/reparse` 手动重新入队
+
+后台管理平台说明：
+
+- 前端后台工程位于仓库根目录 `admin-web/`
+- 默认通过同域 `https://你的域名/admin/` 访问
+- 后台登录和小程序登录分离，走独立账号：
+  - `ADMIN_USERNAME`
+  - `ADMIN_PASSWORD_HASH`
+  - `ADMIN_JWT_SECRET`（可选）
+- `app_runtime_settings` 支持在线覆盖 `AI / sidecar` 相关配置，并在更新后自动失效本地缓存
+- `app_setting_audits` 记录后台保存、测试，以及移动端 `Bilibili SESSDATA` 更新动作
 
 当前步骤图生成策略：
 

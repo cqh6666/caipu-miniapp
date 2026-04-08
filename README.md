@@ -2,6 +2,12 @@
 
 一个基于 `uni-app` 的微信小程序项目，面向“记录想吃和吃过的菜”的轻量型美食清单场景。
 
+当前仓库同时包含：
+
+- 微信小程序前端：`uni-app + Vue 3 + uview-plus`
+- Go 后端：`backend/`
+- PC 管理后台：`admin-web/`
+
 ## 当前状态
 
 - 技术栈：`uni-app` + `Vue 3`
@@ -11,7 +17,7 @@
 - 当前首页：`pages/index/index.vue`
 - 当前详情页：`pages/recipe-detail/index.vue`
 - 当前菜单详情页：`pages/meal-plan-detail/index.vue`
-- 当前阶段：前后端联调阶段，已接入后端登录、菜谱同步、图片上传和邀请加入链路
+- 当前阶段：前后端联调阶段，已接入后端登录、菜谱同步、图片上传和邀请加入链路，并新增 AI 可观测性 / 动态配置后台
 
 ## 已实现功能
 
@@ -70,12 +76,25 @@
   - `npm run wx:auto-preview:skip-compile`
 - 独立说明文档见 `docs/wechat-auto-preview.md`
 
+### Admin Web
+
+- 本地启动：
+  - `npm run admin:dev`
+- 生产构建：
+  - `npm run admin:build`
+- 后台默认通过同域 `https://你的域名/admin/` 访问
+- 后台依赖独立环境变量账号：
+  - `ADMIN_USERNAME`
+  - `ADMIN_PASSWORD_HASH`
+  - `ADMIN_JWT_SECRET`（可选，不填时回退 `JWT_SECRET`）
+
 ## 项目结构
 
 ```text
 .
 ├── App.vue
 ├── README.md
+├── admin-web/
 ├── main.js
 ├── manifest.json
 ├── package.json
@@ -111,6 +130,7 @@
 - `utils/app-config.js` 里的 `inviteShareEnabled` 可控制“邀请成员”里是否展示“发送给微信好友”按钮
 - `utils/auth.js` 负责登录态恢复、空间上下文和 token 持久化
 - `utils/recipe-store.js` 负责菜品数据归一化、本地缓存和远端同步
+- `admin-web/` 是独立的 Vue 3 + Vite 后台工程，默认构建到 `/admin/`
 - `unpackage/` 是构建产物目录，默认不纳入 Git 管理
 
 正式微信登录切换说明：

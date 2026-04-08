@@ -85,3 +85,75 @@ func nullableText(value string) any {
 	}
 	return value
 }
+
+func (r *Repository) ListRuntimeSettings(ctx context.Context) ([]runtimeSettingRecord, error) {
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+	key,
+	group_name,
+	COALESCE(value_text, ''),
+	COALESCE(value_ciphertext, ''),
+	COALESCE(value_type, 'string'),
+	is_secret,
+	is_restart_required,
+	COALESCE(description, ''),
+	COALESCE(updated_by_subject, ''),
+	COALESCE(updated_at, '')
+FROM app_runtime_settings
+ORDER BY group_name ASC, key ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]runtimeSettingRecord, 0, 16)
+	for rows.Next() {
+		var item runtimeSettingRecord
+		var isSecret int
+		var isRestartRequired int
+		if err := rows.Scan(
+			&item.Key,
+			&item.GroupName,
+			&item.ValueText,
+			&item.ValueCiphertext,
+			&item.ValueType,
+			&isSecret,
+			&isRestartRequired,
+			&item.Description,
+			&item.UpdatedBySubject,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		item.IsSecret = isSecret == 1
+		item.IsRestartRequired = isRestartRequired == 1
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) InsertSettingAudit(ctx context.Context, record settingAuditRecord) error {
+	_, err := r.db.ExecContext(ctx, `
+INSERT INTO app_setting_audits (
+	group_name,
+	setting_key,
+	action,
+	old_value_masked,
+	new_value_masked,
+	operator_subject,
+	request_id,
+	created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`,
+		record.GroupName,
+		record.SettingKey,
+		record.Action,
+		record.OldValueMasked,
+		record.NewValueMasked,
+		record.OperatorSubject,
+		record.RequestID,
+		record.CreatedAt,
+	)
+	return err
+}

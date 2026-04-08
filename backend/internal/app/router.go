@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/admin"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
 	"github.com/go-chi/chi/v5"
@@ -24,6 +25,7 @@ import (
 func NewRouter(
 	cfg config.Config,
 	logger *slog.Logger,
+	adminHandler *admin.Handler,
 	appSettingsHandler *appsettings.Handler,
 	authHandler *auth.Handler,
 	kitchenHandler *kitchen.Handler,
@@ -33,6 +35,7 @@ func NewRouter(
 	linkParseHandler *linkparse.Handler,
 	uploadHandler *upload.Handler,
 	authMiddleware func(http.Handler) http.Handler,
+	adminAuthMiddleware func(http.Handler) http.Handler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -67,6 +70,31 @@ func NewRouter(
 				protected.Use(authMiddleware)
 				protected.Get("/me", authHandler.Me)
 				protected.Patch("/profile", authHandler.UpdateProfile)
+			})
+		})
+
+		api.Route("/admin", func(adminRouter chi.Router) {
+			adminRouter.Route("/auth", func(authRouter chi.Router) {
+				authRouter.Post("/login", adminHandler.Login)
+				authRouter.Group(func(protected chi.Router) {
+					protected.Use(adminAuthMiddleware)
+					protected.Post("/logout", adminHandler.Logout)
+					protected.Get("/me", adminHandler.Me)
+				})
+			})
+
+			adminRouter.Group(func(protected chi.Router) {
+				protected.Use(adminAuthMiddleware)
+				protected.Get("/dashboard/overview", adminHandler.DashboardOverview)
+				protected.Get("/dashboard/failures", adminHandler.DashboardFailures)
+				protected.Get("/dashboard/trends", adminHandler.DashboardTrends)
+				protected.Get("/ai/jobs", adminHandler.ListJobs)
+				protected.Get("/ai/jobs/{id}", adminHandler.GetJobDetail)
+				protected.Get("/ai/calls", adminHandler.ListCalls)
+				protected.Get("/runtime-settings", adminHandler.ListRuntimeSettings)
+				protected.Put("/runtime-settings/groups/{group}", adminHandler.UpdateRuntimeGroup)
+				protected.Post("/runtime-settings/groups/{group}/test", adminHandler.TestRuntimeGroup)
+				protected.Get("/runtime-settings/audits", adminHandler.ListRuntimeAudits)
 			})
 		})
 

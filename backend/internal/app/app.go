@@ -9,7 +9,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/admin"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/bootstrap"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
@@ -55,6 +57,8 @@ func New(cfg config.Config) (*App, error) {
 	mealPlanHandler := mealplan.NewHandler(mealPlanService)
 
 	appSettingsRepo := appsettings.NewRepository(dbConn)
+	runtimeProvider := appsettings.NewRuntimeProvider(appSettingsRepo, cfg.CredentialsSecret, cfg)
+	auditService := audit.NewService(dbConn, logger)
 	var appSettingsService *appsettings.Service
 
 	inviteRepo := invite.NewRepository(dbConn)
@@ -86,6 +90,36 @@ func New(cfg config.Config) (*App, error) {
 		LinkparseSidecarBaseURL: cfg.LinkparseSidecarBaseURL,
 		LinkparseSidecarTimeout: time.Duration(cfg.LinkparseSidecarTimeoutSec) * time.Second,
 		LinkparseSidecarAPIKey:  cfg.LinkparseSidecarAPIKey,
+		RuntimeConfigLoader: func(ctx context.Context) linkparse.RuntimeConfig {
+			summary := runtimeProvider.SummaryAI(ctx)
+			title := runtimeProvider.TitleAI(ctx)
+			sidecar := runtimeProvider.LinkparseSidecar(ctx)
+			return linkparse.RuntimeConfig{
+				SummaryAI: linkparse.SummaryAIConfig{
+					BaseURL: summary.BaseURL,
+					APIKey:  summary.APIKey,
+					Model:   summary.Model,
+					Timeout: summary.Timeout,
+				},
+				TitleAI: linkparse.TitleAIConfig{
+					Enabled:     title.Enabled,
+					BaseURL:     title.BaseURL,
+					APIKey:      title.APIKey,
+					Model:       title.Model,
+					Stream:      title.Stream,
+					Temperature: title.Temperature,
+					MaxTokens:   title.MaxTokens,
+					Timeout:     title.Timeout,
+				},
+				LinkparseSidecar: linkparse.LinkparseSidecarConfig{
+					Enabled: sidecar.Enabled,
+					BaseURL: sidecar.BaseURL,
+					APIKey:  sidecar.APIKey,
+					Timeout: sidecar.Timeout,
+				},
+			}
+		},
+		Tracker: auditService,
 		BilibiliSessdataProvider: func(ctx context.Context) string {
 			if appSettingsService == nil {
 				return ""
@@ -99,6 +133,7 @@ func New(cfg config.Config) (*App, error) {
 		},
 	})
 	linkParseHandler := linkparse.NewHandler(linkParseService)
+	runtimeProvider.SetBilibiliVerifier(linkParseService.VerifyBilibiliSessdata)
 	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
 	uploadHandler := upload.NewHandler(uploadService)
 	recipeFlowchart := recipe.NewFlowchartGenerator(recipe.FlowchartOptions{
@@ -106,6 +141,16 @@ func New(cfg config.Config) (*App, error) {
 		APIKey:  cfg.AIFlowchartAPIKey,
 		Model:   cfg.AIFlowchartModel,
 		Timeout: time.Duration(cfg.AIFlowchartTimeoutSeconds) * time.Second,
+		RuntimeConfigLoader: func(ctx context.Context) recipe.FlowchartRuntimeConfig {
+			flowchartCfg := runtimeProvider.FlowchartAI(ctx)
+			return recipe.FlowchartRuntimeConfig{
+				BaseURL: flowchartCfg.BaseURL,
+				APIKey:  flowchartCfg.APIKey,
+				Model:   flowchartCfg.Model,
+				Timeout: flowchartCfg.Timeout,
+			}
+		},
+		Tracker: auditService,
 	}, uploadService)
 	recipeService := recipe.NewService(recipe.ServiceOptions{
 		Repo:               recipeRepo,
@@ -138,6 +183,10 @@ func New(cfg config.Config) (*App, error) {
 	authMiddleware := appmiddleware.Authenticate(tokenManager)
 	appSettingsService = appsettings.NewService(appSettingsRepo, cfg.CredentialsSecret, linkParseService, authService.EnsureCanManageAppSettings)
 	appSettingsHandler := appsettings.NewHandler(appSettingsService)
+	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour)
+	adminService := admin.NewService(cfg.AdminUsername, cfg.AdminPasswordHash, adminTokenManager, cfg.AppEnv != "local")
+	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService)
+	adminAuthMiddleware := admin.NewAuthMiddleware(adminTokenManager)
 	recipeAutoParser := recipe.NewAutoParseWorker(
 		logger,
 		recipeRepo,
@@ -150,6 +199,7 @@ func New(cfg config.Config) (*App, error) {
 		logger,
 		recipeRepo,
 		recipeFlowchart,
+		auditService,
 		cfg.RecipeFlowchartEnabled,
 		cfg.RecipeFlowchartAutoEnqueue,
 		time.Duration(cfg.RecipeFlowchartInterval)*time.Second,
@@ -164,7 +214,21 @@ func New(cfg config.Config) (*App, error) {
 		cfg.RecipeImageMirrorBatchSize,
 	)
 
-	router := NewRouter(cfg, logger, appSettingsHandler, authHandler, kitchenHandler, inviteHandler, mealPlanHandler, recipeHandler, linkParseHandler, uploadHandler, authMiddleware)
+	router := NewRouter(
+		cfg,
+		logger,
+		adminHandler,
+		appSettingsHandler,
+		authHandler,
+		kitchenHandler,
+		inviteHandler,
+		mealPlanHandler,
+		recipeHandler,
+		linkParseHandler,
+		uploadHandler,
+		authMiddleware,
+		adminAuthMiddleware.Require,
+	)
 
 	server := &http.Server{
 		Addr:              cfg.AppAddr,

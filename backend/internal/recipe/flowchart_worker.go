@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 const defaultFlowchartJobTimeout = 3 * time.Minute
@@ -15,6 +18,7 @@ type FlowchartWorker struct {
 	logger             *slog.Logger
 	repo               *Repository
 	generator          *FlowchartGenerator
+	tracker            audit.Tracker
 	enabled            bool
 	autoEnqueueEnabled bool
 	interval           time.Duration
@@ -25,11 +29,12 @@ type FlowchartWorker struct {
 	once   sync.Once
 }
 
-func NewFlowchartWorker(logger *slog.Logger, repo *Repository, generator *FlowchartGenerator, enabled bool, autoEnqueueEnabled bool, interval time.Duration, batchSize int) *FlowchartWorker {
+func NewFlowchartWorker(logger *slog.Logger, repo *Repository, generator *FlowchartGenerator, tracker audit.Tracker, enabled bool, autoEnqueueEnabled bool, interval time.Duration, batchSize int) *FlowchartWorker {
 	return &FlowchartWorker{
 		logger:             logger,
 		repo:               repo,
 		generator:          generator,
+		tracker:            tracker,
 		enabled:            enabled,
 		autoEnqueueEnabled: autoEnqueueEnabled,
 		interval:           interval,
@@ -190,6 +195,38 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		return nil
 	}
 
+	finish := audit.FinishFunc(func(context.Context, audit.JobResult) error { return nil })
+	if w != nil && w.tracker != nil {
+		jobID, startedFinish, trackErr := w.tracker.StartJob(ctx, audit.JobInput{
+			Scene:         audit.SceneFlowchart,
+			TargetType:    "recipe",
+			TargetID:      recipeID,
+			TriggerSource: "worker",
+			RequestID:     common.RequestID(ctx),
+			Meta: map[string]any{
+				"recipe_id": recipeID,
+			},
+		})
+		if trackErr == nil && jobID > 0 {
+			ctx = audit.WithJobContext(ctx, audit.SceneFlowchart, jobID)
+			finish = startedFinish
+		}
+	}
+
+	finishJob := func(status, provider, model string, err error, meta map[string]any) {
+		jobResult := audit.JobResult{
+			Status:        status,
+			FinalProvider: provider,
+			FinalModel:    model,
+			FinishedAt:    audit.NowRFC3339(),
+			Meta:          meta,
+		}
+		if err != nil {
+			jobResult.ErrorMessage = err.Error()
+		}
+		_ = finish(ctx, jobResult)
+	}
+
 	w.logger.Info("recipe flowchart job started", "recipeID", recipeID)
 
 	item, err := w.repo.FindByID(ctx, recipeID)
@@ -199,6 +236,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart failed after load error", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "load", startedAt, err)
+		finishJob(audit.JobStatusFailed, "", "", err, map[string]any{"stage": "load"})
 		return err
 	}
 
@@ -209,6 +247,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart invalid-input failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "validate", startedAt, err)
+		finishJob(audit.JobStatusFailed, "", "", err, map[string]any{"stage": "validate"})
 		return err
 	}
 
@@ -219,6 +258,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart failed state failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "generate", startedAt, err)
+		finishJob(audit.JobStatusFromError(err), "", "", err, map[string]any{"stage": "generate"})
 		return err
 	}
 
@@ -228,6 +268,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart apply failure failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "persist", startedAt, err)
+		finishJob(audit.JobStatusFailed, result.Provider, result.Model, err, map[string]any{"stage": "persist"})
 		return err
 	}
 
@@ -240,6 +281,11 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		"imageURL",
 		result.ImageURL,
 	)
+	finishJob(audit.JobStatusSuccess, result.Provider, result.Model, nil, map[string]any{
+		"stage":       "completed",
+		"image_url":   result.ImageURL,
+		"source_hash": result.SourceHash,
+	})
 	return nil
 }
 

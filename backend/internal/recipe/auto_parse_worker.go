@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 )
 
@@ -149,6 +150,14 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 		return nil
 	}
 
+	ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{
+		TriggerSource: "worker",
+		TargetType:    "recipe",
+		TargetID:      item.ID,
+		Meta: map[string]any{
+			"platform": platform,
+		},
+	})
 	result, err := w.parser.ParseRecipeLink(ctx, item.Link)
 	if err != nil {
 		finishedAt := time.Now().Format(time.RFC3339)

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
@@ -26,20 +27,26 @@ var (
 )
 
 type FlowchartOptions struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	Timeout time.Duration
+	BaseURL             string
+	APIKey              string
+	Model               string
+	Timeout             time.Duration
+	RuntimeConfigLoader RuntimeConfigLoader
+	Tracker             audit.Tracker
 }
 
 type FlowchartGenerator struct {
-	client   *flowchartClient
-	uploader *upload.Service
+	defaultConfig FlowchartRuntimeConfig
+	configLoader  RuntimeConfigLoader
+	tracker       audit.Tracker
+	uploader      *upload.Service
 }
 
 type FlowchartResult struct {
 	ImageURL   string
 	SourceHash string
+	Provider   string
+	Model      string
 }
 
 type flowchartClient struct {
@@ -47,6 +54,16 @@ type flowchartClient struct {
 	apiKey     string
 	model      string
 	httpClient *http.Client
+	tracker    audit.Tracker
+}
+
+type RuntimeConfigLoader func(context.Context) FlowchartRuntimeConfig
+
+type FlowchartRuntimeConfig struct {
+	BaseURL string
+	APIKey  string
+	Model   string
+	Timeout time.Duration
 }
 
 type flowchartPromptInput struct {
@@ -82,37 +99,36 @@ type flowchartChatResponse struct {
 }
 
 func NewFlowchartGenerator(opts FlowchartOptions, uploader *upload.Service) *FlowchartGenerator {
-	if uploader == nil || strings.TrimSpace(opts.Model) == "" {
-		return nil
-	}
-
-	timeout := opts.Timeout
-	if timeout <= 0 {
-		timeout = 45 * time.Second
-	}
-
-	baseURL := strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/")
-	if baseURL == "" {
+	if uploader == nil {
 		return nil
 	}
 
 	return &FlowchartGenerator{
-		client: &flowchartClient{
-			baseURL:    baseURL,
-			apiKey:     strings.TrimSpace(opts.APIKey),
-			model:      strings.TrimSpace(opts.Model),
-			httpClient: &http.Client{Timeout: timeout},
+		defaultConfig: FlowchartRuntimeConfig{
+			BaseURL: strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/"),
+			APIKey:  strings.TrimSpace(opts.APIKey),
+			Model:   strings.TrimSpace(opts.Model),
+			Timeout: opts.Timeout,
 		},
-		uploader: uploader,
+		configLoader: opts.RuntimeConfigLoader,
+		tracker:      opts.Tracker,
+		uploader:     uploader,
 	}
 }
 
 func (g *FlowchartGenerator) IsConfigured() bool {
-	return g != nil && g.client != nil && g.uploader != nil
+	if g == nil || g.uploader == nil {
+		return false
+	}
+	if strings.TrimSpace(g.defaultConfig.Model) != "" && strings.TrimSpace(g.defaultConfig.BaseURL) != "" {
+		return true
+	}
+	return g.configLoader != nil
 }
 
 func (g *FlowchartGenerator) Generate(ctx context.Context, item Recipe) (FlowchartResult, error) {
-	if !g.IsConfigured() {
+	client := g.clientFor(ctx)
+	if client == nil || !g.IsConfigured() {
 		return FlowchartResult{}, common.NewAppError(common.CodeInternalServer, "flowchart generation is not configured", http.StatusServiceUnavailable)
 	}
 
@@ -121,7 +137,7 @@ func (g *FlowchartGenerator) Generate(ctx context.Context, item Recipe) (Flowcha
 		return FlowchartResult{}, err
 	}
 
-	content, err := g.client.generate(ctx, buildFlowchartPrompt(input))
+	content, err := client.generate(ctx, buildFlowchartPrompt(input))
 	if err != nil {
 		return FlowchartResult{}, err
 	}
@@ -139,10 +155,74 @@ func (g *FlowchartGenerator) Generate(ctx context.Context, item Recipe) (Flowcha
 	return FlowchartResult{
 		ImageURL:   image.URL,
 		SourceHash: hashFlowchartPromptInput(input),
+		Provider:   "openai-compatible",
+		Model:      client.model,
 	}, nil
 }
 
+func (g *FlowchartGenerator) clientFor(ctx context.Context) *flowchartClient {
+	if g == nil {
+		return nil
+	}
+	cfg := g.defaultConfig
+	if g.configLoader != nil {
+		runtimeCfg := g.configLoader(ctx)
+		if strings.TrimSpace(runtimeCfg.BaseURL) != "" {
+			cfg.BaseURL = strings.TrimSpace(runtimeCfg.BaseURL)
+		}
+		if strings.TrimSpace(runtimeCfg.APIKey) != "" {
+			cfg.APIKey = strings.TrimSpace(runtimeCfg.APIKey)
+		}
+		if strings.TrimSpace(runtimeCfg.Model) != "" {
+			cfg.Model = strings.TrimSpace(runtimeCfg.Model)
+		}
+		if runtimeCfg.Timeout > 0 {
+			cfg.Timeout = runtimeCfg.Timeout
+		}
+	}
+	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.Model) == "" {
+		return nil
+	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 45 * time.Second
+	}
+	return &flowchartClient{
+		baseURL:    strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		apiKey:     strings.TrimSpace(cfg.APIKey),
+		model:      strings.TrimSpace(cfg.Model),
+		httpClient: &http.Client{Timeout: cfg.Timeout},
+		tracker:    g.tracker,
+	}
+}
+
 func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, error) {
+	startedAt := time.Now()
+	logCall := func(status string, httpStatus int, err error) {
+		if c == nil || c.tracker == nil {
+			return
+		}
+		jobCtx, ok := audit.CurrentJobContext(ctx)
+		if !ok || jobCtx.JobRunID <= 0 {
+			return
+		}
+		_ = c.tracker.LogCall(ctx, audit.CallLogInput{
+			JobRunID:     jobCtx.JobRunID,
+			Scene:        jobCtx.Scene,
+			Provider:     "openai-compatible",
+			Endpoint:     "/chat/completions",
+			Model:        c.model,
+			Status:       status,
+			HTTPStatus:   httpStatus,
+			LatencyMS:    time.Since(startedAt).Milliseconds(),
+			ErrorType:    audit.ErrorTypeFromError(err),
+			ErrorMessage: flowchartErrorMessage(err),
+			RequestID:    common.RequestID(ctx),
+			Meta: map[string]any{
+				"content_kind": "flowchart",
+			},
+		})
+	}
+
 	payload := flowchartChatRequest{
 		Model:       c.model,
 		Temperature: 0.4,
@@ -160,11 +240,13 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 
 	body, err := json.Marshal(payload)
 	if err != nil {
+		logCall(audit.CallStatusFailed, 0, err)
 		return "", common.ErrInternal.WithErr(fmt.Errorf("marshal flowchart request: %w", err))
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
+		logCall(audit.CallStatusFailed, 0, err)
 		return "", common.ErrInternal.WithErr(fmt.Errorf("build flowchart request: %w", err))
 	}
 
@@ -175,7 +257,9 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", newFlowchartRequestError(err, c.httpClient.Timeout)
+		callErr := newFlowchartRequestError(err, c.httpClient.Timeout)
+		logCall(audit.CallStatusFromError(err), 0, callErr)
+		return "", callErr
 	}
 	defer resp.Body.Close()
 
@@ -185,7 +269,9 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 		if message == "" {
 			message = fmt.Sprintf("flowchart request failed with status %d", resp.StatusCode)
 		}
-		return "", common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
+		callErr := common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return "", callErr
 	}
 
 	var parsed flowchartChatResponse
@@ -194,23 +280,33 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 		if cause == "" {
 			cause = "decode failed"
 		}
-		return "", common.NewAppError(
+		callErr := common.NewAppError(
 			common.CodeInternalServer,
 			"invalid flowchart response: "+cause,
 			http.StatusBadGateway,
 		).WithErr(err)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return "", callErr
 	}
 	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
-		return "", common.NewAppError(common.CodeInternalServer, strings.TrimSpace(parsed.Error.Message), http.StatusBadGateway)
+		callErr := common.NewAppError(common.CodeInternalServer, strings.TrimSpace(parsed.Error.Message), http.StatusBadGateway)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return "", callErr
 	}
 	if len(parsed.Choices) == 0 {
-		return "", common.NewAppError(common.CodeInternalServer, "flowchart response contained no choices", http.StatusBadGateway)
+		callErr := common.NewAppError(common.CodeInternalServer, "flowchart response contained no choices", http.StatusBadGateway)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return "", callErr
 	}
 
 	content := extractFlowchartMessageContent(parsed.Choices[0].Message.Content)
 	if content == "" {
-		return "", common.NewAppError(common.CodeInternalServer, "flowchart response was empty", http.StatusBadGateway)
+		callErr := common.NewAppError(common.CodeInternalServer, "flowchart response was empty", http.StatusBadGateway)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return "", callErr
 	}
+
+	logCall(audit.CallStatusSuccess, resp.StatusCode, nil)
 
 	return content, nil
 }
@@ -270,6 +366,13 @@ func flowchartErrorCause(err error) string {
 	}
 
 	return deepestError(err)
+}
+
+func flowchartErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func deepestError(err error) string {

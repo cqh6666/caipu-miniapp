@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
@@ -71,14 +73,53 @@ func (s *Service) ParseXiaohongshu(ctx context.Context, rawInput string) (Xiaoho
 }
 
 func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xhsFetchOptions) (XiaohongshuParseResult, error) {
+	trackedCtx, _, finish := s.startTrackedJob(ctx, audit.SceneParseSummary, rawInput, "manual_link", map[string]any{
+		"platform": "xiaohongshu",
+	})
+	ctx = trackedCtx
+	finishResult := func(result XiaohongshuParseResult, err error) {
+		if finish == nil {
+			return
+		}
+		jobResult := audit.JobResult{
+			Status:        audit.JobStatusSuccess,
+			FinalProvider: "heuristic",
+			FallbackUsed:  strings.TrimSpace(result.SummaryMode) == "heuristic",
+			FinishedAt:    audit.NowRFC3339(),
+			Meta: map[string]any{
+				"platform":      "xiaohongshu",
+				"summary_mode":  strings.TrimSpace(result.SummaryMode),
+				"warnings":      len(result.Warnings),
+				"provider_used": strings.TrimSpace(result.ProviderUsed),
+			},
+		}
+		if result.SummaryMode == "ai" {
+			jobResult.FinalProvider = "openai-compatible"
+			if client := s.summaryAIFor(ctx); client != nil {
+				jobResult.FinalModel = client.model
+			}
+			jobResult.FallbackUsed = false
+		}
+		if err != nil {
+			jobResult.Status = audit.JobStatusFromError(err)
+			jobResult.ErrorMessage = err.Error()
+			jobResult.FinalProvider = ""
+			jobResult.FinalModel = ""
+			jobResult.FallbackUsed = false
+		}
+		_ = finish(ctx, jobResult)
+	}
+
 	result, err := s.fetchXiaohongshu(ctx, rawInput, opts)
 	if err != nil {
 		if !opts.IncludeTranscript || !shouldRetryXiaohongshuWithoutTranscript(err) {
+			finishResult(XiaohongshuParseResult{}, err)
 			return XiaohongshuParseResult{}, err
 		}
 
 		fallback, fallbackErr := s.fetchXiaohongshu(ctx, rawInput, xhsFetchOptions{})
 		if fallbackErr != nil {
+			finishResult(XiaohongshuParseResult{}, err)
 			return XiaohongshuParseResult{}, err
 		}
 
@@ -88,11 +129,12 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 		result = fallback
 	}
 
-	if s.ai != nil {
-		draft, err := s.ai.summarizeXiaohongshu(ctx, result)
+	if summaryAI := s.summaryAIFor(ctx); summaryAI != nil {
+		draft, err := summaryAI.summarizeXiaohongshu(ctx, result)
 		if err == nil {
 			result.SummaryMode = "ai"
 			result.RecipeDraft = normalizeXiaohongshuDraft(result, draft)
+			finishResult(result, nil)
 			return result, nil
 		}
 		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
@@ -100,11 +142,13 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 
 	result.SummaryMode = "heuristic"
 	result.RecipeDraft = summarizeXiaohongshuHeuristically(result)
+	finishResult(result, nil)
 	return result, nil
 }
 
 func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xhsFetchOptions) (XiaohongshuParseResult, error) {
-	if s == nil || s.sidecar == nil {
+	sidecar := s.sidecarFor(ctx)
+	if s == nil || sidecar == nil {
 		return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "linkparse sidecar is not configured", http.StatusInternalServerError)
 	}
 
@@ -116,7 +160,7 @@ func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xh
 		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "invalid xiaohongshu url", http.StatusBadRequest)
 	}
 
-	parsed, err := s.sidecar.parse(ctx, "/v1/parse/xiaohongshu", sidecarParseRequest{
+	parsed, err := sidecar.parse(ctx, "/v1/parse/xiaohongshu", sidecarParseRequest{
 		Input:             rawInput,
 		IncludeDebug:      false,
 		IncludeTranscript: opts.IncludeTranscript,
@@ -210,6 +254,7 @@ func buildXiaohongshuHeuristicNote(meta XiaohongshuParseResult) string {
 }
 
 func (c *aiClient) summarizeXiaohongshu(ctx context.Context, result XiaohongshuParseResult) (RecipeDraft, error) {
+	startedAt := time.Now()
 	payload := openAIChatRequest{
 		Model:       c.model,
 		Temperature: 0.2,
@@ -242,6 +287,9 @@ func (c *aiClient) summarizeXiaohongshu(ctx context.Context, result XiaohongshuP
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFromError(err), 0, err, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
 		return RecipeDraft{}, err
 	}
 	defer resp.Body.Close()
@@ -249,37 +297,70 @@ func (c *aiClient) summarizeXiaohongshu(ctx context.Context, result XiaohongshuP
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		if strings.TrimSpace(string(data)) != "" {
-			return RecipeDraft{}, fmt.Errorf("ai request failed: %s", strings.TrimSpace(string(data)))
+			callErr := fmt.Errorf("ai request failed: %s", strings.TrimSpace(string(data)))
+			c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+				"content_kind": "summary_xiaohongshu",
+			})
+			return RecipeDraft{}, callErr
 		}
-		return RecipeDraft{}, fmt.Errorf("ai request failed with status %d", resp.StatusCode)
+		callErr := fmt.Errorf("ai request failed with status %d", resp.StatusCode)
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
+		return RecipeDraft{}, callErr
 	}
 
 	var parsed openAIChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
 		return RecipeDraft{}, err
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
-		return RecipeDraft{}, fmt.Errorf("ai error: %s", parsed.Error.Message)
+		callErr := fmt.Errorf("ai error: %s", parsed.Error.Message)
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
+		return RecipeDraft{}, callErr
 	}
 	if len(parsed.Choices) == 0 {
-		return RecipeDraft{}, fmt.Errorf("ai response contained no choices")
+		callErr := fmt.Errorf("ai response contained no choices")
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
+		return RecipeDraft{}, callErr
 	}
 
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
 	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(content, "$1"))
 	if content == "" {
-		return RecipeDraft{}, fmt.Errorf("ai response was empty")
+		callErr := fmt.Errorf("ai response was empty")
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
+		return RecipeDraft{}, callErr
 	}
 
 	var summary aiSummaryResponse
 	if err := json.Unmarshal([]byte(content), &summary); err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
 		return RecipeDraft{}, err
 	}
 
 	parsedContent, err := summary.toParsedContent()
 	if err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "summary_xiaohongshu",
+		})
 		return RecipeDraft{}, err
 	}
+
+	c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusSuccess, resp.StatusCode, nil, map[string]any{
+		"content_kind": "summary_xiaohongshu",
+	})
 
 	return RecipeDraft{
 		Title:         summary.Title,

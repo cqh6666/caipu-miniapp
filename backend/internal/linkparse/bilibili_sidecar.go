@@ -14,7 +14,8 @@ type bilibiliFetchOptions struct {
 }
 
 func (s *Service) fetchBilibiliViaSidecar(ctx context.Context, rawInput string, opts bilibiliFetchOptions) (BilibiliParseResult, error) {
-	if s == nil || s.sidecar == nil {
+	sidecar := s.sidecarFor(ctx)
+	if s == nil || sidecar == nil {
 		return BilibiliParseResult{}, common.NewAppError(common.CodeInternalServer, "linkparse sidecar is not configured", http.StatusInternalServerError)
 	}
 
@@ -23,7 +24,7 @@ func (s *Service) fetchBilibiliViaSidecar(ctx context.Context, rawInput string, 
 		return BilibiliParseResult{}, err
 	}
 
-	parsed, err := s.sidecar.parse(ctx, "/v1/parse/bilibili", sidecarParseRequest{
+	parsed, err := sidecar.parse(ctx, "/v1/parse/bilibili", sidecarParseRequest{
 		Input:             rawInput,
 		IncludeDebug:      false,
 		IncludeTranscript: opts.IncludeTranscript,

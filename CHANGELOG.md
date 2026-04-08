@@ -4,6 +4,37 @@
 
 ### Added
 
+- 新增后台管理平台、AI 可观测性与动态配置中心 MVP 实现：
+  - 根目录新增独立后台工程 `admin-web/`，采用 `Vue 3 + Vite + Element Plus + ECharts`
+  - 后端新增 `/api/admin/*` 后台认证、仪表盘、AI 任务、AI 调用与运行时配置接口
+  - 新增 `ai_job_runs`、`ai_call_logs`、`app_runtime_settings`、`app_setting_audits` 迁移与对应服务模块
+  - 新增 `scripts/build-admin-web.sh`，并把根目录 `package.json` 扩展出 `admin:dev / admin:build / admin:preview` 命令
+
+### Changed
+
+- AI / sidecar 链路改为支持运行时配置与统一审计：
+  - `linkparse` 的总结、标题精修与 sidecar 调用统一接入任务级 / 调用级埋点
+  - 流程图生成器与 worker 改为支持运行时读取 `ai.flowchart.*` 配置，并单独记录 `flowchart` 任务与调用日志
+  - 自动解析 worker 会为 `parse_summary` 任务补充 `worker + recipe` 维度的审计上下文
+- 应用设置中心扩展为“移动端隐藏设置页 + 后台配置中心”共用底座：
+  - 现有 `Bilibili SESSDATA` 仍沿用 `app_bilibili_settings`，但现在会同步写入统一审计表
+  - 新增 `RuntimeProvider` 以 15 秒本地缓存承接 `ai.summary / ai.flowchart / ai.title / sidecar.linkparse` 运行时配置读取
+- 部署链路升级为支持同域 `/admin`：
+  - `backend/scripts/deploy.sh` 现在可本地构建并上传 `admin-web/dist`
+  - `backend/scripts/bootstrap-server.sh` 和 `deploy-server-build.sh` 已补齐 `/admin` 静态托管与构建逻辑
+  - 部署文档和 README 已同步更新后台账号、环境变量与 nginx 路由说明
+
+### Notes
+
+- 修改时间：2026-04-08 23:58 CST
+- 变更背景：设计文档已经明确项目要补一版“后台管理平台 + AI 可观测性 + 动态配置中心”，仓库此前虽有 `appsettings` 和隐藏设置页基础，但仍缺少统一的 AI 成功率统计、失败追踪、后台认证和 PC 端运维入口
+- 核心改动：后端新增 `audit / admin / runtime settings` 三层底座，把自动解析、标题精修、流程图生成和 sidecar 调用接入统一埋点；同时新增独立 `admin-web` 工程承接概览、任务、调用和配置中心页面；部署脚本与文档同步收口到同域 `/admin` 路线
+- 影响范围：`backend/internal/admin/*`、`backend/internal/audit/*`、`backend/internal/appsettings/*`、`backend/internal/linkparse/*`、`backend/internal/recipe/*`、`backend/internal/app/*`、`backend/migrations/014_add_ai_audit_and_runtime_settings.sql`、`admin-web/*`、`backend/scripts/*`、`scripts/build-admin-web.sh`、`README.md`、`backend/README.md`、`docs/backend-deploy-quickstart.md`、`package.json`
+- 兼容性/风险：后台登录依赖新增环境变量 `ADMIN_USERNAME / ADMIN_PASSWORD_HASH`；当前 `admin-web` 构建产物体积较大，`vite build` 会给出大 chunk 警告，后续可再做按页拆包；`/admin` 的 nginx `alias + try_files` 路由已按常见 SPA 方式配置，但上线时仍建议先在目标环境做一次真实刷新验证
+- 验证情况：已执行 `cd backend && go test ./...`；已执行 `cd admin-web && npm run build`；已执行 `bash scripts/build-admin-web.sh`；已执行 `bash -n backend/scripts/deploy.sh`、`bash -n backend/scripts/bootstrap-server.sh`、`bash -n backend/scripts/deploy-server-build.sh`、`bash -n scripts/build-admin-web.sh`；已执行 `git diff --check`
+
+### Added
+
 - 新增后台管理平台、AI 可观测性与动态配置中心设计文档：
   - 根目录新增 `docs/admin-console-ai-observability-design.md`
   - 文档明确一期以“应用内埋点 + SQLite + 独立轻量后台”为主路线，不直接以 `Grafana` 作为主后台系统

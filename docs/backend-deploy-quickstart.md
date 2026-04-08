@@ -11,6 +11,7 @@
 - 仓库里已经提供了几份部署相关脚本：
   - `backend/scripts/bootstrap-server.sh` 用于首次初始化服务器
   - `backend/scripts/deploy.sh` 用于后续每次发版
+  - `scripts/build-admin-web.sh` 用于本地构建 `admin-web`
 - 如果你当前线上环境是“服务器拉源码并本机编译”，还可以使用：
   - `backend/scripts/deploy-server-build.sh`
 - 这些脚本都支持按环境变量覆盖默认值；最常用的是 `SERVER_HOST`，其余变量按脚本场景分别使用
@@ -30,6 +31,14 @@ git pull
 cd /srv/caipu-miniapp/backend
 go build -o bin/server ./cmd/server
 systemctl restart caipu-backend
+```
+
+如果你已经启用了后台管理平台，同一轮发版还需要把 `admin-web` 构建出来：
+
+```bash
+cd /srv/caipu-miniapp/admin-web
+npm install
+npm run build
 ```
 
 说明：
@@ -100,6 +109,7 @@ ENV_FILE=configs/local.env \
 - `ENV_FILE` 是可选的；如果服务器上已经有正确的 `.env`，后续部署可以不传
 - 由于 `configs/local.env` 已被 Git 忽略，用它上传不会把密钥带进仓库
 - 如果你的服务不是监听 `127.0.0.1:8080`，可以额外传入 `APP_PORT=你的端口`
+- 默认还会同时本地构建并上传 `admin-web/dist`；如果这次只想发后端，可额外带上 `BUILD_ADMIN_WEB=0`
 
 ## 0. 准备项
 
@@ -115,6 +125,7 @@ ENV_FILE=configs/local.env \
 ```bash
 export SERVER_HOST="root@你的服务器IP"
 export APP_DIR="/opt/caipu-miniapp/backend"
+export ADMIN_WEB_DIR="/opt/caipu-miniapp/admin-web"
 export DOMAIN="your-domain.example"
 export APP_PORT="8080"
 ```
@@ -176,6 +187,9 @@ LOG_LEVEL=info
 
 JWT_SECRET=请替换成openssl生成的随机字符串
 JWT_EXPIRE_HOURS=720
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD_HASH=请填写 bcrypt 哈希
+ADMIN_JWT_SECRET=
 
 WECHAT_APP_ID=wxafe7c4144c9c063e
 WECHAT_APP_SECRET=请填写真实微信小程序密钥
@@ -205,6 +219,28 @@ openssl rand -hex 32
 ```
 
 把生成结果填回上面的 `.env` 文件即可。
+
+生成后台密码哈希示例：
+
+```bash
+cat >/tmp/bcrypt-hash.go <<'EOF'
+package main
+
+import (
+  "fmt"
+  "golang.org/x/crypto/bcrypt"
+)
+
+func main() {
+  hash, err := bcrypt.GenerateFromPassword([]byte("你的后台密码"), bcrypt.DefaultCost)
+  if err != nil {
+    panic(err)
+  }
+  fmt.Println(string(hash))
+}
+EOF
+go run /tmp/bcrypt-hash.go
+```
 
 再把目录权限收紧一点：
 
@@ -285,6 +321,33 @@ server {
 
     client_max_body_size 20m;
 
+    location = /admin {
+        return 301 /admin/;
+    }
+
+    location ^~ /admin/ {
+        alias /opt/caipu-miniapp/admin-web/dist/;
+        try_files $uri $uri/ /admin/index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /uploads/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -331,7 +394,13 @@ curl "https://$DOMAIN/healthz"
 curl "https://$DOMAIN/api/healthz"
 ```
 
-如果返回 `status=ok`，后端就已经对外可用了。
+如果返回 `status=ok`，后端就已经对外可用了。再访问：
+
+```bash
+curl -I "https://$DOMAIN/admin/"
+```
+
+如果返回 `200` 或 `301/302` 跳转到 `/admin/`，说明后台静态资源也已经挂上。
 
 再到微信小程序后台确认：
 

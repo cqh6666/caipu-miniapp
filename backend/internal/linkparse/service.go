@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
@@ -79,15 +80,20 @@ type Options struct {
 	HTTPClient               *http.Client
 	AIHTTPClient             *http.Client
 	ResolveURLClient         *http.Client
+	RuntimeConfigLoader      RuntimeConfigLoader
+	Tracker                  audit.Tracker
 }
 
 type Service struct {
 	httpClient               *http.Client
 	resolveURLClient         *http.Client
+	defaultRuntimeConfig     RuntimeConfig
+	runtimeConfigLoader      RuntimeConfigLoader
 	ai                       *aiClient
 	titleAI                  *aiClient
 	sidecar                  *sidecarClient
 	bilibiliSessdataProvider func(context.Context) string
+	tracker                  audit.Tracker
 }
 
 type aiClient struct {
@@ -98,6 +104,40 @@ type aiClient struct {
 	stream      bool
 	temperature float64
 	maxTokens   int
+	tracker     audit.Tracker
+}
+
+type RuntimeConfigLoader func(context.Context) RuntimeConfig
+
+type RuntimeConfig struct {
+	SummaryAI        SummaryAIConfig
+	TitleAI          TitleAIConfig
+	LinkparseSidecar LinkparseSidecarConfig
+}
+
+type SummaryAIConfig struct {
+	BaseURL string
+	APIKey  string
+	Model   string
+	Timeout time.Duration
+}
+
+type TitleAIConfig struct {
+	Enabled     bool
+	BaseURL     string
+	APIKey      string
+	Model       string
+	Stream      bool
+	Temperature float64
+	MaxTokens   int
+	Timeout     time.Duration
+}
+
+type LinkparseSidecarConfig struct {
+	Enabled bool
+	BaseURL string
+	APIKey  string
+	Timeout time.Duration
 }
 
 type videoRef struct {
@@ -216,86 +256,252 @@ func NewService(opts Options) *Service {
 		resolveURLClient = httpClient
 	}
 
-	var sidecar *sidecarClient
-	if opts.LinkparseSidecarEnabled && strings.TrimSpace(opts.LinkparseSidecarBaseURL) != "" {
-		sidecarHTTPClient := &http.Client{Timeout: defaultHTTPTimeout}
-		if opts.LinkparseSidecarTimeout > 0 {
-			sidecarHTTPClient.Timeout = opts.LinkparseSidecarTimeout
-		}
-
-		sidecar = &sidecarClient{
-			baseURL: strings.TrimRight(strings.TrimSpace(opts.LinkparseSidecarBaseURL), "/"),
-			apiKey:  strings.TrimSpace(opts.LinkparseSidecarAPIKey),
-			client:  sidecarHTTPClient,
-		}
-	}
-
-	var summaryAI *aiClient
-	if strings.TrimSpace(opts.AIModel) != "" {
-		aiHTTPClient := opts.AIHTTPClient
-		if aiHTTPClient == nil {
-			timeout := opts.AITimeout
-			if timeout <= 0 {
-				timeout = 30 * time.Second
-			}
-			aiHTTPClient = &http.Client{Timeout: timeout}
-		}
-
-		baseURL := strings.TrimRight(strings.TrimSpace(opts.AIBaseURL), "/")
-		if baseURL == "" {
-			baseURL = "https://api.openai.com/v1"
-		}
-
-		summaryAI = &aiClient{
-			baseURL:    baseURL,
-			apiKey:     strings.TrimSpace(opts.AIAPIKey),
-			model:      strings.TrimSpace(opts.AIModel),
-			httpClient: aiHTTPClient,
-		}
-	}
-
-	var titleAI *aiClient
 	titleModel := strings.TrimSpace(opts.AITitleModel)
 	if titleModel == "" {
 		titleModel = strings.TrimSpace(opts.AIModel)
 	}
-	if titleModel != "" {
-		titleHTTPClient := &http.Client{Timeout: 3 * time.Second}
-		if opts.AITitleTimeout > 0 {
-			titleHTTPClient.Timeout = opts.AITitleTimeout
-		}
+	titleBaseURL := strings.TrimRight(strings.TrimSpace(opts.AITitleBaseURL), "/")
+	if titleBaseURL == "" {
+		titleBaseURL = strings.TrimRight(strings.TrimSpace(opts.AIBaseURL), "/")
+	}
+	titleAPIKey := strings.TrimSpace(opts.AITitleAPIKey)
+	if titleAPIKey == "" {
+		titleAPIKey = strings.TrimSpace(opts.AIAPIKey)
+	}
 
-		baseURL := strings.TrimRight(strings.TrimSpace(opts.AITitleBaseURL), "/")
-		if baseURL == "" {
-			baseURL = strings.TrimRight(strings.TrimSpace(opts.AIBaseURL), "/")
-		}
-		if baseURL == "" {
-			baseURL = "https://api.openai.com/v1"
-		}
+	defaultRuntimeConfig := RuntimeConfig{
+		SummaryAI: SummaryAIConfig{
+			BaseURL: strings.TrimRight(strings.TrimSpace(opts.AIBaseURL), "/"),
+			APIKey:  strings.TrimSpace(opts.AIAPIKey),
+			Model:   strings.TrimSpace(opts.AIModel),
+			Timeout: opts.AITimeout,
+		},
+		TitleAI: TitleAIConfig{
+			Enabled:     opts.AITitleEnabled,
+			BaseURL:     titleBaseURL,
+			APIKey:      titleAPIKey,
+			Model:       titleModel,
+			Stream:      opts.AITitleStream,
+			Temperature: opts.AITitleTemperature,
+			MaxTokens:   opts.AITitleMaxTokens,
+			Timeout:     opts.AITitleTimeout,
+		},
+		LinkparseSidecar: LinkparseSidecarConfig{
+			Enabled: opts.LinkparseSidecarEnabled,
+			BaseURL: strings.TrimRight(strings.TrimSpace(opts.LinkparseSidecarBaseURL), "/"),
+			APIKey:  strings.TrimSpace(opts.LinkparseSidecarAPIKey),
+			Timeout: opts.LinkparseSidecarTimeout,
+		},
+	}
 
-		apiKey := strings.TrimSpace(opts.AITitleAPIKey)
-		if apiKey == "" {
-			apiKey = strings.TrimSpace(opts.AIAPIKey)
-		}
+	if defaultRuntimeConfig.SummaryAI.BaseURL == "" {
+		defaultRuntimeConfig.SummaryAI.BaseURL = "https://api.openai.com/v1"
+	}
+	if defaultRuntimeConfig.SummaryAI.Timeout <= 0 {
+		defaultRuntimeConfig.SummaryAI.Timeout = 30 * time.Second
+	}
+	if defaultRuntimeConfig.TitleAI.BaseURL == "" {
+		defaultRuntimeConfig.TitleAI.BaseURL = defaultRuntimeConfig.SummaryAI.BaseURL
+	}
+	if defaultRuntimeConfig.TitleAI.Timeout <= 0 {
+		defaultRuntimeConfig.TitleAI.Timeout = 3 * time.Second
+	}
+	if defaultRuntimeConfig.TitleAI.MaxTokens <= 0 {
+		defaultRuntimeConfig.TitleAI.MaxTokens = 64
+	}
+	if defaultRuntimeConfig.LinkparseSidecar.Timeout <= 0 {
+		defaultRuntimeConfig.LinkparseSidecar.Timeout = defaultHTTPTimeout
+	}
 
-		titleAI = &aiClient{
-			baseURL:     baseURL,
-			apiKey:      apiKey,
-			model:       titleModel,
-			httpClient:  titleHTTPClient,
-			stream:      opts.AITitleStream,
-			temperature: opts.AITitleTemperature,
-			maxTokens:   opts.AITitleMaxTokens,
+	var summaryAI *aiClient
+	var titleAI *aiClient
+	var sidecar *sidecarClient
+	if opts.RuntimeConfigLoader == nil {
+		if strings.TrimSpace(defaultRuntimeConfig.SummaryAI.Model) != "" {
+			summaryAI = &aiClient{
+				baseURL:    defaultRuntimeConfig.SummaryAI.BaseURL,
+				apiKey:     defaultRuntimeConfig.SummaryAI.APIKey,
+				model:      defaultRuntimeConfig.SummaryAI.Model,
+				httpClient: &http.Client{Timeout: defaultRuntimeConfig.SummaryAI.Timeout},
+				tracker:    opts.Tracker,
+			}
+		}
+		if strings.TrimSpace(defaultRuntimeConfig.TitleAI.Model) != "" {
+			titleAI = &aiClient{
+				baseURL:     defaultRuntimeConfig.TitleAI.BaseURL,
+				apiKey:      defaultRuntimeConfig.TitleAI.APIKey,
+				model:       defaultRuntimeConfig.TitleAI.Model,
+				httpClient:  &http.Client{Timeout: defaultRuntimeConfig.TitleAI.Timeout},
+				stream:      defaultRuntimeConfig.TitleAI.Stream,
+				temperature: defaultRuntimeConfig.TitleAI.Temperature,
+				maxTokens:   defaultRuntimeConfig.TitleAI.MaxTokens,
+				tracker:     opts.Tracker,
+			}
+		}
+		if defaultRuntimeConfig.LinkparseSidecar.Enabled && strings.TrimSpace(defaultRuntimeConfig.LinkparseSidecar.BaseURL) != "" {
+			sidecar = &sidecarClient{
+				baseURL: defaultRuntimeConfig.LinkparseSidecar.BaseURL,
+				apiKey:  defaultRuntimeConfig.LinkparseSidecar.APIKey,
+				client:  &http.Client{Timeout: defaultRuntimeConfig.LinkparseSidecar.Timeout},
+				tracker: opts.Tracker,
+			}
 		}
 	}
 
 	return &Service{
 		httpClient:               httpClient,
 		resolveURLClient:         resolveURLClient,
+		defaultRuntimeConfig:     defaultRuntimeConfig,
+		runtimeConfigLoader:      opts.RuntimeConfigLoader,
 		ai:                       summaryAI,
 		titleAI:                  titleAI,
 		sidecar:                  sidecar,
 		bilibiliSessdataProvider: opts.BilibiliSessdataProvider,
+		tracker:                  opts.Tracker,
+	}
+}
+
+func (s *Service) runtimeConfig(ctx context.Context) RuntimeConfig {
+	cfg := s.defaultRuntimeConfig
+	if s != nil && s.runtimeConfigLoader != nil {
+		runtimeCfg := s.runtimeConfigLoader(ctx)
+		if strings.TrimSpace(runtimeCfg.SummaryAI.BaseURL) != "" {
+			cfg.SummaryAI.BaseURL = strings.TrimSpace(runtimeCfg.SummaryAI.BaseURL)
+		}
+		if strings.TrimSpace(runtimeCfg.SummaryAI.APIKey) != "" {
+			cfg.SummaryAI.APIKey = strings.TrimSpace(runtimeCfg.SummaryAI.APIKey)
+		}
+		if strings.TrimSpace(runtimeCfg.SummaryAI.Model) != "" {
+			cfg.SummaryAI.Model = strings.TrimSpace(runtimeCfg.SummaryAI.Model)
+		}
+		if runtimeCfg.SummaryAI.Timeout > 0 {
+			cfg.SummaryAI.Timeout = runtimeCfg.SummaryAI.Timeout
+		}
+
+		cfg.TitleAI.Enabled = runtimeCfg.TitleAI.Enabled
+		if strings.TrimSpace(runtimeCfg.TitleAI.BaseURL) != "" {
+			cfg.TitleAI.BaseURL = strings.TrimSpace(runtimeCfg.TitleAI.BaseURL)
+		}
+		if strings.TrimSpace(runtimeCfg.TitleAI.APIKey) != "" {
+			cfg.TitleAI.APIKey = strings.TrimSpace(runtimeCfg.TitleAI.APIKey)
+		}
+		if strings.TrimSpace(runtimeCfg.TitleAI.Model) != "" {
+			cfg.TitleAI.Model = strings.TrimSpace(runtimeCfg.TitleAI.Model)
+		}
+		cfg.TitleAI.Stream = runtimeCfg.TitleAI.Stream
+		cfg.TitleAI.Temperature = runtimeCfg.TitleAI.Temperature
+		if runtimeCfg.TitleAI.MaxTokens > 0 {
+			cfg.TitleAI.MaxTokens = runtimeCfg.TitleAI.MaxTokens
+		}
+		if runtimeCfg.TitleAI.Timeout > 0 {
+			cfg.TitleAI.Timeout = runtimeCfg.TitleAI.Timeout
+		}
+
+		cfg.LinkparseSidecar.Enabled = runtimeCfg.LinkparseSidecar.Enabled
+		if strings.TrimSpace(runtimeCfg.LinkparseSidecar.BaseURL) != "" {
+			cfg.LinkparseSidecar.BaseURL = strings.TrimSpace(runtimeCfg.LinkparseSidecar.BaseURL)
+		}
+		if strings.TrimSpace(runtimeCfg.LinkparseSidecar.APIKey) != "" {
+			cfg.LinkparseSidecar.APIKey = strings.TrimSpace(runtimeCfg.LinkparseSidecar.APIKey)
+		}
+		if runtimeCfg.LinkparseSidecar.Timeout > 0 {
+			cfg.LinkparseSidecar.Timeout = runtimeCfg.LinkparseSidecar.Timeout
+		}
+	}
+
+	if strings.TrimSpace(cfg.TitleAI.Model) == "" {
+		cfg.TitleAI.Model = cfg.SummaryAI.Model
+	}
+	if strings.TrimSpace(cfg.TitleAI.BaseURL) == "" {
+		cfg.TitleAI.BaseURL = cfg.SummaryAI.BaseURL
+	}
+	if strings.TrimSpace(cfg.TitleAI.APIKey) == "" {
+		cfg.TitleAI.APIKey = cfg.SummaryAI.APIKey
+	}
+	return cfg
+}
+
+func (s *Service) summaryAIFor(ctx context.Context) *aiClient {
+	if s != nil && s.ai != nil {
+		return s.ai
+	}
+	cfg := s.runtimeConfig(ctx).SummaryAI
+	if strings.TrimSpace(cfg.Model) == "" {
+		return nil
+	}
+
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	return &aiClient{
+		baseURL:    baseURL,
+		apiKey:     strings.TrimSpace(cfg.APIKey),
+		model:      strings.TrimSpace(cfg.Model),
+		httpClient: &http.Client{Timeout: timeout},
+		tracker:    s.tracker,
+	}
+}
+
+func (s *Service) titleAIFor(ctx context.Context) *aiClient {
+	if s != nil && s.titleAI != nil {
+		return s.titleAI
+	}
+	cfg := s.runtimeConfig(ctx).TitleAI
+	if !cfg.Enabled || strings.TrimSpace(cfg.Model) == "" {
+		return nil
+	}
+
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	maxTokens := cfg.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 64
+	}
+
+	return &aiClient{
+		baseURL:     baseURL,
+		apiKey:      strings.TrimSpace(cfg.APIKey),
+		model:       strings.TrimSpace(cfg.Model),
+		httpClient:  &http.Client{Timeout: timeout},
+		stream:      cfg.Stream,
+		temperature: cfg.Temperature,
+		maxTokens:   maxTokens,
+		tracker:     s.tracker,
+	}
+}
+
+func (s *Service) sidecarFor(ctx context.Context) *sidecarClient {
+	if s != nil && s.sidecar != nil {
+		return s.sidecar
+	}
+	cfg := s.runtimeConfig(ctx).LinkparseSidecar
+	if !cfg.Enabled || strings.TrimSpace(cfg.BaseURL) == "" {
+		return nil
+	}
+
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = defaultHTTPTimeout
+	}
+
+	return &sidecarClient{
+		baseURL: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		apiKey:  strings.TrimSpace(cfg.APIKey),
+		client:  &http.Client{Timeout: timeout},
+		tracker: s.tracker,
 	}
 }
 
@@ -311,7 +517,7 @@ func (s *Service) PreviewLink(ctx context.Context, rawInput string) (LinkPreview
 }
 
 func (s *Service) PreviewBilibili(ctx context.Context, rawInput string) (LinkPreviewResult, error) {
-	if s != nil && s.sidecar != nil {
+	if sidecar := s.sidecarFor(ctx); sidecar != nil {
 		result, err := s.fetchBilibiliViaSidecar(ctx, rawInput, bilibiliFetchOptions{})
 		if err != nil {
 			return LinkPreviewResult{}, err
@@ -362,9 +568,45 @@ func (s *Service) PreviewBilibili(ctx context.Context, rawInput string) (LinkPre
 }
 
 func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliParseResult, error) {
-	if s != nil && s.sidecar != nil {
+	trackedCtx, _, finish := s.startTrackedJob(ctx, audit.SceneParseSummary, rawInput, "manual_link", map[string]any{
+		"platform": "bilibili",
+	})
+	ctx = trackedCtx
+	finishResult := func(result BilibiliParseResult, err error) {
+		if finish == nil {
+			return
+		}
+		jobResult := audit.JobResult{
+			Status:        audit.JobStatusSuccess,
+			FinalProvider: "heuristic",
+			FinalModel:    "",
+			FallbackUsed:  strings.TrimSpace(result.SummaryMode) == "heuristic",
+			FinishedAt:    audit.NowRFC3339(),
+			Meta: map[string]any{
+				"platform":     "bilibili",
+				"summary_mode": strings.TrimSpace(result.SummaryMode),
+				"warnings":     len(result.Warnings),
+			},
+		}
+		if result.SummaryMode == "ai" {
+			jobResult.FinalProvider = "openai-compatible"
+			jobResult.FinalModel = s.summaryAIFor(ctx).model
+			jobResult.FallbackUsed = false
+		}
+		if err != nil {
+			jobResult.Status = audit.JobStatusFromError(err)
+			jobResult.ErrorMessage = err.Error()
+			jobResult.FinalProvider = ""
+			jobResult.FinalModel = ""
+			jobResult.FallbackUsed = false
+		}
+		_ = finish(ctx, jobResult)
+	}
+
+	if sidecar := s.sidecarFor(ctx); sidecar != nil {
 		result, err := s.fetchBilibiliViaSidecar(ctx, rawInput, bilibiliFetchOptions{IncludeTranscript: true})
 		if err != nil {
+			finishResult(BilibiliParseResult{}, err)
 			return BilibiliParseResult{}, err
 		}
 
@@ -372,14 +614,16 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 			result.SummaryMode = "heuristic"
 			result.RecipeDraft = summarizeHeuristically(result, "")
 			result.Warnings = append(result.Warnings, "当前视频没有可直接访问的字幕，已使用标题和简介生成降级草稿。")
+			finishResult(result, nil)
 			return result, nil
 		}
 
-		if s.ai != nil {
-			draft, err := s.ai.summarize(ctx, result)
+		if summaryAI := s.summaryAIFor(ctx); summaryAI != nil {
+			draft, err := summaryAI.summarize(ctx, result)
 			if err == nil {
 				result.SummaryMode = "ai"
 				result.RecipeDraft = normalizeDraft(result, draft)
+				finishResult(result, nil)
 				return result, nil
 			}
 			result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
@@ -387,16 +631,19 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 		result.SummaryMode = "heuristic"
 		result.RecipeDraft = summarizeHeuristically(result, result.SubtitleText)
+		finishResult(result, nil)
 		return result, nil
 	}
 
 	inputURL, err := extractInputURL(rawInput)
 	if err != nil {
+		finishResult(BilibiliParseResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
 	ref, warnings, err := s.resolveVideoRef(ctx, inputURL)
 	if err != nil {
+		finishResult(BilibiliParseResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -404,6 +651,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 	view, err := s.fetchView(ctx, ref, sessdata)
 	if err != nil {
+		finishResult(BilibiliParseResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -427,6 +675,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 	subtitles, err := s.fetchSubtitles(ctx, result.BVID, result.CID, sessdata)
 	if err != nil {
+		finishResult(BilibiliParseResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -440,6 +689,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 	subtitleFile, err := s.fetchSubtitleFile(ctx, selectedSubtitle.SubtitleURL, sessdata)
 	if err != nil {
+		finishResult(BilibiliParseResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -453,14 +703,16 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 		result.SummaryMode = "heuristic"
 		result.RecipeDraft = summarizeHeuristically(result, "")
 		result.Warnings = append(result.Warnings, "字幕列表存在，但未提取到可用文本，已回退到标题和简介总结。")
+		finishResult(result, nil)
 		return result, nil
 	}
 
-	if s.ai != nil {
-		draft, err := s.ai.summarize(ctx, result)
+	if summaryAI := s.summaryAIFor(ctx); summaryAI != nil {
+		draft, err := summaryAI.summarize(ctx, result)
 		if err == nil {
 			result.SummaryMode = "ai"
 			result.RecipeDraft = normalizeDraft(result, draft)
+			finishResult(result, nil)
 			return result, nil
 		}
 		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
@@ -468,6 +720,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 	result.SummaryMode = "heuristic"
 	result.RecipeDraft = summarizeHeuristically(result, result.SubtitleText)
+	finishResult(result, nil)
 	return result, nil
 }
 
@@ -1177,6 +1430,7 @@ func truncateRunes(value string, maxRunes int) string {
 }
 
 func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (RecipeDraft, error) {
+	startedAt := time.Now()
 	payload := openAIChatRequest{
 		Model:       c.model,
 		Temperature: 0.2,
@@ -1209,6 +1463,9 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFromError(err), 0, err, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
 		return RecipeDraft{}, err
 	}
 	defer resp.Body.Close()
@@ -1216,37 +1473,70 @@ func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (R
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		if strings.TrimSpace(string(data)) != "" {
-			return RecipeDraft{}, fmt.Errorf("ai request failed: %s", strings.TrimSpace(string(data)))
+			callErr := fmt.Errorf("ai request failed: %s", strings.TrimSpace(string(data)))
+			c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+				"content_kind": "summary_bilibili",
+			})
+			return RecipeDraft{}, callErr
 		}
-		return RecipeDraft{}, fmt.Errorf("ai request failed with status %d", resp.StatusCode)
+		callErr := fmt.Errorf("ai request failed with status %d", resp.StatusCode)
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
+		return RecipeDraft{}, callErr
 	}
 
 	var parsed openAIChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
 		return RecipeDraft{}, err
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
-		return RecipeDraft{}, fmt.Errorf("ai error: %s", parsed.Error.Message)
+		callErr := fmt.Errorf("ai error: %s", parsed.Error.Message)
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
+		return RecipeDraft{}, callErr
 	}
 	if len(parsed.Choices) == 0 {
-		return RecipeDraft{}, fmt.Errorf("ai response contained no choices")
+		callErr := fmt.Errorf("ai response contained no choices")
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
+		return RecipeDraft{}, callErr
 	}
 
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
 	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(content, "$1"))
 	if content == "" {
-		return RecipeDraft{}, fmt.Errorf("ai response was empty")
+		callErr := fmt.Errorf("ai response was empty")
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
+		return RecipeDraft{}, callErr
 	}
 
 	var summary aiSummaryResponse
 	if err := json.Unmarshal([]byte(content), &summary); err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
 		return RecipeDraft{}, err
 	}
 
 	parsedContent, err := summary.toParsedContent()
 	if err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "summary_bilibili",
+		})
 		return RecipeDraft{}, err
 	}
+
+	c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusSuccess, resp.StatusCode, nil, map[string]any{
+		"content_kind": "summary_bilibili",
+	})
 
 	return RecipeDraft{
 		Title:         summary.Title,
@@ -1449,21 +1739,63 @@ func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewT
 		return outcome
 	}
 	outcome.Source = "rule"
-	if s == nil || s.titleAI == nil {
+	titleAI := s.titleAIFor(ctx)
+	if s == nil || titleAI == nil {
 		return outcome
 	}
 
-	refined, err := s.titleAI.refineTitle(ctx, raw, title)
+	trackedCtx, _, finish := s.startTrackedJob(ctx, audit.SceneTitleRefine, raw, "preview_link", map[string]any{
+		"raw_title": title,
+	})
+	refined, err := titleAI.refineTitle(trackedCtx, raw, title)
 	if err != nil {
+		if finish != nil {
+			_ = finish(trackedCtx, audit.JobResult{
+				Status:        audit.JobStatusFallback,
+				FinalProvider: "rule",
+				FinalModel:    "",
+				FallbackUsed:  true,
+				ErrorMessage:  err.Error(),
+				FinishedAt:    audit.NowRFC3339(),
+				Meta: map[string]any{
+					"result_source": "rule",
+				},
+			})
+		}
 		return outcome
 	}
 
 	refined = sanitizePreviewTitle(refined)
 	if refined == "" {
+		if finish != nil {
+			_ = finish(trackedCtx, audit.JobResult{
+				Status:        audit.JobStatusFallback,
+				FinalProvider: "rule",
+				FinalModel:    "",
+				FallbackUsed:  true,
+				ErrorMessage:  "title ai returned empty result",
+				FinishedAt:    audit.NowRFC3339(),
+				Meta: map[string]any{
+					"result_source": "rule",
+				},
+			})
+		}
 		return outcome
 	}
 	outcome.Title = refined
 	outcome.Source = "ai"
+	if finish != nil {
+		_ = finish(trackedCtx, audit.JobResult{
+			Status:        audit.JobStatusSuccess,
+			FinalProvider: "openai-compatible",
+			FinalModel:    titleAI.model,
+			FallbackUsed:  false,
+			FinishedAt:    audit.NowRFC3339(),
+			Meta: map[string]any{
+				"result_source": "ai",
+			},
+		})
+	}
 	return outcome
 }
 
@@ -1593,6 +1925,7 @@ func trimTrailingPreviewTag(title string) string {
 }
 
 func (c *aiClient) refineTitle(ctx context.Context, rawTitle, currentTitle string) (string, error) {
+	startedAt := time.Now()
 	stream := c != nil && c.stream
 	maxTokens := 64
 	if c != nil && c.maxTokens > 0 {
@@ -1641,6 +1974,9 @@ func (c *aiClient) refineTitle(ctx context.Context, rawTitle, currentTitle strin
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFromError(err), 0, err, map[string]any{
+			"content_kind": "title_refine",
+		})
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -1648,34 +1984,63 @@ func (c *aiClient) refineTitle(ctx context.Context, rawTitle, currentTitle strin
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		if strings.TrimSpace(string(data)) != "" {
-			return "", fmt.Errorf("title ai request failed: %s", strings.TrimSpace(string(data)))
+			callErr := fmt.Errorf("title ai request failed: %s", strings.TrimSpace(string(data)))
+			c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+				"content_kind": "title_refine",
+			})
+			return "", callErr
 		}
-		return "", fmt.Errorf("title ai request failed with status %d", resp.StatusCode)
+		callErr := fmt.Errorf("title ai request failed with status %d", resp.StatusCode)
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "title_refine",
+		})
+		return "", callErr
 	}
 
 	var parsed openAIChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "title_refine",
+		})
 		return "", err
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
-		return "", fmt.Errorf("title ai error: %s", parsed.Error.Message)
+		callErr := fmt.Errorf("title ai error: %s", parsed.Error.Message)
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "title_refine",
+		})
+		return "", callErr
 	}
 	if len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("title ai response contained no choices")
+		callErr := fmt.Errorf("title ai response contained no choices")
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "title_refine",
+		})
+		return "", callErr
 	}
 
 	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
 	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(content, "$1"))
 	if content == "" {
-		return "", fmt.Errorf("title ai response was empty")
+		callErr := fmt.Errorf("title ai response was empty")
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"content_kind": "title_refine",
+		})
+		return "", callErr
 	}
 
 	var response struct {
 		Title string `json:"title"`
 	}
 	if err := json.Unmarshal([]byte(content), &response); err != nil {
+		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
+			"content_kind": "title_refine",
+		})
 		return "", err
 	}
 
+	c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusSuccess, resp.StatusCode, nil, map[string]any{
+		"content_kind": "title_refine",
+	})
 	return strings.TrimSpace(response.Title), nil
 }

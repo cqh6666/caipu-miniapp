@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
@@ -15,6 +17,7 @@ type sidecarClient struct {
 	baseURL string
 	apiKey  string
 	client  *http.Client
+	tracker audit.Tracker
 }
 
 type sidecarParseRequest struct {
@@ -72,13 +75,40 @@ type sidecarParseResponse struct {
 }
 
 func (c *sidecarClient) parse(ctx context.Context, path string, payload sidecarParseRequest, extraHeaders map[string]string) (sidecarParseResponse, error) {
+	startedAt := time.Now()
+	logCall := func(status string, httpStatus int, err error, meta map[string]any) {
+		if c == nil || c.tracker == nil {
+			return
+		}
+		jobCtx, ok := audit.CurrentJobContext(ctx)
+		if !ok || jobCtx.JobRunID <= 0 {
+			return
+		}
+		_ = c.tracker.LogCall(ctx, audit.CallLogInput{
+			JobRunID:     jobCtx.JobRunID,
+			Scene:        jobCtx.Scene,
+			Provider:     "linkparse-sidecar",
+			Endpoint:     path,
+			Model:        strings.TrimSpace(payload.Provider),
+			Status:       status,
+			HTTPStatus:   httpStatus,
+			LatencyMS:    time.Since(startedAt).Milliseconds(),
+			ErrorType:    audit.ErrorTypeFromError(err),
+			ErrorMessage: errorMessage(err),
+			RequestID:    common.RequestID(ctx),
+			Meta:         meta,
+		})
+	}
+
 	body, err := json.Marshal(payload)
 	if err != nil {
+		logCall(audit.CallStatusFailed, 0, err, nil)
 		return sidecarParseResponse{}, common.ErrInternal.WithErr(err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
+		logCall(audit.CallStatusFailed, 0, err, nil)
 		return sidecarParseResponse{}, common.ErrInternal.WithErr(err)
 	}
 
@@ -96,6 +126,7 @@ func (c *sidecarClient) parse(ctx context.Context, path string, payload sidecarP
 
 	resp, err := c.client.Do(req)
 	if err != nil {
+		logCall(audit.CallStatusFromError(err), 0, err, nil)
 		return sidecarParseResponse{}, err
 	}
 	defer resp.Body.Close()
@@ -106,19 +137,44 @@ func (c *sidecarClient) parse(ctx context.Context, path string, payload sidecarP
 		if message == "" {
 			message = "linkparse sidecar request failed"
 		}
-		return sidecarParseResponse{}, common.NewAppError(common.CodeBadRequest, message, http.StatusBadRequest)
+		callErr := common.NewAppError(common.CodeBadRequest, message, http.StatusBadRequest)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr, nil)
+		return sidecarParseResponse{}, callErr
 	}
 
 	var parsed sidecarParseResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return sidecarParseResponse{}, common.NewAppError(common.CodeBadRequest, "failed to decode linkparse sidecar response", http.StatusBadRequest).WithErr(err)
+		callErr := common.NewAppError(common.CodeBadRequest, "failed to decode linkparse sidecar response", http.StatusBadRequest).WithErr(err)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr, nil)
+		return sidecarParseResponse{}, callErr
 	}
 	if !parsed.OK {
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
-			return sidecarParseResponse{}, common.NewAppError(common.CodeBadRequest, strings.TrimSpace(parsed.Error.Message), http.StatusBadRequest)
+			callErr := common.NewAppError(common.CodeBadRequest, strings.TrimSpace(parsed.Error.Message), http.StatusBadRequest)
+			logCall(audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+				"provider_used": strings.TrimSpace(parsed.ProviderUsed),
+			})
+			return sidecarParseResponse{}, callErr
 		}
-		return sidecarParseResponse{}, common.NewAppError(common.CodeBadRequest, "linkparse sidecar parse failed", http.StatusBadRequest)
+		callErr := common.NewAppError(common.CodeBadRequest, "linkparse sidecar parse failed", http.StatusBadRequest)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
+			"provider_used": strings.TrimSpace(parsed.ProviderUsed),
+		})
+		return sidecarParseResponse{}, callErr
 	}
 
+	logCall(audit.CallStatusSuccess, resp.StatusCode, nil, map[string]any{
+		"provider_requested": strings.TrimSpace(parsed.ProviderRequested),
+		"provider_used":      strings.TrimSpace(parsed.ProviderUsed),
+		"quality":            strings.TrimSpace(parsed.Quality),
+	})
+
 	return parsed, nil
+}
+
+func errorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

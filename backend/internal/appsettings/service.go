@@ -2,6 +2,7 @@ package appsettings
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -33,6 +34,10 @@ func (s *Service) GetBilibiliSession(ctx context.Context, userID int64) (Bilibil
 		return BilibiliSessionSetting{}, err
 	}
 
+	return s.CurrentBilibiliSessionSetting(ctx)
+}
+
+func (s *Service) CurrentBilibiliSessionSetting(ctx context.Context) (BilibiliSessionSetting, error) {
 	record, err := s.repo.GetBilibiliSession(ctx)
 	if err != nil {
 		return BilibiliSessionSetting{}, err
@@ -45,7 +50,16 @@ func (s *Service) UpdateBilibiliSession(ctx context.Context, userID int64, rawSe
 		return BilibiliSessionSetting{}, err
 	}
 
+	return s.UpdateBilibiliSessionBySubject(ctx, fmt.Sprintf("user:%d", userID), userID, rawSessdata)
+}
+
+func (s *Service) UpdateBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy int64, rawSessdata string) (BilibiliSessionSetting, error) {
 	sessdata, err := normalizeSessdata(rawSessdata)
+	if err != nil {
+		return BilibiliSessionSetting{}, err
+	}
+
+	currentRecord, err := s.repo.GetBilibiliSession(ctx)
 	if err != nil {
 		return BilibiliSessionSetting{}, err
 	}
@@ -70,12 +84,23 @@ func (s *Service) UpdateBilibiliSession(ctx context.Context, userID int64, rawSe
 		LastCheckedAt:      now,
 		LastSuccessAt:      now,
 		LastError:          "",
-		UpdatedBy:          userID,
+		UpdatedBy:          updatedBy,
 		UpdatedAt:          now,
 	}
 	if err := s.repo.UpsertBilibiliSession(ctx, record); err != nil {
 		return BilibiliSessionSetting{}, err
 	}
+
+	_ = s.repo.InsertSettingAudit(ctx, settingAuditRecord{
+		GroupName:       "bilibili.session",
+		SettingKey:      "bilibili.session.sessdata",
+		Action:          "update",
+		OldValueMasked:  strings.TrimSpace(currentRecord.MaskedSessdata),
+		NewValueMasked:  record.MaskedSessdata,
+		OperatorSubject: strings.TrimSpace(subject),
+		RequestID:       common.RequestID(ctx),
+		CreatedAt:       now,
+	})
 
 	return buildBilibiliSessionSetting(record), nil
 }
@@ -85,16 +110,75 @@ func (s *Service) ClearBilibiliSession(ctx context.Context, userID int64) (Bilib
 		return BilibiliSessionSetting{}, err
 	}
 
+	return s.ClearBilibiliSessionBySubject(ctx, fmt.Sprintf("user:%d", userID), userID)
+}
+
+func (s *Service) ClearBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy int64) (BilibiliSessionSetting, error) {
+	currentRecord, err := s.repo.GetBilibiliSession(ctx)
+	if err != nil {
+		return BilibiliSessionSetting{}, err
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	record := bilibiliSessionRecord{
 		Status:    BilibiliSessionStatusUnconfigured,
-		UpdatedBy: userID,
+		UpdatedBy: updatedBy,
 		UpdatedAt: now,
 	}
 	if err := s.repo.UpsertBilibiliSession(ctx, record); err != nil {
 		return BilibiliSessionSetting{}, err
 	}
+
+	_ = s.repo.InsertSettingAudit(ctx, settingAuditRecord{
+		GroupName:       "bilibili.session",
+		SettingKey:      "bilibili.session.sessdata",
+		Action:          "update",
+		OldValueMasked:  strings.TrimSpace(currentRecord.MaskedSessdata),
+		NewValueMasked:  "",
+		OperatorSubject: strings.TrimSpace(subject),
+		RequestID:       common.RequestID(ctx),
+		CreatedAt:       now,
+	})
+
 	return buildBilibiliSessionSetting(record), nil
+}
+
+func (s *Service) TestBilibiliSession(ctx context.Context, subject string, rawSessdata string) (GroupTestResult, error) {
+	sessdata, err := normalizeSessdata(rawSessdata)
+	if err != nil {
+		return GroupTestResult{}, err
+	}
+	if s.parser == nil {
+		return GroupTestResult{}, common.ErrInternal
+	}
+
+	startedAt := time.Now()
+	err = s.parser.VerifyBilibiliSessdata(ctx, sessdata)
+	result := GroupTestResult{
+		OK:        err == nil,
+		LatencyMS: time.Since(startedAt).Milliseconds(),
+	}
+	if err != nil {
+		result.Message = err.Error()
+	} else {
+		result.Message = "SESSDATA 校验通过"
+	}
+
+	_ = s.repo.InsertSettingAudit(ctx, settingAuditRecord{
+		GroupName:       "bilibili.session",
+		SettingKey:      "__test__",
+		Action:          "test",
+		OldValueMasked:  "",
+		NewValueMasked:  maskSessdata(sessdata),
+		OperatorSubject: strings.TrimSpace(subject),
+		RequestID:       common.RequestID(ctx),
+		CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+	})
+
+	if err != nil {
+		return result, nil
+	}
+	return result, nil
 }
 
 func (s *Service) CurrentBilibiliSessdata(ctx context.Context) (string, error) {

@@ -5,6 +5,9 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "admin:dev": "npm --prefix admin-web run dev",
+    "admin:build": "npm --prefix admin-web run build",
+    "admin:preview": "npm --prefix admin-web run preview",
     "wx:auto-preview": "bash scripts/wx-auto-preview.sh",
     "wx:auto-preview:skip-compile": "bash scripts/wx-auto-preview.sh --skip-compile"
   },
