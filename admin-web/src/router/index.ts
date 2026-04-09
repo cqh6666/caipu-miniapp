@@ -1,9 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import DashboardPage from '@/pages/DashboardPage.vue'
-import JobsPage from '@/pages/JobsPage.vue'
-import CallsPage from '@/pages/CallsPage.vue'
-import SettingsPage from '@/pages/SettingsPage.vue'
-import LoginPage from '@/pages/LoginPage.vue'
 import { bootstrapSession, currentUsername } from '@/session'
 
 const router = createRouter({
@@ -12,8 +7,12 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: LoginPage,
-      meta: { public: true }
+      component: () => import('@/pages/LoginPage.vue'),
+      meta: {
+        public: true,
+        title: '后台登录',
+        description: '进入 Caipu Admin 统一运维与配置控制台。'
+      }
     },
     {
       path: '/',
@@ -22,22 +21,38 @@ const router = createRouter({
     {
       path: '/dashboard',
       name: 'dashboard',
-      component: DashboardPage
+      component: () => import('@/pages/DashboardPage.vue'),
+      meta: {
+        title: 'AI 概览',
+        description: '统一查看任务成功率、调用健康度与最近失败信号。'
+      }
     },
     {
       path: '/ai-jobs',
       name: 'ai-jobs',
-      component: JobsPage
+      component: () => import('@/pages/JobsPage.vue'),
+      meta: {
+        title: 'AI 任务',
+        description: '按任务维度追踪场景、目标对象、最终状态与关联调用。'
+      }
     },
     {
       path: '/ai-calls',
       name: 'ai-calls',
-      component: CallsPage
+      component: () => import('@/pages/CallsPage.vue'),
+      meta: {
+        title: 'API 调用',
+        description: '按 provider 与 request 维度排查超时、失败与异常模式。'
+      }
     },
     {
       path: '/settings',
       name: 'settings',
-      component: SettingsPage
+      component: () => import('@/pages/SettingsPage.vue'),
+      meta: {
+        title: '配置中心',
+        description: '在线管理运行时参数、测试连通性并追踪审计记录。'
+      }
     }
   ]
 })

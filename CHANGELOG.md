@@ -2,6 +2,53 @@
 
 ## 2026-04-09
 
+### Changed
+
+- 后台管理平台首轮从 MVP 升级为“稳重数据台 + 排障优先”的完整工作台：
+  - `admin-web` 新增 `StatusTag`、`FilterToolbar`、`PageState`、
+    `JsonViewerCard`、`CopyTextButton`、任务/调用详情抽屉等共享组件，
+    页面交互从“纯表格 + toast”升级为“可筛选、可回溯、可复制、可空态/
+    错误态表达”的工作流
+  - 概览页重做为 KPI + 趋势 + 最近失败 + Provider/Model 拆分视图，
+    失败任务支持直接打开任务详情并继续下钻到关联调用
+  - 任务页、调用页开始使用 URL query 持久化筛选条件，补齐
+    `timeFrom/timeTo` 时间范围过滤、重置、显式详情入口与详情抽屉
+  - 配置中心补齐脏状态提示、敏感值清空确认、保存前 diff 摘要、
+    最近测试结果面板和审计按 `group/action` 过滤
+  - 后端运行时配置保存/测试逻辑收紧为“显式非空值优先于清空标记”，
+    避免前端同一字段既传新值又带 `clearKeys` 时被误删
+  - `vite` 路由切为懒加载，`echarts` 改为按需模块引入，并补
+    `manualChunks` 让前端入口包明显收敛；当前仍保留 `element-plus`
+    大 chunk 告警，后续若要继续压缩需再推进组件级按需注册
+  - 进一步把 `Element Plus` 从全量 `app.use(ElementPlus) + dist/index.css`
+    切换为“模板组件按需解析 + 服务组件最小样式引入”，将后台样式产物从
+    约 `352 KB` 压到约 `160 KB`，同时保留现有页面功能和样式一致性
+
+### Notes
+
+- 修改时间：2026-04-09 14:32 CST
+- 变更背景：后台管理平台虽然已经具备概览、任务、调用、配置中心四个
+  基础页面，但此前更偏“能看数据的 MVP”，在配置误操作防护、排障
+  下钻路径、筛选持久化、空态/错误态表达和响应式布局上仍明显偏弱，
+  日常运维和联调效率不高
+- 核心改动：统一后台视觉 token 和交互骨架，新增共享组件与详情抽屉，
+  重构概览/任务/调用/配置中心页面，并同步修复运行时配置的清空优先级
+  逻辑与回归测试
+- 影响范围：`admin-web/src/components/*`、`admin-web/src/pages/*`、
+  `admin-web/src/router/index.ts`、`admin-web/src/style.css`、
+  `admin-web/src/utils/*`、`admin-web/vite.config.ts`、
+  `backend/internal/appsettings/runtime_provider.go`、
+  `backend/internal/appsettings/runtime_provider_test.go`、`CHANGELOG.md`
+- 兼容性/风险：本次不新增后台公开接口，只开始正式使用已有
+  `timeFrom/timeTo` 与审计 `group/action` 查询参数；前端首包已明显拆散，
+  但 `element-plus` 仍是当前最大的 vendor chunk，构建时继续有告警；
+  现阶段已先完成按需样式与组件注入优化，若后续还要继续压缩 JS 体积，
+  需要进一步减少后台对重型表格/抽屉/描述组件的依赖或替换部分 UI 组件
+- 验证情况：已执行 `cd admin-web && npm run build`；已执行
+  `cd backend && go test ./...`；已重点新增并通过运行时配置
+  “显式值覆盖清空标记”的回归测试；已确认概览、任务、调用、配置中心
+  页面均完成构建级联检查
+
 ### Fixed
 
 - 修复后台 AI 仪表盘概览/趋势接口在产生真实审计耗时数据后返回 `500`：

@@ -164,10 +164,7 @@ func (p *RuntimeProvider) UpdateRuntimeGroup(ctx context.Context, subject, reque
 		return RuntimeSettingGroupView{}, err
 	}
 
-	clearSet := make(map[string]struct{}, len(clearKeys))
-	for _, item := range clearKeys {
-		clearSet[strings.TrimSpace(item)] = struct{}{}
-	}
+	clearSet := buildEffectiveClearSet(clearKeys, values)
 
 	for _, field := range group.Fields {
 		fullKey := field.Group + "." + field.Key
@@ -267,10 +264,7 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 		return GroupTestResult{}, err
 	}
 
-	clearSet := make(map[string]struct{}, len(clearKeys))
-	for _, item := range clearKeys {
-		clearSet[strings.TrimSpace(item)] = struct{}{}
-	}
+	clearSet := buildEffectiveClearSet(clearKeys, values)
 
 	resolved := make(map[string]string, len(group.Fields))
 	for _, field := range group.Fields {
@@ -785,6 +779,22 @@ func stringifyRuntimeValue(value any) string {
 func isEmptyStringValue(value any) bool {
 	raw, ok := value.(string)
 	return ok && strings.TrimSpace(raw) == ""
+}
+
+func buildEffectiveClearSet(clearKeys []string, values map[string]any) map[string]struct{} {
+	clearSet := make(map[string]struct{}, len(clearKeys))
+	for _, item := range clearKeys {
+		key := strings.TrimSpace(item)
+		if key == "" {
+			continue
+		}
+		rawValue, exists := values[key]
+		if exists && !isEmptyStringValue(rawValue) && rawValue != nil {
+			continue
+		}
+		clearSet[key] = struct{}{}
+	}
+	return clearSet
 }
 
 func sourceFromDefault(value string, valueType string) string {

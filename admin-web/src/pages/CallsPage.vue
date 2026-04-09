@@ -3,64 +3,166 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">API 调用</h2>
-        <div class="page-subtitle">统一查看 AI provider / sidecar 的调用明细。</div>
+        <div class="page-subtitle">按 provider、request 与时间窗口排查具体调用问题。</div>
       </div>
     </div>
 
     <div class="page-card table-card">
-      <div class="filter-bar">
+      <FilterToolbar>
         <el-select v-model="filters.scene" clearable placeholder="场景">
-          <el-option label="parse_summary" value="parse_summary" />
-          <el-option label="flowchart" value="flowchart" />
-          <el-option label="title_refine" value="title_refine" />
+          <el-option v-for="item in sceneOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
         <el-select v-model="filters.status" clearable placeholder="状态">
-          <el-option label="success" value="success" />
-          <el-option label="failed" value="failed" />
-          <el-option label="timeout" value="timeout" />
+          <el-option v-for="item in callStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-input v-model="filters.provider" clearable placeholder="provider" />
-        <el-input v-model="filters.model" clearable placeholder="model" />
-        <el-input v-model="filters.requestId" clearable placeholder="request_id" />
-        <el-button type="primary" @click="loadCalls">筛选</el-button>
-      </div>
-
-      <el-table :data="result.items">
-        <el-table-column prop="scene" label="场景" width="120" />
-        <el-table-column prop="provider" label="Provider" min-width="150" />
-        <el-table-column prop="endpoint" label="Endpoint" min-width="150" />
-        <el-table-column prop="model" label="Model" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="status" label="状态" width="90" />
-        <el-table-column prop="httpStatus" label="HTTP" width="80" />
-        <el-table-column prop="latencyMs" label="耗时(ms)" width="100" />
-        <el-table-column prop="errorType" label="错误类型" width="110" />
-        <el-table-column prop="errorMessage" label="错误摘要" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="requestId" label="Request ID" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="createdAt" label="时间" width="180" />
-      </el-table>
-
-      <div style="display: flex; justify-content: flex-end; margin-top: 16px">
-        <el-pagination
-          v-model:current-page="page"
-          v-model:page-size="pageSize"
-          layout="total, prev, pager, next"
-          :total="result.total"
-          @current-change="loadCalls"
+        <el-input
+          v-model.trim="filters.provider"
+          clearable
+          placeholder="provider"
+          @keyup.enter="applyFilters"
         />
-      </div>
+        <el-input v-model.trim="filters.model" clearable placeholder="model" @keyup.enter="applyFilters" />
+        <el-input
+          v-model.trim="filters.requestId"
+          clearable
+          placeholder="request_id"
+          @keyup.enter="applyFilters"
+        />
+        <el-date-picker
+          v-model="timeRange"
+          type="datetimerange"
+          unlink-panels
+          range-separator="至"
+          start-placeholder="开始时间"
+          end-placeholder="结束时间"
+        />
+        <template #actions>
+          <el-button @click="resetFilters">重置</el-button>
+          <el-button type="primary" :loading="loading" @click="applyFilters">筛选</el-button>
+        </template>
+      </FilterToolbar>
+
+      <el-alert
+        v-if="errorMessage && result.items.length"
+        class="setting-alert"
+        type="warning"
+        :closable="false"
+        :title="errorMessage"
+      />
+
+      <PageState v-if="loading && !result.items.length" mode="loading" title="正在加载调用列表" compact />
+      <PageState
+        v-else-if="errorMessage && !result.items.length"
+        mode="error"
+        title="调用列表加载失败"
+        :description="errorMessage"
+        compact
+        @retry="loadCalls"
+      />
+      <PageState
+        v-else-if="!result.items.length"
+        mode="empty"
+        title="暂无调用记录"
+        description="当前筛选条件下没有命中的调用记录，可以扩大时间范围再试。"
+        compact
+      />
+      <template v-else>
+        <div class="table-scroll">
+          <el-table :data="result.items" size="small" style="width: 100%">
+            <el-table-column label="场景" width="120">
+              <template #default="{ row }">{{ displayScene(row.scene) }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <StatusTag :tone="toneForStatus(row.status)" :text="displayCallStatus(row.status)" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="provider" label="Provider" min-width="150" />
+            <el-table-column label="Endpoint / Model" min-width="220">
+              <template #default="{ row }">
+                <div class="mono-text">{{ row.endpoint || '-' }}</div>
+                <div class="mono-text" style="color: var(--color-text-subtle)">{{ row.model || '-' }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="耗时" width="110">
+              <template #default="{ row }">{{ formatDuration(row.latencyMs) }}</template>
+            </el-table-column>
+            <el-table-column prop="httpStatus" label="HTTP" width="80" />
+            <el-table-column label="Request ID" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="mono-text">{{ row.requestId || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="时间" width="180">
+              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="错误摘要" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.errorMessage || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="118" fixed="right">
+              <template #default="{ row }">
+                <el-button text size="small" @click="openCallDetail(row)">查看详情</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; margin-top: 16px">
+          <el-pagination
+            v-model:current-page="page"
+            layout="total, prev, pager, next"
+            background
+            :total="result.total"
+            @current-change="handlePageChange"
+          />
+        </div>
+      </template>
     </div>
+
+    <CallDetailDrawer
+      v-model="callDrawerVisible"
+      :call="selectedCall"
+      @open-job="openJobDetail"
+    />
+    <JobDetailDrawer
+      v-model="jobDrawerVisible"
+      :detail="jobDetail"
+      :loading="jobDetailLoading"
+      @open-call="openCallDetail"
+    />
   </AppShell>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppShell from '@/components/AppShell.vue'
+import FilterToolbar from '@/components/FilterToolbar.vue'
+import PageState from '@/components/PageState.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import CallDetailDrawer from '@/components/CallDetailDrawer.vue'
+import JobDetailDrawer from '@/components/JobDetailDrawer.vue'
 import * as adminApi from '@/api/admin'
-import type { CallLogRecord, PaginationResult } from '@/types'
+import type { CallLogRecord, JobRunRecord, PaginationResult } from '@/types'
+import {
+  callStatusOptions,
+  displayCallStatus,
+  displayScene,
+  formatDateTime,
+  formatDuration,
+  sceneOptions,
+  toneForStatus
+} from '@/utils/admin-display'
+import { buildRouteQuery, readDateRange, readQueryNumber, readQueryString, writeDateRange, type DateRangeValue } from '@/utils/route-query'
+
+const route = useRoute()
+const router = useRouter()
 
 const page = ref(1)
-const pageSize = ref(20)
+const loading = ref(false)
+const errorMessage = ref('')
+const timeRange = ref<DateRangeValue>([])
 const filters = reactive({
   scene: '',
   status: '',
@@ -76,26 +178,118 @@ const result = ref<PaginationResult<CallLogRecord>>({
   pageSize: 20
 })
 
-function buildQuery() {
+const callDrawerVisible = ref(false)
+const selectedCall = ref<CallLogRecord | null>(null)
+const jobDrawerVisible = ref(false)
+const jobDetailLoading = ref(false)
+const jobDetail = ref<{ job: JobRunRecord; calls: CallLogRecord[] } | null>(null)
+
+function syncStateFromRoute() {
+  page.value = readQueryNumber(route.query, 'page', 1)
+  filters.scene = readQueryString(route.query, 'scene')
+  filters.status = readQueryString(route.query, 'status')
+  filters.provider = readQueryString(route.query, 'provider')
+  filters.model = readQueryString(route.query, 'model')
+  filters.requestId = readQueryString(route.query, 'requestId')
+  timeRange.value = readDateRange(route.query)
+}
+
+function buildListRouteQuery(nextPage = page.value) {
+  return buildRouteQuery({
+    page: nextPage > 1 ? nextPage : undefined,
+    scene: filters.scene || undefined,
+    status: filters.status || undefined,
+    provider: filters.provider || undefined,
+    model: filters.model || undefined,
+    requestId: filters.requestId || undefined,
+    ...writeDateRange(timeRange.value)
+  })
+}
+
+function buildRequestQuery() {
   const query = new URLSearchParams()
   query.set('page', String(page.value))
-  query.set('pageSize', String(pageSize.value))
+  query.set('pageSize', '20')
   if (filters.scene) query.set('scene', filters.scene)
   if (filters.status) query.set('status', filters.status)
   if (filters.provider) query.set('provider', filters.provider)
   if (filters.model) query.set('model', filters.model)
   if (filters.requestId) query.set('requestId', filters.requestId)
+  if (timeRange.value.length) {
+    query.set('timeFrom', timeRange.value[0].toISOString())
+    query.set('timeTo', timeRange.value[1].toISOString())
+  }
   return query
 }
 
 async function loadCalls() {
+  loading.value = true
+  errorMessage.value = ''
   try {
-    const data = await adminApi.listCalls(buildQuery())
+    const data = await adminApi.listCalls(buildRequestQuery())
     result.value = data.result
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载调用失败')
+    errorMessage.value = error instanceof Error ? error.message : '加载调用失败'
+  } finally {
+    loading.value = false
   }
 }
 
-loadCalls()
+async function applyFilters() {
+  const nextQuery = buildListRouteQuery(1)
+  if (JSON.stringify(route.query) === JSON.stringify(nextQuery)) {
+    page.value = 1
+    await loadCalls()
+    return
+  }
+  await router.replace({ query: nextQuery })
+}
+
+async function resetFilters() {
+  filters.scene = ''
+  filters.status = ''
+  filters.provider = ''
+  filters.model = ''
+  filters.requestId = ''
+  timeRange.value = []
+  if (!Object.keys(route.query).length) {
+    page.value = 1
+    await loadCalls()
+    return
+  }
+  await router.replace({ query: {} })
+}
+
+async function handlePageChange(nextPage: number) {
+  await router.replace({ query: buildListRouteQuery(nextPage) })
+}
+
+function openCallDetail(call: CallLogRecord) {
+  selectedCall.value = call
+  callDrawerVisible.value = true
+}
+
+async function openJobDetail(jobId: number) {
+  callDrawerVisible.value = false
+  jobDrawerVisible.value = true
+  jobDetailLoading.value = true
+  try {
+    const data = await adminApi.getJobDetail(jobId)
+    jobDetail.value = data
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载任务详情失败')
+    jobDetail.value = null
+  } finally {
+    jobDetailLoading.value = false
+  }
+}
+
+watch(
+  () => route.fullPath,
+  () => {
+    syncStateFromRoute()
+    void loadCalls()
+  },
+  { immediate: true }
+)
 </script>
