@@ -13,6 +13,8 @@
     不一致时的手工修改
   - 新脚本支持 `PLAN_ONLY=1`、`BUILD_DIST=0`、`DOMAIN / VERIFY_URL`、
     远端备份保留数量控制等参数，默认适配当前线上目录
+  - 远端解压 `dist` 时改为使用 `tar --no-same-owner`，避免从 macOS 打包上传
+    后把本地 `uid/gid` 带到服务器静态目录上
   - 根目录 `package.json` 新增 `npm run admin:upload` 入口，便于从 macOS
     本机直接触发上传
   - `README.md` 与 `docs/cloud-server-config-overview.md` 同步改为优先推荐

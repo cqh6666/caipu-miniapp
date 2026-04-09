@@ -226,7 +226,7 @@ backup_dir="${REMOTE_ADMIN_DIR}/dist.bak-${RELEASE_ID}"
 
 rm -rf "$stage_dir"
 mkdir -p "$stage_dir"
-tar -xzf "$REMOTE_ARCHIVE" -C "$stage_dir"
+tar --no-same-owner -xzf "$REMOTE_ARCHIVE" -C "$stage_dir"
 
 if [[ ! -d "${stage_dir}/dist" ]]; then
   echo "uploaded archive does not contain dist/" >&2
