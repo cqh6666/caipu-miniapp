@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -92,6 +93,103 @@ func TestServiceStartJobLogCallAndQuery(t *testing.T) {
 	}
 	if overview.APITotal != 1 {
 		t.Fatalf("overview.APITotal = %d, want 1", overview.APITotal)
+	}
+}
+
+func TestServiceOverviewAndTrendsHandlePositiveDurations(t *testing.T) {
+	t.Parallel()
+
+	db := openAuditTestDB(t)
+	service := NewService(db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	bucketTime := time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
+	jobStartedAtA := bucketTime.Add(15 * time.Minute).Format(time.RFC3339)
+	jobStartedAtB := bucketTime.Add(35 * time.Minute).Format(time.RFC3339)
+	callCreatedAtA := bucketTime.Add(5 * time.Minute).Format(time.RFC3339)
+	callCreatedAtB := bucketTime.Add(40 * time.Minute).Format(time.RFC3339)
+
+	if _, err := db.Exec(`
+INSERT INTO ai_job_runs (
+	scene,
+	target_type,
+	target_id,
+	trigger_source,
+	status,
+	final_provider,
+	final_model,
+	fallback_used,
+	error_message,
+	request_id,
+	started_at,
+	finished_at,
+	duration_ms,
+	meta_json
+) VALUES
+	(?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, '{}'),
+	(?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, '{}')
+`,
+		SceneParseSummary, "recipe", "rec_1", "worker", JobStatusSuccess, "openai-compatible", "gpt-test", "req-1", jobStartedAtA, jobStartedAtA, 1000,
+		SceneParseSummary, "recipe", "rec_2", "worker", JobStatusSuccess, "openai-compatible", "gpt-test", "req-2", jobStartedAtB, jobStartedAtB, 2000,
+	); err != nil {
+		t.Fatalf("insert ai_job_runs returned error: %v", err)
+	}
+
+	if _, err := db.Exec(`
+INSERT INTO ai_call_logs (
+	job_run_id,
+	scene,
+	provider,
+	endpoint,
+	model,
+	status,
+	http_status,
+	latency_ms,
+	error_type,
+	error_message,
+	request_id,
+	meta_json,
+	created_at
+) VALUES
+	(1, ?, ?, ?, ?, ?, 200, 120, '', '', ?, '{}', ?),
+	(2, ?, ?, ?, ?, ?, 200, 240, '', '', ?, '{}', ?)
+`,
+		SceneParseSummary, "openai-compatible", "/chat/completions", "gpt-test", CallStatusSuccess, "req-1", callCreatedAtA,
+		SceneParseSummary, "openai-compatible", "/chat/completions", "gpt-test", CallStatusSuccess, "req-2", callCreatedAtB,
+	); err != nil {
+		t.Fatalf("insert ai_call_logs returned error: %v", err)
+	}
+
+	overview, err := service.Overview(context.Background())
+	if err != nil {
+		t.Fatalf("Overview returned error: %v", err)
+	}
+	if overview.TaskTotal != 2 {
+		t.Fatalf("overview.TaskTotal = %d, want 2", overview.TaskTotal)
+	}
+	if overview.APITotal != 2 {
+		t.Fatalf("overview.APITotal = %d, want 2", overview.APITotal)
+	}
+	if overview.AvgDurationMS != 1500 {
+		t.Fatalf("overview.AvgDurationMS = %d, want 1500", overview.AvgDurationMS)
+	}
+
+	trends, err := service.Trends(context.Background(), "24h")
+	if err != nil {
+		t.Fatalf("Trends returned error: %v", err)
+	}
+	if len(trends) != 1 {
+		t.Fatalf("len(trends) = %d, want 1", len(trends))
+	}
+
+	expectedBucket := bucketTime.Format(time.RFC3339)
+	if trends[0].Bucket != expectedBucket {
+		t.Fatalf("trends[0].Bucket = %q, want %q", trends[0].Bucket, expectedBucket)
+	}
+	if trends[0].Label != bucketTime.Format("01-02 15:04") {
+		t.Fatalf("trends[0].Label = %q, want %q", trends[0].Label, bucketTime.Format("01-02 15:04"))
+	}
+	if trends[0].AvgDurationMS != 1500 {
+		t.Fatalf("trends[0].AvgDurationMS = %d, want 1500", trends[0].AvgDurationMS)
 	}
 }
 

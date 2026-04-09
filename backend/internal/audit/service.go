@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -405,7 +406,10 @@ func (s *Service) Overview(ctx context.Context) (DashboardOverview, error) {
 		WindowHours: 24,
 	}
 
-	var taskSuccesses, apiSuccesses, apiTimeouts int
+	var (
+		taskSuccesses, apiSuccesses, apiTimeouts int
+		avgDurationMS                            float64
+	)
 	if err := s.db.QueryRowContext(ctx, `
 SELECT
 	COUNT(*),
@@ -413,9 +417,10 @@ SELECT
 	COALESCE(AVG(CASE WHEN duration_ms > 0 THEN duration_ms END), 0)
 FROM ai_job_runs
 WHERE started_at >= ?
-`, JobStatusSuccess, since).Scan(&overview.TaskTotal, &taskSuccesses, &overview.AvgDurationMS); err != nil {
+`, JobStatusSuccess, since).Scan(&overview.TaskTotal, &taskSuccesses, &avgDurationMS); err != nil {
 		return DashboardOverview{}, err
 	}
+	overview.AvgDurationMS = roundDurationMS(avgDurationMS)
 	if overview.TaskTotal > 0 {
 		overview.TaskSuccessRate = float64(taskSuccesses) / float64(overview.TaskTotal)
 	}
@@ -507,7 +512,7 @@ func (s *Service) Trends(ctx context.Context, window string) ([]TrendBucket, err
 	rangeSpec := normalizeTrendRange(window)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 SELECT
-	strftime('%s', %s) AS bucket,
+	%s AS bucket,
 	COUNT(*) AS total,
 	COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS success_count,
 	COALESCE(AVG(CASE WHEN duration_ms > 0 THEN duration_ms END), 0) AS avg_duration_ms
@@ -515,7 +520,7 @@ FROM ai_job_runs
 WHERE started_at >= ?
 GROUP BY bucket
 ORDER BY bucket ASC
-`, rangeSpec.jobSelect, rangeSpec.jobField), JobStatusSuccess, rangeSpec.since)
+`, rangeSpec.jobSelect), JobStatusSuccess, rangeSpec.since)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +530,7 @@ ORDER BY bucket ASC
 	for rows.Next() {
 		var bucket string
 		var total, successCount int
-		var avgDuration int64
+		var avgDuration float64
 		if err := rows.Scan(&bucket, &total, &successCount, &avgDuration); err != nil {
 			return nil, err
 		}
@@ -533,7 +538,7 @@ ORDER BY bucket ASC
 		item.Bucket = bucket
 		item.Label = rangeSpec.formatLabel(bucket)
 		item.TaskTotal = total
-		item.AvgDurationMS = avgDuration
+		item.AvgDurationMS = roundDurationMS(avgDuration)
 		if total > 0 {
 			item.TaskSuccessRate = float64(successCount) / float64(total)
 		}
@@ -542,14 +547,14 @@ ORDER BY bucket ASC
 
 	callRows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 SELECT
-	strftime('%s', %s) AS bucket,
+	%s AS bucket,
 	COUNT(*) AS total,
 	COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS success_count
 FROM ai_call_logs
 WHERE created_at >= ?
 GROUP BY bucket
 ORDER BY bucket ASC
-`, rangeSpec.callSelect, rangeSpec.callField), CallStatusSuccess, rangeSpec.since)
+`, rangeSpec.callSelect), CallStatusSuccess, rangeSpec.since)
 	if err != nil {
 		return nil, err
 	}
@@ -738,6 +743,13 @@ func percentile(values []int64, p float64) int64 {
 	return values[index]
 }
 
+func roundDurationMS(value float64) int64 {
+	if value <= 0 {
+		return 0
+	}
+	return int64(math.Round(value))
+}
+
 type trendRange struct {
 	since       string
 	jobField    string
@@ -754,9 +766,9 @@ func normalizeTrendRange(window string) trendRange {
 		return trendRange{
 			since:       since.Format(time.RFC3339),
 			jobField:    "started_at",
-			jobSelect:   "substr(started_at, 1, 10)",
+			jobSelect:   "strftime('%Y-%m-%d', started_at)",
 			callField:   "created_at",
-			callSelect:  "substr(created_at, 1, 10)",
+			callSelect:  "strftime('%Y-%m-%d', created_at)",
 			formatLabel: func(value string) string { return value },
 		}
 	case "30d":
@@ -764,9 +776,9 @@ func normalizeTrendRange(window string) trendRange {
 		return trendRange{
 			since:       since.Format(time.RFC3339),
 			jobField:    "started_at",
-			jobSelect:   "substr(started_at, 1, 10)",
+			jobSelect:   "strftime('%Y-%m-%d', started_at)",
 			callField:   "created_at",
-			callSelect:  "substr(created_at, 1, 10)",
+			callSelect:  "strftime('%Y-%m-%d', created_at)",
 			formatLabel: func(value string) string { return value },
 		}
 	default:
@@ -774,11 +786,15 @@ func normalizeTrendRange(window string) trendRange {
 		return trendRange{
 			since:      since.Format(time.RFC3339),
 			jobField:   "started_at",
-			jobSelect:  "substr(started_at, 1, 13)",
+			jobSelect:  "strftime('%Y-%m-%dT%H:00:00Z', started_at)",
 			callField:  "created_at",
-			callSelect: "substr(created_at, 1, 13)",
+			callSelect: "strftime('%Y-%m-%dT%H:00:00Z', created_at)",
 			formatLabel: func(value string) string {
-				return value + ":00"
+				timestamp, err := time.Parse(time.RFC3339, strings.TrimSpace(value))
+				if err != nil {
+					return value
+				}
+				return timestamp.Format("01-02 15:04")
 			},
 		}
 	}

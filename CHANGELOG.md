@@ -1,5 +1,45 @@
 # Project Changelog
 
+## 2026-04-09
+
+### Fixed
+
+- 修复后台 AI 仪表盘概览/趋势接口在产生真实审计耗时数据后返回 `500`：
+  - `backend/internal/audit/service.go` 里的概览与趋势统计改为按浮点读取
+    SQLite `AVG(duration_ms)` 结果，再安全转换为整数毫秒，避免平均值
+    非零时扫描失败
+  - 趋势分桶改为直接使用 SQLite 对 RFC3339 时间做日期/整点归一化，
+    不再依赖对时间字符串做 `substr + strftime('%s', ...)` 的脆弱组合，
+    避免 `24h` 视图出现空 bucket 或异常标签
+  - `backend/internal/audit/service_test.go` 新增带真实正耗时样本的回归
+    用例，覆盖此前“无数据正常、有数据即 500”的场景
+
+### Notes
+
+- 修改时间：2026-04-09 13:16 CST
+- 变更背景：线上后台管理页在 `2026-04-09 09:55 CST` 起连续触发
+  `GET /api/admin/dashboard/overview` 与
+  `GET /api/admin/dashboard/trends?range=24h` 的 `500`，而
+  `GET /api/admin/ai/jobs` 仍保持正常，说明问题集中在审计聚合统计链路
+- 核心改动：修正平均耗时聚合的类型处理与时间分桶表达式，让审计概览
+  和趋势图在出现真实 AI 调用耗时样本后仍能稳定返回
+- 影响范围：`backend/internal/audit/service.go`、
+  `backend/internal/audit/service_test.go`、`CHANGELOG.md`
+- 兼容性/风险：本次不改接口字段和响应结构，但 `24h` 趋势图的横轴标签
+  现在会稳定输出按小时归一化后的时间文本；如果前端后续想展示本地时区，
+  仍需单独明确口径
+- 验证情况：已执行
+  `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./internal/audit`；
+  已执行 `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./...`，
+  其中 `internal/linkparse` 与 `internal/recipe` 的部分测试因当前沙箱禁止
+  `httptest` 监听本地端口而失败，其余包通过；已结合
+  `journalctl -u caipu-backend -n 200 --no-pager` 确认线上报错时间点与
+  新增审计数据进入 24 小时统计窗口的时间吻合；已执行
+  `go build -o bin/server ./cmd/server` 并重启 `caipu-backend`；已通过本机
+  Bearer 鉴权直连 `http://127.0.0.1:8080/api/admin/dashboard/overview` 与
+  `http://127.0.0.1:8080/api/admin/dashboard/trends?range=24h`，确认两者均
+  返回 `200`
+
 ## 2026-04-08
 
 ### Added
