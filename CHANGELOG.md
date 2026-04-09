@@ -15,6 +15,9 @@
     远端备份保留数量控制等参数，默认适配当前线上目录
   - 远端解压 `dist` 时改为使用 `tar --no-same-owner`，避免从 macOS 打包上传
     后把本地 `uid/gid` 带到服务器静态目录上
+  - 仓库 `.gitignore` 新增 `admin-web/.upload-tmp/` 与
+    `admin-web/dist.bak-*`，避免服务器上的前端上传临时目录和回滚备份目录
+    持续污染 `git status`
   - 根目录 `package.json` 新增 `npm run admin:upload` 入口，便于从 macOS
     本机直接触发上传
   - `README.md` 与 `docs/cloud-server-config-overview.md` 同步改为优先推荐
@@ -56,7 +59,7 @@
 
 ### Notes
 
-- 修改时间：2026-04-09 23:45 CST
+- 修改时间：2026-04-09 23:59 CST
 - 变更背景：当前线上云服务器仅有 `2 vCPU / 1.9 GiB RAM / 0 swap`，此前
   直接在机器本机执行 `npm install`、`vite build` 与 `go build/go test`
   时容易把 CPU 与内存同时打满，严重时甚至需要重启服务器恢复
