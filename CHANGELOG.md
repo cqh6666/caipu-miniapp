@@ -1,5 +1,40 @@
 # Project Changelog
 
+## 2026-04-10
+
+### Added
+
+- 新增 AI 多 Provider 配置与调度设计文档：
+  - 根目录新增 `docs/ai-multi-provider-routing-design.md`
+  - 文档明确了 `summary / title / flowchart` 三个场景的多 Provider
+    配置模型、`priority_failover / round_robin_failover` 策略、熔断、
+    错误分类、审计口径与 `admin-web` 页面形态
+  - `README.md` 与 `backend/README.md` 同步补充该设计文档入口，方便后续
+    从项目总览与后端说明中直接查阅
+
+### Notes
+
+- 修改时间：2026-04-10 00:11 CST
+- 变更背景：当前 AI 总结、标题精修和流程图生成仍主要依赖单 Provider
+  配置，用户希望后台管理端支持维护多个 API，并在运行时进行轮询或异常时
+  切换到备用节点；为了避免后续实现时再反复讨论，需要先把存储模型、调度
+  策略、审计口径和兼容方案沉淀为项目正式文档
+- 核心改动：新增独立设计文档，推荐采用结构化的场景表 +
+  Provider 节点表承接多 API 配置，并新增独立 `AI Provider` 后台页面，
+  而不是继续把多节点配置塞进当前通用标量设置页；文档同时明确了与现有
+  `app_runtime_settings`、环境变量和 AI 审计表的兼容顺序
+- 影响范围：`docs/ai-multi-provider-routing-design.md`、`README.md`、
+  `backend/README.md`、`CHANGELOG.md`
+- 兼容性/风险：本次仅新增设计文档与索引入口，不涉及运行时代码变更；
+  文档中的新表结构、`airouter` 模块和后台页面仍需在正式开发阶段落地；
+  `round robin` 与熔断当前默认按单实例内存态设计，若后续部署形态改成
+  多实例，需要再评估状态外置方案
+- 验证情况：已结合当前仓库中的 `backend/internal/appsettings`、
+  `backend/internal/linkparse`、`backend/internal/recipe`、
+  `backend/internal/audit`、`admin-web/src/pages/SettingsPage.vue` 与已有
+  `docs/admin-console-ai-observability-design.md` 做方案对齐；本次未涉及
+  编译或接口联调
+
 ## 2026-04-09
 
 ### Changed

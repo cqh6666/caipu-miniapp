@@ -104,6 +104,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - [docs/xiaohongshu-integration-guide.md](./docs/xiaohongshu-integration-guide.md)
 - [docs/xiaohongshu-cloud-deploy.md](./docs/xiaohongshu-cloud-deploy.md)
 - [docs/linkparse-sidecar-refactor-migration.md](./docs/linkparse-sidecar-refactor-migration.md)
+- AI 多 Provider 配置与轮询 / 降级设计见：[../docs/ai-multi-provider-routing-design.md](../docs/ai-multi-provider-routing-design.md)
 
 当前可用接口：
 

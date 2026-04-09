@@ -174,6 +174,7 @@
 - 后端补齐 `WECHAT_APP_SECRET`
 - 更完整的项目专用清单见 `docs/wechat-login-checklist.md`
 - 菜名和步骤生成 `nano-banana-pro` 手绘流程图的调用说明见 `docs/nano-banana-recipe-flowchart.md`
+- AI 多 Provider 配置与轮询 / 降级设计见 `docs/ai-multi-provider-routing-design.md`
 - 当前线上云服务器的实际服务、端口、路径路由和发布口径见 `docs/cloud-server-config-overview.md`
 
 ## 交互说明
