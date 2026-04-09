@@ -1,7 +1,7 @@
 <template>
   <el-drawer
     :model-value="modelValue"
-    size="720px"
+    :size="drawerSize"
     title="调用详情"
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -24,7 +24,7 @@
             <StatusTag :tone="toneForStatus(call.status)" :text="displayCallStatus(call.status)" />
           </div>
 
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="descriptionColumns" border>
             <el-descriptions-item label="场景">{{ displayScene(call.scene) }}</el-descriptions-item>
             <el-descriptions-item label="状态">
               <StatusTag :tone="toneForStatus(call.status)" :text="displayCallStatus(call.status)" />
@@ -76,10 +76,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import PageState from '@/components/PageState.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import JsonViewerCard from '@/components/JsonViewerCard.vue'
 import CopyTextButton from '@/components/CopyTextButton.vue'
+import { useResponsive } from '@/composables/useResponsive'
 import type { CallLogRecord } from '@/types'
 import {
   displayCallStatus,
@@ -94,6 +96,10 @@ defineProps<{
   call: CallLogRecord | null
   loading?: boolean
 }>()
+
+const { isMobile } = useResponsive()
+const drawerSize = computed(() => (isMobile.value ? '100%' : 'min(720px, 100vw)'))
+const descriptionColumns = computed(() => (isMobile.value ? 1 : 2))
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: boolean): void

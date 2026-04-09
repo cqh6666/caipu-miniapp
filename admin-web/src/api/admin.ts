@@ -6,6 +6,7 @@ import type {
   JobRunRecord,
   PaginationResult,
   RuntimeSettingGroupView,
+  ServerHealthOverview,
   SettingAuditRecord,
   TrendBucket
 } from '@/types'
@@ -33,6 +34,10 @@ export function getDashboardOverview() {
 
 export function getDashboardTrends(range: string) {
   return request<{ items: TrendBucket[] }>(`/admin/dashboard/trends?range=${encodeURIComponent(range)}`)
+}
+
+export function getServerHealthOverview() {
+  return request<{ overview: ServerHealthOverview }>('/admin/server-health/overview')
 }
 
 export function listJobs(query: URLSearchParams) {

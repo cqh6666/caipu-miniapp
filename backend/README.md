@@ -115,6 +115,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `GET /api/admin/dashboard/overview`
 - `GET /api/admin/dashboard/failures`
 - `GET /api/admin/dashboard/trends`
+- `GET /api/admin/server-health/overview`
 - `GET /api/admin/ai/jobs`
 - `GET /api/admin/ai/jobs/{id}`
 - `GET /api/admin/ai/calls`

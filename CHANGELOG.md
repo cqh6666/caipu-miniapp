@@ -2,6 +2,52 @@
 
 ## 2026-04-09
 
+### Added
+
+- 后台管理平台新增“服务健康”标准版能力：
+  - 后端新增 `GET /api/admin/server-health/overview`，统一返回主机资源、
+    `systemd` 服务状态和内网 HTTP 健康探测结果
+  - 前端新增 `服务健康` 独立页面，并在概览页补入同口径的健康摘要卡，
+    支持查看 CPU / 内存 / 磁盘、`nginx` / `caipu-backend` /
+    `caipu-linkparse-sidecar` 状态以及 `/healthz`、`/api/healthz`、
+    sidecar `/v1/health` 探测结果
+
+### Changed
+
+- 后台管理平台补齐“桌面 + 平板优先”的响应式布局收口：
+  - `AppShell` 从固定侧栏改为“桌面侧栏 + 平板抽屉导航”双形态，
+    统一接入前端断点状态源
+  - 概览页、服务健康页、筛选工具条、任务/调用详情抽屉和表格固定操作列
+    按 `1440 / 1200 / 992 / 768` 四档重新收口，避免平板和窄屏下出现
+    侧栏堆叠、抽屉过宽和固定列遮挡
+
+### Notes
+
+- 修改时间：2026-04-09 18:03 CST
+- 变更背景：后台此前已经具备 AI 可观测性与配置中心，但缺少对当前
+  云服务器主机资源、核心服务状态和内网健康探测的统一视图；同时现有
+  后台虽然有基础断点样式，平板和窄屏下仍存在侧栏、筛选区、抽屉和表格
+  体验不一致的问题
+- 核心改动：后端新增轻量 `ServerHealthService` 聚合 Linux 主机资源、
+  `systemctl is-active` 和内网 HTTP 健康检查；前端新增服务健康页、
+  概览页健康摘要卡、`HealthRing` 组件与统一响应式断点源，并重构后台
+  壳层为侧栏/抽屉双形态布局
+- 影响范围：`backend/internal/admin/*`、`backend/internal/app/*`、
+  `admin-web/src/components/*`、`admin-web/src/pages/*`、
+  `admin-web/src/router/index.ts`、`admin-web/src/types.ts`、
+  `admin-web/src/utils/admin-display.ts`、`admin-web/src/style.css`、
+  `README.md`、`backend/README.md`、`CHANGELOG.md`
+- 兼容性/风险：标准版仅做手动刷新，不引入 `Prometheus/Grafana`、
+  历史时序存储或告警中心；主机资源采集默认依赖 Linux `/proc` 与
+  `systemd`，因此本地 macOS 开发环境允许部分检查显示为 `unknown`；
+  当前后台首包仍保留 `element-plus` 大 chunk 告警，后续若继续压包，
+  仍需进一步做组件和页面级拆分
+- 验证情况：已执行
+  `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./...`；
+  已执行 `cd admin-web && npm run build`；已新增并通过服务健康聚合的
+  `healthy / warning / critical / unknown` 回归测试；已确认服务健康页
+  构建产物与概览页摘要卡均完成构建级联检查
+
 ### Changed
 
 - 后台管理平台首轮从 MVP 升级为“稳重数据台 + 排障优先”的完整工作台：

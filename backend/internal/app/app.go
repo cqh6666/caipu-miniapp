@@ -185,7 +185,8 @@ func New(cfg config.Config) (*App, error) {
 	appSettingsHandler := appsettings.NewHandler(appSettingsService)
 	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour)
 	adminService := admin.NewService(cfg.AdminUsername, cfg.AdminPasswordHash, adminTokenManager, cfg.AppEnv != "local")
-	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService)
+	serverHealthService := admin.NewServerHealthService(cfg, runtimeProvider)
+	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService, serverHealthService)
 	adminAuthMiddleware := admin.NewAuthMiddleware(adminTokenManager)
 	recipeAutoParser := recipe.NewAutoParseWorker(
 		logger,

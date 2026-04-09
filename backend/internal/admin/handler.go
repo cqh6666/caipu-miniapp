@@ -17,6 +17,7 @@ type Handler struct {
 	audit          *audit.Service
 	runtime        *appsettings.RuntimeProvider
 	appSettingsSvc *appsettings.Service
+	serverHealth   *ServerHealthService
 }
 
 type loginRequest struct {
@@ -29,12 +30,19 @@ type runtimeGroupMutationRequest struct {
 	ClearKeys []string       `json:"clearKeys"`
 }
 
-func NewHandler(auth AuthService, auditService *audit.Service, runtimeProvider *appsettings.RuntimeProvider, appSettingsService *appsettings.Service) *Handler {
+func NewHandler(
+	auth AuthService,
+	auditService *audit.Service,
+	runtimeProvider *appsettings.RuntimeProvider,
+	appSettingsService *appsettings.Service,
+	serverHealthService *ServerHealthService,
+) *Handler {
 	return &Handler{
 		auth:           auth,
 		audit:          auditService,
 		runtime:        runtimeProvider,
 		appSettingsSvc: appSettingsService,
+		serverHealth:   serverHealthService,
 	}
 }
 
@@ -109,6 +117,22 @@ func (h *Handler) DashboardTrends(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteData(w, http.StatusOK, map[string]any{
 		"items": items,
+	})
+}
+
+func (h *Handler) ServerHealthOverview(w http.ResponseWriter, r *http.Request) {
+	if h.serverHealth == nil {
+		common.WriteError(w, common.ErrInternal)
+		return
+	}
+
+	overview, err := h.serverHealth.Overview(r.Context())
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"overview": overview,
 	})
 }
 

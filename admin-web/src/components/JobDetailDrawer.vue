@@ -1,7 +1,7 @@
 <template>
   <el-drawer
     :model-value="modelValue"
-    size="760px"
+    :size="drawerSize"
     title="任务详情"
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -24,7 +24,7 @@
             <StatusTag :tone="toneForStatus(detail.job.status)" :text="displayJobStatus(detail.job.status)" />
           </div>
 
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="descriptionColumns" border>
             <el-descriptions-item label="任务 ID">
               <div class="detail-inline">
                 <span class="mono-text">{{ detail.job.id }}</span>
@@ -106,7 +106,7 @@
               <el-table-column label="时间" width="180">
                 <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="120" fixed="right">
+              <el-table-column label="操作" width="120" :fixed="actionColumnFixed">
                 <template #default="{ row }">
                   <el-button text size="small" @click="emit('openCall', row)">查看调用</el-button>
                 </template>
@@ -120,10 +120,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import PageState from '@/components/PageState.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import JsonViewerCard from '@/components/JsonViewerCard.vue'
 import CopyTextButton from '@/components/CopyTextButton.vue'
+import { useResponsive } from '@/composables/useResponsive'
 import type { CallLogRecord, JobRunRecord } from '@/types'
 import {
   displayCallStatus,
@@ -140,6 +142,11 @@ defineProps<{
   detail: { job: JobRunRecord; calls: CallLogRecord[] } | null
   loading?: boolean
 }>()
+
+const { isCompactLayout, isMobile } = useResponsive()
+const drawerSize = computed(() => (isMobile.value ? '100%' : 'min(760px, 100vw)'))
+const descriptionColumns = computed(() => (isMobile.value ? 1 : 2))
+const actionColumnFixed = computed(() => (isCompactLayout.value ? false : 'right'))
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: boolean): void

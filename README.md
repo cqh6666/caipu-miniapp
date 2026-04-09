@@ -17,7 +17,7 @@
 - 当前首页：`pages/index/index.vue`
 - 当前详情页：`pages/recipe-detail/index.vue`
 - 当前菜单详情页：`pages/meal-plan-detail/index.vue`
-- 当前阶段：前后端联调阶段，已接入后端登录、菜谱同步、图片上传和邀请加入链路，并新增 AI 可观测性 / 动态配置后台
+- 当前阶段：前后端联调阶段，已接入后端登录、菜谱同步、图片上传和邀请加入链路，并新增 AI 可观测性 / 动态配置 / 服务健康后台
 
 ## 已实现功能
 
@@ -90,6 +90,12 @@
   - `ADMIN_USERNAME`
   - `ADMIN_PASSWORD_HASH`
   - `ADMIN_JWT_SECRET`（可选，不填时回退 `JWT_SECRET`）
+- 当前后台页面：
+  - `概览`
+  - `服务健康`
+  - `AI 任务`
+  - `API 调用`
+  - `配置中心`
 
 ## 项目结构
 

@@ -29,6 +29,7 @@ export const auditActionOptions = [
 ]
 
 export type StatusTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger'
+export type HealthResourceKind = 'cpu' | 'memory' | 'disk'
 
 const sceneLabelMap: Record<string, string> = Object.fromEntries(sceneOptions.map((item) => [item.value, item.label]))
 const jobStatusLabelMap: Record<string, string> = Object.fromEntries(jobStatusOptions.map((item) => [item.value, item.label]))
@@ -54,6 +55,13 @@ export function formatPercent(value?: number, digits = 1) {
   return `${((value || 0) * 100).toFixed(digits)}%`
 }
 
+export function formatUsagePercent(value?: number | null, digits = 1) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '-'
+  }
+  return `${value.toFixed(digits)}%`
+}
+
 export function formatDateTime(value?: string) {
   if (!value) {
     return '-'
@@ -76,6 +84,35 @@ export function formatDuration(ms?: number) {
     return `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)} s`
   }
   return `${(ms / 60_000).toFixed(1)} min`
+}
+
+export function formatUptime(seconds?: number | null) {
+  if (!seconds || seconds <= 0) {
+    return '-'
+  }
+
+  const days = Math.floor(seconds / 86_400)
+  const hours = Math.floor((seconds % 86_400) / 3_600)
+  const minutes = Math.floor((seconds % 3_600) / 60)
+
+  if (days > 0) {
+    return `${days} 天 ${hours} 小时`
+  }
+  if (hours > 0) {
+    return `${hours} 小时 ${minutes} 分`
+  }
+  if (minutes > 0) {
+    return `${minutes} 分`
+  }
+  return `${seconds} 秒`
+}
+
+export function formatLoadAverage(...values: Array<number | null | undefined>) {
+  const visible = values.filter((value) => value !== null && value !== undefined && !Number.isNaN(value))
+  if (!visible.length) {
+    return '-'
+  }
+  return visible.map((value) => Number(value).toFixed(2)).join(' / ')
 }
 
 export function displayScene(value?: string) {
@@ -111,6 +148,19 @@ export function displayAuditAction(value?: string) {
     return '-'
   }
   return auditActionLabelMap[value] || value
+}
+
+export function displayHealthStatus(value?: string) {
+  switch (value) {
+    case 'healthy':
+      return '正常'
+    case 'warning':
+      return '关注'
+    case 'critical':
+      return '异常'
+    default:
+      return '未知'
+  }
 }
 
 export function displaySettingSource(value?: string) {
@@ -152,6 +202,39 @@ export function toneForStatus(status?: string): StatusTone {
     default:
       return 'neutral'
   }
+}
+
+export function toneForHealthStatus(status?: string): StatusTone {
+  switch (status) {
+    case 'healthy':
+      return 'success'
+    case 'warning':
+      return 'warning'
+    case 'critical':
+      return 'danger'
+    default:
+      return 'neutral'
+  }
+}
+
+export function statusForResourceUsage(
+  value: number | null | undefined,
+  kind: HealthResourceKind
+): 'healthy' | 'warning' | 'critical' | 'unknown' {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return 'unknown'
+  }
+
+  const warningThreshold = kind === 'disk' ? 80 : 75
+  const criticalThreshold = 90
+
+  if (value >= criticalThreshold) {
+    return 'critical'
+  }
+  if (value >= warningThreshold) {
+    return 'warning'
+  }
+  return 'healthy'
 }
 
 export function toneForSuccessRate(value?: number): StatusTone {

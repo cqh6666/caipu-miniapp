@@ -43,6 +43,67 @@
       </div>
     </div>
 
+    <div class="dashboard-health-block">
+      <div v-if="serverHealthLoading && !serverHealth" class="page-card server-health-summary-card">
+        <el-skeleton animated :rows="4" />
+      </div>
+      <div v-else-if="serverHealthError && !serverHealth" class="page-card server-health-summary-card">
+        <PageState
+          mode="error"
+          title="服务健康摘要加载失败"
+          :description="serverHealthError"
+          compact
+          @retry="loadServerHealth"
+        />
+      </div>
+      <button
+        v-else-if="serverHealth"
+        type="button"
+        class="page-card server-health-summary-card server-health-summary-card--interactive"
+        @click="openServerHealthPage"
+      >
+        <div class="subsection-header">
+          <div>
+            <h3 class="subsection-title">服务健康摘要</h3>
+            <div class="subsection-subtitle">主机资源与核心链路状态的一页式快照。</div>
+          </div>
+          <StatusTag
+            :tone="toneForHealthStatus(serverHealth.summary.status)"
+            :text="displayHealthStatus(serverHealth.summary.status)"
+          />
+        </div>
+
+        <div class="server-health-summary-card__body">
+          <HealthRing :summary="serverHealth.summary" />
+          <div class="server-health-summary-card__stats">
+            <div class="server-health-summary-stat">
+              <span>CPU 占用</span>
+              <strong>{{ formatUsagePercent(serverHealth.host.cpuUsagePercent) }}</strong>
+            </div>
+            <div class="server-health-summary-stat">
+              <span>内存占用</span>
+              <strong>{{ formatUsagePercent(serverHealth.host.memoryUsagePercent) }}</strong>
+            </div>
+            <div class="server-health-summary-stat">
+              <span>磁盘占用</span>
+              <strong>{{ formatUsagePercent(serverHealth.host.diskUsagePercent) }}</strong>
+            </div>
+            <div class="server-health-summary-stat">
+              <span>异常信号</span>
+              <strong>{{ serverHealth.summary.warningCount + serverHealth.summary.criticalCount }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="serverHealthError" class="server-health-summary-card__warning">
+          {{ serverHealthError }}
+        </div>
+        <div class="server-health-summary-card__footer">
+          查看服务健康详情
+        </div>
+      </button>
+    </div>
+
     <div class="dashboard-grid dashboard-grid--primary">
       <div class="page-card chart-card">
         <div class="subsection-header">
@@ -118,7 +179,7 @@
             <el-table-column label="开始时间" width="180">
               <template #default="{ row }">{{ formatDateTime(row.startedAt) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="108" fixed="right">
+            <el-table-column label="操作" width="108" :fixed="actionColumnFixed">
               <template #default="{ row }">
                 <el-button text size="small" @click="openJobDetail(row.id)">查看详情</el-button>
               </template>
@@ -223,6 +284,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { BarChart, LineChart } from 'echarts/charts'
 import {
@@ -237,18 +299,23 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { use, init, type ComposeOption, type ECharts } from 'echarts/core'
 import type { BarSeriesOption, LineSeriesOption } from 'echarts/charts'
 import AppShell from '@/components/AppShell.vue'
+import HealthRing from '@/components/HealthRing.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import PageState from '@/components/PageState.vue'
 import JobDetailDrawer from '@/components/JobDetailDrawer.vue'
 import CallDetailDrawer from '@/components/CallDetailDrawer.vue'
 import * as adminApi from '@/api/admin'
-import type { CallLogRecord, DashboardOverview, TrendBucket } from '@/types'
+import { useResponsive } from '@/composables/useResponsive'
+import type { CallLogRecord, DashboardOverview, ServerHealthOverview, TrendBucket } from '@/types'
 import {
+  displayHealthStatus,
   displayJobStatus,
   displayScene,
   formatDateTime,
   formatPercent,
+  formatUsagePercent,
   toneForLatency,
+  toneForHealthStatus,
   toneForStatus,
   toneForSuccessRate,
   toneForTimeoutRate
@@ -262,13 +329,18 @@ use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, Canv
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = ref<ECharts | null>(null)
+const router = useRouter()
+const { isCompactLayout } = useResponsive()
 const overview = ref<DashboardOverview | null>(null)
+const serverHealth = ref<ServerHealthOverview | null>(null)
 const trends = ref<TrendBucket[]>([])
 const trendRange = ref('24h')
 const refreshing = ref(false)
 const overviewLoading = ref(false)
+const serverHealthLoading = ref(false)
 const trendsLoading = ref(false)
 const overviewError = ref('')
+const serverHealthError = ref('')
 const trendError = ref('')
 
 const jobDrawerVisible = ref(false)
@@ -276,6 +348,7 @@ const jobDetailLoading = ref(false)
 const jobDetail = ref<{ job: DashboardOverview['recentFailures'][number]; calls: CallLogRecord[] } | null>(null)
 const callDrawerVisible = ref(false)
 const selectedCall = ref<CallLogRecord | null>(null)
+const actionColumnFixed = computed(() => (isCompactLayout.value ? false : 'right'))
 
 const trendOptions = [
   { label: '24 小时', value: '24h' },
@@ -365,6 +438,23 @@ async function loadOverview(showToast = false) {
   }
 }
 
+async function loadServerHealth(showToast = false) {
+  serverHealthLoading.value = true
+  serverHealthError.value = ''
+  try {
+    const data = await adminApi.getServerHealthOverview()
+    serverHealth.value = data.overview
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载服务健康摘要失败'
+    serverHealthError.value = message
+    if (showToast) {
+      ElMessage.error(message)
+    }
+  } finally {
+    serverHealthLoading.value = false
+  }
+}
+
 async function loadTrends(showToast = false) {
   trendsLoading.value = true
   trendError.value = ''
@@ -386,7 +476,7 @@ async function loadTrends(showToast = false) {
 
 async function refreshPage() {
   refreshing.value = true
-  await Promise.all([loadOverview(true), loadTrends(true)])
+  await Promise.all([loadOverview(true), loadServerHealth(true), loadTrends(true)])
   refreshing.value = false
 }
 
@@ -492,9 +582,13 @@ function openCallDetail(call: CallLogRecord) {
   callDrawerVisible.value = true
 }
 
+function openServerHealthPage() {
+  void router.push('/server-health')
+}
+
 onMounted(async () => {
   window.addEventListener('resize', handleResize)
-  await Promise.all([loadOverview(), loadTrends()])
+  await Promise.all([loadOverview(), loadServerHealth(), loadTrends()])
 })
 
 onBeforeUnmount(() => {

@@ -37,6 +37,15 @@ const router = createRouter({
       }
     },
     {
+      path: '/server-health',
+      name: 'server-health',
+      component: () => import('@/pages/ServerHealthPage.vue'),
+      meta: {
+        title: '服务健康',
+        description: '统一查看主机资源、核心服务状态与内网健康检查结果。'
+      }
+    },
+    {
       path: '/ai-calls',
       name: 'ai-calls',
       component: () => import('@/pages/CallsPage.vue'),

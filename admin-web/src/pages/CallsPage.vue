@@ -99,7 +99,7 @@
             <el-table-column label="错误摘要" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">{{ row.errorMessage || '-' }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="118" fixed="right">
+            <el-table-column label="操作" width="118" :fixed="actionColumnFixed">
               <template #default="{ row }">
                 <el-button text size="small" @click="openCallDetail(row)">查看详情</el-button>
               </template>
@@ -134,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppShell from '@/components/AppShell.vue'
@@ -155,9 +155,11 @@ import {
   toneForStatus
 } from '@/utils/admin-display'
 import { buildRouteQuery, readDateRange, readQueryNumber, readQueryString, writeDateRange, type DateRangeValue } from '@/utils/route-query'
+import { useResponsive } from '@/composables/useResponsive'
 
 const route = useRoute()
 const router = useRouter()
+const { isCompactLayout } = useResponsive()
 
 const page = ref(1)
 const loading = ref(false)
@@ -183,6 +185,7 @@ const selectedCall = ref<CallLogRecord | null>(null)
 const jobDrawerVisible = ref(false)
 const jobDetailLoading = ref(false)
 const jobDetail = ref<{ job: JobRunRecord; calls: CallLogRecord[] } | null>(null)
+const actionColumnFixed = computed(() => (isCompactLayout.value ? false : 'right'))
 
 function syncStateFromRoute() {
   page.value = readQueryNumber(route.query, 'page', 1)

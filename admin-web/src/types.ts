@@ -77,6 +77,46 @@ export interface TrendBucket {
   avgDurationMs: number
 }
 
+export type ServerHealthStatus = 'healthy' | 'warning' | 'critical' | 'unknown'
+
+export interface ServerHealthSummary {
+  status: ServerHealthStatus
+  healthyCount: number
+  warningCount: number
+  criticalCount: number
+  unknownCount: number
+}
+
+export interface ServerHealthHost {
+  hostname: string
+  platform: string
+  uptimeSeconds: number
+  cpuUsagePercent: number | null
+  memoryUsagePercent: number | null
+  diskUsagePercent: number | null
+  load1: number | null
+  load5: number | null
+  load15: number | null
+}
+
+export interface ServerHealthCheck {
+  key: string
+  label: string
+  category: 'systemd' | 'http'
+  status: ServerHealthStatus
+  target: string
+  detail: string
+  latencyMs: number | null
+  checkedAt: string
+}
+
+export interface ServerHealthOverview {
+  generatedAt: string
+  summary: ServerHealthSummary
+  host: ServerHealthHost
+  checks: ServerHealthCheck[]
+}
+
 export interface RuntimeSettingFieldView {
   key: string
   label: string

@@ -88,6 +88,7 @@ func NewRouter(
 				protected.Get("/dashboard/overview", adminHandler.DashboardOverview)
 				protected.Get("/dashboard/failures", adminHandler.DashboardFailures)
 				protected.Get("/dashboard/trends", adminHandler.DashboardTrends)
+				protected.Get("/server-health/overview", adminHandler.ServerHealthOverview)
 				protected.Get("/ai/jobs", adminHandler.ListJobs)
 				protected.Get("/ai/jobs/{id}", adminHandler.GetJobDetail)
 				protected.Get("/ai/calls", adminHandler.ListCalls)
