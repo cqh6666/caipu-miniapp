@@ -2,6 +2,94 @@
 
 ## 2026-04-09
 
+### Changed
+
+- 后台管理前端新增“本地构建产物上传到服务器”的低风险发布链路：
+  - 新增 `scripts/upload-admin-web-dist.sh`，支持在本地或 CI 机器上先构建
+    `admin-web/dist`，再通过 `scp + ssh + tar` 上传到服务器，并在远端
+    原子替换 `/srv/caipu-miniapp/admin-web/dist`
+  - 上传脚本现在会优先从本机 `~/.ssh/config` 自动识别
+    `one-hub-server / oh-prod / my-cloud`，减少本机 SSH 别名与脚本默认值
+    不一致时的手工修改
+  - 新脚本支持 `PLAN_ONLY=1`、`BUILD_DIST=0`、`DOMAIN / VERIFY_URL`、
+    远端备份保留数量控制等参数，默认适配当前线上目录
+  - 根目录 `package.json` 新增 `npm run admin:upload` 入口，便于从 macOS
+    本机直接触发上传
+  - `README.md` 与 `docs/cloud-server-config-overview.md` 同步改为优先推荐
+    “本地构建 -> 上传 dist” 的后台前端发布口径，降低低配线上机参与
+    `vite build` 的风险
+
+- 线上部署脚本按服务拆分为独立入口，降低误触发重任务的概率：
+  - 新增 `scripts/deploy-backend-on-server.sh`，固定只处理 `backend`
+  - 新增 `scripts/deploy-admin-web-on-server.sh`，固定只处理 `admin-web`
+  - 新增 `scripts/deploy-linkparse-sidecar-on-server.sh`，固定只处理
+    `linkparse-sidecar`，并仅在依赖变更时执行 `npm install`
+  - `backend/scripts/deploy-server-build.sh` 改为复用
+    `scripts/deploy-backend-on-server.sh`，避免远程 server-build 再把
+    `admin-web` 相关变量和逻辑一起带上
+  - `scripts/deploy-on-server.sh` 降级为聚合入口，保留给“明确需要同时处理
+    backend + admin-web”的场景
+
+- 线上小规格云服务器的本机发布链路补齐“低占用、按变更自动收口”能力：
+  - 新增 `scripts/deploy-on-server.sh`，支持在服务器本机执行
+    `git pull --ff-only` 后自动识别 `backend/` 与 `admin-web/` 的变更范围，
+    只构建必要模块，并仅在后端有变更时重启 `caipu-backend`
+  - 构建流程默认通过 `nice + ionice` 降低优先级，并将服务器本机构建时的
+    `go build` 默认收口到 `GOMAXPROCS=1`，同时给 `admin-web` 提供更保守
+    的 `NODE_OPTIONS` 默认值，降低 `2 vCPU / 1.9 GiB RAM / 0 swap`
+    机器在部署时被打满的概率
+  - `backend/scripts/deploy-server-build.sh` 改为复用上述本机发布脚本，避免
+    远程触发发布时仍走“每次都全量构建 + 无条件重启”的旧口径
+  - `README.md` 与 `docs/cloud-server-config-overview.md` 同步补充低资源
+    服务器发布建议与显式按范围发布命令
+- 线上小规格云服务器的本机发布链路进一步收紧为“默认拒绝危险构建”：
+  - `scripts/deploy-on-server.sh` 新增 `PLAN_ONLY=1` 预检查模式，可在
+    不执行构建与重启的前提下先查看本次 `git pull` 后将会触发哪些动作
+  - 脚本现在会检测主机 `CPU / 内存 / swap`，对当前这类
+    `2 vCPU / 1.9 GiB RAM / 0 swap` 低配机默认仅允许 `backend` 单独构建，
+    但会拒绝 `admin-web` 构建或前后端一起构建；只有显式传入
+    `ALLOW_LOW_RESOURCE_BUILD=1` 才允许硬跑前端重任务
+  - 相关 README 与云服务器运维文档同步改为“先计划、再决策、必要时强制”
+    的口径，避免再次因为脚本默认执行构建而把整机压死
+
+### Notes
+
+- 修改时间：2026-04-09 23:45 CST
+- 变更背景：当前线上云服务器仅有 `2 vCPU / 1.9 GiB RAM / 0 swap`，此前
+  直接在机器本机执行 `npm install`、`vite build` 与 `go build/go test`
+  时容易把 CPU 与内存同时打满，严重时甚至需要重启服务器恢复
+- 核心改动：新增低优先级、自动识别变更范围的本机发布脚本，并让远程
+  server-build 脚本统一复用该逻辑；随后进一步按 `backend / admin-web /
+  linkparse-sidecar` 拆成独立入口；同时新增 `admin-web` 产物上传脚本，
+  让后台前端可以从本地或 CI 机器发布而不再依赖线上机构建；相关发布口径
+  已正式沉淀到仓库文档
+- 影响范围：`scripts/deploy-on-server.sh`、
+  `scripts/deploy-backend-on-server.sh`、
+  `scripts/deploy-admin-web-on-server.sh`、
+  `scripts/deploy-linkparse-sidecar-on-server.sh`、
+  `scripts/upload-admin-web-dist.sh`、`backend/scripts/deploy-server-build.sh`、
+  `package.json`、`README.md`、`docs/cloud-server-config-overview.md`、
+  `CHANGELOG.md`
+- 兼容性/风险：默认跳过未变更模块的构建与重启，能显著减轻小机压力，但
+  如果遇到“依赖未变更、node_modules 已损坏”的场景，仍需显式使用
+  `ADMIN_WEB_INSTALL_MODE=always` 强制重新安装后台依赖
+- 验证情况：已执行 `bash -n scripts/deploy-on-server.sh` 与
+  `bash -n backend/scripts/deploy-server-build.sh`；已执行
+  `RUN_GIT_PULL=0 DEPLOY_SCOPE=none bash scripts/deploy-on-server.sh`
+  验证空跑分支；已执行 `bash -n scripts/deploy-backend-on-server.sh`、
+  `bash -n scripts/deploy-admin-web-on-server.sh`、
+  `bash -n scripts/deploy-linkparse-sidecar-on-server.sh`；已执行
+  `RUN_GIT_PULL=0 PLAN_ONLY=1 bash scripts/deploy-backend-on-server.sh`、
+  `RUN_GIT_PULL=0 PLAN_ONLY=1 bash scripts/deploy-admin-web-on-server.sh`、
+  `RUN_GIT_PULL=0 SIDECAR_INSTALL_MODE=always PLAN_ONLY=1 bash scripts/deploy-linkparse-sidecar-on-server.sh`
+  验证拆分入口的计划分支；已执行
+  `RUN_GIT_PULL=0 bash scripts/deploy-admin-web-on-server.sh` 与
+  `RUN_GIT_PULL=0 SIDECAR_INSTALL_MODE=always bash scripts/deploy-linkparse-sidecar-on-server.sh`
+  验证低配机拒绝分支；已执行 `bash -n scripts/upload-admin-web-dist.sh` 与
+  `SERVER_HOST=root@example.com DOMAIN=www.example.com PLAN_ONLY=1 bash scripts/upload-admin-web-dist.sh`
+  验证 `admin-web` 上传脚本的语法与计划输出；已执行 `git diff --check`；
+  本次未在生产机上直接跑前端构建，以避免再次触发高负载
+
 ### Added
 
 - 后台管理平台新增“服务健康”标准版能力：

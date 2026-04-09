@@ -82,6 +82,13 @@
   - `npm run admin:dev`
 - 生产构建：
   - `npm run admin:build`
+- 本机构建并上传到服务器：
+  - 脚本会优先从你本机 `~/.ssh/config` 自动识别
+    `one-hub-server / oh-prod / my-cloud`，可直接执行：
+    `DOMAIN=你的域名 bash scripts/upload-admin-web-dist.sh`
+  - 或：`DOMAIN=你的域名 npm run admin:upload`
+  - 如果后续你想切换到别的服务器，也可以显式覆盖：
+    `SERVER_HOST=其他主机别名 DOMAIN=你的域名 bash scripts/upload-admin-web-dist.sh`
 - 后台默认通过同域 `https://你的域名/admin/` 访问
 - 后台 API 前缀通过 `VITE_API_BASE` 适配：
   - 本地开发默认走 `/api`
@@ -96,6 +103,22 @@
   - `AI 任务`
   - `API 调用`
   - `配置中心`
+- 线上小规格服务器若需要先判断本次拉码是否会触发真正发布，优先使用：
+  - `bash scripts/deploy-backend-on-server.sh`
+  - `bash scripts/deploy-admin-web-on-server.sh`
+  - `bash scripts/deploy-linkparse-sidecar-on-server.sh`
+  - 三个脚本都支持 `PLAN_ONLY=1` 预检查模式，例如：
+    `PLAN_ONLY=1 bash scripts/deploy-backend-on-server.sh`
+  - 当前 `scripts/deploy-on-server.sh` 保留为聚合入口，只有在你明确需要
+    同时处理 `backend + admin-web` 时再用
+  - 对当前这台 `2 vCPU / 1.9 GiB RAM / 0 swap` 的线上机：
+    - 默认允许 `backend` 单独构建
+    - 默认拒绝 `admin-web` 构建
+    - `linkparse-sidecar` 只有在 `npm install` 必须执行时才会被拦下
+  - 真正需要在维护窗口硬跑前端或 sidecar 的依赖安装时，显式带：
+    `ALLOW_LOW_RESOURCE_BUILD=1`
+  - 对 `admin-web`，更推荐在你的 Mac 或 CI 上先构建 `dist`，再用
+    `scripts/upload-admin-web-dist.sh` 上传到服务器，避免线上机参与前端编译
 
 ## 项目结构
 

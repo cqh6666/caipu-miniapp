@@ -4,7 +4,7 @@
 方便后续排障、发版和迁移。文档只记录结构、路径、端口、服务名和配置
 入口，不记录任何真实密钥。
 
-最后核对时间：`2026-04-08 23:50 CST`
+最后核对时间：`2026-04-09 23:33 CST`
 
 ## 1. 服务器基础信息
 
@@ -14,6 +14,9 @@
 | 系统 | `Ubuntu 22.04.3 LTS` |
 | 虚拟化 | `kvm` |
 | 架构 | `x86_64` |
+| CPU | `2 vCPU` |
+| 内存 | `1.9 GiB` |
+| Swap | `0 B` |
 | 线上域名 | `https://www.gxm1227.top` |
 | 项目仓库目录 | `/srv/caipu-miniapp` |
 
@@ -254,23 +257,74 @@ journalctl -u hapi-runner -n 200 --no-pager
 
 ```bash
 cd /srv/caipu-miniapp
-git pull
+bash scripts/deploy-backend-on-server.sh
+```
 
-cd /srv/caipu-miniapp/backend
-go build -o bin/server ./cmd/server
-systemctl restart caipu-backend
+说明：
+
+- 当前推荐按服务拆开执行：
+
+```bash
+bash scripts/deploy-backend-on-server.sh
+bash scripts/deploy-admin-web-on-server.sh
+bash scripts/deploy-linkparse-sidecar-on-server.sh
+```
+
+- `scripts/deploy-on-server.sh` 仍保留为聚合入口，但只建议在你明确需要一次
+  同时处理 `backend + admin-web` 时使用。
+- 先看计划而不执行构建，使用：
+
+```bash
+PLAN_ONLY=1 bash scripts/deploy-backend-on-server.sh
+```
+
+- 当前这台 `2 vCPU / 1.9 GiB RAM / 0 swap` 的线上机，脚本默认允许
+  `backend` 单独构建，但会拒绝 `admin-web` 构建或前后端一起构建；这不是
+  脚本坏了，而是根据当前机器规格优先拦住更容易把整机打满的
+  `npm install` / `vite build` 链路。
+- 只有明确在维护窗口、并且接受风险时，才允许显式强制：
+
+```bash
+ALLOW_LOW_RESOURCE_BUILD=1 bash scripts/deploy-admin-web-on-server.sh
+ALLOW_LOW_RESOURCE_BUILD=1 bash scripts/deploy-linkparse-sidecar-on-server.sh
+ALLOW_LOW_RESOURCE_BUILD=1 DEPLOY_SCOPE=all bash scripts/deploy-on-server.sh
+```
+
+- 构建默认通过 `nice + ionice` 降低优先级，并把后端 `go build` 限制为
+  `GOMAXPROCS=1`；但这只能“稍微减轻”，不能从根本上解决低配机本机构建
+  的卡顿风险。
+- `admin-web` 默认只有在 `package.json / package-lock.json` 变更或
+  `node_modules` 缺失时才执行 `npm install`；其余情况下直接复用现有依赖
+  做 `vite build`。
+- 如果只是同步源码而不做构建，可用：
+
+```bash
+DEPLOY_SCOPE=none bash scripts/deploy-on-server.sh
 ```
 
 ### 7.2 后台管理前端发布
 
 ```bash
-cd /srv/caipu-miniapp
-npm --prefix admin-web install
-npm --prefix admin-web run build
+cd /path/to/caipu-miniapp
+DOMAIN=www.gxm1227.top \
+  bash scripts/upload-admin-web-dist.sh
 ```
 
 说明：
 
+- 脚本会优先从你本机 `~/.ssh/config` 自动识别
+  `one-hub-server / oh-prod / my-cloud`；如果后续切换服务器，也可以在执行时
+  显式覆盖 `SERVER_HOST=...`。
+- 当前更推荐“本地或 CI 构建 `dist` -> 上传到服务器 -> 原子替换远端
+  `/srv/caipu-miniapp/admin-web/dist`”这条路线，尤其适合当前这台
+  `2 vCPU / 1.9 GiB RAM / 0 swap` 的线上机。
+- `scripts/upload-admin-web-dist.sh` 会在本地调用
+  `scripts/build-admin-web.sh`，随后通过 `scp + ssh + tar` 上传并切换远端
+  `dist` 目录；如果设置了 `DOMAIN` 或 `VERIFY_URL`，脚本还会在上传后做
+  一次 `curl -I` 验证。
+- `scripts/deploy-admin-web-on-server.sh` 是 `admin-web` 独立入口，会固定按
+  `admin-web` 范围处理，不会顺手重启 `caipu-backend`，但它仍然属于
+  “服务器本机构建”路线，更适合作为维护窗口里的兜底方案。
 - `admin-web` 是静态站点，不需要单独的 `systemd` 常驻服务。
 - 当前由 `nginx` 直接托管 `/srv/caipu-miniapp/admin-web/dist`。
 - 纯静态资源更新通常不需要重启 `nginx`；如果改了 nginx 配置，才需要：
@@ -284,9 +338,17 @@ systemctl reload nginx
 
 ```bash
 cd /srv/caipu-miniapp/sidecars/linkparse-sidecar
-npm install
-systemctl restart caipu-linkparse-sidecar
+bash ../../scripts/deploy-linkparse-sidecar-on-server.sh
 ```
+
+说明：
+
+- `scripts/deploy-linkparse-sidecar-on-server.sh` 只处理
+  `sidecars/linkparse-sidecar` 与 `caipu-linkparse-sidecar`。
+- 如果只是 sidecar JS 代码改动，它会直接重启服务，不会额外跑
+  `npm install`。
+- 只有在 `package.json / package-lock.json` 变更或 `node_modules` 缺失时，
+  才会尝试安装 sidecar 依赖。
 
 ## 8. 常用检查命令
 
@@ -332,6 +394,19 @@ curl -i https://www.gxm1227.top/caipu-api/admin/auth/me
    `caipu-backend`。
 5. 后台前端代码更新后，只有拉代码不够，必须重新构建 `admin-web/dist`。
 6. 如果只改了 `admin-web` 页面代码，一般不需要重启 `caipu-backend`。
+7. 当前线上机器只有 `2 vCPU / 1.9 GiB RAM / 0 swap`，不要在业务高峰期
+   运行 `npm install`、`vite build`、`go build`、`go test ./...`
+   这类高占用任务。
+8. 优先使用拆开的独立脚本：
+   `deploy-backend-on-server.sh`、`deploy-admin-web-on-server.sh`、
+   `deploy-linkparse-sidecar-on-server.sh`；聚合脚本只在确实需要联动部署时
+   再用。
+9. `scripts/deploy-admin-web-on-server.sh` 现在默认会拒绝在该机器上做
+   `admin-web` 构建；先用 `PLAN_ONLY=1` 看计划，需要仅同步源码时用
+   `DEPLOY_SCOPE=none bash scripts/deploy-on-server.sh`。
+10. 如果确实要在服务器上强制构建 `admin-web`、执行 sidecar 依赖安装，
+    或前后端一起构建，必须显式带 `ALLOW_LOW_RESOURCE_BUILD=1`，并尽量放到
+    维护窗口执行。
 
 ## 10. 推荐的后续补强
 

@@ -8,6 +8,7 @@
     "admin:dev": "npm --prefix admin-web run dev",
     "admin:build": "npm --prefix admin-web run build",
     "admin:preview": "npm --prefix admin-web run preview",
+    "admin:upload": "bash scripts/upload-admin-web-dist.sh",
     "wx:auto-preview": "bash scripts/wx-auto-preview.sh",
     "wx:auto-preview:skip-compile": "bash scripts/wx-auto-preview.sh --skip-compile"
   },
