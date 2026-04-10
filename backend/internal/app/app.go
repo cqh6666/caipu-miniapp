@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/admin"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
@@ -59,6 +61,13 @@ func New(cfg config.Config) (*App, error) {
 	appSettingsRepo := appsettings.NewRepository(dbConn)
 	runtimeProvider := appsettings.NewRuntimeProvider(appSettingsRepo, cfg.CredentialsSecret, cfg)
 	auditService := audit.NewService(dbConn, logger)
+	aiRoutingRepo := airouter.NewRepository(dbConn)
+	aiRoutingService := airouter.NewService(
+		aiRoutingRepo,
+		cfg.CredentialsSecret,
+		buildAIRoutingCompatibilityLoader(runtimeProvider),
+		auditService,
+	)
 	var appSettingsService *appsettings.Service
 
 	inviteRepo := invite.NewRepository(dbConn)
@@ -119,6 +128,7 @@ func New(cfg config.Config) (*App, error) {
 				},
 			}
 		},
+		AIRouter: aiRoutingService,
 		Tracker: auditService,
 		BilibiliSessdataProvider: func(ctx context.Context) string {
 			if appSettingsService == nil {
@@ -150,6 +160,7 @@ func New(cfg config.Config) (*App, error) {
 				Timeout: flowchartCfg.Timeout,
 			}
 		},
+		AIRouter: aiRoutingService,
 		Tracker: auditService,
 	}, uploadService)
 	recipeService := recipe.NewService(recipe.ServiceOptions{
@@ -186,7 +197,7 @@ func New(cfg config.Config) (*App, error) {
 	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour)
 	adminService := admin.NewService(cfg.AdminUsername, cfg.AdminPasswordHash, adminTokenManager, cfg.AppEnv != "local")
 	serverHealthService := admin.NewServerHealthService(cfg, runtimeProvider)
-	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService, serverHealthService)
+	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService, serverHealthService, aiRoutingService)
 	adminAuthMiddleware := admin.NewAuthMiddleware(adminTokenManager)
 	recipeAutoParser := recipe.NewAutoParseWorker(
 		logger,
@@ -247,6 +258,125 @@ func New(cfg config.Config) (*App, error) {
 		RecipeFlowchart:   recipeFlowchartWorker,
 		RecipeImageMirror: recipeImageMirror,
 	}, nil
+}
+
+func buildAIRoutingCompatibilityLoader(runtimeProvider *appsettings.RuntimeProvider) airouter.CompatibilityLoader {
+	return func(ctx context.Context, scene airouter.Scene) airouter.SceneConfig {
+		switch scene {
+		case airouter.SceneSummary:
+			summary := runtimeProvider.SummaryAI(ctx)
+			enabled := summary.BaseURL != "" && summary.Model != ""
+			return airouter.SceneConfig{
+				Scene:       scene,
+				Enabled:     enabled,
+				Strategy:    airouter.StrategyPriorityFailover,
+				MaxAttempts: 1,
+				RetryOn:     airouter.DefaultRetryOn(),
+				Breaker:     airouter.DefaultBreakerConfig(),
+				Providers: []airouter.ProviderConfig{
+					{
+						ID:             "summary-compat",
+						Name:           "兼容单节点",
+						Adapter:        airouter.AdapterOpenAICompatible,
+						Enabled:        enabled,
+						Priority:       10,
+						BaseURL:        summary.BaseURL,
+						APIKey:         summary.APIKey,
+						APIKeyMasked:   maskCompatSecret(summary.APIKey),
+						HasAPIKey:      strings.TrimSpace(summary.APIKey) != "",
+						Model:          summary.Model,
+						TimeoutSeconds: int(summary.Timeout.Seconds()),
+					},
+				},
+			}
+		case airouter.SceneTitle:
+			summary := runtimeProvider.SummaryAI(ctx)
+			title := runtimeProvider.TitleAI(ctx)
+			if strings.TrimSpace(title.BaseURL) == "" {
+				title.BaseURL = summary.BaseURL
+			}
+			if strings.TrimSpace(title.APIKey) == "" {
+				title.APIKey = summary.APIKey
+			}
+			if strings.TrimSpace(title.Model) == "" {
+				title.Model = summary.Model
+			}
+			enabled := title.Enabled && title.BaseURL != "" && title.Model != ""
+			return airouter.SceneConfig{
+				Scene:       scene,
+				Enabled:     enabled,
+				Strategy:    airouter.StrategyRoundRobinFailover,
+				MaxAttempts: 1,
+				RetryOn:     airouter.DefaultRetryOn(),
+				Breaker:     airouter.DefaultBreakerConfig(),
+				RequestOptions: airouter.RequestOptions{
+					Stream:      title.Stream,
+					Temperature: title.Temperature,
+					MaxTokens:   title.MaxTokens,
+				},
+				Providers: []airouter.ProviderConfig{
+					{
+						ID:             "title-compat",
+						Name:           "兼容单节点",
+						Adapter:        airouter.AdapterOpenAICompatible,
+						Enabled:        enabled,
+						Priority:       10,
+						BaseURL:        title.BaseURL,
+						APIKey:         title.APIKey,
+						APIKeyMasked:   maskCompatSecret(title.APIKey),
+						HasAPIKey:      strings.TrimSpace(title.APIKey) != "",
+						Model:          title.Model,
+						TimeoutSeconds: int(title.Timeout.Seconds()),
+					},
+				},
+			}
+		case airouter.SceneFlowchart:
+			flowchart := runtimeProvider.FlowchartAI(ctx)
+			enabled := flowchart.BaseURL != "" && flowchart.Model != ""
+			return airouter.SceneConfig{
+				Scene:       scene,
+				Enabled:     enabled,
+				Strategy:    airouter.StrategyPriorityFailover,
+				MaxAttempts: 1,
+				RetryOn:     airouter.DefaultRetryOn(),
+				Breaker:     airouter.DefaultBreakerConfig(),
+				Providers: []airouter.ProviderConfig{
+					{
+						ID:             "flowchart-compat",
+						Name:           "兼容单节点",
+						Adapter:        airouter.AdapterOpenAICompatible,
+						Enabled:        enabled,
+						Priority:       10,
+						BaseURL:        flowchart.BaseURL,
+						APIKey:         flowchart.APIKey,
+						APIKeyMasked:   maskCompatSecret(flowchart.APIKey),
+						HasAPIKey:      strings.TrimSpace(flowchart.APIKey) != "",
+						Model:          flowchart.Model,
+						TimeoutSeconds: int(flowchart.Timeout.Seconds()),
+					},
+				},
+			}
+		default:
+			return airouter.SceneConfig{
+				Scene:       scene,
+				Strategy:    airouter.StrategyPriorityFailover,
+				MaxAttempts: 1,
+				RetryOn:     airouter.DefaultRetryOn(),
+				Breaker:     airouter.DefaultBreakerConfig(),
+			}
+		}
+	}
+}
+
+func maskCompatSecret(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) <= 8 {
+		return "****"
+	}
+	return value[:4] + "..." + value[len(value)-4:]
 }
 
 func (a *App) Start() error {

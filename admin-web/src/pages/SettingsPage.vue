@@ -54,6 +54,20 @@
           :title="`该分组尚有 ${getGroupDiff(group.name).length} 项未保存变更`"
         />
 
+        <el-alert
+          v-if="isAIRuntimeCompatGroup(group.name)"
+          class="setting-alert"
+          type="info"
+          :closable="false"
+          title="该分组已降级为兼容模式入口"
+        >
+          <template #default>
+            多 Provider 正式入口已迁移到
+            <router-link to="/ai-providers">AI Provider</router-link>
+            页面；这里保留为旧单节点兜底配置，仅在新路由未启用时生效。
+          </template>
+        </el-alert>
+
         <div v-if="testResults[group.name]" class="test-result-card">
           <div class="detail-panel__header">
             <div>
@@ -399,6 +413,10 @@ function getSecretHint(groupName: string, key: string) {
     return '已输入新值，保存后会覆盖当前密钥。'
   }
   return ''
+}
+
+function isAIRuntimeCompatGroup(groupName: string) {
+  return groupName === 'ai.summary' || groupName === 'ai.title' || groupName === 'ai.flowchart'
 }
 
 function handleFieldInput(groupName: string, field: RuntimeSettingFieldView, value: string | boolean) {

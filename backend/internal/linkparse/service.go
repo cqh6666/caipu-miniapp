@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
@@ -81,6 +82,7 @@ type Options struct {
 	AIHTTPClient             *http.Client
 	ResolveURLClient         *http.Client
 	RuntimeConfigLoader      RuntimeConfigLoader
+	AIRouter                 *airouter.Service
 	Tracker                  audit.Tracker
 }
 
@@ -92,6 +94,7 @@ type Service struct {
 	ai                       *aiClient
 	titleAI                  *aiClient
 	sidecar                  *sidecarClient
+	aiRouter                 *airouter.Service
 	bilibiliSessdataProvider func(context.Context) string
 	tracker                  audit.Tracker
 }
@@ -356,6 +359,7 @@ func NewService(opts Options) *Service {
 		ai:                       summaryAI,
 		titleAI:                  titleAI,
 		sidecar:                  sidecar,
+		aiRouter:                 opts.AIRouter,
 		bilibiliSessdataProvider: opts.BilibiliSessdataProvider,
 		tracker:                  opts.Tracker,
 	}
@@ -483,6 +487,210 @@ func (s *Service) titleAIFor(ctx context.Context) *aiClient {
 	}
 }
 
+func (s *Service) hasSummaryAI(ctx context.Context) bool {
+	if s != nil && s.aiRouter != nil {
+		return s.aiRouter.IsSceneAvailable(ctx, airouter.SceneSummary)
+	}
+	return s.summaryAIFor(ctx) != nil
+}
+
+func (s *Service) hasTitleAI(ctx context.Context) bool {
+	if s != nil && s.aiRouter != nil {
+		return s.aiRouter.IsSceneAvailable(ctx, airouter.SceneTitle)
+	}
+	return s.titleAIFor(ctx) != nil
+}
+
+func (s *Service) summarizeBilibiliDraft(ctx context.Context, result BilibiliParseResult) (RecipeDraft, airouter.ChatCompletionResult, error) {
+	if s != nil && s.aiRouter != nil {
+		routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneSummary, airouter.ChatCompletionInput{
+			Messages:    buildBilibiliSummaryMessages(result),
+			Temperature: floatPtr(0.2),
+			ContentKind: "summary_bilibili",
+			ValidateContent: func(content string) error {
+				_, err := summaryDraftFromAIContent(content)
+				return err
+			},
+		})
+		if err != nil {
+			return RecipeDraft{}, routeResult, err
+		}
+		draft, err := summaryDraftFromAIContent(routeResult.Content)
+		if err != nil {
+			return RecipeDraft{}, airouter.ChatCompletionResult{}, err
+		}
+		return draft, routeResult, nil
+	}
+
+	client := s.summaryAIFor(ctx)
+	if client == nil {
+		return RecipeDraft{}, airouter.ChatCompletionResult{}, common.NewAppError(common.CodeInternalServer, "summary ai is not configured", http.StatusServiceUnavailable)
+	}
+	draft, err := client.summarize(ctx, result)
+	if err != nil {
+		return RecipeDraft{}, airouter.ChatCompletionResult{}, err
+	}
+	return draft, legacyRouteResult(client.model), nil
+}
+
+func (s *Service) summarizeXiaohongshuDraft(ctx context.Context, result XiaohongshuParseResult) (RecipeDraft, airouter.ChatCompletionResult, error) {
+	if s != nil && s.aiRouter != nil {
+		routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneSummary, airouter.ChatCompletionInput{
+			Messages:    buildXiaohongshuSummaryMessages(result),
+			Temperature: floatPtr(0.2),
+			ContentKind: "summary_xiaohongshu",
+			ValidateContent: func(content string) error {
+				_, err := summaryDraftFromAIContent(content)
+				return err
+			},
+		})
+		if err != nil {
+			return RecipeDraft{}, routeResult, err
+		}
+		draft, err := summaryDraftFromAIContent(routeResult.Content)
+		if err != nil {
+			return RecipeDraft{}, airouter.ChatCompletionResult{}, err
+		}
+		return draft, routeResult, nil
+	}
+
+	client := s.summaryAIFor(ctx)
+	if client == nil {
+		return RecipeDraft{}, airouter.ChatCompletionResult{}, common.NewAppError(common.CodeInternalServer, "summary ai is not configured", http.StatusServiceUnavailable)
+	}
+	draft, err := client.summarizeXiaohongshu(ctx, result)
+	if err != nil {
+		return RecipeDraft{}, airouter.ChatCompletionResult{}, err
+	}
+	return draft, legacyRouteResult(client.model), nil
+}
+
+func (s *Service) refineTitleWithAI(ctx context.Context, rawTitle, currentTitle string) (string, airouter.ChatCompletionResult, error) {
+	if s != nil && s.aiRouter != nil {
+		routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneTitle, airouter.ChatCompletionInput{
+			Messages:    buildTitleRefineMessages(rawTitle, currentTitle),
+			ContentKind: "title_refine",
+			ValidateContent: func(content string) error {
+				_, err := parseTitleRefineContent(content)
+				return err
+			},
+		})
+		if err != nil {
+			return "", routeResult, err
+		}
+		title, err := parseTitleRefineContent(routeResult.Content)
+		if err != nil {
+			return "", airouter.ChatCompletionResult{}, err
+		}
+		return title, routeResult, nil
+	}
+
+	client := s.titleAIFor(ctx)
+	if client == nil {
+		return "", airouter.ChatCompletionResult{}, common.NewAppError(common.CodeInternalServer, "title ai is not configured", http.StatusServiceUnavailable)
+	}
+	title, err := client.refineTitle(ctx, rawTitle, currentTitle)
+	if err != nil {
+		return "", airouter.ChatCompletionResult{}, err
+	}
+	return title, legacyRouteResult(client.model), nil
+}
+
+func buildBilibiliSummaryMessages(result BilibiliParseResult) []airouter.ChatMessage {
+	return []airouter.ChatMessage{
+		{
+			Role:    "system",
+			Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。steps 必须返回 3 到 6 步；如果原始做法更细，请合并相邻动作，不要拆得过碎，也不要超过 6 步。每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildIngredientPromptRuleText() + " " + buildSummaryPromptRuleText(),
+		},
+		{
+			Role:    "user",
+			Content: buildAISummaryPrompt(result),
+		},
+	}
+}
+
+func buildXiaohongshuSummaryMessages(result XiaohongshuParseResult) []airouter.ChatMessage {
+	return []airouter.ChatMessage{
+		{
+			Role:    "system",
+			Content: "你是一个菜谱整理助手。请根据小红书图文笔记正文、标签和图片描述线索，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。steps 必须返回 3 到 6 步；如果原始做法更细，请合并相邻动作，不要拆得过碎，也不要超过 6 步。每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原笔记和配图确认。 " + buildIngredientPromptRuleText() + " " + buildSummaryPromptRuleText(),
+		},
+		{
+			Role:    "user",
+			Content: buildXiaohongshuAISummaryPrompt(result),
+		},
+	}
+}
+
+func buildTitleRefineMessages(rawTitle, currentTitle string) []airouter.ChatMessage {
+	return []airouter.ChatMessage{
+		{
+			Role: "system",
+			Content: "你是一个菜谱标题清洗助手。请从原始分享标题里提取最适合作为菜谱名的核心菜名。" +
+				"必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\"}。" +
+				"不要返回平台词、教程词、营销词、口感修饰、系列名。标题尽量 3 到 12 个汉字，最长不超过 14 个字。",
+		},
+		{
+			Role: "user",
+			Content: "原始标题: " + strings.TrimSpace(rawTitle) + "\n" +
+				"当前规则结果: " + strings.TrimSpace(currentTitle) + "\n" +
+				"请只提取核心菜名。",
+		},
+	}
+}
+
+func summaryDraftFromAIContent(content string) (RecipeDraft, error) {
+	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(strings.TrimSpace(content), "$1"))
+	if content == "" {
+		return RecipeDraft{}, fmt.Errorf("ai response was empty")
+	}
+
+	var summary aiSummaryResponse
+	if err := json.Unmarshal([]byte(content), &summary); err != nil {
+		return RecipeDraft{}, err
+	}
+	parsedContent, err := summary.toParsedContent()
+	if err != nil {
+		return RecipeDraft{}, err
+	}
+	return RecipeDraft{
+		Title:         summary.Title,
+		Ingredient:    summary.Ingredient,
+		Summary:       summary.Summary,
+		Note:          summary.Note,
+		ParsedContent: parsedContent,
+	}, nil
+}
+
+func parseTitleRefineContent(content string) (string, error) {
+	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(strings.TrimSpace(content), "$1"))
+	if content == "" {
+		return "", fmt.Errorf("title ai response was empty")
+	}
+
+	var response struct {
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(content), &response); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(response.Title), nil
+}
+
+func legacyRouteResult(model string) airouter.ChatCompletionResult {
+	return airouter.ChatCompletionResult{
+		ProviderID:   airouter.AdapterOpenAICompatible,
+		ProviderName: airouter.AdapterOpenAICompatible,
+		Model:        strings.TrimSpace(model),
+		Strategy:     airouter.StrategyPriorityFailover,
+		AttemptCount: 1,
+	}
+}
+
+func floatPtr(value float64) *float64 {
+	return &value
+}
+
 func (s *Service) sidecarFor(ctx context.Context) *sidecarClient {
 	if s != nil && s.sidecar != nil {
 		return s.sidecar
@@ -572,9 +780,19 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 		"platform": "bilibili",
 	})
 	ctx = trackedCtx
-	finishResult := func(result BilibiliParseResult, err error) {
+	finishResult := func(result BilibiliParseResult, routeInfo airouter.ChatCompletionResult, err error) {
 		if finish == nil {
 			return
+		}
+		meta := map[string]any{
+			"platform":     "bilibili",
+			"summary_mode": strings.TrimSpace(result.SummaryMode),
+			"warnings":     len(result.Warnings),
+		}
+		if routeInfo.AttemptCount > 0 {
+			meta["route_strategy"] = string(routeInfo.Strategy)
+			meta["attempt_count"] = routeInfo.AttemptCount
+			meta["started_provider"] = routeInfo.StartedProvider
 		}
 		jobResult := audit.JobResult{
 			Status:        audit.JobStatusSuccess,
@@ -582,16 +800,14 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 			FinalModel:    "",
 			FallbackUsed:  strings.TrimSpace(result.SummaryMode) == "heuristic",
 			FinishedAt:    audit.NowRFC3339(),
-			Meta: map[string]any{
-				"platform":     "bilibili",
-				"summary_mode": strings.TrimSpace(result.SummaryMode),
-				"warnings":     len(result.Warnings),
-			},
+			Meta:          meta,
 		}
 		if result.SummaryMode == "ai" {
-			jobResult.FinalProvider = "openai-compatible"
-			jobResult.FinalModel = s.summaryAIFor(ctx).model
-			jobResult.FallbackUsed = false
+			jobResult.FinalProvider = firstNonEmpty(routeInfo.ProviderID, airouter.AdapterOpenAICompatible)
+			jobResult.FinalModel = routeInfo.Model
+			jobResult.FallbackUsed = routeInfo.FallbackUsed
+		} else if routeInfo.AttemptCount > 0 {
+			jobResult.FallbackUsed = true
 		}
 		if err != nil {
 			jobResult.Status = audit.JobStatusFromError(err)
@@ -602,11 +818,12 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 		}
 		_ = finish(ctx, jobResult)
 	}
+	var summaryRoute airouter.ChatCompletionResult
 
 	if sidecar := s.sidecarFor(ctx); sidecar != nil {
 		result, err := s.fetchBilibiliViaSidecar(ctx, rawInput, bilibiliFetchOptions{IncludeTranscript: true})
 		if err != nil {
-			finishResult(BilibiliParseResult{}, err)
+			finishResult(BilibiliParseResult{}, airouter.ChatCompletionResult{}, err)
 			return BilibiliParseResult{}, err
 		}
 
@@ -614,16 +831,17 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 			result.SummaryMode = "heuristic"
 			result.RecipeDraft = summarizeHeuristically(result, "")
 			result.Warnings = append(result.Warnings, "当前视频没有可直接访问的字幕，已使用标题和简介生成降级草稿。")
-			finishResult(result, nil)
+			finishResult(result, summaryRoute, nil)
 			return result, nil
 		}
 
-		if summaryAI := s.summaryAIFor(ctx); summaryAI != nil {
-			draft, err := summaryAI.summarize(ctx, result)
+		if s.hasSummaryAI(ctx) {
+			draft, routeInfo, err := s.summarizeBilibiliDraft(ctx, result)
+			summaryRoute = routeInfo
 			if err == nil {
 				result.SummaryMode = "ai"
 				result.RecipeDraft = normalizeDraft(result, draft)
-				finishResult(result, nil)
+				finishResult(result, routeInfo, nil)
 				return result, nil
 			}
 			result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
@@ -631,19 +849,19 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 		result.SummaryMode = "heuristic"
 		result.RecipeDraft = summarizeHeuristically(result, result.SubtitleText)
-		finishResult(result, nil)
+		finishResult(result, summaryRoute, nil)
 		return result, nil
 	}
 
 	inputURL, err := extractInputURL(rawInput)
 	if err != nil {
-		finishResult(BilibiliParseResult{}, err)
+		finishResult(BilibiliParseResult{}, airouter.ChatCompletionResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
 	ref, warnings, err := s.resolveVideoRef(ctx, inputURL)
 	if err != nil {
-		finishResult(BilibiliParseResult{}, err)
+		finishResult(BilibiliParseResult{}, airouter.ChatCompletionResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -651,7 +869,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 	view, err := s.fetchView(ctx, ref, sessdata)
 	if err != nil {
-		finishResult(BilibiliParseResult{}, err)
+		finishResult(BilibiliParseResult{}, airouter.ChatCompletionResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -675,7 +893,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 	subtitles, err := s.fetchSubtitles(ctx, result.BVID, result.CID, sessdata)
 	if err != nil {
-		finishResult(BilibiliParseResult{}, err)
+		finishResult(BilibiliParseResult{}, airouter.ChatCompletionResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -684,12 +902,13 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 		result.SummaryMode = "heuristic"
 		result.RecipeDraft = summarizeHeuristically(result, "")
 		result.Warnings = append(result.Warnings, "当前视频没有可直接访问的字幕，已使用标题和简介生成降级草稿。")
+		finishResult(result, summaryRoute, nil)
 		return result, nil
 	}
 
 	subtitleFile, err := s.fetchSubtitleFile(ctx, selectedSubtitle.SubtitleURL, sessdata)
 	if err != nil {
-		finishResult(BilibiliParseResult{}, err)
+		finishResult(BilibiliParseResult{}, airouter.ChatCompletionResult{}, err)
 		return BilibiliParseResult{}, err
 	}
 
@@ -703,16 +922,17 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 		result.SummaryMode = "heuristic"
 		result.RecipeDraft = summarizeHeuristically(result, "")
 		result.Warnings = append(result.Warnings, "字幕列表存在，但未提取到可用文本，已回退到标题和简介总结。")
-		finishResult(result, nil)
+		finishResult(result, summaryRoute, nil)
 		return result, nil
 	}
 
-	if summaryAI := s.summaryAIFor(ctx); summaryAI != nil {
-		draft, err := summaryAI.summarize(ctx, result)
+	if s.hasSummaryAI(ctx) {
+		draft, routeInfo, err := s.summarizeBilibiliDraft(ctx, result)
+		summaryRoute = routeInfo
 		if err == nil {
 			result.SummaryMode = "ai"
 			result.RecipeDraft = normalizeDraft(result, draft)
-			finishResult(result, nil)
+			finishResult(result, routeInfo, nil)
 			return result, nil
 		}
 		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
@@ -720,7 +940,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 
 	result.SummaryMode = "heuristic"
 	result.RecipeDraft = summarizeHeuristically(result, result.SubtitleText)
-	finishResult(result, nil)
+	finishResult(result, summaryRoute, nil)
 	return result, nil
 }
 
@@ -1739,15 +1959,14 @@ func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewT
 		return outcome
 	}
 	outcome.Source = "rule"
-	titleAI := s.titleAIFor(ctx)
-	if s == nil || titleAI == nil {
+	if s == nil || !s.hasTitleAI(ctx) {
 		return outcome
 	}
 
 	trackedCtx, _, finish := s.startTrackedJob(ctx, audit.SceneTitleRefine, raw, "preview_link", map[string]any{
 		"raw_title": title,
 	})
-	refined, err := titleAI.refineTitle(trackedCtx, raw, title)
+	refined, routeInfo, err := s.refineTitleWithAI(trackedCtx, raw, title)
 	if err != nil {
 		if finish != nil {
 			_ = finish(trackedCtx, audit.JobResult{
@@ -1758,7 +1977,10 @@ func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewT
 				ErrorMessage:  err.Error(),
 				FinishedAt:    audit.NowRFC3339(),
 				Meta: map[string]any{
-					"result_source": "rule",
+					"result_source":    "rule",
+					"route_strategy":   string(routeInfo.Strategy),
+					"attempt_count":    routeInfo.AttemptCount,
+					"started_provider": routeInfo.StartedProvider,
 				},
 			})
 		}
@@ -1776,7 +1998,10 @@ func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewT
 				ErrorMessage:  "title ai returned empty result",
 				FinishedAt:    audit.NowRFC3339(),
 				Meta: map[string]any{
-					"result_source": "rule",
+					"result_source":    "rule",
+					"route_strategy":   string(routeInfo.Strategy),
+					"attempt_count":    routeInfo.AttemptCount,
+					"started_provider": routeInfo.StartedProvider,
 				},
 			})
 		}
@@ -1787,12 +2012,15 @@ func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewT
 	if finish != nil {
 		_ = finish(trackedCtx, audit.JobResult{
 			Status:        audit.JobStatusSuccess,
-			FinalProvider: "openai-compatible",
-			FinalModel:    titleAI.model,
-			FallbackUsed:  false,
+			FinalProvider: firstNonEmpty(routeInfo.ProviderID, airouter.AdapterOpenAICompatible),
+			FinalModel:    routeInfo.Model,
+			FallbackUsed:  routeInfo.FallbackUsed,
 			FinishedAt:    audit.NowRFC3339(),
 			Meta: map[string]any{
-				"result_source": "ai",
+				"result_source":    "ai",
+				"route_strategy":   string(routeInfo.Strategy),
+				"attempt_count":    routeInfo.AttemptCount,
+				"started_provider": routeInfo.StartedProvider,
 			},
 		})
 	}

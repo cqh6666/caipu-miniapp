@@ -2,6 +2,28 @@
 
 ## 2026-04-10
 
+### Fixed
+
+- AI 多 Provider 路由补齐首轮实现后的关键闭环修复：
+  - `airouter` 现在支持对模型输出内容做场景级校验，`summary / title /
+    flowchart` 在上游返回 `200` 但内容结构不合法时，会按
+    `invalid_response` 继续切换到下一个 Provider，不再把这类响应误记为
+    成功
+  - 后台“测试当前草稿 / 单节点测试”改为按场景使用结构化测试 prompt 与输
+    出校验，不再只做 `ping + MaxTokens=1` 式联通性探测，避免测试页误报
+    可用
+  - `flowchart` 的“是否已配置”判定收紧为基于运行时可用路由，而不是只要
+    注入 `AIRouter` 或仅存在运行时 loader 就算启用，避免后台接口和
+    worker 在实际无可用节点时被误判为可用
+  - `AI Provider` 页面切场景和手动刷新时都会先清空旧编辑态，防止目标场景
+    加载失败时仍保留上一场景草稿，进而误保存到新的场景 key 上
+  - 后台返回的 `compatibilityMode` 改为按真实运行态计算；当场景虽然已保
+    存到数据库，但没有可参与调度的 Provider 时，页面会继续明确提示仍在
+    走兼容链路
+  - 新增 `backend/internal/airouter/service_test.go` 与
+    `backend/internal/recipe/flowchart_test.go`，覆盖输出校验切换与
+    `flowchart` 配置判定的关键回归场景
+
 ### Added
 
 - 新增 AI 多 Provider 配置与调度设计文档：
@@ -14,26 +36,31 @@
 
 ### Notes
 
-- 修改时间：2026-04-10 00:11 CST
+- 修改时间：2026-04-10 17:08 CST
 - 变更背景：当前 AI 总结、标题精修和流程图生成仍主要依赖单 Provider
   配置，用户希望后台管理端支持维护多个 API，并在运行时进行轮询或异常时
   切换到备用节点；为了避免后续实现时再反复讨论，需要先把存储模型、调度
   策略、审计口径和兼容方案沉淀为项目正式文档
-- 核心改动：新增独立设计文档，推荐采用结构化的场景表 +
-  Provider 节点表承接多 API 配置，并新增独立 `AI Provider` 后台页面，
-  而不是继续把多节点配置塞进当前通用标量设置页；文档同时明确了与现有
-  `app_runtime_settings`、环境变量和 AI 审计表的兼容顺序
-- 影响范围：`docs/ai-multi-provider-routing-design.md`、`README.md`、
-  `backend/README.md`、`CHANGELOG.md`
-- 兼容性/风险：本次仅新增设计文档与索引入口，不涉及运行时代码变更；
-  文档中的新表结构、`airouter` 模块和后台页面仍需在正式开发阶段落地；
-  `round robin` 与熔断当前默认按单实例内存态设计，若后续部署形态改成
-  多实例，需要再评估状态外置方案
-- 验证情况：已结合当前仓库中的 `backend/internal/appsettings`、
-  `backend/internal/linkparse`、`backend/internal/recipe`、
-  `backend/internal/audit`、`admin-web/src/pages/SettingsPage.vue` 与已有
-  `docs/admin-console-ai-observability-design.md` 做方案对齐；本次未涉及
-  编译或接口联调
+- 变更背景：AI 多 Provider 首轮落地后，代码审查发现仍存在 4 个关键问题：
+  场景切换失败时后台页面可能误保存旧草稿、`200` 但结构错误的模型输出无
+  法切到备用节点、`flowchart` 可用性判断过宽，以及兼容模式标记与真实运
+  行态不一致
+- 核心改动：在 `airouter` 引入输出校验回调并统一把不合法内容归类为
+  `invalid_response`；`summary / title / flowchart` 三条链路接入该能力；
+  后台草稿测试改为按场景做结构化输出校验；`flowchart` 的配置判断改为检
+  查真实可用路由与合并后的运行时配置；管理端切场景和刷新时都会重置编辑
+  器状态；`compatibilityMode` 与场景摘要节点数改为按运行时是否真的可路
+  由来计算
+- 影响范围：`backend/internal/airouter/`、`backend/internal/linkparse/`、
+  `backend/internal/recipe/`、`admin-web/src/pages/AIProvidersPage.vue`、
+  `CHANGELOG.md`
+- 兼容性/风险：本次不改数据库结构，也不改现有 API 路径；但路由层现在会
+  对模型内容做更严格校验，原先“HTTP 成功但内容格式错误”且被当作成功的
+  上游会被识别为失败并触发切换，这属于预期纠偏
+- 验证情况：已补充 `airouter` 与 `flowchart` 单测；本轮在云服务器上未再
+  执行 `admin-web` 构建；后端定向测试尝试执行 `cd backend && go test
+  ./internal/airouter ./internal/recipe`，但当前沙箱环境受 Go 依赖下载网
+  络限制，未完成自动化验证
 
 ## 2026-04-09
 

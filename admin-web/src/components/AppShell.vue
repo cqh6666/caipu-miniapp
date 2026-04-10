@@ -92,6 +92,11 @@ const navItems = [
     description: '全局健康度与失败信号'
   },
   {
+    path: '/ai-providers',
+    label: 'AI Provider',
+    description: '多节点路由、熔断与草稿测试'
+  },
+  {
     path: '/server-health',
     label: '服务健康',
     description: '主机资源与核心链路状态'

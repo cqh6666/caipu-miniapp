@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
@@ -18,6 +19,7 @@ type Handler struct {
 	runtime        *appsettings.RuntimeProvider
 	appSettingsSvc *appsettings.Service
 	serverHealth   *ServerHealthService
+	aiRouting      *airouter.Service
 }
 
 type loginRequest struct {
@@ -36,6 +38,7 @@ func NewHandler(
 	runtimeProvider *appsettings.RuntimeProvider,
 	appSettingsService *appsettings.Service,
 	serverHealthService *ServerHealthService,
+	aiRoutingService *airouter.Service,
 ) *Handler {
 	return &Handler{
 		auth:           auth,
@@ -43,6 +46,7 @@ func NewHandler(
 		runtime:        runtimeProvider,
 		appSettingsSvc: appSettingsService,
 		serverHealth:   serverHealthService,
+		aiRouting:      aiRoutingService,
 	}
 }
 
@@ -291,6 +295,89 @@ func (h *Handler) ListRuntimeAudits(w http.ResponseWriter, r *http.Request) {
 		Page:      parseIntQuery(r, "page", 1),
 		PageSize:  parseIntQuery(r, "pageSize", 20),
 	})
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"result": result,
+	})
+}
+
+func (h *Handler) ListAIRoutingScenes(w http.ResponseWriter, r *http.Request) {
+	if h.aiRouting == nil {
+		common.WriteError(w, common.ErrInternal)
+		return
+	}
+	items, err := h.aiRouting.ListScenes(r.Context())
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"items": items,
+	})
+}
+
+func (h *Handler) GetAIRoutingScene(w http.ResponseWriter, r *http.Request) {
+	if h.aiRouting == nil {
+		common.WriteError(w, common.ErrInternal)
+		return
+	}
+	scene := airouter.Scene(strings.TrimSpace(chi.URLParam(r, "scene")))
+	config, err := h.aiRouting.GetScene(r.Context(), scene)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"scene": config,
+	})
+}
+
+func (h *Handler) UpdateAIRoutingScene(w http.ResponseWriter, r *http.Request) {
+	if h.aiRouting == nil {
+		common.WriteError(w, common.ErrInternal)
+		return
+	}
+	subject, err := h.auth.CurrentSubject(r.Context())
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	scene := airouter.Scene(strings.TrimSpace(chi.URLParam(r, "scene")))
+	var req airouter.SceneConfig
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	config, err := h.aiRouting.SaveScene(r.Context(), subject, common.RequestID(r.Context()), scene, req)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"scene": config,
+	})
+}
+
+func (h *Handler) TestAIRoutingScene(w http.ResponseWriter, r *http.Request) {
+	if h.aiRouting == nil {
+		common.WriteError(w, common.ErrInternal)
+		return
+	}
+	subject, err := h.auth.CurrentSubject(r.Context())
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	scene := airouter.Scene(strings.TrimSpace(chi.URLParam(r, "scene")))
+	var req airouter.SceneConfig
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	result, err := h.aiRouting.TestScene(r.Context(), subject, common.RequestID(r.Context()), scene, req)
 	if err != nil {
 		common.WriteError(w, err)
 		return

@@ -4,6 +4,17 @@ export const sceneOptions = [
   { label: '标题精修', value: 'title_refine' }
 ]
 
+export const aiRoutingSceneOptions = [
+  { label: 'AI 总结', value: 'summary' },
+  { label: '标题精修', value: 'title' },
+  { label: '流程图生成', value: 'flowchart' }
+]
+
+export const aiRoutingStrategyOptions = [
+  { label: '主节点优先 + 失败切换', value: 'priority_failover' },
+  { label: '轮询起始 + 失败切换', value: 'round_robin_failover' }
+]
+
 export const jobStatusOptions = [
   { label: '成功', value: 'success' },
   { label: '失败', value: 'failed' },
@@ -39,6 +50,12 @@ const triggerSourceLabelMap: Record<string, string> = Object.fromEntries(
 )
 const auditActionLabelMap: Record<string, string> = Object.fromEntries(
   auditActionOptions.map((item) => [item.value, item.label])
+)
+const aiRoutingSceneLabelMap: Record<string, string> = Object.fromEntries(
+  aiRoutingSceneOptions.map((item) => [item.value, item.label])
+)
+const aiRoutingStrategyLabelMap: Record<string, string> = Object.fromEntries(
+  aiRoutingStrategyOptions.map((item) => [item.value, item.label])
 )
 
 const dateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -167,6 +184,10 @@ export function displaySettingSource(value?: string) {
   switch (value) {
     case 'db':
       return '数据库覆盖'
+    case 'compat':
+      return '兼容模式'
+    case 'empty':
+      return '未配置'
     case 'env':
       return '环境变量'
     case 'none':
@@ -187,6 +208,20 @@ export function displayValueType(value?: string) {
     default:
       return '文本'
   }
+}
+
+export function displayAIRoutingScene(value?: string) {
+  if (!value) {
+    return '-'
+  }
+  return aiRoutingSceneLabelMap[value] || value
+}
+
+export function displayAIRoutingStrategy(value?: string) {
+  if (!value) {
+    return '-'
+  }
+  return aiRoutingStrategyLabelMap[value] || value
 }
 
 export function toneForStatus(status?: string): StatusTone {

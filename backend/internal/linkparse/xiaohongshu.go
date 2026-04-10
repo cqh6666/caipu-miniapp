@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
@@ -77,28 +78,34 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 		"platform": "xiaohongshu",
 	})
 	ctx = trackedCtx
-	finishResult := func(result XiaohongshuParseResult, err error) {
+	finishResult := func(result XiaohongshuParseResult, routeInfo airouter.ChatCompletionResult, err error) {
 		if finish == nil {
 			return
+		}
+		meta := map[string]any{
+			"platform":      "xiaohongshu",
+			"summary_mode":  strings.TrimSpace(result.SummaryMode),
+			"warnings":      len(result.Warnings),
+			"provider_used": strings.TrimSpace(result.ProviderUsed),
+		}
+		if routeInfo.AttemptCount > 0 {
+			meta["route_strategy"] = string(routeInfo.Strategy)
+			meta["attempt_count"] = routeInfo.AttemptCount
+			meta["started_provider"] = routeInfo.StartedProvider
 		}
 		jobResult := audit.JobResult{
 			Status:        audit.JobStatusSuccess,
 			FinalProvider: "heuristic",
 			FallbackUsed:  strings.TrimSpace(result.SummaryMode) == "heuristic",
 			FinishedAt:    audit.NowRFC3339(),
-			Meta: map[string]any{
-				"platform":      "xiaohongshu",
-				"summary_mode":  strings.TrimSpace(result.SummaryMode),
-				"warnings":      len(result.Warnings),
-				"provider_used": strings.TrimSpace(result.ProviderUsed),
-			},
+			Meta:          meta,
 		}
 		if result.SummaryMode == "ai" {
-			jobResult.FinalProvider = "openai-compatible"
-			if client := s.summaryAIFor(ctx); client != nil {
-				jobResult.FinalModel = client.model
-			}
-			jobResult.FallbackUsed = false
+			jobResult.FinalProvider = firstNonEmpty(routeInfo.ProviderID, airouter.AdapterOpenAICompatible)
+			jobResult.FinalModel = routeInfo.Model
+			jobResult.FallbackUsed = routeInfo.FallbackUsed
+		} else if routeInfo.AttemptCount > 0 {
+			jobResult.FallbackUsed = true
 		}
 		if err != nil {
 			jobResult.Status = audit.JobStatusFromError(err)
@@ -109,17 +116,18 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 		}
 		_ = finish(ctx, jobResult)
 	}
+	var summaryRoute airouter.ChatCompletionResult
 
 	result, err := s.fetchXiaohongshu(ctx, rawInput, opts)
 	if err != nil {
 		if !opts.IncludeTranscript || !shouldRetryXiaohongshuWithoutTranscript(err) {
-			finishResult(XiaohongshuParseResult{}, err)
+			finishResult(XiaohongshuParseResult{}, airouter.ChatCompletionResult{}, err)
 			return XiaohongshuParseResult{}, err
 		}
 
 		fallback, fallbackErr := s.fetchXiaohongshu(ctx, rawInput, xhsFetchOptions{})
 		if fallbackErr != nil {
-			finishResult(XiaohongshuParseResult{}, err)
+			finishResult(XiaohongshuParseResult{}, airouter.ChatCompletionResult{}, err)
 			return XiaohongshuParseResult{}, err
 		}
 
@@ -129,12 +137,13 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 		result = fallback
 	}
 
-	if summaryAI := s.summaryAIFor(ctx); summaryAI != nil {
-		draft, err := summaryAI.summarizeXiaohongshu(ctx, result)
+	if s.hasSummaryAI(ctx) {
+		draft, routeInfo, err := s.summarizeXiaohongshuDraft(ctx, result)
+		summaryRoute = routeInfo
 		if err == nil {
 			result.SummaryMode = "ai"
 			result.RecipeDraft = normalizeXiaohongshuDraft(result, draft)
-			finishResult(result, nil)
+			finishResult(result, routeInfo, nil)
 			return result, nil
 		}
 		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
@@ -142,7 +151,7 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 
 	result.SummaryMode = "heuristic"
 	result.RecipeDraft = summarizeXiaohongshuHeuristically(result)
-	finishResult(result, nil)
+	finishResult(result, summaryRoute, nil)
 	return result, nil
 }
 

@@ -1,5 +1,8 @@
 import { request } from './http'
 import type {
+  AIRoutingSceneConfig,
+  AIRoutingSceneSummary,
+  AIRoutingTestResult,
   CallLogRecord,
   DashboardOverview,
   GroupTestResult,
@@ -74,4 +77,26 @@ export function listSettingAudits(query: URLSearchParams) {
   return request<{ result: PaginationResult<SettingAuditRecord> }>(
     `/admin/runtime-settings/audits?${query.toString()}`
   )
+}
+
+export function listAIRoutingScenes() {
+  return request<{ items: AIRoutingSceneSummary[] }>('/admin/ai-routing/scenes')
+}
+
+export function getAIRoutingScene(scene: string) {
+  return request<{ scene: AIRoutingSceneConfig }>(`/admin/ai-routing/scenes/${encodeURIComponent(scene)}`)
+}
+
+export function updateAIRoutingScene(scene: string, payload: AIRoutingSceneConfig) {
+  return request<{ scene: AIRoutingSceneConfig }>(`/admin/ai-routing/scenes/${encodeURIComponent(scene)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function testAIRoutingScene(scene: string, payload: AIRoutingSceneConfig) {
+  return request<{ result: AIRoutingTestResult }>(`/admin/ai-routing/scenes/${encodeURIComponent(scene)}/test`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }

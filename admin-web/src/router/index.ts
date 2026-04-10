@@ -28,6 +28,15 @@ const router = createRouter({
       }
     },
     {
+      path: '/ai-providers',
+      name: 'ai-providers',
+      component: () => import('@/pages/AIProvidersPage.vue'),
+      meta: {
+        title: 'AI Provider',
+        description: '管理 summary / title / flowchart 的多 Provider 路由与降级策略。'
+      }
+    },
+    {
       path: '/ai-jobs',
       name: 'ai-jobs',
       component: () => import('@/pages/JobsPage.vue'),
@@ -60,7 +69,7 @@ const router = createRouter({
       component: () => import('@/pages/SettingsPage.vue'),
       meta: {
         title: '配置中心',
-        description: '在线管理运行时参数、测试连通性并追踪审计记录。'
+        description: '在线管理兼容模式参数、测试连通性并追踪审计记录。'
       }
     }
   ]

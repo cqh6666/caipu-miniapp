@@ -213,11 +213,20 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		}
 	}
 
-	finishJob := func(status, provider, model string, err error, meta map[string]any) {
+	finishJob := func(status string, result FlowchartResult, err error, meta map[string]any) {
+		if meta == nil {
+			meta = make(map[string]any)
+		}
+		if result.AttemptCount > 0 {
+			meta["route_strategy"] = result.RouteStrategy
+			meta["attempt_count"] = result.AttemptCount
+			meta["started_provider"] = result.StartedProvider
+		}
 		jobResult := audit.JobResult{
 			Status:        status,
-			FinalProvider: provider,
-			FinalModel:    model,
+			FinalProvider: result.Provider,
+			FinalModel:    result.Model,
+			FallbackUsed:  result.FallbackUsed,
 			FinishedAt:    audit.NowRFC3339(),
 			Meta:          meta,
 		}
@@ -236,7 +245,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart failed after load error", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "load", startedAt, err)
-		finishJob(audit.JobStatusFailed, "", "", err, map[string]any{"stage": "load"})
+		finishJob(audit.JobStatusFailed, FlowchartResult{}, err, map[string]any{"stage": "load"})
 		return err
 	}
 
@@ -247,7 +256,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart invalid-input failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "validate", startedAt, err)
-		finishJob(audit.JobStatusFailed, "", "", err, map[string]any{"stage": "validate"})
+		finishJob(audit.JobStatusFailed, FlowchartResult{}, err, map[string]any{"stage": "validate"})
 		return err
 	}
 
@@ -258,7 +267,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart failed state failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "generate", startedAt, err)
-		finishJob(audit.JobStatusFromError(err), "", "", err, map[string]any{"stage": "generate"})
+		finishJob(audit.JobStatusFromError(err), result, err, map[string]any{"stage": "generate"})
 		return err
 	}
 
@@ -268,7 +277,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 			w.logger.Error("mark recipe flowchart apply failure failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "persist", startedAt, err)
-		finishJob(audit.JobStatusFailed, result.Provider, result.Model, err, map[string]any{"stage": "persist"})
+		finishJob(audit.JobStatusFailed, result, err, map[string]any{"stage": "persist"})
 		return err
 	}
 
@@ -281,7 +290,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 		"imageURL",
 		result.ImageURL,
 	)
-	finishJob(audit.JobStatusSuccess, result.Provider, result.Model, nil, map[string]any{
+	finishJob(audit.JobStatusSuccess, result, nil, map[string]any{
 		"stage":       "completed",
 		"image_url":   result.ImageURL,
 		"source_hash": result.SourceHash,

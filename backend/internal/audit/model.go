@@ -191,6 +191,15 @@ func ErrorTypeFromError(err error) string {
 	if err == nil {
 		return ""
 	}
+	type typed interface {
+		AuditErrorType() string
+	}
+	var typedErr typed
+	if errors.As(err, &typedErr) {
+		if value := strings.TrimSpace(typedErr.AuditErrorType()); value != "" {
+			return value
+		}
+	}
 	if IsTimeoutError(err) {
 		return "timeout"
 	}
@@ -200,6 +209,8 @@ func ErrorTypeFromError(err error) string {
 		switch {
 		case appErr.HTTPStatus == http.StatusUnauthorized || appErr.HTTPStatus == http.StatusForbidden:
 			return "auth"
+		case appErr.HTTPStatus == http.StatusTooManyRequests:
+			return "rate_limit"
 		case appErr.HTTPStatus >= 500:
 			return "upstream"
 		case appErr.HTTPStatus >= 400:

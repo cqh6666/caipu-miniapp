@@ -156,3 +156,84 @@ export interface GroupTestResult {
   latencyMs: number
   message: string
 }
+
+export type AIRoutingSceneKey = 'summary' | 'title' | 'flowchart'
+export type AIRoutingStrategy = 'priority_failover' | 'round_robin_failover'
+
+export interface AIRoutingBreakerConfig {
+  failureThreshold: number
+  cooldownSeconds: number
+}
+
+export interface AIRoutingRequestOptions {
+  stream: boolean
+  temperature: number
+  maxTokens: number
+}
+
+export interface AIRoutingProviderConfig {
+  id: string
+  scene?: AIRoutingSceneKey
+  name: string
+  adapter: string
+  enabled: boolean
+  priority: number
+  weight?: number
+  baseURL: string
+  apiKey?: string
+  apiKeyMasked?: string
+  hasAPIKey: boolean
+  clearApiKey?: boolean
+  model: string
+  timeoutSeconds: number
+  updatedBySubject?: string
+  updatedAt?: string
+}
+
+export interface AIRoutingSceneConfig {
+  scene: AIRoutingSceneKey
+  enabled: boolean
+  strategy: AIRoutingStrategy
+  maxAttempts: number
+  retryOn: string[]
+  breaker: AIRoutingBreakerConfig
+  requestOptions: AIRoutingRequestOptions
+  providers: AIRoutingProviderConfig[]
+  updatedBySubject?: string
+  updatedAt?: string
+  source?: string
+  compatibilityMode?: boolean
+}
+
+export interface AIRoutingSceneSummary {
+  scene: AIRoutingSceneKey
+  enabled: boolean
+  strategy: AIRoutingStrategy
+  providerCount: number
+  activeProviderCount: number
+  updatedBySubject?: string
+  updatedAt?: string
+  source?: string
+  compatibilityMode?: boolean
+}
+
+export interface AIRoutingAttemptResult {
+  providerId: string
+  providerName: string
+  model: string
+  status: string
+  httpStatus: number
+  errorType?: string
+  errorMessage?: string
+  latencyMs: number
+  skippedByBreaker?: boolean
+  breakerOpenUntil?: string
+}
+
+export interface AIRoutingTestResult {
+  ok: boolean
+  message: string
+  finalProvider?: string
+  finalModel?: string
+  attempts: AIRoutingAttemptResult[]
+}
