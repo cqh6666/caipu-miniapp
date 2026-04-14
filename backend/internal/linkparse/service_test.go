@@ -241,7 +241,7 @@ func TestRefineTitleUsesConfiguredRequestParameters(t *testing.T) {
 		maxTokens:   64,
 	}
 
-	title, err := client.refineTitle(context.Background(), "【香菜牛肉最好吃的做法~-哔哩哔哩】", "香菜牛肉")
+	title, err := client.refineTitle(context.Background(), "【香菜牛肉最好吃的做法~-哔哩哔哩】")
 	if err != nil {
 		t.Fatalf("refineTitle returned error: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestFinalizePreviewTitleMarksAISourceWhenRefinedTitleWins(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"香菜牛肉\"}"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"蒜香排骨\"}"}}]}`))
 	}))
 	defer server.Close()
 
@@ -284,9 +284,9 @@ func TestFinalizePreviewTitleMarksAISourceWhenRefinedTitleWins(t *testing.T) {
 		},
 	}
 
-	got := service.finalizePreviewTitle(context.Background(), "教程")
-	if got.Title != "香菜牛肉" {
-		t.Fatalf("Title = %q, want %q", got.Title, "香菜牛肉")
+	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨最好吃的做法~-哔哩哔哩】")
+	if got.Title != "蒜香排骨" {
+		t.Fatalf("Title = %q, want %q", got.Title, "蒜香排骨")
 	}
 	if got.Source != "ai" {
 		t.Fatalf("Source = %q, want %q", got.Source, "ai")
@@ -315,6 +315,66 @@ func TestFinalizePreviewTitleFallsBackToRuleWhenAIRequestFails(t *testing.T) {
 	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨】")
 	if got.Title != "蒜香排骨" {
 		t.Fatalf("Title = %q, want %q", got.Title, "蒜香排骨")
+	}
+	if got.Source != "rule" {
+		t.Fatalf("Source = %q, want %q", got.Source, "rule")
+	}
+}
+
+func TestFinalizePreviewTitleFallsBackToRuleWhenAIScoreLower(t *testing.T) {
+	t.Parallel()
+
+	// AI returns a vague non-dish word which scores lower than the rule result.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"厨房日记\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	service := &Service{
+		titleAI: &aiClient{
+			baseURL:     server.URL,
+			model:       "demo-title-model",
+			httpClient:  &http.Client{},
+			stream:      false,
+			temperature: 0,
+			maxTokens:   64,
+		},
+	}
+
+	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨】做法分享")
+	if got.Title != "蒜香排骨" {
+		t.Fatalf("Title = %q, want %q", got.Title, "蒜香排骨")
+	}
+	if got.Source != "rule" {
+		t.Fatalf("Source = %q, want %q", got.Source, "rule")
+	}
+}
+
+func TestFinalizePreviewTitleFallsBackToRuleWhenAIReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	// AI correctly declines to extract a dish name by returning empty title.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	service := &Service{
+		titleAI: &aiClient{
+			baseURL:     server.URL,
+			model:       "demo-title-model",
+			httpClient:  &http.Client{},
+			stream:      false,
+			temperature: 0,
+			maxTokens:   64,
+		},
+	}
+
+	got := service.finalizePreviewTitle(context.Background(), "【红烧排骨】")
+	if got.Title != "红烧排骨" {
+		t.Fatalf("Title = %q, want %q", got.Title, "红烧排骨")
 	}
 	if got.Source != "rule" {
 		t.Fatalf("Source = %q, want %q", got.Source, "rule")

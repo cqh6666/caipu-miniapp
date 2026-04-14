@@ -565,10 +565,10 @@ func (s *Service) summarizeXiaohongshuDraft(ctx context.Context, result Xiaohong
 	return draft, legacyRouteResult(client.model), nil
 }
 
-func (s *Service) refineTitleWithAI(ctx context.Context, rawTitle, currentTitle string) (string, airouter.ChatCompletionResult, error) {
+func (s *Service) refineTitleWithAI(ctx context.Context, rawTitle string) (string, airouter.ChatCompletionResult, error) {
 	if s != nil && s.aiRouter != nil {
 		routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneTitle, airouter.ChatCompletionInput{
-			Messages:    buildTitleRefineMessages(rawTitle, currentTitle),
+			Messages:    buildTitleRefineMessages(rawTitle),
 			ContentKind: "title_refine",
 			ValidateContent: func(content string) error {
 				_, err := parseTitleRefineContent(content)
@@ -589,7 +589,7 @@ func (s *Service) refineTitleWithAI(ctx context.Context, rawTitle, currentTitle 
 	if client == nil {
 		return "", airouter.ChatCompletionResult{}, common.NewAppError(common.CodeInternalServer, "title ai is not configured", http.StatusServiceUnavailable)
 	}
-	title, err := client.refineTitle(ctx, rawTitle, currentTitle)
+	title, err := client.refineTitle(ctx, rawTitle)
 	if err != nil {
 		return "", airouter.ChatCompletionResult{}, err
 	}
@@ -622,19 +622,30 @@ func buildXiaohongshuSummaryMessages(result XiaohongshuParseResult) []airouter.C
 	}
 }
 
-func buildTitleRefineMessages(rawTitle, currentTitle string) []airouter.ChatMessage {
+func buildTitleRefineMessages(rawTitle string) []airouter.ChatMessage {
 	return []airouter.ChatMessage{
 		{
 			Role: "system",
-			Content: "你是一个菜谱标题清洗助手。请从原始分享标题里提取最适合作为菜谱名的核心菜名。" +
-				"必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\"}。" +
-				"不要返回平台词、教程词、营销词、口感修饰、系列名。标题尽量 3 到 12 个汉字，最长不超过 14 个字。",
+			Content: "你是一个菜谱标题提取助手。请从视频或笔记的原始标题里，提取最适合作为菜谱名的核心菜名。\n\n" +
+				"## 判断标准\n" +
+				"菜名必须包含「食材」或「烹饪方式」（炒/炖/蒸/煮/烤/卤/拌/煎/焖/红烧/糖醋/凉拌等）中的至少一项。\n" +
+				"保留完整的食材搭配关系，不要只留单个食材。例如「番茄土豆炖牛腩」不能缩成「牛腩」。\n\n" +
+				"## 拒绝规则\n" +
+				"如果标题里没有具体菜名（比如是 vlog、生活日记、合集、探店等），返回 {\"title\":\"\"}。\n" +
+				"宁可返回空也不要硬凑一个不是菜名的结果。\n\n" +
+				"## 去除内容\n" +
+				"去掉平台词（哔哩哔哩/小红书）、教程词（教程/做法/分享）、营销词（巨好吃/零失败/保姆级）、口感修饰（超软烂/入口即化）、系列名、人名。\n\n" +
+				"## 示例\n" +
+				"- \"番茄土豆炖牛腩教程来咯超级软烂\" → {\"title\":\"番茄土豆炖牛腩\"}\n" +
+				"- \"我做了20年的拿手菜西红柿土豆炖牛腩\" → {\"title\":\"西红柿土豆炖牛腩\"}\n" +
+				"- \"蒜香排骨最好吃的做法\" → {\"title\":\"蒜香排骨\"}\n" +
+				"- \"周末给全家做了一桌好菜\" → {\"title\":\"\"}\n" +
+				"- \"跟着婆婆学做菜｜家常红烧肉\" → {\"title\":\"家常红烧肉\"}\n\n" +
+				"必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\"}。标题尽量 3 到 12 个汉字，最长不超过 14 个字。",
 		},
 		{
-			Role: "user",
-			Content: "原始标题: " + strings.TrimSpace(rawTitle) + "\n" +
-				"当前规则结果: " + strings.TrimSpace(currentTitle) + "\n" +
-				"请只提取核心菜名。",
+			Role:    "user",
+			Content: "原始标题: " + strings.TrimSpace(rawTitle),
 		},
 	}
 }
@@ -1966,7 +1977,7 @@ func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewT
 	trackedCtx, _, finish := s.startTrackedJob(ctx, audit.SceneTitleRefine, raw, "preview_link", map[string]any{
 		"raw_title": title,
 	})
-	refined, routeInfo, err := s.refineTitleWithAI(trackedCtx, raw, title)
+	refined, routeInfo, err := s.refineTitleWithAI(trackedCtx, raw)
 	if err != nil {
 		if finish != nil {
 			_ = finish(trackedCtx, audit.JobResult{
@@ -2007,6 +2018,32 @@ func (s *Service) finalizePreviewTitle(ctx context.Context, raw string) previewT
 		}
 		return outcome
 	}
+
+	aiScore := scorePreviewTitleCandidate(refined)
+	ruleScore := scorePreviewTitleCandidate(title)
+	if aiScore < ruleScore {
+		if finish != nil {
+			_ = finish(trackedCtx, audit.JobResult{
+				Status:        audit.JobStatusFallback,
+				FinalProvider: "rule",
+				FinalModel:    "",
+				FallbackUsed:  true,
+				ErrorMessage:  fmt.Sprintf("ai title %q scored %d < rule title %q scored %d", refined, aiScore, title, ruleScore),
+				FinishedAt:    audit.NowRFC3339(),
+				Meta: map[string]any{
+					"result_source":    "rule",
+					"ai_title":         refined,
+					"ai_score":         aiScore,
+					"rule_score":       ruleScore,
+					"route_strategy":   string(routeInfo.Strategy),
+					"attempt_count":    routeInfo.AttemptCount,
+					"started_provider": routeInfo.StartedProvider,
+				},
+			})
+		}
+		return outcome
+	}
+
 	outcome.Title = refined
 	outcome.Source = "ai"
 	if finish != nil {
@@ -2152,7 +2189,7 @@ func trimTrailingPreviewTag(title string) string {
 	return value
 }
 
-func (c *aiClient) refineTitle(ctx context.Context, rawTitle, currentTitle string) (string, error) {
+func (c *aiClient) refineTitle(ctx context.Context, rawTitle string) (string, error) {
 	startedAt := time.Now()
 	stream := c != nil && c.stream
 	maxTokens := 64
@@ -2164,25 +2201,18 @@ func (c *aiClient) refineTitle(ctx context.Context, rawTitle, currentTitle strin
 		temperature = c.temperature
 	}
 
+	msgs := buildTitleRefineMessages(rawTitle)
+	openAIMsgs := make([]openAIChatMessage, len(msgs))
+	for i, m := range msgs {
+		openAIMsgs[i] = openAIChatMessage{Role: m.Role, Content: m.Content}
+	}
+
 	payload := openAIChatRequest{
 		Model:       c.model,
 		Temperature: temperature,
 		Stream:      &stream,
 		MaxTokens:   &maxTokens,
-		Messages: []openAIChatMessage{
-			{
-				Role: "system",
-				Content: "你是一个菜谱标题清洗助手。请从原始分享标题里提取最适合作为菜谱名的核心菜名。" +
-					"必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\"}。" +
-					"不要返回平台词、教程词、营销词、口感修饰、系列名。标题尽量 3 到 12 个汉字，最长不超过 14 个字。",
-			},
-			{
-				Role: "user",
-				Content: "原始标题: " + strings.TrimSpace(rawTitle) + "\n" +
-					"当前规则结果: " + strings.TrimSpace(currentTitle) + "\n" +
-					"请只提取核心菜名。",
-			},
-		},
+		Messages:    openAIMsgs,
 	}
 
 	body, err := json.Marshal(payload)
