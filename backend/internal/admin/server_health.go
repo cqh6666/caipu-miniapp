@@ -105,9 +105,9 @@ func (s *ServerHealthService) Overview(ctx context.Context) (ServerHealthOvervie
 		s.checkSystemdService(ctx, "nginx", "Nginx", true),
 		s.checkSystemdService(ctx, "caipu-backend", "Caipu Backend", true),
 		s.checkSystemdService(ctx, "caipu-linkparse-sidecar", "Linkparse Sidecar", sidecarConfig.Enabled),
-		s.checkHTTP(ctx, "backend-healthz", "Backend /healthz", "http://127.0.0.1:8080/healthz", true),
-		s.checkHTTP(ctx, "backend-api-healthz", "Backend /api/healthz", "http://127.0.0.1:8080/api/healthz", true),
-		s.checkHTTP(ctx, "sidecar-health", "Linkparse Sidecar /v1/health", sidecarHealthTarget(sidecarConfig.BaseURL), sidecarConfig.Enabled),
+		s.checkHTTP(ctx, "backend-healthz", "Backend /healthz", "http://127.0.0.1:8080/healthz", true, ""),
+		s.checkHTTP(ctx, "backend-api-healthz", "Backend /api/healthz", "http://127.0.0.1:8080/api/healthz", true, ""),
+		s.checkHTTP(ctx, "sidecar-health", "Linkparse Sidecar /v1/health", sidecarHealthTarget(sidecarConfig.BaseURL), sidecarConfig.Enabled, sidecarConfig.APIKey),
 	}
 
 	statuses := append([]ServerHealthStatus{}, hostSnapshot.Signals...)
@@ -201,7 +201,7 @@ func (s *ServerHealthService) checkSystemdService(ctx context.Context, key, labe
 	return check
 }
 
-func (s *ServerHealthService) checkHTTP(ctx context.Context, key, label, target string, enabled bool) ServerHealthCheck {
+func (s *ServerHealthService) checkHTTP(ctx context.Context, key, label, target string, enabled bool, bearerToken string) ServerHealthCheck {
 	checkedAt := s.now().UTC().Format(time.RFC3339)
 	if !enabled {
 		return ServerHealthCheck{
@@ -240,6 +240,9 @@ func (s *ServerHealthService) checkHTTP(ctx context.Context, key, label, target 
 			Detail:    strings.TrimSpace(err.Error()),
 			CheckedAt: checkedAt,
 		}
+	}
+	if strings.TrimSpace(bearerToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
 
 	startedAt := time.Now()

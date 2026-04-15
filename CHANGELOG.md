@@ -2,6 +2,32 @@
 
 ## 2026-04-15
 
+### Fixed
+
+- 后台“服务健康”里的 `Linkparse Sidecar /v1/health` 探测现在会自动复用
+  sidecar 运行时 `API Key`，避免 sidecar 已启用内部鉴权时，后台健康面板
+  对 `http://127.0.0.1:8091/v1/health` 误报 `HTTP 401 Unauthorized`
+
+### Notes
+
+- 修改时间：2026-04-15 22:45 CST
+- 变更背景：后台服务健康面板会主动探测 sidecar 的 `/v1/health`，但当前
+  linkparse-sidecar 在配置 `LINKPARSE_INTERNAL_API_KEY` 后会要求
+  `Authorization: Bearer ...`；此前该探测未复用运行时 sidecar `API Key`，
+  导致服务本身正常、后台却持续显示 `401 Unauthorized`
+- 核心改动：`ServerHealthService` 的 HTTP 探测新增可选 Bearer Token 注入；
+  `sidecar-health` 探测改为复用 `sidecar.linkparse.api_key` /
+  `LINKPARSE_SIDECAR_API_KEY`；补充定向单测，校验 sidecar 探测会带鉴权头，
+  而 backend `/healthz` 不会误带该头
+- 影响范围：`backend/internal/admin/server_health.go`、
+  `backend/internal/admin/server_health_test.go`、`CHANGELOG.md`
+- 兼容性/风险：仅修正后台健康检查探测口径，不改 sidecar 鉴权策略，也不改
+  实际业务请求链路
+- 验证情况：已执行 `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache
+  GOCACHE=/tmp/caipu-go-build-cache go test ./internal/admin`
+
+## 2026-04-15
+
 ### Added
 
 - AI 多 Provider 新增连续异常邮件告警能力：

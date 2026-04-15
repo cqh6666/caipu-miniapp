@@ -212,6 +212,53 @@ func TestServerHealthOverviewMarksHTTPFailureAsCritical(t *testing.T) {
 	}
 }
 
+func TestServerHealthOverviewUsesSidecarAPIKeyForHealthProbe(t *testing.T) {
+	t.Parallel()
+
+	service := newTestServerHealthService()
+	service.cfg.LinkparseSidecarAPIKey = "sidecar-secret"
+	service.collectHostSnapshot = func(context.Context, string) serverHealthHostSnapshot {
+		return serverHealthHostSnapshot{
+			Signals: []ServerHealthStatus{
+				ServerHealthStatusHealthy,
+				ServerHealthStatusHealthy,
+				ServerHealthStatusHealthy,
+			},
+		}
+	}
+	service.execCommand = func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("active\n"), nil
+	}
+	service.httpClient = newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.String() {
+		case "http://127.0.0.1:8091/v1/health":
+			if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "Bearer sidecar-secret" {
+				t.Fatalf("sidecar Authorization = %q, want %q", got, "Bearer sidecar-secret")
+			}
+		case "http://127.0.0.1:8080/healthz", "http://127.0.0.1:8080/api/healthz":
+			if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "" {
+				t.Fatalf("backend Authorization = %q, want empty", got)
+			}
+		default:
+			t.Fatalf("unexpected probe target: %s", r.URL.String())
+		}
+		return newTestResponse(r, http.StatusOK), nil
+	})
+
+	overview, err := service.Overview(context.Background())
+	if err != nil {
+		t.Fatalf("Overview returned error: %v", err)
+	}
+
+	check := findServerHealthCheck(overview.Checks, "sidecar-health")
+	if check == nil {
+		t.Fatal("expected sidecar health check")
+	}
+	if check.Status != ServerHealthStatusHealthy {
+		t.Fatalf("sidecar health status = %q, want %q", check.Status, ServerHealthStatusHealthy)
+	}
+}
+
 func TestServerHealthOverviewCountsResourceThresholds(t *testing.T) {
 	t.Parallel()
 
