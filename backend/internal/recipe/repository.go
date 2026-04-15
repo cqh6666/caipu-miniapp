@@ -819,7 +819,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 	return nil
 }
 
-func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSource, finishedAt string, draft Recipe) error {
+func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSource, parseError, finishedAt string, draft Recipe) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin apply auto parse tx: %w", err)
@@ -859,7 +859,7 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 		ctx,
 		`UPDATE recipes
 SET ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, ingredients_json = ?, steps_json = ?,
-    parse_status = ?, parse_source = ?, parse_error = '', parse_finished_at = ?, parsed_content_edited = 0, updated_at = ?
+    parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?, parsed_content_edited = 0, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(ingredientValue),
 		nonNullableTrimmedString(summaryValue),
@@ -870,6 +870,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 		stepsJSON,
 		ParseStatusDone,
 		parseSource,
+		strings.TrimSpace(parseError),
 		finishedAt,
 		finishedAt,
 		recipeID,

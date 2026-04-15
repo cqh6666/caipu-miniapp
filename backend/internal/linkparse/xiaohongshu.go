@@ -32,6 +32,7 @@ func (s *Service) ParseRecipeLink(ctx context.Context, rawInput string) (RecipeP
 			Source:      result.Source,
 			SummaryMode: result.SummaryMode,
 			RecipeDraft: result.RecipeDraft,
+			Warnings:    append([]string{}, result.Warnings...),
 		}, nil
 	case "xiaohongshu":
 		result, err := s.parseXiaohongshu(ctx, rawInput, xhsFetchOptions{IncludeTranscript: true})
@@ -43,6 +44,7 @@ func (s *Service) ParseRecipeLink(ctx context.Context, rawInput string) (RecipeP
 			SourceDetail: strings.TrimSpace(result.NoteType),
 			SummaryMode:  result.SummaryMode,
 			RecipeDraft:  result.RecipeDraft,
+			Warnings:     append([]string{}, result.Warnings...),
 		}, nil
 	default:
 		return RecipeParseOutcome{}, common.NewAppError(common.CodeBadRequest, "unsupported auto-parse link", http.StatusBadRequest)
@@ -146,7 +148,7 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 			finishResult(result, routeInfo, nil)
 			return result, nil
 		}
-		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
+		result.Warnings = append(result.Warnings, buildAISummaryFallbackWarning(err))
 	}
 
 	result.SummaryMode = "heuristic"

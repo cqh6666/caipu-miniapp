@@ -1086,6 +1086,9 @@ export default {
 			if (this.parseStatusValue === 'failed' && errorMessage) {
 				return errorMessage
 			}
+			if (this.parseStatusValue === 'done' && errorMessage && String(this.recipe?.parseSource || '').toLowerCase().includes('heuristic')) {
+				return errorMessage
+			}
 			const waitHint = buildParseWaitHint(this.parseStatusValue, this.parseQueueAhead, this.parseEstimatedWaitSeconds)
 			if (waitHint) {
 				return waitHint

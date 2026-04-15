@@ -169,8 +169,9 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	finishedAt := time.Now().Format(time.RFC3339)
 	parseSource := buildAutoParseSource(result)
+	parseError := buildAutoParseResultMessage(result)
 
-	if err := w.repo.ApplyAutoParseResult(ctx, item.ID, parseSource, finishedAt, Recipe{
+	if err := w.repo.ApplyAutoParseResult(ctx, item.ID, parseSource, parseError, finishedAt, Recipe{
 		Ingredient: result.RecipeDraft.Ingredient,
 		Summary:    result.RecipeDraft.Summary,
 		ImageURL:   strings.TrimSpace(result.RecipeDraft.ImageURL),
@@ -189,6 +190,28 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	w.logger.Info("recipe auto-parse completed", "recipeID", item.ID, "source", parseSource)
 	return nil
+}
+
+func buildAutoParseResultMessage(result linkparse.RecipeParseOutcome) string {
+	for _, warning := range result.Warnings {
+		value := strings.TrimSpace(warning)
+		if value == "" {
+			continue
+		}
+		return truncateAutoParseMessage(value, 180)
+	}
+	return ""
+}
+
+func truncateAutoParseMessage(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes]) + "..."
 }
 
 func buildAutoParseSource(result linkparse.RecipeParseOutcome) string {

@@ -855,7 +855,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 				finishResult(result, routeInfo, nil)
 				return result, nil
 			}
-			result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
+			result.Warnings = append(result.Warnings, buildAISummaryFallbackWarning(err))
 		}
 
 		result.SummaryMode = "heuristic"
@@ -946,7 +946,7 @@ func (s *Service) ParseBilibili(ctx context.Context, rawInput string) (BilibiliP
 			finishResult(result, routeInfo, nil)
 			return result, nil
 		}
-		result.Warnings = append(result.Warnings, "AI 总结暂时不可用，已回退到规则整理并生成一句话重点。")
+		result.Warnings = append(result.Warnings, buildAISummaryFallbackWarning(err))
 	}
 
 	result.SummaryMode = "heuristic"
