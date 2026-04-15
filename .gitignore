@@ -22,10 +22,19 @@ backend/coverage.out
 backend/coverage/
 backend/backups/
 backend/configs/local.env
+backend/configs/prod.env
 backend/data/*.db
 backend/data/*.db-shm
 backend/data/*.db-wal
+backend/data/*.bak-*
+backend/data/*backup*.db
 backend/data/uploads/
+runtime/
+
+# Local tooling cache
+.codex.local-backup-*
+__pycache__/
+*.pyc
 
 # Logs
 *.log
