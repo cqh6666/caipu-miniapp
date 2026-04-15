@@ -382,6 +382,7 @@ func (s *Service) buildSceneConfig(record sceneRecord, providers []providerRecor
 			Priority:       provider.Priority,
 			Weight:         provider.Weight,
 			BaseURL:        strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/"),
+			APIKey:         provider.APIKeyCipher,
 			Model:          strings.TrimSpace(provider.Model),
 			TimeoutSeconds: provider.TimeoutSeconds,
 			Extra:          provider.Extra,
@@ -767,7 +768,7 @@ func buildSceneTestInput(scene Scene) ChatCompletionInput {
 					Content: "请返回一个最小可用的测试菜谱 JSON，主题是西红柿炒鸡蛋。",
 				},
 			},
-			MaxTokens:       intPtr(256),
+			MaxTokens:       intPtr(1024),
 			ContentKind:     "route_test",
 			ValidateContent: validateSummaryTestContent,
 		}

@@ -1,5 +1,55 @@
 # Project Changelog
 
+## 2026-04-15
+
+### Fixed
+
+- 修复 AI 多 Provider `summary / title / flowchart` 真实运行链路从数据库加载
+  Provider 时遗漏密文字段的问题，避免后台“测试当前草稿 / 单节点测试”可成
+  功，但实际业务请求因未带 `Authorization` 头而被上游返回 `401 未提供令牌`
+
+### Notes
+
+- 修改时间：2026-04-15 10:25 CST
+- 变更背景：排查“做法重新整理”总是直接回退规则整理时，定位到后台 AI
+  Provider 页面测试链路使用的是内存草稿配置，而真实业务链路使用的是从
+  `ai_route_providers` 回读的运行时配置；后者在组装 `ProviderConfig`
+  时只回填了 `HasAPIKey / APIKeyMasked`，遗漏了运行时真正用于解密和注入
+  `Authorization` 的密文字段
+- 核心改动：`airouter.buildSceneConfig` 在从数据库恢复 Provider 时同步回填
+  `APIKey` 密文，确保真实业务链路与后台测试链路都能在请求前正确解密并注
+  入 Bearer Token；新增定向单测覆盖该回归场景
+- 影响范围：`backend/internal/airouter/service.go`、
+  `backend/internal/airouter/service_test.go`、`CHANGELOG.md`
+- 兼容性/风险：仅修正多 Provider 运行时从数据库恢复配置时的缺失字段，不改
+  API 结构、不改调度策略；修复后此前被误判为“AI 不可用”的真实业务请求会
+  重新命中已保存的 Provider 凭证
+- 验证情况：已通过线上数据库与上游定向复现确认根因；本轮将补充
+  `backend/internal/airouter` 定向单测验证
+
+## 2026-04-15
+
+### Fixed
+
+- AI Provider 后台 `summary` 场景的“测试当前草稿 / 单节点测试”把测试请求的
+  `maxTokens` 从 `256` 提高到 `1024`，避免部分上游在返回完整菜谱 JSON 前
+  被截断，进而误报 `unexpected end of JSON input`
+
+### Notes
+
+- 修改时间：2026-04-15 01:35 CST
+- 变更背景：`summary` 场景的结构化测试 prompt 需要模型返回完整菜谱 JSON；
+  实际联调中发现 `https://x666.me/v1` 这类上游虽然可正常鉴权，但在测试链
+  路即使使用 `maxTokens=512` 仍可能以 `finish_reason=length` 截断输出，导
+  致后台误判为 JSON 解析失败
+- 核心改动：上调 `summary` 场景路由测试的 token 预算，并补充定向单测覆盖
+  该测试上限，避免后续回归
+- 影响范围：`backend/internal/airouter/service.go`、
+  `backend/internal/airouter/service_test.go`、`CHANGELOG.md`
+- 兼容性/风险：仅影响后台 AI Provider 页面里的场景测试，不改真实业务正文总
+  结链路；测试请求的输出上限提高后，单次验证的 token 消耗会略有增加
+- 验证情况：已执行 `cd backend && go test ./internal/airouter`
+
 ## 2026-04-10
 
 ### Fixed
