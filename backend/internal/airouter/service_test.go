@@ -72,7 +72,7 @@ func TestBuildSceneTestInputUsesLargerSummaryTokenBudget(t *testing.T) {
 func TestBuildSceneConfigRetainsEncryptedAPIKeyForRuntimeCalls(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(nil, "unit-test-secret", nil, nil)
+	service := NewService(nil, "unit-test-secret", nil, nil, nil)
 	ciphertext, err := service.cipherBox.Encrypt("sk-test-12345678")
 	if err != nil {
 		t.Fatalf("Encrypt() error = %v", err)
@@ -116,7 +116,7 @@ func TestBuildSceneConfigRetainsEncryptedAPIKeyForRuntimeCalls(t *testing.T) {
 func TestSceneTestInputUsesInjectedBuilder(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(nil, "unit-test-secret", nil, nil)
+	service := NewService(nil, "unit-test-secret", nil, nil, nil)
 	service.SetTestInputBuilder(func(scene Scene) (ChatCompletionInput, bool) {
 		if scene != SceneSummary {
 			return ChatCompletionInput{}, false

@@ -18,6 +18,9 @@
   - 可在线配置启停开关、连续异常阈值、SMTP 主机/端口、QQ 邮箱账号、SMTP
     授权码、发件人与收件邮箱
   - 分组“测试连接”改为发送一封测试邮件，便于直接验证 SMTP 与收件链路
+- AI Provider 告警邮件模板增强为更适合运维排障的文本格式：
+  - 标题开始包含场景中文名与 Provider 展示名
+  - 正文补充触发来源、目标对象、最近 3 次失败摘要和静态排查建议
 - `AI Provider` 页面补充跳转提示，引导从配置中心配置连续异常告警，避免和
   路由场景编辑入口割裂
 - `README.md`、`backend/README.md` 与 `backend/configs/example.env`
@@ -25,13 +28,14 @@
 
 ### Notes
 
-- 修改时间：2026-04-15 21:47 CST
+- 修改时间：2026-04-15 22:27 CST
 - 变更背景：当前项目已支持同一 AI 场景下配置多个 Provider 并在异常时切换，
   但缺少面向运维的主动告警；用户希望当某个 Provider 连续异常达到阈值时，
   能自动发 QQ 邮箱通知，便于及时排查上游服务或密钥问题
 - 核心改动：新增 SMTP 邮件发送与测试能力；新增 Provider 连续失败状态持久化；
   在 `airouter` 的实际调用链路里接入连续异常计数与阈值告警；后台配置中心
-  新增 `AI Provider 告警` 分组，默认阈值为 `3`
+  新增 `AI Provider 告警` 分组，默认阈值为 `3`；告警邮件模板补齐场景中文
+  名、触发来源、目标对象与最近失败摘要，便于直接排障
 - 影响范围：`backend/internal/aialert/`、`backend/internal/airouter/`、
   `backend/internal/appsettings/`、`backend/internal/config/`、
   `backend/internal/app/`、`backend/migrations/016_add_ai_provider_alert_states.sql`、

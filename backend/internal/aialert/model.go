@@ -55,6 +55,16 @@ type State struct {
 	UpdatedAt               string
 }
 
+type FailureSummary struct {
+	Scene        string
+	Model        string
+	HTTPStatus   int
+	ErrorType    string
+	ErrorMessage string
+	RequestID    string
+	CreatedAt    string
+}
+
 type SendRequest struct {
 	Config  Config
 	Subject string

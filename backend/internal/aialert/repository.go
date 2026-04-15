@@ -152,6 +152,50 @@ WHERE provider_id = ?
 	return err
 }
 
+func (r *Repository) ListRecentFailures(ctx context.Context, providerID string, limit int) ([]FailureSummary, error) {
+	if r == nil || r.db == nil || strings.TrimSpace(providerID) == "" || limit <= 0 {
+		return nil, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+	COALESCE(scene, ''),
+	COALESCE(model, ''),
+	http_status,
+	COALESCE(error_type, ''),
+	COALESCE(error_message, ''),
+	COALESCE(request_id, ''),
+	COALESCE(created_at, '')
+FROM ai_call_logs
+WHERE provider = ?
+  AND status <> 'success'
+ORDER BY created_at DESC, id DESC
+LIMIT ?
+`, strings.TrimSpace(providerID), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]FailureSummary, 0, limit)
+	for rows.Next() {
+		var item FailureSummary
+		if err := rows.Scan(
+			&item.Scene,
+			&item.Model,
+			&item.HTTPStatus,
+			&item.ErrorType,
+			&item.ErrorMessage,
+			&item.RequestID,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) getState(ctx context.Context, tx *sql.Tx, providerID string) (State, bool, error) {
 	if strings.TrimSpace(providerID) == "" {
 		return State{}, false, nil

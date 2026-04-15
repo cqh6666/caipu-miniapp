@@ -3,8 +3,10 @@ package aialert
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -29,29 +31,65 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 	}, sender, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	event := Event{
-		Scene:        "summary",
-		ProviderID:   "summary-main",
-		ProviderName: "主节点",
-		Model:        "gpt-test",
-		ErrorType:    "timeout",
-		ErrorMessage: "request timeout",
-		RequestID:    "req-1",
-		HTTPStatus:   504,
-		OccurredAt:   "2026-04-15T08:00:00Z",
+		Scene:         "summary",
+		ProviderID:    "summary-main",
+		ProviderName:  "主节点",
+		Model:         "gpt-test",
+		ErrorType:     "timeout",
+		ErrorMessage:  "request timeout",
+		RequestID:     "req-1",
+		HTTPStatus:    504,
+		TriggerSource: "worker",
+		TargetType:    "recipe",
+		TargetID:      "recipe-123",
+		OccurredAt:    "2026-04-15T08:00:00Z",
 	}
 
-	service.RecordFailure(context.Background(), event)
-	service.RecordFailure(context.Background(), event)
+	for attempt := 1; attempt <= 2; attempt++ {
+		current := event
+		current.RequestID = fmt.Sprintf("req-%d", attempt)
+		current.ErrorMessage = fmt.Sprintf("request timeout %d", attempt)
+		current.OccurredAt = fmt.Sprintf("2026-04-15T08:00:0%dZ", attempt)
+		insertFailureCallLog(t, db, current)
+		service.RecordFailure(context.Background(), current)
+	}
 	if len(sender.requests) != 0 {
 		t.Fatalf("sender.requests = %d, want 0", len(sender.requests))
 	}
 
-	service.RecordFailure(context.Background(), event)
+	current := event
+	current.RequestID = "req-3"
+	current.ErrorMessage = "request timeout 3"
+	current.OccurredAt = "2026-04-15T08:00:03Z"
+	insertFailureCallLog(t, db, current)
+	service.RecordFailure(context.Background(), current)
 	if len(sender.requests) != 1 {
 		t.Fatalf("sender.requests = %d, want 1", len(sender.requests))
 	}
+	if got := sender.requests[0].Subject; !strings.Contains(got, "做法总结") || !strings.Contains(got, "主节点(summary-main)") {
+		t.Fatalf("sender.requests[0].Subject = %q, want scene/provider label", got)
+	}
+	body := sender.requests[0].Body
+	for _, want := range []string{
+		"触发来源: 后台 Worker",
+		"目标对象: recipe / recipe-123",
+		"最近 3 次失败摘要:",
+		"req-3",
+		"req-2",
+		"req-1",
+		"排查建议：",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sender.requests[0].Body missing %q, body = %q", want, body)
+		}
+	}
 
-	service.RecordFailure(context.Background(), event)
+	current = event
+	current.RequestID = "req-4"
+	current.ErrorMessage = "request timeout 4"
+	current.OccurredAt = "2026-04-15T08:00:04Z"
+	insertFailureCallLog(t, db, current)
+	service.RecordFailure(context.Background(), current)
 	if len(sender.requests) != 1 {
 		t.Fatalf("sender.requests = %d, want still 1", len(sender.requests))
 	}
@@ -91,9 +129,14 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 		t.Fatalf("state.LastAlertedFailureCount = %d, want 0", state.LastAlertedFailureCount)
 	}
 
-	service.RecordFailure(context.Background(), event)
-	service.RecordFailure(context.Background(), event)
-	service.RecordFailure(context.Background(), event)
+	for attempt := 5; attempt <= 7; attempt++ {
+		current = event
+		current.RequestID = fmt.Sprintf("req-%d", attempt)
+		current.ErrorMessage = fmt.Sprintf("request timeout %d", attempt)
+		current.OccurredAt = fmt.Sprintf("2026-04-15T08:00:%02dZ", attempt)
+		insertFailureCallLog(t, db, current)
+		service.RecordFailure(context.Background(), current)
+	}
 	if len(sender.requests) != 2 {
 		t.Fatalf("sender.requests = %d, want 2 after new streak", len(sender.requests))
 	}
@@ -144,9 +187,60 @@ CREATE TABLE ai_provider_alert_states (
 	last_alerted_at TEXT NOT NULL DEFAULT '',
 	last_alerted_failure_count INTEGER NOT NULL DEFAULT 0,
 	updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE ai_call_logs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	job_run_id INTEGER,
+	scene TEXT NOT NULL,
+	provider TEXT NOT NULL DEFAULT '',
+	endpoint TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT '',
+	http_status INTEGER NOT NULL DEFAULT 0,
+	latency_ms INTEGER NOT NULL DEFAULT 0,
+	error_type TEXT NOT NULL DEFAULT '',
+	error_message TEXT NOT NULL DEFAULT '',
+	request_id TEXT NOT NULL DEFAULT '',
+	meta_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL
 );`
 	if _, err := db.Exec(statement); err != nil {
 		t.Fatalf("db.Exec() error = %v", err)
 	}
 	return db
+}
+
+func insertFailureCallLog(t *testing.T, db *sql.DB, event Event) {
+	t.Helper()
+
+	if _, err := db.Exec(`
+INSERT INTO ai_call_logs (
+	scene,
+	provider,
+	endpoint,
+	model,
+	status,
+	http_status,
+	latency_ms,
+	error_type,
+	error_message,
+	request_id,
+	meta_json,
+	created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)
+`,
+		event.Scene,
+		event.ProviderID,
+		"/chat/completions",
+		event.Model,
+		"timeout",
+		event.HTTPStatus,
+		3000,
+		event.ErrorType,
+		event.ErrorMessage,
+		event.RequestID,
+		event.OccurredAt,
+	); err != nil {
+		t.Fatalf("insert ai_call_logs error = %v", err)
+	}
 }
