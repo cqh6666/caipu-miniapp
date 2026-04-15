@@ -63,6 +63,14 @@ go run ./cmd/server
 - `AI_TITLE_TEMPERATURE`
 - `AI_TITLE_MAX_TOKENS`
 - `AI_TITLE_TIMEOUT_SECONDS`
+- `AI_ALERT_ENABLED`
+- `AI_ALERT_FAILURE_THRESHOLD`
+- `AI_ALERT_SMTP_HOST`
+- `AI_ALERT_SMTP_PORT`
+- `AI_ALERT_SMTP_USERNAME`
+- `AI_ALERT_SMTP_PASSWORD`
+- `AI_ALERT_FROM_EMAIL`
+- `AI_ALERT_TO_EMAILS`
 - `LINKPARSE_SIDECAR_ENABLED`
 - `LINKPARSE_SIDECAR_BASE_URL`
 - `LINKPARSE_SIDECAR_TIMEOUT_SECONDS`
@@ -105,6 +113,9 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - [docs/xiaohongshu-cloud-deploy.md](./docs/xiaohongshu-cloud-deploy.md)
 - [docs/linkparse-sidecar-refactor-migration.md](./docs/linkparse-sidecar-refactor-migration.md)
 - AI 多 Provider 配置与轮询 / 降级设计见：[../docs/ai-multi-provider-routing-design.md](../docs/ai-multi-provider-routing-design.md)
+- 后台 `配置中心 -> AI Provider 告警` 支持对多 Provider 路由配置连续异常邮件告警，
+  默认按同一 Provider 连续异常 `3` 次触发一次邮件；QQ 邮箱推荐使用
+  `smtp.qq.com:587` + SMTP 授权码
 
 当前可用接口：
 

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
 )
@@ -47,6 +48,7 @@ type RuntimeProvider struct {
 	cachedAt         time.Time
 	cachedSettings   map[string]runtimeSettingRecord
 	bilibiliVerifier func(context.Context, string) error
+	alertSender      aialert.Sender
 }
 
 func NewRuntimeProvider(repo *Repository, secret string, cfg config.Config) *RuntimeProvider {
@@ -72,6 +74,10 @@ func NewRuntimeProvider(repo *Repository, secret string, cfg config.Config) *Run
 
 func (p *RuntimeProvider) SetBilibiliVerifier(verify func(context.Context, string) error) {
 	p.bilibiliVerifier = verify
+}
+
+func (p *RuntimeProvider) SetAIAlertSender(sender aialert.Sender) {
+	p.alertSender = sender
 }
 
 func (p *RuntimeProvider) SummaryAI(ctx context.Context) SummaryAIConfig {
@@ -102,6 +108,19 @@ func (p *RuntimeProvider) TitleAI(ctx context.Context) TitleAIConfig {
 		Temperature: p.getFloat(ctx, "ai.title.temperature", 0),
 		MaxTokens:   p.getInt(ctx, "ai.title.max_tokens", 64),
 		Timeout:     time.Duration(p.getInt(ctx, "ai.title.timeout_seconds", 3)) * time.Second,
+	}
+}
+
+func (p *RuntimeProvider) AIProviderAlert(ctx context.Context) aialert.Config {
+	return aialert.Config{
+		Enabled:          p.getBool(ctx, "ai.provider_alert.enabled", false),
+		FailureThreshold: p.getInt(ctx, "ai.provider_alert.failure_threshold", 3),
+		SMTPHost:         p.getString(ctx, "ai.provider_alert.smtp_host"),
+		SMTPPort:         p.getInt(ctx, "ai.provider_alert.smtp_port", 587),
+		SMTPUsername:     p.getString(ctx, "ai.provider_alert.smtp_username"),
+		SMTPPassword:     p.getString(ctx, "ai.provider_alert.smtp_password"),
+		FromEmail:        p.getString(ctx, "ai.provider_alert.from_email"),
+		ToEmails:         p.getString(ctx, "ai.provider_alert.to_emails"),
 	}
 }
 
@@ -303,6 +322,34 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 			timeoutSeconds = 10
 		}
 		result = testSidecarHealth(ctx, resolved["base_url"], resolved["api_key"], time.Duration(timeoutSeconds)*time.Second)
+	case "ai.provider_alert":
+		alertConfig := aialert.Config{
+			Enabled:          strings.EqualFold(strings.TrimSpace(resolved["enabled"]), "true"),
+			FailureThreshold: parseRuntimeInt(resolved["failure_threshold"], 3),
+			SMTPHost:         resolved["smtp_host"],
+			SMTPPort:         parseRuntimeInt(resolved["smtp_port"], 587),
+			SMTPUsername:     resolved["smtp_username"],
+			SMTPPassword:     resolved["smtp_password"],
+			FromEmail:        resolved["from_email"],
+			ToEmails:         resolved["to_emails"],
+		}
+		sender := p.alertSender
+		if sender == nil {
+			sender = aialert.NewSMTPSender()
+		}
+		subject, body := aialert.BuildTestMessage()
+		err := sender.Send(ctx, aialert.SendRequest{
+			Config:  alertConfig,
+			Subject: subject,
+			Body:    body,
+		})
+		result = GroupTestResult{
+			OK:      err == nil,
+			Message: "测试邮件已发送，请检查收件箱和垃圾箱",
+		}
+		if err != nil {
+			result.Message = err.Error()
+		}
 	default:
 		return GroupTestResult{}, common.ErrNotFound
 	}
@@ -686,6 +733,21 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 			},
 		},
 		{
+			Name:        "ai.provider_alert",
+			Title:       "AI Provider 告警",
+			Description: "按 provider 连续异常次数发送邮件告警，默认适配 QQ 邮箱 SMTP。",
+			Fields: []runtimeFieldDefinition{
+				{Group: "ai.provider_alert", Key: "enabled", Label: "Enabled", Description: "是否启用连续异常邮件告警。", ValueType: "bool", DefaultValue: strconv.FormatBool(cfg.AIAlertEnabled)},
+				{Group: "ai.provider_alert", Key: "failure_threshold", Label: "Failure Threshold", Description: "同一 Provider 连续异常达到该次数后触发一次告警。", ValueType: "int", DefaultValue: strconv.Itoa(cfg.AIAlertFailureThreshold)},
+				{Group: "ai.provider_alert", Key: "smtp_host", Label: "SMTP Host", Description: "SMTP 主机，QQ 邮箱默认 smtp.qq.com。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIAlertSMTPHost)},
+				{Group: "ai.provider_alert", Key: "smtp_port", Label: "SMTP Port", Description: "SMTP 端口，推荐 587（STARTTLS）或 465（SSL）。", ValueType: "int", DefaultValue: strconv.Itoa(cfg.AIAlertSMTPPort)},
+				{Group: "ai.provider_alert", Key: "smtp_username", Label: "SMTP Username", Description: "发件邮箱账号。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIAlertSMTPUsername)},
+				{Group: "ai.provider_alert", Key: "smtp_password", Label: "SMTP Password", Description: "SMTP 授权码，不是邮箱登录密码。", ValueType: "string", IsSecret: true, DefaultValue: strings.TrimSpace(cfg.AIAlertSMTPPassword)},
+				{Group: "ai.provider_alert", Key: "from_email", Label: "From Email", Description: "发件邮箱，留空时回退到 SMTP Username。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIAlertFromEmail)},
+				{Group: "ai.provider_alert", Key: "to_emails", Label: "To Emails", Description: "收件邮箱，支持多个，逗号分隔。", ValueType: "string", DefaultValue: strings.Join(cfg.AIAlertToEmails, ",")},
+			},
+		},
+		{
 			Name:        "sidecar.linkparse",
 			Title:       "Linkparse Sidecar",
 			Description: "小红书 / B 站 sidecar 调用配置。",
@@ -757,6 +819,17 @@ func normalizeRuntimeValue(value any, valueType string) (string, error) {
 	default:
 		return strings.TrimSpace(stringifyRuntimeValue(value)), nil
 	}
+}
+
+func parseRuntimeInt(value string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fallback
+	}
+	if parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func stringifyRuntimeValue(value any) string {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
 	_ "modernc.org/sqlite"
 )
@@ -66,6 +67,37 @@ func TestRuntimeProviderTestRuntimeGroupPrefersExplicitValueOverClear(t *testing
 	}
 }
 
+func TestRuntimeProviderTestRuntimeGroupSendsAIProviderAlertTestEmail(t *testing.T) {
+	t.Parallel()
+
+	provider := newRuntimeProviderForTest(t)
+	sender := &fakeAlertSender{}
+	provider.SetAIAlertSender(sender)
+
+	result, err := provider.TestRuntimeGroup(context.Background(), "tester", "req-4", "ai.provider_alert", map[string]any{
+		"enabled":           true,
+		"failure_threshold": 3,
+		"smtp_host":         "smtp.qq.com",
+		"smtp_port":         587,
+		"smtp_username":     "bot@qq.com",
+		"smtp_password":     "auth-code",
+		"from_email":        "bot@qq.com",
+		"to_emails":         "ops@qq.com",
+	}, nil)
+	if err != nil {
+		t.Fatalf("TestRuntimeGroup(ai.provider_alert) error = %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("TestRuntimeGroup(ai.provider_alert).OK = false, message = %q", result.Message)
+	}
+	if len(sender.requests) != 1 {
+		t.Fatalf("len(sender.requests) = %d, want 1", len(sender.requests))
+	}
+	if sender.requests[0].Config.ToEmails != "ops@qq.com" {
+		t.Fatalf("sender.requests[0].Config.ToEmails = %q, want %q", sender.requests[0].Config.ToEmails, "ops@qq.com")
+	}
+}
+
 func newRuntimeProviderForTest(t *testing.T) *RuntimeProvider {
 	t.Helper()
 
@@ -117,6 +149,18 @@ func newRuntimeProviderForTest(t *testing.T) *RuntimeProvider {
 		AIFlowchartTimeoutSeconds:  45,
 		AITitleTimeoutSeconds:      3,
 		AITitleMaxTokens:           64,
+		AIAlertFailureThreshold:    3,
+		AIAlertSMTPHost:            "smtp.qq.com",
+		AIAlertSMTPPort:            587,
 		LinkparseSidecarTimeoutSec: 150,
 	})
+}
+
+type fakeAlertSender struct {
+	requests []aialert.SendRequest
+}
+
+func (f *fakeAlertSender) Send(_ context.Context, request aialert.SendRequest) error {
+	f.requests = append(f.requests, request)
+	return nil
 }

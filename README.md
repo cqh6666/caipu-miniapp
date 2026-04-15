@@ -102,7 +102,7 @@
   - `服务健康`
   - `AI 任务`
   - `API 调用`
-  - `配置中心`
+  - `配置中心`（含 `AI Provider 告警` 分组，可配置连续异常阈值、QQ SMTP 和收件邮箱）
 - 线上小规格服务器若需要先判断本次拉码是否会触发真正发布，优先使用：
   - `bash scripts/deploy-backend-on-server.sh`
   - `bash scripts/deploy-admin-web-on-server.sh`
@@ -175,6 +175,8 @@
 - 更完整的项目专用清单见 `docs/wechat-login-checklist.md`
 - 菜名和步骤生成 `nano-banana-pro` 手绘流程图的调用说明见 `docs/nano-banana-recipe-flowchart.md`
 - AI 多 Provider 配置与轮询 / 降级设计见 `docs/ai-multi-provider-routing-design.md`
+- 后台 `配置中心 -> AI Provider 告警` 支持对多 Provider 路由配置连续异常邮件告警，
+  默认阈值为 `3` 次，支持 QQ 邮箱 SMTP、授权码和收件邮箱
 - 当前线上云服务器的实际服务、端口、路径路由和发布口径见 `docs/cloud-server-config-overview.md`
 
 ## 交互说明

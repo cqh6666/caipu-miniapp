@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
@@ -33,17 +34,19 @@ type Service struct {
 	compatibility  CompatibilityLoader
 	testInputBuilder TestInputBuilder
 	tracker        audit.Tracker
+	alertTracker   aialert.Tracker
 	breaker        *breakerStore
 	roundRobinMu   sync.Mutex
 	roundRobinNext map[Scene]int
 }
 
-func NewService(repo *Repository, secret string, compatibility CompatibilityLoader, tracker audit.Tracker) *Service {
+func NewService(repo *Repository, secret string, compatibility CompatibilityLoader, tracker audit.Tracker, alertTracker aialert.Tracker) *Service {
 	return &Service{
 		repo:           repo,
 		cipherBox:      newCipherBox(secret),
 		compatibility:  compatibility,
 		tracker:        tracker,
+		alertTracker:   alertTracker,
 		breaker:        newBreakerStore(),
 		roundRobinNext: make(map[Scene]int),
 	}
@@ -698,6 +701,7 @@ func (s *Service) routeChat(ctx context.Context, config SceneConfig, input ChatC
 				LatencyMS:    latencyMS,
 			})
 			s.logCall(ctx, config, candidate, actualAttempts, httpStatus, latencyMS, nil, input)
+			s.trackProviderAlert(ctx, config, candidate, httpStatus, nil, input)
 			if config.Strategy == StrategyRoundRobinFailover {
 				s.setRoundRobinNext(config.Scene, candidate.originalIndex+1, len(providers))
 			}
@@ -705,6 +709,7 @@ func (s *Service) routeChat(ctx context.Context, config SceneConfig, input ChatC
 		}
 
 		s.logCall(ctx, config, candidate, actualAttempts, httpStatus, latencyMS, callErr, input)
+		s.trackProviderAlert(ctx, config, candidate, httpStatus, callErr, input)
 		errorType := routeErrorType(callErr)
 		attempt := AttemptResult{
 			ProviderID:   candidate.ID,
@@ -734,6 +739,34 @@ func (s *Service) routeChat(ctx context.Context, config SceneConfig, input ChatC
 		lastErr = common.NewAppError(common.CodeInternalServer, "all providers are cooling down", http.StatusBadGateway)
 	}
 	return result, lastErr
+}
+
+func (s *Service) trackProviderAlert(ctx context.Context, config SceneConfig, provider orderedProvider, httpStatus int, err error, input ChatCompletionInput) {
+	if s == nil || s.alertTracker == nil || input.ContentKind == "route_test" {
+		return
+	}
+
+	event := aialert.Event{
+		Scene:        string(config.Scene),
+		ProviderID:   provider.ID,
+		ProviderName: provider.Name,
+		Model:        provider.Model,
+		HTTPStatus:   httpStatus,
+		ErrorType:    routeErrorType(err),
+		ErrorMessage: errorMessage(err),
+		RequestID:    common.RequestID(ctx),
+		OccurredAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+	if meta, ok := audit.CurrentRequestMeta(ctx); ok {
+		event.TriggerSource = meta.TriggerSource
+		event.TargetType = meta.TargetType
+		event.TargetID = meta.TargetID
+	}
+	if err == nil {
+		s.alertTracker.RecordSuccess(ctx, event)
+		return
+	}
+	s.alertTracker.RecordFailure(ctx, event)
 }
 
 func sceneUsesCompatibility(config SceneConfig) bool {

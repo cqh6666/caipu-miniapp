@@ -3,12 +3,15 @@ package appsettings
 import (
 	"context"
 	"time"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 )
 
 type RuntimeConfigProvider interface {
 	SummaryAI(ctx context.Context) SummaryAIConfig
 	FlowchartAI(ctx context.Context) FlowchartAIConfig
 	TitleAI(ctx context.Context) TitleAIConfig
+	AIProviderAlert(ctx context.Context) aialert.Config
 	LinkparseSidecar(ctx context.Context) LinkparseSidecarConfig
 }
 

@@ -18,7 +18,7 @@ func TestFlowchartGeneratorIsConfiguredRequiresAvailableRoute(t *testing.T) {
 				Enabled:  false,
 				Strategy: airouter.StrategyPriorityFailover,
 			}
-		}, nil),
+		}, nil, nil),
 	}, upload.NewService(t.TempDir(), "https://static.example.com", 10))
 
 	if generator.IsConfigured() {

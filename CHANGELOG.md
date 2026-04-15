@@ -2,6 +2,51 @@
 
 ## 2026-04-15
 
+### Added
+
+- AI 多 Provider 新增连续异常邮件告警能力：
+  - 后端新增 `ai_provider_alert_states` 状态表，按 Provider 维度持久化连续失败
+    次数、最近错误、最近恢复时间和最近一次已发送告警状态
+  - 新增 `backend/internal/aialert/`，支持通过 SMTP 发送告警与测试邮件，
+    默认兼容 QQ 邮箱 `smtp.qq.com`
+  - `airouter` 现在会在真实 Provider 调用成功/失败后更新连续异常状态；
+    同一 Provider 连续异常达到阈值后会自动发邮件，成功一次后自动清零
+
+### Changed
+
+- 后台配置中心新增 `AI Provider 告警` 分组：
+  - 可在线配置启停开关、连续异常阈值、SMTP 主机/端口、QQ 邮箱账号、SMTP
+    授权码、发件人与收件邮箱
+  - 分组“测试连接”改为发送一封测试邮件，便于直接验证 SMTP 与收件链路
+- `AI Provider` 页面补充跳转提示，引导从配置中心配置连续异常告警，避免和
+  路由场景编辑入口割裂
+- `README.md`、`backend/README.md` 与 `backend/configs/example.env`
+  同步补充 AI Provider 告警配置入口与默认环境变量
+
+### Notes
+
+- 修改时间：2026-04-15 21:47 CST
+- 变更背景：当前项目已支持同一 AI 场景下配置多个 Provider 并在异常时切换，
+  但缺少面向运维的主动告警；用户希望当某个 Provider 连续异常达到阈值时，
+  能自动发 QQ 邮箱通知，便于及时排查上游服务或密钥问题
+- 核心改动：新增 SMTP 邮件发送与测试能力；新增 Provider 连续失败状态持久化；
+  在 `airouter` 的实际调用链路里接入连续异常计数与阈值告警；后台配置中心
+  新增 `AI Provider 告警` 分组，默认阈值为 `3`
+- 影响范围：`backend/internal/aialert/`、`backend/internal/airouter/`、
+  `backend/internal/appsettings/`、`backend/internal/config/`、
+  `backend/internal/app/`、`backend/migrations/016_add_ai_provider_alert_states.sql`、
+  `backend/configs/example.env`、`admin-web/src/pages/AIProvidersPage.vue`、
+  `README.md`、`backend/README.md`、`CHANGELOG.md`
+- 兼容性/风险：告警发送依赖可用的 SMTP 配置；若 SMTP 授权码或收件人配置错
+  误，业务主流程不会被阻塞，但阈值触发时后台日志会记录发送失败；当前告警
+  只统计真实运行时 Provider 调用，不统计后台“测试当前草稿/单节点测试”
+- 验证情况：已执行 `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test
+  ./internal/aialert ./internal/appsettings ./internal/airouter ./internal/recipe`；
+  已执行 `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./internal/app
+  ./cmd/server`；本轮未执行 `admin-web` 构建，前端仅新增静态提示文案
+
+## 2026-04-15
+
 ### Fixed
 
 - AI Provider 后台场景测试开始复用真实业务 prompt 模板，并使用内置真实样例

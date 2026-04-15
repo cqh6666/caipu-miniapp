@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/admin"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
@@ -61,12 +62,17 @@ func New(cfg config.Config) (*App, error) {
 	appSettingsRepo := appsettings.NewRepository(dbConn)
 	runtimeProvider := appsettings.NewRuntimeProvider(appSettingsRepo, cfg.CredentialsSecret, cfg)
 	auditService := audit.NewService(dbConn, logger)
+	alertSender := aialert.NewSMTPSender()
+	runtimeProvider.SetAIAlertSender(alertSender)
+	aiAlertRepo := aialert.NewRepository(dbConn)
+	aiAlertService := aialert.NewService(aiAlertRepo, runtimeProvider, alertSender, logger)
 	aiRoutingRepo := airouter.NewRepository(dbConn)
 	aiRoutingService := airouter.NewService(
 		aiRoutingRepo,
 		cfg.CredentialsSecret,
 		buildAIRoutingCompatibilityLoader(runtimeProvider),
 		auditService,
+		aiAlertService,
 	)
 	aiRoutingService.SetTestInputBuilder(buildAIRoutingTestInputBuilder())
 	var appSettingsService *appsettings.Service
@@ -130,7 +136,7 @@ func New(cfg config.Config) (*App, error) {
 			}
 		},
 		AIRouter: aiRoutingService,
-		Tracker: auditService,
+		Tracker:  auditService,
 		BilibiliSessdataProvider: func(ctx context.Context) string {
 			if appSettingsService == nil {
 				return ""
@@ -162,7 +168,7 @@ func New(cfg config.Config) (*App, error) {
 			}
 		},
 		AIRouter: aiRoutingService,
-		Tracker: auditService,
+		Tracker:  auditService,
 	}, uploadService)
 	recipeService := recipe.NewService(recipe.ServiceOptions{
 		Repo:               recipeRepo,

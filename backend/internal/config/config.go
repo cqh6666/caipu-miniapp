@@ -41,6 +41,14 @@ type Config struct {
 	AITitleTemperature         float64
 	AITitleMaxTokens           int
 	AITitleTimeoutSeconds      int
+	AIAlertEnabled             bool
+	AIAlertFailureThreshold    int
+	AIAlertSMTPHost            string
+	AIAlertSMTPPort            int
+	AIAlertSMTPUsername        string
+	AIAlertSMTPPassword        string
+	AIAlertFromEmail           string
+	AIAlertToEmails            []string
 	LinkparseSidecarEnabled    bool
 	LinkparseSidecarBaseURL    string
 	LinkparseSidecarTimeoutSec int
@@ -103,6 +111,14 @@ func Load() (Config, error) {
 		AITitleTemperature:         getFloat("AI_TITLE_TEMPERATURE", 0),
 		AITitleMaxTokens:           getInt("AI_TITLE_MAX_TOKENS", 64),
 		AITitleTimeoutSeconds:      getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
+		AIAlertEnabled:             getBool("AI_ALERT_ENABLED", false),
+		AIAlertFailureThreshold:    getInt("AI_ALERT_FAILURE_THRESHOLD", 3),
+		AIAlertSMTPHost:            strings.TrimSpace(getEnv("AI_ALERT_SMTP_HOST", "smtp.qq.com")),
+		AIAlertSMTPPort:            getInt("AI_ALERT_SMTP_PORT", 587),
+		AIAlertSMTPUsername:        strings.TrimSpace(os.Getenv("AI_ALERT_SMTP_USERNAME")),
+		AIAlertSMTPPassword:        strings.TrimSpace(os.Getenv("AI_ALERT_SMTP_PASSWORD")),
+		AIAlertFromEmail:           strings.TrimSpace(os.Getenv("AI_ALERT_FROM_EMAIL")),
+		AIAlertToEmails:            splitCSV(os.Getenv("AI_ALERT_TO_EMAILS")),
 		LinkparseSidecarEnabled:    getBool("LINKPARSE_SIDECAR_ENABLED", false),
 		LinkparseSidecarBaseURL:    strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_BASE_URL")),
 		LinkparseSidecarTimeoutSec: getInt("LINKPARSE_SIDECAR_TIMEOUT_SECONDS", 150),
@@ -153,6 +169,14 @@ func Load() (Config, error) {
 
 	if cfg.AITitleMaxTokens <= 0 {
 		return Config{}, errors.New("AI_TITLE_MAX_TOKENS must be positive")
+	}
+
+	if cfg.AIAlertFailureThreshold <= 0 {
+		return Config{}, errors.New("AI_ALERT_FAILURE_THRESHOLD must be positive")
+	}
+
+	if cfg.AIAlertSMTPPort <= 0 {
+		return Config{}, errors.New("AI_ALERT_SMTP_PORT must be positive")
 	}
 
 	if cfg.LinkparseSidecarTimeoutSec <= 0 {

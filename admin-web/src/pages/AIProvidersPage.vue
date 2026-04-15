@@ -49,6 +49,14 @@
       description="建议先测试，再保存；敏感密钥留空表示保留旧值，点击清空后保存才会真正移除。"
     />
 
+    <el-alert class="routing-alert" type="info" :closable="false" title="连续异常邮件告警已接入配置中心">
+      <template #default>
+        如果你需要在某个 Provider 连续异常达到阈值后发 QQ 邮箱告警，请前往
+        <router-link to="/settings">配置中心</router-link>
+        的“AI Provider 告警”分组配置阈值、SMTP 和收件人。
+      </template>
+    </el-alert>
+
     <div v-if="sceneLoading && !draftScene" class="page-card routing-panel">
       <PageState mode="loading" title="正在加载场景配置" />
     </div>

@@ -1,6 +1,13 @@
 package airouter
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
+)
 
 func TestBuildSceneTestInputUsesSceneSpecificValidator(t *testing.T) {
 	t.Parallel()
@@ -143,4 +150,62 @@ func TestSceneUsesCompatibilityWhenNoRuntimeProviderIsAvailable(t *testing.T) {
 	if !sceneUsesCompatibility(config) {
 		t.Fatalf("sceneUsesCompatibility() = false, want true")
 	}
+}
+
+func TestRouteChatRouteTestSkipsProviderAlerts(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"西红柿炒鸡蛋\",\"ingredient\":\"鸡蛋 番茄\",\"summary\":\"家常快手菜\",\"mainIngredients\":[\"番茄\"],\"secondaryIngredients\":[\"鸡蛋\"],\"steps\":[{\"title\":\"备料\",\"detail\":\"切番茄，打蛋。\"}],\"note\":\"\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	alerts := &fakeAlertTracker{}
+	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+		return SceneConfig{}
+	}, nil, alerts)
+
+	_, err := service.routeChat(context.Background(), SceneConfig{
+		Scene:       SceneSummary,
+		Enabled:     true,
+		Strategy:    StrategyPriorityFailover,
+		MaxAttempts: 1,
+		RetryOn:     DefaultRetryOn(),
+		Breaker:     DefaultBreakerConfig(),
+		Providers: []ProviderConfig{
+			{
+				ID:             "summary-main",
+				Name:           "主节点",
+				Adapter:        AdapterOpenAICompatible,
+				Enabled:        true,
+				Priority:       10,
+				BaseURL:        server.URL,
+				Model:          "gpt-test",
+				TimeoutSeconds: 5,
+			},
+		},
+	}, buildSceneTestInput(SceneSummary))
+	if err != nil {
+		t.Fatalf("routeChat() error = %v", err)
+	}
+	if alerts.successCount != 0 || alerts.failureCount != 0 {
+		t.Fatalf("alerts = %+v, want zero", alerts)
+	}
+}
+
+type fakeAlertTracker struct {
+	successCount int
+	failureCount int
+}
+
+func (f *fakeAlertTracker) RecordSuccess(context.Context, aialert.Event) {
+	f.successCount++
+}
+
+func (f *fakeAlertTracker) RecordFailure(context.Context, aialert.Event) {
+	f.failureCount++
 }
