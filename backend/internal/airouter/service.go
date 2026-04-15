@@ -20,6 +20,7 @@ import (
 )
 
 type CompatibilityLoader func(context.Context, Scene) SceneConfig
+type TestInputBuilder func(Scene) (ChatCompletionInput, bool)
 
 var (
 	markdownImageURLPattern = regexp.MustCompile(`!\[[^\]]*\]\((https?://[^\s)]+)\)`)
@@ -30,6 +31,7 @@ type Service struct {
 	repo           *Repository
 	cipherBox      *cipherBox
 	compatibility  CompatibilityLoader
+	testInputBuilder TestInputBuilder
 	tracker        audit.Tracker
 	breaker        *breakerStore
 	roundRobinMu   sync.Mutex
@@ -45,6 +47,13 @@ func NewService(repo *Repository, secret string, compatibility CompatibilityLoad
 		breaker:        newBreakerStore(),
 		roundRobinNext: make(map[Scene]int),
 	}
+}
+
+func (s *Service) SetTestInputBuilder(builder TestInputBuilder) {
+	if s == nil {
+		return
+	}
+	s.testInputBuilder = builder
 }
 
 func (s *Service) ListScenes(ctx context.Context) ([]SceneSummaryView, error) {
@@ -264,7 +273,7 @@ func (s *Service) TestScene(ctx context.Context, subject, requestID string, scen
 		normalized.Enabled = true
 	}
 
-	result, routeErr := s.routeChat(ctx, normalized, buildSceneTestInput(scene))
+	result, routeErr := s.routeChat(ctx, normalized, s.sceneTestInput(scene))
 	testResult := TestResult{
 		OK:            routeErr == nil,
 		Message:       "route test succeeded",
@@ -310,6 +319,15 @@ INSERT INTO app_setting_audits (
 		return testResult, nil
 	}
 	return testResult, nil
+}
+
+func (s *Service) sceneTestInput(scene Scene) ChatCompletionInput {
+	if s != nil && s.testInputBuilder != nil {
+		if input, ok := s.testInputBuilder(scene); ok {
+			return input
+		}
+	}
+	return buildSceneTestInput(scene)
 }
 
 func (s *Service) RouteChat(ctx context.Context, scene Scene, input ChatCompletionInput) (ChatCompletionResult, error) {

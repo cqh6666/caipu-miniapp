@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- AI Provider 后台场景测试开始复用真实业务 prompt 模板，并使用内置真实样例
+  case 发起测试，避免“最小测试 prompt 通过但真实业务 prompt 表现不同”的偏差
 - 菜谱详情页在“做法重新整理”成功但 AI 回退规则整理时，开始展示真实 AI
   失败原因，而不是只提示“规则整理”
 - 修复 AI 多 Provider `summary / title / flowchart` 真实运行链路从数据库加载
@@ -18,16 +20,20 @@
   `ai_route_providers` 回读的运行时配置；后者在组装 `ProviderConfig`
   时只回填了 `HasAPIKey / APIKeyMasked`，遗漏了运行时真正用于解密和注入
   `Authorization` 的密文字段；同时现有详情页在 AI 回退规则整理时只显示泛化
-  提示，无法告诉用户真实失败原因
+  提示，无法告诉用户真实失败原因；后台 AI Provider 测试此前使用的是最小
+  prompt，与真实业务 prompt 存在偏差
 - 核心改动：`airouter.buildSceneConfig` 在从数据库恢复 Provider 时同步回填
   `APIKey` 密文，确保真实业务链路与后台测试链路都能在请求前正确解密并注
   入 Bearer Token；`linkparse` 在 AI 总结失败并回退规则整理时会生成真实错
   误摘要，`auto_parse_worker` 会把该提示落到 `recipes.parse_error`，详情页优
-  先展示这条回退原因；新增定向单测覆盖该回归场景
+  先展示这条回退原因；`AIRouter` 测试链路新增可注入测试输入构造器，当前
+  `summary / title / flowchart` 均已切到复用真实业务 prompt 模板和内置样
+  例 case；新增定向单测覆盖该回归场景
 - 影响范围：`backend/internal/airouter/service.go`、
   `backend/internal/airouter/service_test.go`、
   `backend/internal/linkparse/*`、`backend/internal/recipe/*`、
-  `pages/recipe-detail/index.vue`、`CHANGELOG.md`
+  `backend/internal/app/app.go`、`pages/recipe-detail/index.vue`、
+  `CHANGELOG.md`
 - 兼容性/风险：仅修正多 Provider 运行时从数据库恢复配置时的缺失字段，不改
   API 结构、不改调度策略；修复后此前被误判为“AI 不可用”的真实业务请求会
   重新命中已保存的 Provider 凭证

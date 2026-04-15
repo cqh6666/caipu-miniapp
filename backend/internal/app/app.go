@@ -68,6 +68,7 @@ func New(cfg config.Config) (*App, error) {
 		buildAIRoutingCompatibilityLoader(runtimeProvider),
 		auditService,
 	)
+	aiRoutingService.SetTestInputBuilder(buildAIRoutingTestInputBuilder())
 	var appSettingsService *appsettings.Service
 
 	inviteRepo := invite.NewRepository(dbConn)
@@ -364,6 +365,21 @@ func buildAIRoutingCompatibilityLoader(runtimeProvider *appsettings.RuntimeProvi
 				RetryOn:     airouter.DefaultRetryOn(),
 				Breaker:     airouter.DefaultBreakerConfig(),
 			}
+		}
+	}
+}
+
+func buildAIRoutingTestInputBuilder() airouter.TestInputBuilder {
+	return func(scene airouter.Scene) (airouter.ChatCompletionInput, bool) {
+		switch scene {
+		case airouter.SceneSummary:
+			return linkparse.BuildSummaryRouteTestInput(), true
+		case airouter.SceneTitle:
+			return linkparse.BuildTitleRouteTestInput(), true
+		case airouter.SceneFlowchart:
+			return recipe.BuildFlowchartRouteTestInput(), true
+		default:
+			return airouter.ChatCompletionInput{}, false
 		}
 	}
 }

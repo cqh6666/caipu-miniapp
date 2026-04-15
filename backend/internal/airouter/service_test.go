@@ -106,6 +106,25 @@ func TestBuildSceneConfigRetainsEncryptedAPIKeyForRuntimeCalls(t *testing.T) {
 	}
 }
 
+func TestSceneTestInputUsesInjectedBuilder(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, "unit-test-secret", nil, nil)
+	service.SetTestInputBuilder(func(scene Scene) (ChatCompletionInput, bool) {
+		if scene != SceneSummary {
+			return ChatCompletionInput{}, false
+		}
+		return ChatCompletionInput{
+			ContentKind: "custom-route-test",
+		}, true
+	})
+
+	input := service.sceneTestInput(SceneSummary)
+	if got := input.ContentKind; got != "custom-route-test" {
+		t.Fatalf("sceneTestInput(summary).ContentKind = %q, want %q", got, "custom-route-test")
+	}
+}
+
 func TestSceneUsesCompatibilityWhenNoRuntimeProviderIsAvailable(t *testing.T) {
 	t.Parallel()
 
