@@ -1,5 +1,27 @@
 # Project Changelog
 
+## 2026-04-18 (仓库清理)
+
+### Changed
+
+- 仓库忽略规则补充本地工具与构建缓存文件：
+  - `.gitignore` 新增 `.claude/`、`CLAUDE.md` 与 `*.tsbuildinfo`
+  - 避免 Claude 本地权限配置、协作文档草稿和 TypeScript 增量构建缓存持续出现在
+    `git status` 中，误混入业务提交
+
+### Notes
+
+- 修改时间：2026-04-18 04:07 CST
+- 变更背景：本地工作区中存在 `.claude/settings.local.json`、`CLAUDE.md` 和
+  `admin-web/tsconfig.app.tsbuildinfo` 这类本地工具/缓存文件，不适合继续作为
+  未跟踪改动长期暴露在仓库状态里
+- 核心改动：补齐 `.gitignore`，把仅对本地协作工具或增量构建有效的文件排除出
+  版本控制
+- 影响范围：`.gitignore`、`CHANGELOG.md`
+- 兼容性/风险：仅影响 Git 跟踪规则，不改运行时逻辑；若未来确实需要版本化
+  `CLAUDE.md`，可再显式调整忽略规则
+- 验证情况：将通过 `git status --short` 确认相关未跟踪文件不再显示
+
 ## 2026-04-18 (概览视觉补丁)
 
 ### Changed

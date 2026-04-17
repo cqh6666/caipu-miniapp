@@ -32,7 +32,10 @@ backend/data/uploads/
 runtime/
 
 # Local tooling cache
+.claude/
+CLAUDE.md
 .codex.local-backup-*
+*.tsbuildinfo
 __pycache__/
 *.pyc
 
