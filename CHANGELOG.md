@@ -1,5 +1,30 @@
 # Project Changelog
 
+## 2026-04-18 (概览分布图表修复)
+
+### Fixed
+
+- 修复后台概览页三张分布图在三列卡片布局下串位越界的问题：
+  - `admin-web/src/pages/DashboardPage.vue` 的分布图改为固定左侧标签预留宽度，
+    不再依赖 `containLabel` 在窄卡片里动态撑开画布
+  - 三张分布图卡片新增 `min-width: 0` 与 `overflow: hidden` 约束，避免 ECharts
+    canvas 宽度异常时串到相邻卡片
+  - `distribution-chart` 容器同步补齐 `max-width` / `overflow` 保护，保证图表只在
+    当前卡片内渲染
+
+### Notes
+
+- 修改时间：2026-04-18 04:03 CST
+- 变更背景：上一轮概览页新增图表 / 表格切换后，用户反馈三张分布图在桌面端
+  三列布局下会互相覆盖，条形图越过卡片边界，导致页面可读性明显下降
+- 核心改动：收紧分布图的 ECharts 网格与标签宽度策略，并补足卡片与图表容器的
+  宽度/溢出保护，优先保证三列卡片场景下布局稳定
+- 影响范围：`admin-web/src/pages/DashboardPage.vue`、`CHANGELOG.md`
+- 兼容性/风险：仅涉及后台概览页图表展示；标签宽度改为固定值后，超长名称会更早
+  被截断，但 tooltip 仍保留完整数据说明
+- 验证情况：已执行 `npm --prefix admin-web run build` 做前端构建验证；建议上线后
+  再对 `/admin/` 概览页做一次桌面端人工复核
+
 ## 2026-04-18 (概览分布图表视图)
 
 ### Added

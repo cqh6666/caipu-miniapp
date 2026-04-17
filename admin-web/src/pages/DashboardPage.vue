@@ -193,7 +193,7 @@
     </div>
 
     <div class="dashboard-grid dashboard-grid--triple" style="margin-top: 20px">
-      <div class="page-card table-card">
+      <div class="page-card table-card distribution-card">
         <div class="subsection-header">
           <div>
             <h3 class="subsection-title">按场景分布</h3>
@@ -239,7 +239,7 @@
         </div>
       </div>
 
-      <div class="page-card table-card">
+      <div class="page-card table-card distribution-card">
         <div class="subsection-header">
           <div>
             <h3 class="subsection-title">Provider 热点</h3>
@@ -283,7 +283,7 @@
         </div>
       </div>
 
-      <div class="page-card table-card">
+      <div class="page-card table-card distribution-card">
         <div class="subsection-header">
           <div>
             <h3 class="subsection-title">Model 热点</h3>
@@ -773,7 +773,7 @@ function renderDistributionChart(
           + `<div style="display:flex;justify-content:space-between;gap:16px"><span style="color:#64748b">成功 / 失败</span><strong>${successData[idx]} / ${failData[idx]}</strong></div>`
       }
     },
-    grid: { left: 8, right: 24, top: 12, bottom: 8, containLabel: true },
+    grid: { left: 112, right: 20, top: 12, bottom: 8, containLabel: false },
     xAxis: {
       type: 'value',
       axisLine: { show: false },
@@ -789,6 +789,8 @@ function renderDistributionChart(
       axisLabel: {
         color: '#334155',
         fontWeight: 500,
+        width: 96,
+        overflow: 'truncate',
         formatter: (value: string) => (value.length > 14 ? `${value.slice(0, 13)}…` : value)
       }
     },
@@ -990,8 +992,16 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.distribution-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .distribution-chart {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 160px;
+  overflow: hidden;
 }
 </style>
