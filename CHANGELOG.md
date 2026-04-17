@@ -1,5 +1,46 @@
 # Project Changelog
 
+## 2026-04-18
+
+### Changed
+
+- 后台管理前端继续收口为统一壳层工作台：
+  - `AppShell` 顶部统一改为“面包屑 + 页面标题 + toolbar 插槽”，
+    `AI Provider`、概览页和服务健康页等主操作开始收口到同一顶部动作区
+  - 登录页改为品牌介绍 + 表单双栏结构；全局样式 token、表格态、空态和
+    路由切页动画同步刷新，后台视觉语言进一步统一
+  - 概览页开始显式区分“暂无数据”和“待采样”状态，成功率分布改为条形
+    进度展示，服务健康摘要卡也补齐更细的状态文案与跳转提示
+
+### Fixed
+
+- 修复后台壳层侧栏底部把后端状态写死为“后端在线”的误导问题：
+  - 新增 `useBackendHealth`，轮询
+    `GET /api/admin/server-health/overview` 后按 `online / degraded /
+    critical / offline / unknown` 展示真实状态，并可直接跳到服务健康页
+- 修复后台登录页亮点列表保留浏览器默认 `ul` 缩进导致文案整体右偏的
+  样式回归
+
+### Notes
+
+- 修改时间：2026-04-18 02:48 CST
+- 变更背景：上一轮后台视觉重构后，壳层导航、登录页和概览页仍有一批细节
+  没有完全收口；其中侧栏底部把后端状态写死为在线，登录页亮点区也因默认
+  列表样式出现偏移，需要补齐真实状态表达和基础视觉回归
+- 核心改动：后台路由页接入统一转场；`AppShell` 增加 breadcrumb、账号下拉
+  与 toolbar 插槽；侧栏/抽屉底部接入真实后端健康探测；登录页改为双栏品牌
+  布局并补齐列表重置；`StatusTag`、`PageState` 与概览页指标卡的状态表达
+  同步升级
+- 影响范围：`admin-web/src/App.vue`、
+  `admin-web/src/composables/useBackendHealth.ts`、
+  `admin-web/src/components/*`、`admin-web/src/pages/*`、
+  `admin-web/src/style.css`、`CHANGELOG.md`
+- 兼容性/风险：本次只涉及后台前端与已存在的服务健康接口，不改后端 API
+  契约；但后台壳层登录后会新增一次首屏探测并按 `30s` 轮询服务健康概览，
+  若会话过期则侧栏状态会回退为 `unknown`，并继续由原有路由守卫接管登录态
+- 验证情况：已执行 `cd admin-web && npm run build`；已针对侧栏健康状态不再
+  写死、登录页亮点列表缩进修复做代码级复核；本轮未单独补做浏览器人工验收
+
 ## 2026-04-15
 
 ### Fixed

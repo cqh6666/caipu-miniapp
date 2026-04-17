@@ -1,15 +1,11 @@
 <template>
   <AppShell>
-    <div class="page-header">
-      <div>
-        <h2 class="page-title">AI 概览</h2>
-        <div class="page-subtitle">最近 {{ overview?.windowHours ?? 24 }} 小时任务与调用的整体健康度。</div>
-      </div>
-      <div class="page-header__actions">
-        <el-segmented v-model="trendRange" :options="trendOptions" @change="handleTrendRangeChange" />
-        <el-button :loading="refreshing" @click="refreshPage">刷新数据</el-button>
-      </div>
-    </div>
+    <template #toolbar>
+      <el-button :loading="refreshing" @click="refreshPage">
+        <el-icon><Refresh /></el-icon>
+        <span style="margin-left: 6px">刷新数据</span>
+      </el-button>
+    </template>
 
     <el-alert
       v-if="overviewError && overview"
@@ -20,7 +16,7 @@
     />
 
     <div v-if="overviewLoading && !overview" class="metric-grid">
-      <div v-for="item in 5" :key="item" class="metric-card">
+      <div v-for="item in 5" :key="item" class="metric-card metric-card--neutral">
         <el-skeleton animated :rows="3" />
       </div>
     </div>
@@ -33,12 +29,19 @@
       />
     </div>
     <div v-else class="metric-grid">
-      <div v-for="metric in metricItems" :key="metric.label" class="metric-card">
+      <div
+        v-for="metric in metricItems"
+        :key="metric.label"
+        class="metric-card"
+        :class="`metric-card--${metric.tone}`"
+      >
         <div class="metric-card__header">
           <div class="metric-label">{{ metric.label }}</div>
           <StatusTag :tone="metric.tone" :text="metric.statusText" />
         </div>
-        <div class="metric-value">{{ metric.value }}</div>
+        <div class="metric-value" :class="{ 'metric-value--pending': metric.pending }">
+          {{ metric.value }}
+        </div>
         <div class="metric-note">{{ metric.note }}</div>
       </div>
     </div>
@@ -76,21 +79,15 @@
         <div class="server-health-summary-card__body">
           <HealthRing :summary="serverHealth.summary" />
           <div class="server-health-summary-card__stats">
-            <div class="server-health-summary-stat">
-              <span>CPU 占用</span>
-              <strong>{{ formatUsagePercent(serverHealth.host.cpuUsagePercent) }}</strong>
-            </div>
-            <div class="server-health-summary-stat">
-              <span>内存占用</span>
-              <strong>{{ formatUsagePercent(serverHealth.host.memoryUsagePercent) }}</strong>
-            </div>
-            <div class="server-health-summary-stat">
-              <span>磁盘占用</span>
-              <strong>{{ formatUsagePercent(serverHealth.host.diskUsagePercent) }}</strong>
-            </div>
-            <div class="server-health-summary-stat">
-              <span>异常信号</span>
-              <strong>{{ serverHealth.summary.warningCount + serverHealth.summary.criticalCount }}</strong>
+            <div
+              v-for="stat in healthStats"
+              :key="stat.label"
+              class="server-health-summary-stat"
+              :class="{ 'server-health-summary-stat--pending': stat.pending }"
+            >
+              <span>{{ stat.label }}</span>
+              <strong>{{ stat.value }}</strong>
+              <span v-if="stat.pending" class="server-health-summary-stat__hint">采集中</span>
             </div>
           </div>
         </div>
@@ -99,7 +96,8 @@
           {{ serverHealthError }}
         </div>
         <div class="server-health-summary-card__footer">
-          查看服务健康详情
+          <span>查看服务健康详情</span>
+          <el-icon><ArrowRight /></el-icon>
         </div>
       </button>
     </div>
@@ -111,7 +109,12 @@
             <h3 class="subsection-title">趋势</h3>
             <div class="subsection-subtitle">按时间窗口观察任务成功率、API 成功率与任务总量。</div>
           </div>
-          <StatusTag tone="neutral" :text="currentTrendLabel" />
+          <el-segmented
+            v-model="trendRange"
+            :options="trendOptions"
+            size="small"
+            @change="handleTrendRangeChange"
+          />
         </div>
 
         <PageState
@@ -145,7 +148,7 @@
             <div class="subsection-subtitle">失败与超时任务优先暴露，支持直接进入详情排障。</div>
           </div>
           <StatusTag
-            tone="neutral"
+            :tone="overview?.recentFailures?.length ? 'warning' : 'success'"
             :text="overview?.recentFailures?.length ? `${overview.recentFailures.length} 条记录` : '暂无异常'"
           />
         </div>
@@ -168,7 +171,7 @@
             <el-table-column label="场景" min-width="130">
               <template #default="{ row }">{{ displayScene(row.scene) }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="96">
+            <el-table-column label="状态" width="110">
               <template #default="{ row }">
                 <StatusTag :tone="toneForStatus(row.status)" :text="displayJobStatus(row.status)" />
               </template>
@@ -196,6 +199,7 @@
             <h3 class="subsection-title">按场景分布</h3>
             <div class="subsection-subtitle">任务量与成功率分布。</div>
           </div>
+          <StatusTag tone="neutral" :text="`${overview?.byScene?.length || 0} 个场景`" />
         </div>
         <PageState
           v-if="!(overview?.byScene?.length)"
@@ -209,9 +213,11 @@
             <el-table-column label="场景" min-width="130">
               <template #default="{ row }">{{ displayScene(row.name) }}</template>
             </el-table-column>
-            <el-table-column prop="total" label="总数" width="90" />
-            <el-table-column label="成功率" width="110">
-              <template #default="{ row }">{{ formatPercent(row.successRate) }}</template>
+            <el-table-column prop="total" label="总数" width="80" align="right" />
+            <el-table-column label="成功率" min-width="160">
+              <template #default="{ row }">
+                <RateCell :rate="row.successRate" />
+              </template>
             </el-table-column>
           </el-table>
         </div>
@@ -223,6 +229,7 @@
             <h3 class="subsection-title">Provider 热点</h3>
             <div class="subsection-subtitle">调用量最高的 Provider 与成功率。</div>
           </div>
+          <StatusTag tone="neutral" :text="`${overview?.byProvider?.length || 0} 个节点`" />
         </div>
         <PageState
           v-if="!(overview?.byProvider?.length)"
@@ -234,9 +241,11 @@
         <div v-else class="table-scroll">
           <el-table :data="overview?.byProvider || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Provider" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="total" label="总数" width="90" />
-            <el-table-column label="成功率" width="110">
-              <template #default="{ row }">{{ formatPercent(row.successRate) }}</template>
+            <el-table-column prop="total" label="总数" width="80" align="right" />
+            <el-table-column label="成功率" min-width="160">
+              <template #default="{ row }">
+                <RateCell :rate="row.successRate" />
+              </template>
             </el-table-column>
           </el-table>
         </div>
@@ -248,6 +257,7 @@
             <h3 class="subsection-title">Model 热点</h3>
             <div class="subsection-subtitle">调用量最高的模型分布与成功率。</div>
           </div>
+          <StatusTag tone="neutral" :text="`${overview?.byModel?.length || 0} 个模型`" />
         </div>
         <PageState
           v-if="!(overview?.byModel?.length)"
@@ -259,9 +269,11 @@
         <div v-else class="table-scroll">
           <el-table :data="overview?.byModel || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Model" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="total" label="总数" width="90" />
-            <el-table-column label="成功率" width="110">
-              <template #default="{ row }">{{ formatPercent(row.successRate) }}</template>
+            <el-table-column prop="total" label="总数" width="80" align="right" />
+            <el-table-column label="成功率" min-width="160">
+              <template #default="{ row }">
+                <RateCell :rate="row.successRate" />
+              </template>
             </el-table-column>
           </el-table>
         </div>
@@ -283,9 +295,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, type FunctionalComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { BarChart, LineChart } from 'echarts/charts'
 import {
   GridComponent,
@@ -318,7 +331,8 @@ import {
   toneForHealthStatus,
   toneForStatus,
   toneForSuccessRate,
-  toneForTimeoutRate
+  toneForTimeoutRate,
+  type StatusTone
 } from '@/utils/admin-display'
 
 type DashboardChartOption = ComposeOption<
@@ -326,6 +340,22 @@ type DashboardChartOption = ComposeOption<
 >
 
 use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+
+const RateCell: FunctionalComponent<{ rate: number | undefined | null }> = (props) => {
+  const rate = props.rate ?? 0
+  const percent = Math.max(Math.min(rate * 100, 100), 0)
+  const tone = toneForSuccessRate(rate)
+  return h('div', { class: 'rate-cell' }, [
+    h('div', { class: 'rate-cell__bar' }, [
+      h('div', {
+        class: `rate-cell__fill rate-cell__fill--${tone}`,
+        style: { width: `${percent}%` }
+      })
+    ]),
+    h('span', { class: 'rate-cell__value' }, formatPercent(rate))
+  ])
+}
+RateCell.props = ['rate']
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = ref<ECharts | null>(null)
@@ -356,67 +386,127 @@ const trendOptions = [
   { label: '30 天', value: '30d' }
 ]
 
-const currentTrendLabel = computed(() => {
-  return trendOptions.find((item) => item.value === trendRange.value)?.label || '24 小时'
-})
+function hasNumericValue(value: number | null | undefined): boolean {
+  return value !== null && value !== undefined && !Number.isNaN(value)
+}
 
-const metricItems = computed(() => {
+interface MetricItem {
+  label: string
+  value: string
+  tone: StatusTone
+  statusText: string
+  note: string
+  pending: boolean
+}
+
+const metricItems = computed<MetricItem[]>(() => {
   const data = overview.value
+  const taskTotal = data?.taskTotal ?? 0
+  const apiTotal = data?.apiTotal ?? 0
+  const pendingTasks = taskTotal === 0
+  const pendingApi = apiTotal === 0
+
+  const taskSuccessTone = toneForSuccessRate(data?.taskSuccessRate)
+  const apiSuccessTone = toneForSuccessRate(data?.apiSuccessRate)
+  const timeoutTone = toneForTimeoutRate(data?.timeoutRate)
+  const latencyTone = toneForLatency(data?.p95DurationMs)
+
   return [
     {
       label: '任务总数',
-      value: `${data?.taskTotal ?? 0}`,
-      tone: (data?.taskTotal || 0) > 0 ? 'primary' : 'neutral',
-      statusText: (data?.taskTotal || 0) > 0 ? '运行中' : '暂无任务',
-      note: `统计窗口：最近 ${data?.windowHours ?? 24} 小时`
+      value: `${taskTotal}`,
+      tone: taskTotal > 0 ? 'primary' : 'neutral',
+      statusText: taskTotal > 0 ? '运行中' : '暂无任务',
+      note: `统计窗口：最近 ${data?.windowHours ?? 24} 小时`,
+      pending: pendingTasks
     },
     {
       label: '任务成功率',
-      value: formatPercent(data?.taskSuccessRate),
-      tone: toneForSuccessRate(data?.taskSuccessRate),
-      statusText:
-        toneForSuccessRate(data?.taskSuccessRate) === 'success'
+      value: pendingTasks ? '—' : formatPercent(data?.taskSuccessRate),
+      tone: pendingTasks ? 'neutral' : taskSuccessTone,
+      statusText: pendingTasks
+        ? '待数据'
+        : taskSuccessTone === 'success'
           ? '稳定'
-          : toneForSuccessRate(data?.taskSuccessRate) === 'warning'
+          : taskSuccessTone === 'warning'
             ? '关注'
             : '异常',
-      note: '目标建议保持在 95% 以上'
+      note: pendingTasks ? '首次任务完成后展示真实成功率' : '目标建议保持在 95% 以上',
+      pending: pendingTasks
     },
     {
       label: 'API 成功率',
-      value: formatPercent(data?.apiSuccessRate),
-      tone: toneForSuccessRate(data?.apiSuccessRate),
-      statusText:
-        toneForSuccessRate(data?.apiSuccessRate) === 'success'
+      value: pendingApi ? '—' : formatPercent(data?.apiSuccessRate),
+      tone: pendingApi ? 'neutral' : apiSuccessTone,
+      statusText: pendingApi
+        ? '待数据'
+        : apiSuccessTone === 'success'
           ? '稳定'
-          : toneForSuccessRate(data?.apiSuccessRate) === 'warning'
+          : apiSuccessTone === 'warning'
             ? '关注'
             : '异常',
-      note: `调用总数：${data?.apiTotal ?? 0}`
+      note: pendingApi ? '累计调用后展示 API 侧成功率' : `调用总数：${apiTotal}`,
+      pending: pendingApi
     },
     {
       label: '超时率',
-      value: formatPercent(data?.timeoutRate),
-      tone: toneForTimeoutRate(data?.timeoutRate),
-      statusText:
-        toneForTimeoutRate(data?.timeoutRate) === 'success'
+      value: pendingApi ? '—' : formatPercent(data?.timeoutRate),
+      tone: pendingApi ? 'neutral' : timeoutTone,
+      statusText: pendingApi
+        ? '待数据'
+        : timeoutTone === 'success'
           ? '正常'
-          : toneForTimeoutRate(data?.timeoutRate) === 'warning'
+          : timeoutTone === 'warning'
             ? '升高'
             : '偏高',
-      note: '超时率越低越利于任务闭环稳定'
+      note: pendingApi ? '依赖 API 调用样本统计' : '超时率越低越利于任务闭环稳定',
+      pending: pendingApi
     },
     {
       label: 'P95 耗时',
-      value: `${data?.p95DurationMs ?? 0} ms`,
-      tone: toneForLatency(data?.p95DurationMs),
-      statusText:
-        toneForLatency(data?.p95DurationMs) === 'success'
+      value: pendingApi ? '—' : `${data?.p95DurationMs ?? 0} ms`,
+      tone: pendingApi ? 'neutral' : latencyTone,
+      statusText: pendingApi
+        ? '待数据'
+        : latencyTone === 'success'
           ? '快速'
-          : toneForLatency(data?.p95DurationMs) === 'warning'
+          : latencyTone === 'warning'
             ? '偏慢'
             : '过高',
-      note: `平均耗时：${data?.avgDurationMs ?? 0} ms`
+      note: pendingApi ? '暂无耗时样本' : `平均耗时：${data?.avgDurationMs ?? 0} ms`,
+      pending: pendingApi
+    }
+  ]
+})
+
+const healthStats = computed(() => {
+  const host = serverHealth.value?.host
+  const summary = serverHealth.value?.summary
+  const warningTotal = summary ? summary.warningCount + summary.criticalCount : 0
+  const hasCpu = hasNumericValue(host?.cpuUsagePercent)
+  const hasMemory = hasNumericValue(host?.memoryUsagePercent)
+  const hasDisk = hasNumericValue(host?.diskUsagePercent)
+
+  return [
+    {
+      label: 'CPU 占用',
+      pending: !hasCpu,
+      value: hasCpu ? formatUsagePercent(host?.cpuUsagePercent) : '—'
+    },
+    {
+      label: '内存占用',
+      pending: !hasMemory,
+      value: hasMemory ? formatUsagePercent(host?.memoryUsagePercent) : '—'
+    },
+    {
+      label: '磁盘占用',
+      pending: !hasDisk,
+      value: hasDisk ? formatUsagePercent(host?.diskUsagePercent) : '—'
+    },
+    {
+      label: '异常信号',
+      pending: false,
+      value: `${warningTotal}`
     }
   ]
 })
@@ -490,32 +580,26 @@ function renderChart() {
 
   const option: DashboardChartOption = {
     tooltip: { trigger: 'axis' },
-    legend: { top: 0 },
+    legend: { top: 0, textStyle: { color: '#334155' } },
     grid: { left: 32, right: 24, top: 52, bottom: 28, containLabel: true },
     xAxis: {
       type: 'category',
       data: trends.value.map((item) => item.label),
-      axisLine: {
-        lineStyle: {
-          color: 'rgba(148, 163, 184, 0.4)'
-        }
-      }
+      axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.4)' } },
+      axisLabel: { color: '#64748b' }
     },
     yAxis: [
       {
         type: 'value',
         min: 0,
         max: 100,
-        axisLabel: { formatter: '{value}%' },
-        splitLine: {
-          lineStyle: {
-            color: 'rgba(148, 163, 184, 0.18)'
-          }
-        }
+        axisLabel: { formatter: '{value}%', color: '#64748b' },
+        splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.18)' } }
       },
       {
         type: 'value',
         min: 0,
+        axisLabel: { color: '#64748b' },
         splitLine: { show: false }
       }
     ],
@@ -526,6 +610,7 @@ function renderChart() {
         smooth: true,
         yAxisIndex: 0,
         lineStyle: { width: 3, color: '#2563eb' },
+        itemStyle: { color: '#2563eb' },
         areaStyle: { color: 'rgba(37, 99, 235, 0.1)' },
         data: trends.value.map((item) => Number(((item.taskSuccessRate || 0) * 100).toFixed(1)))
       },
@@ -535,6 +620,7 @@ function renderChart() {
         smooth: true,
         yAxisIndex: 0,
         lineStyle: { width: 3, color: '#0f766e' },
+        itemStyle: { color: '#0f766e' },
         areaStyle: { color: 'rgba(15, 118, 110, 0.08)' },
         data: trends.value.map((item) => Number(((item.apiSuccessRate || 0) * 100).toFixed(1)))
       },
@@ -544,7 +630,7 @@ function renderChart() {
         yAxisIndex: 1,
         itemStyle: {
           color: 'rgba(148, 163, 184, 0.55)',
-          borderRadius: [8, 8, 0, 0]
+          borderRadius: [6, 6, 0, 0]
         },
         data: trends.value.map((item) => item.taskTotal)
       }
@@ -596,3 +682,55 @@ onBeforeUnmount(() => {
   chart.value?.dispose()
 })
 </script>
+
+<style scoped>
+.rate-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rate-cell__bar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+  overflow: hidden;
+}
+
+.rate-cell__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.22s ease;
+}
+
+.rate-cell__fill--success {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.rate-cell__fill--warning {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.rate-cell__fill--danger {
+  background: linear-gradient(90deg, #f87171, #dc2626);
+}
+
+.rate-cell__fill--primary {
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+}
+
+.rate-cell__fill--neutral {
+  background: #cbd5e1;
+}
+
+.rate-cell__value {
+  min-width: 48px;
+  color: var(--color-text);
+  font-weight: 700;
+  font-size: 12px;
+  text-align: right;
+}
+</style>

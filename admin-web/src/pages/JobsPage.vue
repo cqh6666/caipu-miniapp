@@ -1,12 +1,5 @@
 <template>
   <AppShell>
-    <div class="page-header">
-      <div>
-        <h2 class="page-title">AI 任务</h2>
-        <div class="page-subtitle">按任务维度回看状态、来源、目标对象与关联调用。</div>
-      </div>
-    </div>
-
     <div class="page-card table-card">
       <FilterToolbar>
         <el-select v-model="filters.scene" clearable placeholder="场景">

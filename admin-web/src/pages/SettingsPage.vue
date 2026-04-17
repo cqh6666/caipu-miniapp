@@ -1,12 +1,5 @@
 <template>
   <AppShell>
-    <div class="page-header">
-      <div>
-        <h2 class="page-title">配置中心</h2>
-        <div class="page-subtitle">在线修改运行时参数、测试连通性，并保留清晰的审计记录。</div>
-      </div>
-    </div>
-
     <el-alert
       v-if="dirtyGroupCount"
       class="settings-summary"

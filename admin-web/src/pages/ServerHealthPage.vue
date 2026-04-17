@@ -1,15 +1,15 @@
 <template>
   <AppShell>
-    <div class="page-header">
-      <div>
-        <h2 class="page-title">服务健康</h2>
-        <div class="page-subtitle">轻量查看主机资源、systemd 服务状态与内网健康探测结果。</div>
-      </div>
-      <div class="page-header__actions">
-        <StatusTag tone="neutral" :text="overview ? `更新于 ${formatDateTime(overview.generatedAt)}` : '等待首次拉取'" />
-        <el-button :loading="loading" @click="loadOverview(true)">刷新数据</el-button>
-      </div>
-    </div>
+    <template #toolbar>
+      <StatusTag
+        tone="neutral"
+        :text="overview ? `更新于 ${formatDateTime(overview.generatedAt)}` : '等待首次拉取'"
+      />
+      <el-button :loading="loading" @click="loadOverview(true)">
+        <el-icon><Refresh /></el-icon>
+        <span style="margin-left: 6px">刷新数据</span>
+      </el-button>
+    </template>
 
     <el-alert
       v-if="errorMessage && overview"
@@ -159,6 +159,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 import AppShell from '@/components/AppShell.vue'
 import HealthRing from '@/components/HealthRing.vue'
 import PageState from '@/components/PageState.vue'

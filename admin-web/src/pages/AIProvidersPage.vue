@@ -1,16 +1,22 @@
 <template>
   <AppShell>
-    <div class="page-header">
-      <div>
-        <h2 class="page-title">AI Provider</h2>
-        <div class="page-subtitle">按场景维护多 Provider 路由、失败切换和兼容模式收口。</div>
-      </div>
-	    <div class="page-header__actions">
-	        <el-button :loading="pageRefreshing" @click="refreshPage">刷新</el-button>
-	        <el-button :loading="testingScene" :disabled="!draftScene" @click="handleTestScene">测试当前草稿</el-button>
-	        <el-button type="primary" :loading="savingScene" :disabled="!draftScene" @click="handleSaveScene">保存场景</el-button>
-	      </div>
-    </div>
+    <template #toolbar>
+      <el-button :loading="pageRefreshing" @click="refreshPage">
+        <el-icon><Refresh /></el-icon>
+        <span style="margin-left: 6px">刷新</span>
+      </el-button>
+      <el-button :loading="testingScene" :disabled="!draftScene" @click="handleTestScene">
+        测试当前草稿
+      </el-button>
+      <el-button
+        type="primary"
+        :loading="savingScene"
+        :disabled="!draftScene"
+        @click="handleSaveScene"
+      >
+        保存场景
+      </el-button>
+    </template>
 
     <div class="routing-scene-grid">
       <button
@@ -365,6 +371,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 import AppShell from '@/components/AppShell.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
 import PageState from '@/components/PageState.vue'

@@ -7,12 +7,36 @@
     </template>
 
     <template v-else>
-      <div class="page-state__symbol" aria-hidden="true">
-        {{ mode === 'error' ? '!' : '·' }}
+      <div class="page-state__illustration" aria-hidden="true">
+        <!-- Empty illustration -->
+        <svg v-if="mode === 'empty'" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="12" y="16" width="56" height="48" rx="8" fill="#eef3fb" stroke="#c7d2e3" stroke-width="1.5" />
+          <path d="M12 28 H68" stroke="#c7d2e3" stroke-width="1.5" />
+          <circle cx="20" cy="22" r="1.5" fill="#94a3b8" />
+          <circle cx="26" cy="22" r="1.5" fill="#94a3b8" />
+          <circle cx="32" cy="22" r="1.5" fill="#94a3b8" />
+          <rect x="22" y="38" width="36" height="4" rx="2" fill="#cbd5e1" />
+          <rect x="22" y="46" width="26" height="4" rx="2" fill="#dbe3ef" />
+          <rect x="22" y="54" width="20" height="4" rx="2" fill="#dbe3ef" />
+        </svg>
+
+        <!-- Error illustration -->
+        <svg v-else-if="mode === 'error'" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="40" cy="40" r="30" fill="#fee2e2" />
+          <circle cx="40" cy="40" r="22" fill="#fecaca" />
+          <path d="M40 28 V44" stroke="#dc2626" stroke-width="3.5" stroke-linecap="round" />
+          <circle cx="40" cy="52" r="2.5" fill="#dc2626" />
+        </svg>
       </div>
       <div class="page-state__title">{{ resolvedTitle }}</div>
       <div class="page-state__description">{{ resolvedDescription }}</div>
-      <el-button v-if="mode === 'error'" type="primary" plain @click="$emit('retry')">
+      <el-button
+        v-if="mode === 'error'"
+        type="primary"
+        plain
+        class="page-state__action"
+        @click="$emit('retry')"
+      >
         {{ retryText }}
       </el-button>
     </template>

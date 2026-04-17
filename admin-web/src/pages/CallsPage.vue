@@ -1,12 +1,5 @@
 <template>
   <AppShell>
-    <div class="page-header">
-      <div>
-        <h2 class="page-title">API 调用</h2>
-        <div class="page-subtitle">按 provider、request 与时间窗口排查具体调用问题。</div>
-      </div>
-    </div>
-
     <div class="page-card table-card">
       <FilterToolbar>
         <el-select v-model="filters.scene" clearable placeholder="场景">
