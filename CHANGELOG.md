@@ -1,5 +1,32 @@
 # Project Changelog
 
+## 2026-04-18 (部署补丁)
+
+### Fixed
+
+- 远端 `backend` 发布脚本补齐 Go 可执行文件兜底路径：
+  - `scripts/deploy-on-server.sh` 新增 `GO_BIN_DIR`，默认指向
+    `/usr/local/go/bin`
+  - 当非交互式 `ssh` shell 的 `PATH` 未包含 Go，但 `${GO_BIN_DIR}/go`
+    存在时，脚本会自动补上 PATH 后再执行 `go build`
+  - 避免从 Mac 本地通过 `backend/scripts/deploy-server-build.sh` 发起远端
+    发布时，服务器明明已安装 Go 却报 `env: ‘go’: No such file or directory`
+
+### Notes
+
+- 修改时间：2026-04-18 03:40 CST
+- 变更背景：本次从 Mac 本地触发远端 `backend` 重部署时，`ssh` 非交互 shell
+  的默认 `PATH` 不包含 `/usr/local/go/bin`，导致线上机虽然已安装 Go，部署脚本
+  仍在 `go build` 阶段失败
+- 核心改动：为服务器端部署脚本增加 Go 路径自动兜底，保持现有
+  `deploy-server-build -> deploy-backend-on-server -> deploy-on-server`
+  链路不变，仅修复非交互 shell 找不到 Go 的问题
+- 影响范围：`scripts/deploy-on-server.sh`、`CHANGELOG.md`
+- 兼容性/风险：默认仍优先使用当前 `PATH` 中的 `go`；只有未找到时才回退到
+  `GO_BIN_DIR`，如未来服务器 Go 安装目录不同，可显式覆盖该环境变量
+- 验证情况：已通过 `ssh my-cloud 'cd /srv/caipu-miniapp && PATH=/usr/local/go/bin:$PATH bash scripts/deploy-backend-on-server.sh'`
+  成功完成一次真实后端重部署，并确认 `caipu-backend` 服务正常拉起
+
 ## 2026-04-18 (晚间补丁)
 
 ### Added

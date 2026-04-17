@@ -23,6 +23,7 @@ ALLOW_LOW_RESOURCE_BUILD="${ALLOW_LOW_RESOURCE_BUILD:-0}"
 LOW_RESOURCE_MIN_CPU="${LOW_RESOURCE_MIN_CPU:-4}"
 LOW_RESOURCE_MIN_MEM_MB="${LOW_RESOURCE_MIN_MEM_MB:-3072}"
 LOW_RESOURCE_MIN_SWAP_MB="${LOW_RESOURCE_MIN_SWAP_MB:-1024}"
+GO_BIN_DIR="${GO_BIN_DIR:-/usr/local/go/bin}"
 
 log() {
   echo "==> $*"
@@ -30,6 +31,20 @@ log() {
 
 has_cmd() {
   command -v "$1" >/dev/null 2>&1
+}
+
+ensure_go_in_path() {
+  if has_cmd go; then
+    return 0
+  fi
+
+  if [[ -x "${GO_BIN_DIR}/go" ]]; then
+    export PATH="${GO_BIN_DIR}:$PATH"
+    return 0
+  fi
+
+  echo "go not found in PATH and fallback path is missing: ${GO_BIN_DIR}/go" >&2
+  return 1
 }
 
 run_low_priority() {
@@ -271,6 +286,7 @@ if [[ "$build_backend" == "1" ]]; then
   log "building backend binary with low priority"
   cd "$BACKEND_DIR"
   mkdir -p "$(dirname "$BINARY_PATH")"
+  ensure_go_in_path
   run_low_priority env \
     GOMAXPROCS="$GO_BUILD_GOMAXPROCS" \
     GOCACHE="$GOCACHE_DIR" \
