@@ -47,11 +47,45 @@ npm run build
 - 如果下次要快速重发版，优先先按这组命令检查
 - 现在仓库里已经补了一份同逻辑脚本：`backend/scripts/deploy-server-build.sh`
 
+脚本角色区分：
+
+- `backend/scripts/deploy-server-build.sh`
+  - 适合你人在 **Mac 本地**
+  - 会先通过 `ssh` 连到远端服务器
+  - 默认在远端进入 `/srv/caipu-miniapp`
+  - 然后在服务器上执行 `bash scripts/deploy-backend-on-server.sh`
+- `scripts/deploy-backend-on-server.sh`
+  - 适合你已经 **登录到服务器**
+  - 只会在当前机器执行，不会自动帮你从 Mac 再发起一层 `ssh`
+
 可以直接在本地执行：
 
 ```bash
 cd /path/to/caipu-miniapp/backend
-SERVER_HOST=root@你的服务器IP \
+SERVER_HOST=<ssh主机别名或user@host> \
+./scripts/deploy-server-build.sh
+```
+
+说明：
+
+- `SERVER_HOST` 可以是 `root@你的服务器IP`
+- 也可以是你本机 `~/.ssh/config` 中已配置的主机别名
+- `my-cloud` 只是本文档里的示例别名，不是固定值
+
+如果你本机 `~/.ssh/config` 已经配了别名，也可以直接写别名，例如：
+
+```bash
+cd /path/to/caipu-miniapp/backend
+SERVER_HOST=my-cloud \
+./scripts/deploy-server-build.sh
+```
+
+只想先确认会不会真正构建和重启，可先执行：
+
+```bash
+cd /path/to/caipu-miniapp/backend
+SERVER_HOST=<ssh主机别名或user@host> \
+PLAN_ONLY=1 \
 ./scripts/deploy-server-build.sh
 ```
 
@@ -62,6 +96,8 @@ SERVER_HOST=root@你的服务器IP \
 - `BINARY_PATH=/srv/caipu-miniapp/backend/bin/server`
 - `SERVICE_NAME=caipu-backend`
 - `APP_PORT=8080`
+- 当前线上机的 Go 若安装在 `/usr/local/go/bin`，发布脚本也会自动兜底补上
+  该路径，避免非交互式 `ssh` shell 找不到 `go`
 
 如果以后线上目录或服务名改了，可以通过环境变量覆盖：
 

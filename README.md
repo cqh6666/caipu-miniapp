@@ -104,6 +104,15 @@
   - `API 调用`
   - `配置中心`（含 `AI Provider 告警` 分组，可配置连续异常阈值、QQ SMTP 和收件邮箱）
 - 线上小规格服务器若需要先判断本次拉码是否会触发真正发布，优先使用：
+  - 如果你当前人在 **Mac 本地**，想通过 `ssh` 发起远端后端重部署，使用：
+    `cd backend && SERVER_HOST=<ssh主机别名或user@host> ./scripts/deploy-server-build.sh`
+  - 先做预检查、不真正构建和重启：
+    `cd backend && SERVER_HOST=<ssh主机别名或user@host> PLAN_ONLY=1 ./scripts/deploy-server-build.sh`
+  - 上面这个 `backend/scripts/deploy-server-build.sh` 会自动连到远端服务器，
+    默认进入 `/srv/caipu-miniapp`，再在服务器上执行后端发布脚本
+  - `SERVER_HOST` 可以写成 `root@117.72.159.252`，也可以写成你
+    `~/.ssh/config` 里的主机别名；`my-cloud` 只是当前仓库里常用的示例别名
+  - 如果你已经 **登录到服务器** 并位于仓库根目录，再使用下面这几个脚本：
   - `bash scripts/deploy-backend-on-server.sh`
   - `bash scripts/deploy-admin-web-on-server.sh`
   - `bash scripts/deploy-linkparse-sidecar-on-server.sh`

@@ -1,5 +1,34 @@
 # Project Changelog
 
+## 2026-04-18 (文档补充)
+
+### Changed
+
+- 部署文档补充“Mac 本地发起远端后端重部署”的明确说明：
+  - `README.md` 现在显式区分“Mac 本地运行
+    `backend/scripts/deploy-server-build.sh`”与“已登录服务器后运行
+    `scripts/deploy-backend-on-server.sh`”两种场景
+  - `docs/backend-deploy-quickstart.md` 补充脚本角色对照、`SERVER_HOST`
+    可写 `user@host` 或 `~/.ssh/config` 主机别名的说明，并把 `my-cloud`
+    明确标注为示例别名；同时补充 `PLAN_ONLY=1` 预检查命令
+  - 文档同步说明远端默认会进入 `/srv/caipu-miniapp`，并补充 Go 路径兜底说明，
+    避免误以为本地直接运行根目录脚本也会自动发起 `ssh`
+
+### Notes
+
+- 修改时间：2026-04-18 03:52 CST
+- 变更背景：上一轮已修复远端后端部署脚本在非交互式 `ssh` shell 下找不到
+  Go 的问题，但当前 `README.md` 对“本地发起远端部署”和“已登录服务器后在
+  机器内执行部署脚本”两类场景区分还不够直白，容易让使用者误判入口脚本
+- 核心改动：补齐部署入口说明、预检查示例和默认远端工作目录说明，统一当前
+  线上 `/srv/caipu-miniapp` 的实际口径
+- 影响范围：`README.md`、`docs/backend-deploy-quickstart.md`、
+  `CHANGELOG.md`
+- 兼容性/风险：仅文档澄清，不改实际部署逻辑
+- 验证情况：已对照 `backend/scripts/deploy-server-build.sh`、
+  `scripts/deploy-backend-on-server.sh` 与现网 `/srv/caipu-miniapp` 部署路径
+  做代码级复核
+
 ## 2026-04-18 (部署补丁)
 
 ### Fixed
