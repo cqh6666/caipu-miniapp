@@ -88,7 +88,13 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DashboardOverview(w http.ResponseWriter, r *http.Request) {
-	overview, err := h.audit.Overview(r.Context())
+	windowHours := 0
+	if raw := r.URL.Query().Get("windowHours"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			windowHours = parsed
+		}
+	}
+	overview, err := h.audit.Overview(r.Context(), windowHours)
 	if err != nil {
 		common.WriteError(w, err)
 		return

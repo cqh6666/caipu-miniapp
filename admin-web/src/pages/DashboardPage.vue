@@ -1,6 +1,12 @@
 <template>
   <AppShell>
     <template #toolbar>
+      <el-radio-group v-model="overviewWindow" size="small" @change="loadOverview(true)">
+        <el-radio-button :value="24">24h</el-radio-button>
+        <el-radio-button :value="168">7d</el-radio-button>
+        <el-radio-button :value="720">30d</el-radio-button>
+      </el-radio-group>
+      <span v-if="lastRefreshed" class="topbar-refreshed">更新于 {{ lastRefreshed }}</span>
       <el-button :loading="refreshing" @click="refreshPage">
         <el-icon><Refresh /></el-icon>
         <span style="margin-left: 6px">刷新数据</span>
@@ -312,6 +318,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { use, init, type ComposeOption, type ECharts } from 'echarts/core'
 import type { BarSeriesOption, LineSeriesOption } from 'echarts/charts'
 import AppShell from '@/components/AppShell.vue'
+import { useLastRefreshed } from '@/composables/useLastRefreshed'
 import HealthRing from '@/components/HealthRing.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import PageState from '@/components/PageState.vue'
@@ -340,6 +347,10 @@ type DashboardChartOption = ComposeOption<
 >
 
 use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+
+const { display: lastRefreshed, mark: markRefreshed } = useLastRefreshed('dashboard')
+
+const overviewWindow = ref<number>(168)
 
 const RateCell: FunctionalComponent<{ rate: number | undefined | null }> = (props) => {
   const rate = props.rate ?? 0
@@ -515,8 +526,9 @@ async function loadOverview(showToast = false) {
   overviewLoading.value = true
   overviewError.value = ''
   try {
-    const data = await adminApi.getDashboardOverview()
+    const data = await adminApi.getDashboardOverview(overviewWindow.value)
     overview.value = data.overview
+    markRefreshed()
   } catch (error) {
     const message = error instanceof Error ? error.message : '加载概览失败'
     overviewError.value = message

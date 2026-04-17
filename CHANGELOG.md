@@ -1,5 +1,38 @@
 # Project Changelog
 
+## 2026-04-18 (晚间补丁)
+
+### Added
+
+- `admin-web` 顶栏新增"更新于 hh:mm:ss"时间戳：
+  - 新增 `composables/useLastRefreshed.ts`，按 key 打点的全局 reactive map
+  - `DashboardPage` / `CallsPage` / `JobsPage` 在各自 `loadXxx` 成功后打点并通过
+    `AppShell` 的 `#toolbar` 插槽展示
+- `FilterToolbar` 支持 `activeFilters` + `onClearAll`，渲染"已应用筛选"chip 行；
+  `CallsPage` / `JobsPage` 接入，单项 chip 可关闭并立刻重新筛选
+- 概览页支持时间窗切换：新增 24h / 7d / 30d 单选；后端
+  `GET /api/admin/dashboard/overview?windowHours=` 支持 1~720 小时范围
+
+### Changed
+
+- **概览窗口默认从 24h 改为 7d**：`audit.Service.Overview` 签名改为
+  `Overview(ctx, windowHours int)`，`windowHours<=0` 走 168（7d）默认值，
+  上限 720（30d）；前端 `getDashboardOverview(windowHours?)` 默认传 168
+- `AIProvidersPage` 场景卡片 eyebrow 去掉 `text-transform: uppercase` 和
+  `letter-spacing`，让中文场景名（"AI 总结 / 标题精修 / 流程图生成"）正常显示
+- 四个列表页（Calls / Jobs / AIProviders / Settings）的分页条抽成
+  `.pagination-row` 公共类，加 `border-top` 与卡片内容分隔
+
+### Notes
+
+- 修改时间：2026-04-18 晚
+- 变更背景：P0 体验硬伤收口第一批，重点补齐刷新时间戳、筛选可见性、分页视觉分隔；
+  概览页时间窗口写死 24h 导致数据太稀疏，改为 7d 默认并支持切换
+- 接口契约：`GET /api/admin/dashboard/overview` 新增可选 `windowHours` 查询参数，
+  旧调用方不传参时行为变化（窗口由 24h 扩大到 7d），响应里 `windowHours` 字段
+  已存在、前端卡片注释会随之显示"最近 168 小时"
+- 未做：P0-3 侧栏告警红点（待确认是否复用概览接口的失败数）；P1 图表升级
+
 ## 2026-04-18
 
 ### Changed

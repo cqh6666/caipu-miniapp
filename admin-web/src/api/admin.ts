@@ -31,8 +31,9 @@ export function getMe() {
   return request<{ username: string }>('/admin/auth/me')
 }
 
-export function getDashboardOverview() {
-  return request<{ overview: DashboardOverview }>('/admin/dashboard/overview')
+export function getDashboardOverview(windowHours?: number) {
+  const suffix = windowHours && windowHours > 0 ? `?windowHours=${windowHours}` : ''
+  return request<{ overview: DashboardOverview }>(`/admin/dashboard/overview${suffix}`)
 }
 
 export function getDashboardTrends(range: string) {

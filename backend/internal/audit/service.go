@@ -400,10 +400,16 @@ LIMIT ? OFFSET ?
 	}, rows.Err()
 }
 
-func (s *Service) Overview(ctx context.Context) (DashboardOverview, error) {
-	since := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+func (s *Service) Overview(ctx context.Context, windowHours int) (DashboardOverview, error) {
+	if windowHours <= 0 {
+		windowHours = 7 * 24
+	}
+	if windowHours > 30*24 {
+		windowHours = 30 * 24
+	}
+	since := time.Now().UTC().Add(-time.Duration(windowHours) * time.Hour).Format(time.RFC3339)
 	overview := DashboardOverview{
-		WindowHours: 24,
+		WindowHours: windowHours,
 	}
 
 	var (

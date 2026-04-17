@@ -1,7 +1,10 @@
 <template>
   <AppShell>
+    <template #toolbar>
+      <span v-if="lastRefreshed" class="topbar-refreshed">更新于 {{ lastRefreshed }}</span>
+    </template>
     <div class="page-card table-card">
-      <FilterToolbar>
+      <FilterToolbar :active-filters="activeFilters" :on-clear-all="hasActiveFilters ? resetFilters : undefined">
         <el-select v-model="filters.scene" clearable placeholder="场景">
           <el-option v-for="item in sceneOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
@@ -103,7 +106,7 @@
           </el-table>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; margin-top: 16px">
+        <div class="pagination-row">
           <el-pagination
             v-model:current-page="page"
             layout="total, prev, pager, next"
@@ -154,6 +157,9 @@ import {
 } from '@/utils/admin-display'
 import { buildRouteQuery, readDateRange, readQueryNumber, readQueryString, writeDateRange, type DateRangeValue } from '@/utils/route-query'
 import { useResponsive } from '@/composables/useResponsive'
+import { useLastRefreshed } from '@/composables/useLastRefreshed'
+
+const { display: lastRefreshed, mark: markRefreshed } = useLastRefreshed('jobs')
 
 const route = useRoute()
 const router = useRouter()
@@ -225,6 +231,7 @@ async function loadJobs() {
   try {
     const data = await adminApi.listJobs(buildRequestQuery())
     result.value = data.result
+    markRefreshed()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '加载任务失败'
   } finally {
@@ -259,6 +266,45 @@ async function resetFilters() {
 async function handlePageChange(nextPage: number) {
   await router.replace({ query: buildListRouteQuery(nextPage) })
 }
+
+function labelFor(options: { label: string; value: string }[], value: string) {
+  return options.find((item) => item.value === value)?.label || value
+}
+
+function removeFilter(key: 'scene' | 'status' | 'triggerSource' | 'targetId' | 'timeRange') {
+  if (key === 'timeRange') {
+    timeRange.value = []
+  } else {
+    filters[key] = ''
+  }
+  void applyFilters()
+}
+
+const activeFilters = computed(() => {
+  const chips: { key: string; label: string; onRemove?: () => void }[] = []
+  if (filters.scene) {
+    chips.push({ key: 'scene', label: `场景：${labelFor(sceneOptions, filters.scene)}`, onRemove: () => removeFilter('scene') })
+  }
+  if (filters.status) {
+    chips.push({ key: 'status', label: `状态：${labelFor(jobStatusOptions, filters.status)}`, onRemove: () => removeFilter('status') })
+  }
+  if (filters.triggerSource) {
+    chips.push({ key: 'triggerSource', label: `来源：${labelFor(triggerSourceOptions, filters.triggerSource)}`, onRemove: () => removeFilter('triggerSource') })
+  }
+  if (filters.targetId) {
+    chips.push({ key: 'targetId', label: `target_id：${filters.targetId}`, onRemove: () => removeFilter('targetId') })
+  }
+  if (timeRange.value.length === 2) {
+    chips.push({
+      key: 'timeRange',
+      label: `时间：${formatDateTime(timeRange.value[0].toISOString())} ~ ${formatDateTime(timeRange.value[1].toISOString())}`,
+      onRemove: () => removeFilter('timeRange')
+    })
+  }
+  return chips
+})
+
+const hasActiveFilters = computed(() => activeFilters.value.length > 0)
 
 async function openJobDetail(jobId: number) {
   callDrawerVisible.value = false

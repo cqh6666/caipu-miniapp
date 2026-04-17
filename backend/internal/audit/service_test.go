@@ -84,7 +84,7 @@ func TestServiceStartJobLogCallAndQuery(t *testing.T) {
 		t.Fatalf("provider = %q, want %q", calls.Items[0].Provider, "openai-compatible")
 	}
 
-	overview, err := service.Overview(context.Background())
+	overview, err := service.Overview(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("Overview returned error: %v", err)
 	}
@@ -159,7 +159,7 @@ INSERT INTO ai_call_logs (
 		t.Fatalf("insert ai_call_logs returned error: %v", err)
 	}
 
-	overview, err := service.Overview(context.Background())
+	overview, err := service.Overview(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("Overview returned error: %v", err)
 	}

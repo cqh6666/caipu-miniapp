@@ -352,7 +352,7 @@
             </el-table>
           </div>
 
-          <div style="display: flex; justify-content: flex-end; margin-top: 16px">
+          <div class="pagination-row">
             <el-pagination
               v-model:current-page="auditPage"
               layout="total, prev, pager, next"
@@ -814,9 +814,7 @@ function extractMessage(error: unknown) {
 .routing-scene-card__eyebrow {
   color: var(--color-text-subtle);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .routing-scene-card__meta,

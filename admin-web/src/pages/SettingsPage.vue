@@ -213,7 +213,7 @@
           </el-table>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; margin-top: 16px">
+        <div class="pagination-row">
           <el-pagination
             v-model:current-page="auditPage"
             layout="total, prev, pager, next"
