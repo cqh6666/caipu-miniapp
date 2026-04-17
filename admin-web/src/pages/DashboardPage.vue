@@ -1,7 +1,7 @@
 <template>
   <AppShell>
     <template #toolbar>
-      <el-radio-group v-model="overviewWindow" size="small" @change="loadOverview(true)">
+      <el-radio-group v-model="overviewWindow" size="small" @change="handleWindowChange">
         <el-radio-button :value="24">24h</el-radio-button>
         <el-radio-button :value="168">7d</el-radio-button>
         <el-radio-button :value="720">30d</el-radio-button>
@@ -113,14 +113,8 @@
         <div class="subsection-header">
           <div>
             <h3 class="subsection-title">趋势</h3>
-            <div class="subsection-subtitle">按时间窗口观察任务成功率、API 成功率与任务总量。</div>
+            <div class="subsection-subtitle">按时间窗口观察任务成功率、API 成功率与任务总量（跟随顶部窗口切换）。</div>
           </div>
-          <el-segmented
-            v-model="trendRange"
-            :options="trendOptions"
-            size="small"
-            @change="handleTrendRangeChange"
-          />
         </div>
 
         <PageState
@@ -214,7 +208,7 @@
           description="当前时间窗口内还没有场景级任务数据。"
           compact
         />
-        <div v-else class="table-scroll">
+        <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byScene || []" size="small" style="width: 100%">
             <el-table-column label="场景" min-width="130">
               <template #default="{ row }">{{ displayScene(row.name) }}</template>
@@ -244,7 +238,7 @@
           description="当前时间窗口内还没有调用侧热点分布。"
           compact
         />
-        <div v-else class="table-scroll">
+        <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byProvider || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Provider" min-width="160" show-overflow-tooltip />
             <el-table-column prop="total" label="总数" width="80" align="right" />
@@ -272,7 +266,7 @@
           description="当前时间窗口内还没有模型侧热点分布。"
           compact
         />
-        <div v-else class="table-scroll">
+        <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byModel || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Model" min-width="180" show-overflow-tooltip />
             <el-table-column prop="total" label="总数" width="80" align="right" />
@@ -375,7 +369,6 @@ const { isCompactLayout } = useResponsive()
 const overview = ref<DashboardOverview | null>(null)
 const serverHealth = ref<ServerHealthOverview | null>(null)
 const trends = ref<TrendBucket[]>([])
-const trendRange = ref('24h')
 const refreshing = ref(false)
 const overviewLoading = ref(false)
 const serverHealthLoading = ref(false)
@@ -391,11 +384,11 @@ const callDrawerVisible = ref(false)
 const selectedCall = ref<CallLogRecord | null>(null)
 const actionColumnFixed = computed(() => (isCompactLayout.value ? false : 'right'))
 
-const trendOptions = [
-  { label: '24 小时', value: '24h' },
-  { label: '7 天', value: '7d' },
-  { label: '30 天', value: '30d' }
-]
+const trendRange = computed(() => {
+  if (overviewWindow.value >= 720) return '30d'
+  if (overviewWindow.value >= 168) return '7d'
+  return '24h'
+})
 
 function hasNumericValue(value: number | null | undefined): boolean {
   return value !== null && value !== undefined && !Number.isNaN(value)
@@ -656,8 +649,8 @@ function handleResize() {
   chart.value?.resize()
 }
 
-async function handleTrendRangeChange() {
-  await loadTrends(true)
+async function handleWindowChange() {
+  await Promise.all([loadOverview(true), loadTrends(true)])
 }
 
 async function openJobDetail(jobId: number) {

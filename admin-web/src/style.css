@@ -155,6 +155,10 @@ a {
   min-width: 720px;
 }
 
+.table-scroll--compact .el-table {
+  min-width: 0;
+}
+
 /* ==================== Shell ==================== */
 
 .layout-shell {
