@@ -213,8 +213,12 @@
             <el-table-column label="场景" min-width="130">
               <template #default="{ row }">{{ displayScene(row.name) }}</template>
             </el-table-column>
-            <el-table-column prop="total" label="总数" width="80" align="right" />
-            <el-table-column label="成功率" min-width="160">
+            <el-table-column label="总数" min-width="120">
+              <template #default="{ row }">
+                <TotalCell :total="row.total" :max="maxSceneTotal" />
+              </template>
+            </el-table-column>
+            <el-table-column label="成功率" min-width="180">
               <template #default="{ row }">
                 <RateCell :rate="row.successRate" />
               </template>
@@ -241,8 +245,12 @@
         <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byProvider || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Provider" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="total" label="总数" width="80" align="right" />
-            <el-table-column label="成功率" min-width="160">
+            <el-table-column label="总数" min-width="120">
+              <template #default="{ row }">
+                <TotalCell :total="row.total" :max="maxProviderTotal" />
+              </template>
+            </el-table-column>
+            <el-table-column label="成功率" min-width="180">
               <template #default="{ row }">
                 <RateCell :rate="row.successRate" />
               </template>
@@ -269,8 +277,12 @@
         <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byModel || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Model" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="total" label="总数" width="80" align="right" />
-            <el-table-column label="成功率" min-width="160">
+            <el-table-column label="总数" min-width="120">
+              <template #default="{ row }">
+                <TotalCell :total="row.total" :max="maxModelTotal" />
+              </template>
+            </el-table-column>
+            <el-table-column label="成功率" min-width="180">
               <template #default="{ row }">
                 <RateCell :rate="row.successRate" />
               </template>
@@ -361,6 +373,28 @@ const RateCell: FunctionalComponent<{ rate: number | undefined | null }> = (prop
   ])
 }
 RateCell.props = ['rate']
+
+const TotalCell: FunctionalComponent<{ total: number | undefined | null; max: number }> = (props) => {
+  const total = props.total ?? 0
+  const max = Math.max(props.max, 1)
+  const percent = Math.max(Math.min((total / max) * 100, 100), 0)
+  return h('div', { class: 'total-cell' }, [
+    h('div', { class: 'total-cell__bar' }, [
+      h('div', { class: 'total-cell__fill', style: { width: `${percent}%` } })
+    ]),
+    h('span', { class: 'total-cell__value' }, `${total}`)
+  ])
+}
+TotalCell.props = ['total', 'max']
+
+function maxTotal(items: Array<{ total?: number | null }> | undefined | null): number {
+  if (!items || !items.length) return 1
+  return items.reduce((acc, item) => Math.max(acc, item?.total ?? 0), 0) || 1
+}
+
+const maxSceneTotal = computed(() => maxTotal(overview.value?.byScene))
+const maxProviderTotal = computed(() => maxTotal(overview.value?.byProvider))
+const maxModelTotal = computed(() => maxTotal(overview.value?.byModel))
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = ref<ECharts | null>(null)
@@ -737,5 +771,37 @@ onBeforeUnmount(() => {
   font-weight: 700;
   font-size: 12px;
   text-align: right;
+}
+
+.total-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.total-cell__bar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+  overflow: hidden;
+}
+
+.total-cell__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #93c5fd, #3b82f6);
+  transition: width 0.22s ease;
+}
+
+.total-cell__value {
+  min-width: 32px;
+  color: var(--color-text);
+  font-weight: 700;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 </style>
