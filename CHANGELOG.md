@@ -1,5 +1,28 @@
 # Project Changelog
 
+## 2026-04-18 (概览分布图表视图)
+
+### Added
+
+- 后台概览页「按场景分布 / Provider 热点 / Model 热点」三张卡片新增「图表 / 表格」切换：
+  - 默认图表模式，横向堆叠条形图按总数升序排列，绿色为成功调用量、红色为失败调用量，
+    一眼可读出「谁调用多 + 谁成功率低」的组合信息
+  - Tooltip 同步展示总数、成功率（按阈值着色）、成功 / 失败拆分
+  - 切回表格即恢复原有 `TotalCell` / `RateCell` 可视化占比条行为
+  - 切换或窗口 resize 时复用已有 ECharts 实例，卸载 / 切表时主动 `dispose()` 释放
+
+### Notes
+
+- 修改时间：2026-04-18 04:45 CST
+- 变更背景：用户反馈仅表格承载「总数 + 成功率」两维信息不够直观，希望有图表视图
+- 核心改动：`admin-web/src/pages/DashboardPage.vue` 新增 `distViewMode` 状态、三路
+  ECharts 实例、`renderDistributionChart()` 堆叠横条渲染与容器变更时的重建逻辑
+- 影响范围：`admin-web/src/pages/DashboardPage.vue`
+- 兼容性/风险：纯前端可视化变更，不动后端接口；ECharts 已在此页常驻引入，打包体积无
+  新增依赖
+- 验证情况：`npx vue-tsc --noEmit` 通过；建议在浏览器内切换「图表 / 表格」并触发窗口
+  resize 确认图表自适应正常
+
 ## 2026-04-18 (仓库清理)
 
 ### Changed

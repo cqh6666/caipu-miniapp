@@ -199,7 +199,13 @@
             <h3 class="subsection-title">按场景分布</h3>
             <div class="subsection-subtitle">任务量与成功率分布。</div>
           </div>
-          <StatusTag tone="neutral" :text="`${overview?.byScene?.length || 0} 个场景`" />
+          <div class="distribution-header-actions">
+            <el-radio-group v-model="distViewMode.scene" size="small">
+              <el-radio-button value="chart">图表</el-radio-button>
+              <el-radio-button value="table">表格</el-radio-button>
+            </el-radio-group>
+            <StatusTag tone="neutral" :text="`${overview?.byScene?.length || 0} 个场景`" />
+          </div>
         </div>
         <PageState
           v-if="!(overview?.byScene?.length)"
@@ -208,6 +214,12 @@
           description="当前时间窗口内还没有场景级任务数据。"
           compact
         />
+        <div
+          v-else-if="distViewMode.scene === 'chart'"
+          ref="sceneChartRef"
+          class="distribution-chart"
+          :style="{ height: distChartHeight(overview?.byScene?.length || 0) }"
+        ></div>
         <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byScene || []" size="small" style="width: 100%">
             <el-table-column label="场景" min-width="130">
@@ -233,7 +245,13 @@
             <h3 class="subsection-title">Provider 热点</h3>
             <div class="subsection-subtitle">调用量最高的 Provider 与成功率。</div>
           </div>
-          <StatusTag tone="neutral" :text="`${overview?.byProvider?.length || 0} 个节点`" />
+          <div class="distribution-header-actions">
+            <el-radio-group v-model="distViewMode.provider" size="small">
+              <el-radio-button value="chart">图表</el-radio-button>
+              <el-radio-button value="table">表格</el-radio-button>
+            </el-radio-group>
+            <StatusTag tone="neutral" :text="`${overview?.byProvider?.length || 0} 个节点`" />
+          </div>
         </div>
         <PageState
           v-if="!(overview?.byProvider?.length)"
@@ -242,6 +260,12 @@
           description="当前时间窗口内还没有调用侧热点分布。"
           compact
         />
+        <div
+          v-else-if="distViewMode.provider === 'chart'"
+          ref="providerChartRef"
+          class="distribution-chart"
+          :style="{ height: distChartHeight(overview?.byProvider?.length || 0) }"
+        ></div>
         <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byProvider || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Provider" min-width="160" show-overflow-tooltip />
@@ -265,7 +289,13 @@
             <h3 class="subsection-title">Model 热点</h3>
             <div class="subsection-subtitle">调用量最高的模型分布与成功率。</div>
           </div>
-          <StatusTag tone="neutral" :text="`${overview?.byModel?.length || 0} 个模型`" />
+          <div class="distribution-header-actions">
+            <el-radio-group v-model="distViewMode.model" size="small">
+              <el-radio-button value="chart">图表</el-radio-button>
+              <el-radio-button value="table">表格</el-radio-button>
+            </el-radio-group>
+            <StatusTag tone="neutral" :text="`${overview?.byModel?.length || 0} 个模型`" />
+          </div>
         </div>
         <PageState
           v-if="!(overview?.byModel?.length)"
@@ -274,6 +304,12 @@
           description="当前时间窗口内还没有模型侧热点分布。"
           compact
         />
+        <div
+          v-else-if="distViewMode.model === 'chart'"
+          ref="modelChartRef"
+          class="distribution-chart"
+          :style="{ height: distChartHeight(overview?.byModel?.length || 0) }"
+        ></div>
         <div v-else class="table-scroll table-scroll--compact">
           <el-table :data="overview?.byModel || []" size="small" style="width: 100%">
             <el-table-column prop="name" label="Model" min-width="180" show-overflow-tooltip />
@@ -307,7 +343,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, type FunctionalComponent } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type FunctionalComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, Refresh } from '@element-plus/icons-vue'
@@ -398,6 +434,18 @@ const maxModelTotal = computed(() => maxTotal(overview.value?.byModel))
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = ref<ECharts | null>(null)
+const sceneChartRef = ref<HTMLDivElement | null>(null)
+const providerChartRef = ref<HTMLDivElement | null>(null)
+const modelChartRef = ref<HTMLDivElement | null>(null)
+const sceneChart = ref<ECharts | null>(null)
+const providerChart = ref<ECharts | null>(null)
+const modelChart = ref<ECharts | null>(null)
+type DistViewMode = 'chart' | 'table'
+const distViewMode = reactive<{ scene: DistViewMode; provider: DistViewMode; model: DistViewMode }>({
+  scene: 'chart',
+  provider: 'chart',
+  model: 'chart'
+})
 const router = useRouter()
 const { isCompactLayout } = useResponsive()
 const overview = ref<DashboardOverview | null>(null)
@@ -679,8 +727,127 @@ function renderChart() {
   chart.value.setOption(option, true)
 }
 
+type DistributionItem = { name: string; total?: number | null; successRate?: number | null }
+
+function distChartHeight(count: number): string {
+  const rows = Math.max(count, 1)
+  return `${Math.max(rows * 36 + 48, 160)}px`
+}
+
+function renderDistributionChart(
+  instanceRef: typeof sceneChart,
+  container: HTMLDivElement | null,
+  items: DistributionItem[] | undefined | null,
+  nameFormatter?: (name: string) => string
+) {
+  if (!container || !items || !items.length) return
+  if (!instanceRef.value) {
+    instanceRef.value = init(container)
+  }
+  const sorted = [...items].sort((a, b) => (a.total ?? 0) - (b.total ?? 0))
+  const labels = sorted.map((item) => (nameFormatter ? nameFormatter(item.name) : item.name))
+  const successData = sorted.map((item) => {
+    const total = item.total ?? 0
+    const rate = item.successRate ?? 0
+    return Math.round(total * rate)
+  })
+  const failData = sorted.map((item, idx) => Math.max((item.total ?? 0) - successData[idx], 0))
+
+  const option: DashboardChartOption = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: unknown) => {
+        const list = params as Array<{ dataIndex: number; name: string }>
+        if (!list?.length) return ''
+        const idx = list[0].dataIndex
+        const item = sorted[idx]
+        const total = item.total ?? 0
+        const rate = item.successRate ?? 0
+        const rateTone = rate >= 0.9 ? '#16a34a' : rate >= 0.7 ? '#d97706' : '#dc2626'
+        return `<div style="font-weight:600;margin-bottom:6px">${list[0].name}</div>`
+          + `<div style="display:flex;justify-content:space-between;gap:16px"><span style="color:#64748b">总数</span><strong>${total}</strong></div>`
+          + `<div style="display:flex;justify-content:space-between;gap:16px"><span style="color:#64748b">成功率</span><strong style="color:${rateTone}">${(rate * 100).toFixed(1)}%</strong></div>`
+          + `<div style="display:flex;justify-content:space-between;gap:16px"><span style="color:#64748b">成功 / 失败</span><strong>${successData[idx]} / ${failData[idx]}</strong></div>`
+      }
+    },
+    grid: { left: 8, right: 24, top: 12, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'value',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: '#94a3b8' },
+      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.18)' } }
+    },
+    yAxis: {
+      type: 'category',
+      data: labels,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: '#334155',
+        fontWeight: 500,
+        formatter: (value: string) => (value.length > 14 ? `${value.slice(0, 13)}…` : value)
+      }
+    },
+    series: [
+      {
+        name: '成功',
+        type: 'bar',
+        stack: 'total',
+        barMaxWidth: 18,
+        itemStyle: { color: '#22c55e', borderRadius: [4, 0, 0, 4] },
+        data: successData
+      },
+      {
+        name: '失败',
+        type: 'bar',
+        stack: 'total',
+        barMaxWidth: 18,
+        itemStyle: { color: '#f87171', borderRadius: [0, 4, 4, 0] },
+        data: failData
+      }
+    ]
+  }
+
+  instanceRef.value.setOption(option, true)
+  instanceRef.value.resize()
+}
+
+async function renderDistributionCharts() {
+  await nextTick()
+  const pairs: Array<[DistViewMode, typeof sceneChart, HTMLDivElement | null, DistributionItem[] | undefined, ((n: string) => string) | undefined]> = [
+    [distViewMode.scene, sceneChart, sceneChartRef.value, overview.value?.byScene, displayScene],
+    [distViewMode.provider, providerChart, providerChartRef.value, overview.value?.byProvider, undefined],
+    [distViewMode.model, modelChart, modelChartRef.value, overview.value?.byModel, undefined]
+  ]
+  for (const [mode, instanceRef, container, items, fmt] of pairs) {
+    if (mode === 'chart' && items?.length && container) {
+      if (instanceRef.value && instanceRef.value.getDom() !== container) {
+        instanceRef.value.dispose()
+        instanceRef.value = null
+      }
+      renderDistributionChart(instanceRef, container, items, fmt)
+    } else if (instanceRef.value) {
+      instanceRef.value.dispose()
+      instanceRef.value = null
+    }
+  }
+}
+
+watch(
+  () => [overview.value, distViewMode.scene, distViewMode.provider, distViewMode.model],
+  () => {
+    void renderDistributionCharts()
+  },
+  { deep: true }
+)
+
 function handleResize() {
   chart.value?.resize()
+  sceneChart.value?.resize()
+  providerChart.value?.resize()
+  modelChart.value?.resize()
 }
 
 async function handleWindowChange() {
@@ -719,6 +886,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   chart.value?.dispose()
+  sceneChart.value?.dispose()
+  providerChart.value?.dispose()
+  modelChart.value?.dispose()
 })
 </script>
 
@@ -803,5 +973,16 @@ onBeforeUnmount(() => {
   font-size: 12px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.distribution-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.distribution-chart {
+  width: 100%;
+  min-height: 160px;
 }
 </style>
