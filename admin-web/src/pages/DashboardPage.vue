@@ -349,6 +349,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { BarChart, LineChart } from 'echarts/charts'
 import {
+  AxisPointerComponent,
   GridComponent,
   LegendComponent,
   TooltipComponent,
@@ -388,7 +389,7 @@ type DashboardChartOption = ComposeOption<
   GridComponentOption | TooltipComponentOption | LegendComponentOption | LineSeriesOption | BarSeriesOption
 >
 
-use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, AxisPointerComponent, CanvasRenderer])
 
 const { display: lastRefreshed, mark: markRefreshed } = useLastRefreshed('dashboard')
 
