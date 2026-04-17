@@ -604,6 +604,7 @@ async function loadOverview(showToast = false) {
     const data = await adminApi.getDashboardOverview(overviewWindow.value)
     overview.value = data.overview
     markRefreshed()
+    void renderDistributionCharts()
   } catch (error) {
     const message = error instanceof Error ? error.message : '加载概览失败'
     overviewError.value = message
@@ -812,25 +813,32 @@ function renderDistributionChart(
 
   instanceRef.value.setOption(option, true)
   instanceRef.value.resize()
+  requestAnimationFrame(() => {
+    instanceRef.value?.resize()
+  })
 }
 
 async function renderDistributionCharts() {
   await nextTick()
-  const pairs: Array<[DistViewMode, typeof sceneChart, HTMLDivElement | null, DistributionItem[] | undefined, ((n: string) => string) | undefined]> = [
-    [distViewMode.scene, sceneChart, sceneChartRef.value, overview.value?.byScene, displayScene],
-    [distViewMode.provider, providerChart, providerChartRef.value, overview.value?.byProvider, undefined],
-    [distViewMode.model, modelChart, modelChartRef.value, overview.value?.byModel, undefined]
+  const pairs: Array<[DistViewMode, typeof sceneChart, HTMLDivElement | null, DistributionItem[] | undefined, ((n: string) => string) | undefined, string]> = [
+    [distViewMode.scene, sceneChart, sceneChartRef.value, overview.value?.byScene, displayScene, 'scene'],
+    [distViewMode.provider, providerChart, providerChartRef.value, overview.value?.byProvider, undefined, 'provider'],
+    [distViewMode.model, modelChart, modelChartRef.value, overview.value?.byModel, undefined, 'model']
   ]
-  for (const [mode, instanceRef, container, items, fmt] of pairs) {
-    if (mode === 'chart' && items?.length && container) {
-      if (instanceRef.value && instanceRef.value.getDom() !== container) {
+  for (const [mode, instanceRef, container, items, fmt, label] of pairs) {
+    try {
+      if (mode === 'chart' && items?.length && container) {
+        if (instanceRef.value && instanceRef.value.getDom() !== container) {
+          instanceRef.value.dispose()
+          instanceRef.value = null
+        }
+        renderDistributionChart(instanceRef, container, items, fmt)
+      } else if (instanceRef.value) {
         instanceRef.value.dispose()
         instanceRef.value = null
       }
-      renderDistributionChart(instanceRef, container, items, fmt)
-    } else if (instanceRef.value) {
-      instanceRef.value.dispose()
-      instanceRef.value = null
+    } catch (err) {
+      console.warn(`[dashboard] render distribution chart "${label}" failed`, err)
     }
   }
 }
@@ -840,7 +848,7 @@ watch(
   () => {
     void renderDistributionCharts()
   },
-  { deep: true }
+  { deep: true, flush: 'post' }
 )
 
 function handleResize() {
