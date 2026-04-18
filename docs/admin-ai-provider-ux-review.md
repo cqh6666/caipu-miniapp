@@ -273,3 +273,184 @@
 | --- | --- | --- |
 | 概念理解 | 新运维回答「当前场景实际生效哪条链路」的准确率 | ≥ 95% |
 | 信息密度 | 1440px 下看完一条场景 + 1 节点编辑无需滚动 | 达成 |
+
+---
+
+## 8. 二次 review 的设计实现方案
+
+> 面向 `admin-web/src/pages/AIProvidersPage.vue` 现状（Vue 3 `<script setup>` + Element Plus + ECharts），逐条落到代码级动作。除特别说明外，所有改动都只在本页组件内，无须后端配合。
+
+### 8.1 顶部操作区节奏（对应 §7.1）
+
+**目标态**：`[测试结果 chip] │ [🔄 icon] │ [放弃草稿] │ [测试草稿] ┃ [保存场景 ●]`
+
+- 新增一层工具栏分组 DOM：
+  ```html
+  <template #toolbar>
+    <div class="toolbar-cluster toolbar-cluster--status">…test chip…</div>
+    <div class="toolbar-cluster toolbar-cluster--meta">刷新(icon) · 放弃草稿</div>
+    <div class="toolbar-divider" aria-hidden="true" />
+    <div class="toolbar-cluster toolbar-cluster--action">测试草稿 · 保存场景</div>
+  </template>
+  ```
+  - `.toolbar-divider`：`width:1px; height:20px; background:var(--color-border-soft); margin:0 4px;`。
+  - `toolbar-cluster--action` 与前组之间额外 12px `gap`。
+- 「刷新」降级：`<el-button circle>` + `<el-icon><Refresh /></el-icon>`，配 `<el-tooltip content="重新拉取远端">`。
+- 「放弃草稿」改 `type="danger" link`；禁用态用 `computed(discardTooltip)` 切换文案：`!isDirty ? '当前无未保存改动' : '将丢弃 N 项改动(含 X 个节点)'`；`N` 通过 `diffCount` 计数（见 §8.2）。
+- 「保存场景」上加一枚 `dirty badge`：
+  ```html
+  <el-badge :is-dot="isDirty" class="save-dot" type="primary">
+    <el-button type="primary" …>保存场景</el-button>
+  </el-badge>
+  ```
+  CSS 里把红点染成主色：`.save-dot .el-badge__content { background:var(--color-primary); box-shadow:0 0 0 2px var(--color-bg-elevated); }`。
+
+### 8.2 状态矩阵 popover（对应 §7.2）
+
+**新增 computed**：`effectiveChannel(scene)`，返回 `{ label: 'summary-compat' | 'summary-v2', tone, reason }`。规则：
+
+| draft/remote | enabled | compatibilityMode | label |
+| --- | --- | --- | --- |
+| remote | true | false | `{scene}-v2` |
+| remote | * | true | `{scene}-compat` |
+| remote | false | false | `{scene}-compat` |
+| draft only | — | — | `线上保持不变，仅测试入口生效` |
+
+- 场景卡 `StatusTag` 右侧追加 `<el-popover trigger="hover|click" :width="320">`，内容用一张 3×3 矩阵表（复用 `el-table` size=small 或手写 `<dl>`），当前状态行用 `--color-primary-soft` 高亮。
+- 文案改写：把 `运行时仍走兼容链路` / `运行时已走新路由` 两行统一为 `线上链路：<code>{effectiveChannel.label}</code>`，放在原位置；兼容模式 `el-alert` 的 description 也同步引用同一 label，避免两处表述漂移。
+- 增加 `diffCount`（`ref`）在 `hydrateScene` / watch(draftScene) 里重算：遍历 `sceneFieldPaths` 对比 `draftScene` vs `remoteScene`，产出 `{ scope: 'scene' | 'provider:{id}', path, from, to }[]`，顶部 discard tooltip / §3 P1#8 的 diff dialog 都复用这份结构。
+
+### 8.3 数值输入语义化（对应 §7.3）
+
+**受影响控件**：模板 L124/128/132 的「最大尝试次数 / 熔断阈值 / 冷却时间」。
+
+- 包一层 `<FieldWithHint>` 局部组件（仅本文件内，`const FieldWithHint = defineComponent({...})` 或纯 template partial）：
+  - props: `label`, `unit`, `recommendHint`, `warningWhen(value) => string | null`。
+  - slot 放 `el-input-number`；下方渲染 `.field-hint` 小字 + `warningWhen` 命中时切换为 `--color-warning`。
+- 推荐区间常量：
+  ```js
+  const NUMERIC_HINTS = {
+    maxAttempts: { range: [2, 5], tip: '建议 2–5 次；过大会把失败降级变慢' },
+    circuitThreshold: { range: [3, 10], tip: '连续失败次数达到后触发熔断' },
+    cooldownSeconds: { range: [30, 300], tip: '熔断冷却；低于 30s 容易抖动' },
+  }
+  ```
+- 新增一张 `<RoutingTimelineHint>`（纯 SVG，宽 100%，高 48px）嵌在三个数字之下：
+  ```
+  attempt₁ ──fail──▶ attempt₂ … attemptₙ ──fail×T──▶ [cooldown S]
+  ```
+  用 `draftScene.strategy.maxAttempts / circuitThreshold / cooldownSeconds` 算段宽；变动时 `watchEffect` 重绘。
+- Live preview：`const expectedFirstRoundMs = computed(() => maxAttempts * timeoutMs)`，渲染 `预计首轮最长 {n}s`。
+
+### 8.4 告警条升级（对应 §7.4）
+
+- 把 L70 的 `el-alert` 改造：
+  ```html
+  <el-alert
+    :type="alertTone"         // 有近 1h 触发则 'warning'，否则 'info'
+    show-icon
+    :closable="false"
+    :title="alertTitle"       // '连续异常邮件告警已接入配置中心' / '最近 1h 触发过 N 次告警'
+  >
+    <template #default>… 描述 …</template>
+    <template #append>
+      <el-button type="primary" link @click="goAlertConfig">前往配置</el-button>
+    </template>
+  </el-alert>
+  ```
+  `el-alert` 无 `#append` 槽 → 用绝对定位 `.routing-alert__action { position:absolute; right:16px; top:50%; transform:translateY(-50%); }`。
+- `goAlertConfig`：`router.push({ path: '/settings', query: { group: 'ai.alert' }, hash: '#ai-provider-alert' })`，配置页对应分组加一个 `scrollIntoView` 监听 hash。
+- 数据源：新增 `adminApi.fetchAIRoutingAlertSummary({ windowHours: 1 })`（后端若暂无，可先读 `ai_routing_audit` 里 `action=alert.fire` 计数做 mock），`onMounted` 拉一次、`onActivated` 再拉。
+
+### 8.5 Sticky 策略面板 + 节点折叠（对应 §7.5）
+
+- `routing-editor-grid` 目前是双列（L1224）。桌面宽度下给左列加：
+  ```css
+  @media (min-width: 1200px) {
+    .routing-editor-grid > .routing-panel--strategy {
+      position: sticky;
+      top: calc(var(--app-shell-toolbar-h, 64px) + 24px);
+      align-self: start;
+      max-height: calc(100vh - 120px);
+      overflow: auto;
+    }
+  }
+  ```
+  需要给策略面板加 `--strategy` 修饰类。
+- Provider 节点折叠：新增 `collapsedProviderIds = ref(new Set())`；`providerRows` length > 3 时默认全部加入。每张 provider 卡顶部新增 `summary-row`：
+  ```
+  [drag] [▶] [名称] [StatusTag] [延迟 312ms] [model: gpt-4o] [开关] [更多]
+  ```
+  - `drag` handle 用 `vuedraggable`，`handle: '.provider-card__drag'`；`onEnd` 里改 `draftScene.providers` 顺序，触发 `isDirty`。
+  - 折叠行支持拖拽排序，不展开编辑表单；展开后才渲染现有 `el-form`（用 `v-if="!collapsed"` 避免渲染成本）。
+- 键盘可达性：`▶` 按钮 `aria-expanded` 同步 collapsed 状态。
+
+### 8.6 编辑上下文面包屑（对应 §7.6）
+
+- `routing-editor-grid` 之上、告警之下插入：
+  ```html
+  <div class="routing-breadcrumb" aria-live="polite">
+    <span class="routing-breadcrumb__crumbs">
+      场景策略 <el-icon><ArrowRight /></el-icon>
+      正在编辑：{{ currentSceneTitle }}
+    </span>
+    <StatusTag v-if="isDirty" tone="warning" text="📝 有未保存改动" />
+    <span v-else class="routing-breadcrumb__clean">已同步</span>
+  </div>
+  ```
+  CSS：`position: sticky; top: var(--app-shell-toolbar-h); z-index: 9;` + 毛玻璃 `backdrop-filter: blur(10px)` + `background: color-mix(in srgb, var(--color-bg-elevated) 85%, transparent);`。
+- 与 §8.5 的 sticky 策略面板叠放时，面包屑 `top` 在前，策略面板 `top` 往下再加 `+40px`；用 CSS 变量 `--routing-breadcrumb-h` 做联动。
+
+### 8.7 新增/调整的状态与工具函数汇总
+
+| 名称 | 类型 | 位置 | 用途 |
+| --- | --- | --- | --- |
+| `diffCount` / `sceneDiff` | `computed` | script setup 顶层 | 驱动 discard tooltip / save dialog / badge |
+| `effectiveChannel(scene)` | `function` | 同上 | §8.2 状态矩阵与文案收敛 |
+| `NUMERIC_HINTS` | `const` | 同上 | §8.3 推荐值 / 告警阈值 |
+| `collapsedProviderIds` | `ref<Set<string>>` | 同上 | §8.5 折叠状态 |
+| `alertSummary` | `ref` + `fetchAIRoutingAlertSummary` | 同上 | §8.4 告警条 |
+| `FieldWithHint` | 局部组件 | 同文件 | §8.3 stepper + hint |
+| `RoutingTimelineHint` | 局部组件（SVG） | 同文件 | §8.3 时序图 |
+
+### 8.8 落地顺序与风险
+
+1. **第 1 批**（无后端依赖，~0.5d）：§8.1 工具栏分组、§8.6 面包屑、§8.3 hint 文案、§8.4 前端文案升级。风险最低，先合。
+2. **第 2 批**（~1d）：§8.2 diff 基础设施 + 状态矩阵 popover，复用到 P1 #8 的 diff dialog。
+3. **第 3 批**（~1–1.5d）：§8.5 拖拽 + 折叠，引入 `vuedraggable` 依赖，需在 `admin-web/package.json` 登记。
+4. **第 4 批**（依赖后端）：§8.4 告警 summary 接口、§8.3 成功率 sparkline 如果要真数据，需扩展 `listAIRoutingScenes` 返回 `recentStats`。建议单独开 backend issue，与前端 mock 并行。
+
+主要风险：
+- sticky + 折叠面板在 Safari 下对 `overflow:auto` 父级敏感，合并时务必真机回归；
+- 拖拽改顺序会把 `draftScene` 变脏，需确认和 `handleDiscardDraft` 的 revert 路径一致；
+- `el-alert` append 区用绝对定位存在 i18n 长文本重叠风险，长文案走换行 fallback。
+
+---
+
+## 9. 落地 TODO（分阶段）
+
+> 已评估现状与方案的差异：`放弃草稿` / `isDirty` 禁用已在模板 L11/L20 实现；Provider 节点已用原生 HTML5 drag（L210 等），因此 §8.5 不再引入 `vuedraggable`，复用现有 drag handle，仅加折叠态。
+
+### 阶段 1 · 低风险先合（~0.5d，纯模板 + CSS）
+
+- [x] **§8.1 工具栏节奏**：`#toolbar` 切成三组 cluster + 1px divider；刷新改 circle + icon-only + Tooltip；放弃草稿 `type="danger" link` + 动态 tooltip `将丢弃 {diffCount} 项改动`；保存场景外包 `<el-badge :is-dot="isDirty">`。
+- [x] **§8.6 编辑面包屑**：`routing-editor-grid` 上方插入 `.routing-breadcrumb`，sticky + 毛玻璃；暴露 CSS 变量 `--routing-breadcrumb-h` 给阶段 4 复用。
+- [x] **§8.3 数值字段 hint**：封装 `FieldWithHint`（label / unit / recommendHint / warningWhen），常量 `NUMERIC_HINTS`；三字段下方嵌 `RoutingTimelineHint` SVG + `expectedFirstRoundMs` 文案。
+
+### 阶段 2 · 概念收敛（~1d，为 P1#8 diff dialog 铺路）
+
+- [x] **sceneDiff 基础设施**：`computed sceneDiff`: `{ scope, path, from, to }[]`，`diffCount = sceneDiff.length`；接入阶段 1 的 discardTooltip。
+- [x] **§8.2 状态矩阵**：`effectiveChannel(scene)` + 场景卡 `StatusTag` 右侧 `el-popover` 3×3 矩阵；模板 L56 / 兼容 alert 文案统一为「线上链路：`{scene}-v2|compat`」。
+
+### 阶段 3 · 告警升级（~0.5d，可 mock 不阻塞）
+
+- [x] **§8.4 告警条**：L70 `el-alert` 改造 + 绝对定位「前往配置」按钮；`fetchAIRoutingAlertSummary({ windowHours: 1 })` 先读 `ai_routing_audit` 做 mock；后端真 summary 接口单独开 issue。
+
+### 阶段 4 · 布局重构（~1d，需 Safari 真机回归）
+
+- [x] **§8.5 sticky + 折叠**：左列加 `.routing-panel--strategy`，`@media(min-width:1200px)` 下 `position:sticky; top:calc(toolbar-h + breadcrumb-h + 24px)`；`collapsedProviderIds = ref(Set)`，>3 节点默认折叠；折叠行 `summary-row` 复用现有 HTML5 drag handle，展开用 `v-if` 控制现有表单。
+
+### 跟进（非本批次）
+
+- [ ] P1 #8「保存前变更摘要 dialog」→ 复用阶段 2 的 `sceneDiff`。
+- [ ] 后端 `listAIRoutingScenes` 扩展 `recentStats` / `fetchAIRoutingAlertSummary` 真实接口（单独 issue）。

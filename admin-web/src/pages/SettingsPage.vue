@@ -22,7 +22,13 @@
     </div>
 
     <template v-else>
-      <div v-for="group in groups" :key="group.name" class="page-card setting-card">
+      <div
+        v-for="group in groups"
+        :key="group.name"
+        :id="groupAnchorId(group.name)"
+        :ref="(el) => setGroupCardRef(group.name, el)"
+        class="page-card setting-card"
+      >
         <div class="setting-card__header">
           <div>
             <h3 class="setting-card__title">{{ group.title }}</h3>
@@ -228,7 +234,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppShell from '@/components/AppShell.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
@@ -254,6 +261,7 @@ interface DiffItem {
   summary: string
 }
 
+const route = useRoute()
 const groups = ref<RuntimeSettingGroupView[]>([])
 const groupsLoading = ref(false)
 const groupsError = ref('')
@@ -280,8 +288,20 @@ const audits = ref<PaginationResult<SettingAuditRecord>>({
 const groupTitleMap = computed(() =>
   Object.fromEntries(groups.value.map((group) => [group.name, group.title]))
 )
+const groupCardRefs: Partial<Record<string, HTMLElement | null>> = {}
 
 const dirtyGroupCount = computed(() => groups.value.filter((group) => isGroupDirty(group.name)).length)
+
+function groupAnchorId(groupName: string) {
+  if (groupName === 'ai.provider_alert') {
+    return 'ai-provider-alert'
+  }
+  return `setting-group-${groupName.replace(/\./g, '-')}`
+}
+
+function setGroupCardRef(groupName: string, element: Element | null) {
+  groupCardRefs[groupName] = element instanceof HTMLElement ? element : null
+}
 
 function resetReactiveRecord(target: Record<string, unknown>) {
   for (const key of Object.keys(target)) {
@@ -585,7 +605,29 @@ async function handleAuditPageChange(nextPage: number) {
   await loadAudits()
 }
 
+async function scrollToRouteGroup() {
+  const hash = String(route.hash || '').trim()
+  const queryGroup = typeof route.query.group === 'string' ? route.query.group.trim() : ''
+  const targetGroup = hash === '#ai-provider-alert' ? 'ai.provider_alert' : queryGroup
+  if (!targetGroup) {
+    return
+  }
+  await nextTick()
+  groupCardRefs[targetGroup]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 onMounted(async () => {
   await Promise.all([loadGroups(), loadAudits()])
+  await scrollToRouteGroup()
 })
+
+watch(
+  () => [route.query.group, route.hash, groups.value.length],
+  async () => {
+    if (!groups.value.length) {
+      return
+    }
+    await scrollToRouteGroup()
+  }
+)
 </script>

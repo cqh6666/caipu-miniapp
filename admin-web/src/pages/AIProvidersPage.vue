@@ -1,27 +1,41 @@
 <template>
   <AppShell>
     <template #toolbar>
-      <button v-if="latestTestSummary" type="button" class="test-result-chip" @click="scrollToTestCard">
-        <StatusTag :tone="latestTestSummary.tone" :text="latestTestSummary.text" />
-      </button>
-      <el-button :loading="pageRefreshing" @click="refreshPage">
-        <el-icon><Refresh /></el-icon>
-        <span style="margin-left: 6px">刷新</span>
-      </el-button>
-      <el-button :disabled="!isDirty" @click="handleDiscardDraft">
-        放弃草稿
-      </el-button>
-      <el-button :loading="testingScene" :disabled="!draftScene" @click="handleTestScene">
-        测试当前草稿
-      </el-button>
-      <el-button
-        type="primary"
-        :loading="savingScene"
-        :disabled="!isDirty || savingScene"
-        @click="handleSaveScene"
-      >
-        保存场景
-      </el-button>
+      <div class="toolbar-cluster toolbar-cluster--status">
+        <button v-if="latestTestSummary" type="button" class="test-result-chip" @click="scrollToTestCard">
+          <StatusTag :tone="latestTestSummary.tone" :text="latestTestSummary.text" />
+        </button>
+      </div>
+      <div class="toolbar-cluster toolbar-cluster--meta">
+        <el-tooltip content="重新拉取远端配置" placement="bottom">
+          <el-button circle :loading="pageRefreshing" aria-label="刷新" @click="refreshPage">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip :content="discardTooltip" placement="bottom">
+          <span class="toolbar-discard-wrap">
+            <el-button type="danger" link :disabled="!isDirty" @click="handleDiscardDraft">
+              放弃草稿
+            </el-button>
+          </span>
+        </el-tooltip>
+      </div>
+      <span class="toolbar-divider" aria-hidden="true" />
+      <div class="toolbar-cluster toolbar-cluster--action">
+        <el-button :loading="testingScene" :disabled="!draftScene" @click="handleTestScene">
+          测试当前草稿
+        </el-button>
+        <el-badge :is-dot="isDirty" class="toolbar-save-dot">
+          <el-button
+            type="primary"
+            :loading="savingScene"
+            :disabled="!isDirty || savingScene"
+            @click="handleSaveScene"
+          >
+            保存场景
+          </el-button>
+        </el-badge>
+      </div>
     </template>
 
     <div class="routing-scene-grid" role="tablist" aria-label="AI 路由场景">
@@ -53,7 +67,9 @@
         </div>
         <div class="routing-scene-card__footer">
           <span>最近修改：{{ formatDateTime(item.updatedAt) }}</span>
-          <span>{{ item.compatibilityMode ? '运行时仍走兼容链路' : '运行时已走新路由' }}</span>
+          <span class="routing-scene-card__channel">
+            线上链路：<code>{{ sceneEffectiveChannel(item.scene).label }}</code>
+          </span>
         </div>
       </button>
     </div>
@@ -67,12 +83,22 @@
       description="建议先测试，再保存；敏感密钥留空表示保留旧值，点击清空后保存才会真正移除。"
     />
 
-    <el-alert class="routing-alert" type="info" :closable="false" title="连续异常邮件告警已接入配置中心">
-      <template #default>
-        如果你需要在某个 Provider 连续异常达到阈值后发 QQ 邮箱告警，请前往
-        <router-link to="/settings">配置中心</router-link>
-        的“AI Provider 告警”分组配置阈值、SMTP 和收件人。
-      </template>
+    <el-alert
+      class="routing-alert routing-alert--with-action"
+      type="info"
+      show-icon
+      :closable="false"
+      title="连续异常邮件告警已接入配置中心"
+    >
+      <div class="routing-alert__content">
+        <span>如果你需要在某个 Provider 连续异常达到阈值后发 QQ 邮箱告警，请前往配置中心的"AI Provider 告警"分组配置阈值、SMTP 和收件人。</span>
+        <div class="routing-alert__action">
+          <el-button type="primary" link @click="goAlertConfig">
+            前往配置
+            <el-icon><ArrowRight /></el-icon>
+          </el-button>
+        </div>
+      </div>
     </el-alert>
 
     <div v-if="sceneLoading && !draftScene" class="page-card routing-panel">
@@ -91,8 +117,41 @@
         :description="compatibilityHint"
       />
 
+      <div class="routing-breadcrumb" aria-live="polite">
+        <span class="routing-breadcrumb__crumbs">
+          场景策略
+          <el-icon class="routing-breadcrumb__sep"><ArrowRight /></el-icon>
+          正在编辑：<strong>{{ currentSceneTitle }}</strong>
+          <el-popover placement="bottom-start" :width="340" trigger="click">
+            <template #reference>
+              <button type="button" class="routing-breadcrumb__channel" :class="`routing-breadcrumb__channel--${currentChannel.tone}`">
+                线上链路：<code>{{ currentChannel.label }}</code>
+                <el-icon class="routing-breadcrumb__channel-icon"><InfoFilled /></el-icon>
+              </button>
+            </template>
+            <div class="channel-popover">
+              <div class="channel-popover__title">当前状态：{{ currentChannel.reason }}</div>
+              <table class="channel-popover__table">
+                <thead>
+                  <tr><th>草稿/正式</th><th>新路由</th><th>实际生效链路</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in channelMatrix" :key="idx" :class="{ 'is-hit': row.hit }">
+                    <td>{{ row.draft }}</td>
+                    <td>{{ row.toggle }}</td>
+                    <td><code>{{ row.effect }}</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </el-popover>
+        </span>
+        <StatusTag v-if="isDirty" tone="warning" :text="`📝 ${diffCount} 项未保存`" />
+        <span v-else class="routing-breadcrumb__clean">已同步</span>
+      </div>
+
       <div class="routing-editor-grid">
-        <div class="page-card routing-panel">
+        <div class="page-card routing-panel routing-panel--strategy">
           <div class="routing-panel__header">
             <div>
               <h3 class="routing-panel__title">场景策略</h3>
@@ -120,22 +179,53 @@
                 />
               </el-select>
             </label>
-            <label class="routing-field">
+            <label class="routing-field routing-field--with-hint">
               <span>最大尝试次数</span>
               <el-input-number v-model="draftScene.maxAttempts" :min="1" :max="maxAttemptCeiling" />
+              <small class="routing-field__hint" :class="{ 'routing-field__hint--warn': numericWarn.maxAttempts }">
+                {{ numericWarn.maxAttempts || '建议 2–5 次；过大会让失败降级变慢' }}
+              </small>
             </label>
-            <label class="routing-field">
+            <label class="routing-field routing-field--with-hint">
               <span>熔断阈值</span>
               <el-input-number v-model="draftScene.breaker.failureThreshold" :min="1" :max="10" />
+              <small class="routing-field__hint" :class="{ 'routing-field__hint--warn': numericWarn.failureThreshold }">
+                {{ numericWarn.failureThreshold || '连续失败达到该次数后触发熔断，建议 3–10' }}
+              </small>
             </label>
-            <label class="routing-field">
+            <label class="routing-field routing-field--with-hint">
               <span>冷却时间（秒）</span>
               <el-input-number v-model="draftScene.breaker.cooldownSeconds" :min="5" :max="600" />
+              <small class="routing-field__hint" :class="{ 'routing-field__hint--warn': numericWarn.cooldownSeconds }">
+                {{ numericWarn.cooldownSeconds || '熔断冷却时长，低于 30s 容易抖动' }}
+              </small>
             </label>
             <div class="routing-field routing-field--meta">
               <span>最近修改</span>
               <strong>{{ formatDateTime(draftScene.updatedAt) }}</strong>
               <small>修改人：{{ draftScene.updatedBySubject || '暂无' }}</small>
+            </div>
+          </div>
+
+          <div class="routing-timeline-hint" aria-label="重试与熔断时序示意">
+            <div class="routing-timeline-hint__track">
+              <span
+                v-for="i in timelineSegments.attempts"
+                :key="`att-${i}`"
+                class="routing-timeline-hint__seg routing-timeline-hint__seg--attempt"
+              >
+                试 {{ i }}
+              </span>
+              <span class="routing-timeline-hint__seg routing-timeline-hint__seg--breaker">
+                连续失败 {{ draftScene.breaker.failureThreshold }} 次
+              </span>
+              <span class="routing-timeline-hint__seg routing-timeline-hint__seg--cooldown">
+                冷却 {{ draftScene.breaker.cooldownSeconds }}s
+              </span>
+            </div>
+            <div class="routing-timeline-hint__caption">
+              预计首轮最长 ≈ <strong>{{ expectedFirstRoundSeconds }}s</strong>
+              <span class="routing-timeline-hint__hint">（最大尝试次数 × 启用节点最大超时）</span>
             </div>
           </div>
 
@@ -214,12 +304,22 @@
               <div class="provider-editor-card__header">
                 <div>
                   <div class="provider-editor-card__title">
+                    <button
+                      type="button"
+                      class="provider-icon-button provider-collapse-toggle"
+                      :aria-expanded="!isProviderCollapsed(provider)"
+                      :aria-label="isProviderCollapsed(provider) ? '展开编辑' : '折叠编辑'"
+                      @click="toggleProviderCollapsed(provider)"
+                    >
+                      <el-icon><ArrowDown v-if="!isProviderCollapsed(provider)" /><ArrowRight v-else /></el-icon>
+                    </button>
                     <strong>{{ provider.name || `节点 ${index + 1}` }}</strong>
                     <span class="mono-text">{{ provider.id }}</span>
                   </div>
                   <div class="provider-editor-card__meta">
                     <span>顺序 {{ index + 1 }}</span>
                     <span>{{ provider.adapter }}</span>
+                    <span v-if="provider.model">Model: {{ provider.model }}</span>
                     <span>{{ provider.enabled ? '参与调度' : '已停用' }}</span>
                   </div>
                 </div>
@@ -289,34 +389,35 @@
                 </div>
               </div>
 
-              <div class="provider-editor-grid">
-                <label class="routing-field">
-                  <span>Provider ID</span>
-                  <el-input v-model.trim="provider.id" placeholder="summary-main" />
-                </label>
-                <label class="routing-field">
-                  <span>展示名称</span>
-                  <el-input v-model.trim="provider.name" placeholder="主节点 / 备用节点" />
-                </label>
-                <label class="routing-field">
-                  <span>Base URL</span>
-                  <el-input v-model.trim="provider.baseURL" placeholder="https://api.example.com/v1" />
-                </label>
-                <label class="routing-field">
-                  <span>Model</span>
-                  <el-input v-model.trim="provider.model" placeholder="gpt-4.1-mini" />
-                </label>
-                <label class="routing-field">
-                  <span>超时（秒）</span>
-                  <el-input-number v-model="provider.timeoutSeconds" :min="1" :max="600" />
-                </label>
-                <label class="routing-field">
-                  <span>Adapter</span>
-                  <el-input v-model="provider.adapter" disabled />
-                </label>
-              </div>
+              <template v-if="!isProviderCollapsed(provider)">
+                <div class="provider-editor-grid">
+                  <label class="routing-field">
+                    <span>Provider ID</span>
+                    <el-input v-model.trim="provider.id" placeholder="summary-main" />
+                  </label>
+                  <label class="routing-field">
+                    <span>展示名称</span>
+                    <el-input v-model.trim="provider.name" placeholder="主节点 / 备用节点" />
+                  </label>
+                  <label class="routing-field">
+                    <span>Base URL</span>
+                    <el-input v-model.trim="provider.baseURL" placeholder="https://api.example.com/v1" />
+                  </label>
+                  <label class="routing-field">
+                    <span>Model</span>
+                    <el-input v-model.trim="provider.model" placeholder="gpt-4.1-mini" />
+                  </label>
+                  <label class="routing-field">
+                    <span>超时（秒）</span>
+                    <el-input-number v-model="provider.timeoutSeconds" :min="1" :max="600" />
+                  </label>
+                  <label class="routing-field">
+                    <span>Adapter</span>
+                    <el-input v-model="provider.adapter" disabled />
+                  </label>
+                </div>
 
-              <div class="provider-editor-secret">
+                <div class="provider-editor-secret">
                 <div class="provider-editor-secret__header">
                   <div class="provider-editor-secret__label-row">
                     <span class="provider-editor-secret__label">API Key</span>
@@ -356,6 +457,7 @@
                 <template v-else-if="provider.hasAPIKey">当前已保存密钥；不输入新值则继续保留旧值。</template>
                 <template v-else>当前没有已保存密钥，可直接录入新值。</template>
               </div>
+              </template>
             </div>
           </div>
         </div>
@@ -475,7 +577,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, ArrowUp, MoreFilled, Promotion, Rank, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowRight, ArrowUp, InfoFilled, MoreFilled, Promotion, Rank, Refresh } from '@element-plus/icons-vue'
 import AppShell from '@/components/AppShell.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
 import PageState from '@/components/PageState.vue'
@@ -538,6 +640,7 @@ const auditsError = ref('')
 const auditAction = ref('')
 const auditPage = ref(1)
 const providerSecretEditorState = ref<Record<string, boolean>>({})
+const collapsedProviderKeys = ref<Set<string>>(new Set())
 
 const providerLocalKeys = new WeakMap<AIRoutingProviderConfig, string>()
 let providerLocalKeyCounter = 0
@@ -579,6 +682,86 @@ const sceneCards = computed(() => {
   })
 })
 
+const currentSceneTitle = computed(() => {
+  const card = sceneCards.value.find((item) => item.scene === currentSceneKey.value)
+  return card?.title || displayAIRoutingScene(currentSceneKey.value)
+})
+
+function goAlertConfig() {
+  router.push({ path: '/settings', query: { group: 'ai.provider_alert' }, hash: '#ai-provider-alert' })
+}
+
+function effectiveChannel(params: { scene: AIRoutingSceneKey; enabled: boolean; compatibilityMode: boolean; isDraftDirty?: boolean }) {
+  const { scene, enabled, compatibilityMode, isDraftDirty } = params
+  if (isDraftDirty) {
+    return {
+      label: `${scene}-draft`,
+      tone: 'info' as const,
+      reason: '草稿未保存 · 线上保持不变，仅测试入口生效'
+    }
+  }
+  if (compatibilityMode) {
+    return { label: `${scene}-compat`, tone: 'warning' as const, reason: '兼容模式 · 走旧单 Provider 链路' }
+  }
+  if (!enabled) {
+    return { label: `${scene}-compat`, tone: 'neutral' as const, reason: '新路由未启用 · 回退兼容链路' }
+  }
+  return { label: `${scene}-v2`, tone: 'success' as const, reason: '线上走新多节点路由' }
+}
+
+function sceneEffectiveChannel(scene: AIRoutingSceneKey) {
+  const summary = sceneSummaries.value.find((item) => item.scene === scene)
+  const isCurrent = scene === currentSceneKey.value && !!draftScene.value
+  const enabled = isCurrent && draftScene.value ? draftScene.value.enabled : summary?.enabled ?? false
+  const compatibilityMode = isCurrent && draftScene.value
+    ? draftScene.value.compatibilityMode
+    : summary?.compatibilityMode ?? true
+  const isDraftDirty = isCurrent && isDirty.value
+  return effectiveChannel({ scene, enabled, compatibilityMode, isDraftDirty })
+}
+
+const currentChannel = computed(() => sceneEffectiveChannel(currentSceneKey.value))
+
+const channelMatrix = computed(() => [
+  { draft: '正式', toggle: '开', effect: `${currentSceneKey.value}-v2`, hit: !isDirty.value && draftScene.value?.enabled && !draftScene.value?.compatibilityMode },
+  { draft: '正式', toggle: '关', effect: `${currentSceneKey.value}-compat`, hit: !isDirty.value && (!draftScene.value?.enabled || draftScene.value?.compatibilityMode) },
+  { draft: '草稿', toggle: '—', effect: '仅测试入口生效', hit: isDirty.value }
+])
+
+const numericWarn = computed(() => {
+  const scene = draftScene.value
+  const warn: { maxAttempts: string; failureThreshold: string; cooldownSeconds: string } = {
+    maxAttempts: '',
+    failureThreshold: '',
+    cooldownSeconds: ''
+  }
+  if (!scene) return warn
+  const ma = Number(scene.maxAttempts) || 0
+  if (ma > 5) warn.maxAttempts = `当前 ${ma} 次偏大，失败降级会变慢`
+  else if (ma < 2) warn.maxAttempts = '至少 2 次才能触发节点切换'
+  const ft = Number(scene.breaker?.failureThreshold) || 0
+  if (ft < 3) warn.failureThreshold = '阈值过低容易误熔断'
+  else if (ft > 10) warn.failureThreshold = '阈值过高将延迟熔断保护'
+  const cs = Number(scene.breaker?.cooldownSeconds) || 0
+  if (cs < 30) warn.cooldownSeconds = '低于 30s 容易抖动'
+  else if (cs > 300) warn.cooldownSeconds = '超过 5 分钟可能影响恢复'
+  return warn
+})
+
+const timelineSegments = computed(() => {
+  const attempts = Math.max(Number(draftScene.value?.maxAttempts) || 1, 1)
+  return { attempts: Math.min(attempts, 6) }
+})
+
+const expectedFirstRoundSeconds = computed(() => {
+  const scene = draftScene.value
+  if (!scene) return 0
+  const attempts = Math.max(Number(scene.maxAttempts) || 1, 1)
+  const enabled = scene.providers.filter((p) => p.enabled)
+  const maxTimeout = enabled.reduce((acc, p) => Math.max(acc, Number(p.timeoutSeconds) || 0), 0) || 30
+  return attempts * maxTimeout
+})
+
 const latestTestSummary = computed(() => {
   if (!testResult.value) {
     return null
@@ -596,6 +779,91 @@ const isDirty = computed(() => {
     return false
   }
   return comparableScene(draftScene.value) !== comparableScene(remoteScene.value)
+})
+
+function diffProviderKey(provider: Record<string, unknown>, index: number) {
+  const id = String(provider.id || '').trim()
+  return id || `__index_${index}`
+}
+
+function providerDiffSnapshot(provider: Record<string, unknown>) {
+  return {
+    id: String(provider.id || '').trim(),
+    name: String(provider.name || '').trim(),
+    adapter: String(provider.adapter || '').trim(),
+    enabled: Boolean(provider.enabled),
+    baseURL: String(provider.baseURL || '').trim(),
+    model: String(provider.model || '').trim(),
+    timeoutSeconds: Number(provider.timeoutSeconds) || 0,
+    clearApiKey: Boolean(provider.clearApiKey),
+    apiKey: typeof provider.apiKey === 'string' && provider.apiKey.trim() ? '[已录入]' : ''
+  }
+}
+
+const sceneDiff = computed<Array<{ scope: string; path: string; from: unknown; to: unknown }>>(() => {
+  if (!draftScene.value || !remoteScene.value) return []
+  const a = buildScenePayload(draftScene.value) as unknown as Record<string, unknown>
+  const b = buildScenePayload(remoteScene.value) as unknown as Record<string, unknown>
+  const results: Array<{ scope: string; path: string; from: unknown; to: unknown }> = []
+  const sceneFieldKeys = ['enabled', 'strategy', 'maxAttempts', 'retryOn', 'breaker', 'requestOptions'] as const
+  for (const key of sceneFieldKeys) {
+    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) {
+      results.push({ scope: 'scene', path: key, from: b[key], to: a[key] })
+    }
+  }
+  const aps = (a.providers as Array<Record<string, unknown>>) || []
+  const bps = (b.providers as Array<Record<string, unknown>>) || []
+  const aEntries = aps.map((provider, index) => [diffProviderKey(provider, index), provider] as const)
+  const bEntries = bps.map((provider, index) => [diffProviderKey(provider, index), provider] as const)
+  const aMap = new Map(aEntries)
+  const bMap = new Map(bEntries)
+  const aKeys = aEntries.map(([key]) => key)
+  const bKeys = bEntries.map(([key]) => key)
+  const sameProviderSet = aKeys.length === bKeys.length && aKeys.every((key) => bMap.has(key))
+  if (sameProviderSet && JSON.stringify(aKeys) !== JSON.stringify(bKeys)) {
+    results.push({
+      scope: 'providers',
+      path: 'order',
+      from: bKeys,
+      to: aKeys
+    })
+  }
+  const providerKeys = Array.from(new Set([...bKeys, ...aKeys]))
+  for (const key of providerKeys) {
+    const ap = aMap.get(key)
+    const bp = bMap.get(key)
+    if (!ap || !bp) {
+      results.push({
+        scope: `provider:${key}`,
+        path: ap ? 'added' : 'removed',
+        from: bp ? providerDiffSnapshot(bp) : null,
+        to: ap ? providerDiffSnapshot(ap) : null
+      })
+      continue
+    }
+    const nextProvider = providerDiffSnapshot(ap)
+    const prevProvider = providerDiffSnapshot(bp)
+    const fields = Object.keys({ ...prevProvider, ...nextProvider })
+    for (const field of fields) {
+      if (JSON.stringify(nextProvider[field as keyof typeof nextProvider]) !== JSON.stringify(prevProvider[field as keyof typeof prevProvider])) {
+        results.push({
+          scope: `provider:${key}`,
+          path: field,
+          from: prevProvider[field as keyof typeof prevProvider],
+          to: nextProvider[field as keyof typeof nextProvider]
+        })
+      }
+    }
+  }
+  return results
+})
+
+const diffCount = computed(() => sceneDiff.value.length)
+
+const discardTooltip = computed(() => {
+  if (!isDirty.value) return '当前没有未保存改动'
+  const n = diffCount.value
+  return n > 0 ? `将丢弃 ${n} 项未保存改动` : '将丢弃当前未保存改动'
 })
 
 function onBeforeUnload(e: BeforeUnloadEvent) {
@@ -1038,9 +1306,30 @@ function shouldShowProviderSecretEditor(provider: AIRoutingProviderConfig) {
   return !provider.hasAPIKey || !!provider.apiKey?.trim() || !!providerSecretEditorState.value[getProviderLocalKey(provider)]
 }
 
+function isProviderCollapsed(provider: AIRoutingProviderConfig) {
+  return collapsedProviderKeys.value.has(getProviderLocalKey(provider))
+}
+
+function toggleProviderCollapsed(provider: AIRoutingProviderConfig) {
+  const key = getProviderLocalKey(provider)
+  const next = new Set(collapsedProviderKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsedProviderKeys.value = next
+}
+
 function resetProviderUIState() {
   providerSecretEditorState.value = {}
   handleProviderDragEnd()
+  if (draftScene.value && draftScene.value.providers.length > 3) {
+    const keys = new Set<string>()
+    draftScene.value.providers.forEach((p, idx) => {
+      if (idx > 0) keys.add(getProviderLocalKey(p))
+    })
+    collapsedProviderKeys.value = keys
+  } else {
+    collapsedProviderKeys.value = new Set()
+  }
 }
 
 function discardDraftChanges(message?: string) {
@@ -1143,6 +1432,37 @@ function extractMessage(error: unknown) {
 </script>
 
 <style scoped>
+.toolbar-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-cluster--action {
+  gap: 12px;
+}
+
+.toolbar-divider {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.toolbar-discard-wrap {
+  display: inline-flex;
+}
+
+.toolbar-save-dot :deep(.el-badge__content.is-dot) {
+  width: 8px;
+  height: 8px;
+  background: var(--color-primary, #409eff);
+  box-shadow: 0 0 0 2px #fff;
+  right: 6px;
+  top: 4px;
+}
+
 .routing-scene-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1227,8 +1547,215 @@ function extractMessage(error: unknown) {
   gap: 20px;
 }
 
+.routing-breadcrumb {
+  --routing-breadcrumb-h: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--routing-breadcrumb-h);
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-bg-elevated, #ffffff) 85%, transparent);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  backdrop-filter: blur(10px);
+  font-size: 13px;
+  color: var(--color-text-subtle, #64748b);
+}
+
+.routing-breadcrumb__crumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.routing-breadcrumb__crumbs strong {
+  color: var(--color-text, #1f2937);
+  font-weight: 600;
+}
+
+.routing-breadcrumb__sep {
+  font-size: 12px;
+  color: var(--color-text-subtle, #94a3b8);
+}
+
+.routing-breadcrumb__clean {
+  color: var(--color-success, #10b981);
+  font-weight: 500;
+}
+
+.routing-breadcrumb__channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: #fff;
+  font-size: 12px;
+  color: var(--color-text, #1f2937);
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.routing-breadcrumb__channel code {
+  font-size: 12px;
+  background: transparent;
+  padding: 0;
+}
+
+.routing-breadcrumb__channel-icon {
+  font-size: 12px;
+  color: var(--color-text-subtle, #94a3b8);
+}
+
+.routing-breadcrumb__channel--success {
+  border-color: color-mix(in srgb, var(--color-success, #10b981) 40%, transparent);
+  color: var(--color-success, #10b981);
+}
+
+.routing-breadcrumb__channel--warning {
+  border-color: color-mix(in srgb, var(--color-warning, #d97706) 40%, transparent);
+  color: var(--color-warning, #d97706);
+}
+
+.routing-breadcrumb__channel--info {
+  border-color: color-mix(in srgb, var(--color-info, #0ea5e9) 40%, transparent);
+  color: var(--color-info, #0ea5e9);
+}
+
+.channel-popover__title {
+  font-size: 13px;
+  margin-bottom: 10px;
+  color: var(--color-text, #1f2937);
+}
+
+.channel-popover__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.channel-popover__table th,
+.channel-popover__table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.channel-popover__table th {
+  color: var(--color-text-subtle, #94a3b8);
+  font-weight: 500;
+}
+
+.channel-popover__table tr.is-hit {
+  background: color-mix(in srgb, var(--color-primary, #409eff) 10%, transparent);
+}
+
+.channel-popover__table tr.is-hit td {
+  color: var(--color-primary, #409eff);
+  font-weight: 600;
+}
+
+.routing-scene-card__channel code {
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.routing-field--with-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.routing-field__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-subtle, #94a3b8);
+}
+
+.routing-field__hint--warn {
+  color: var(--color-warning, #d97706);
+}
+
+.routing-timeline-hint {
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+}
+
+.routing-timeline-hint__track {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.routing-timeline-hint__seg {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: var(--color-text-subtle, #64748b);
+  white-space: nowrap;
+}
+
+.routing-timeline-hint__seg--attempt {
+  color: var(--color-primary, #409eff);
+  border-color: color-mix(in srgb, var(--color-primary, #409eff) 30%, transparent);
+}
+
+.routing-timeline-hint__seg--breaker {
+  color: var(--color-warning, #d97706);
+  border-color: color-mix(in srgb, var(--color-warning, #d97706) 35%, transparent);
+}
+
+.routing-timeline-hint__seg--cooldown {
+  color: var(--color-info, #0ea5e9);
+  border-color: color-mix(in srgb, var(--color-info, #0ea5e9) 35%, transparent);
+}
+
+.routing-timeline-hint__caption {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-subtle, #64748b);
+}
+
+.routing-timeline-hint__caption strong {
+  color: var(--color-text, #1f2937);
+  font-weight: 600;
+}
+
+.routing-timeline-hint__hint {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
 .routing-panel {
   padding: 22px;
+}
+
+.provider-collapse-toggle {
+  margin-right: 6px;
+}
+
+@media (min-width: 1200px) {
+  .routing-editor-grid > .routing-panel--strategy {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 120px);
+    overflow: auto;
+  }
 }
 
 .routing-panel__header {
@@ -1522,6 +2049,34 @@ function extractMessage(error: unknown) {
 
 .routing-alert {
   margin-bottom: 18px;
+}
+
+.routing-alert--with-action {
+  position: relative;
+  padding-right: 120px;
+}
+
+.routing-alert__content {
+  min-height: 24px;
+}
+
+.routing-alert__action {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+@media (max-width: 720px) {
+  .routing-alert--with-action {
+    padding-right: 16px;
+  }
+
+  .routing-alert__action {
+    position: static;
+    transform: none;
+    margin-top: 8px;
+  }
 }
 
 @media (max-width: 1440px) {

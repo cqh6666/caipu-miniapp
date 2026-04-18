@@ -1,5 +1,24 @@
 # Project Changelog
 
+## 2026-04-18 (AI Provider 管理页二次 UX 迭代落地)
+
+### Changed
+
+- `admin-web/src/pages/AIProvidersPage.vue` 按 `docs/admin-ai-provider-ux-review.md` §8 四阶段落地：
+  - **阶段 1**：工具栏分组 + divider + 保存场景 dirty 红点；放弃草稿改 danger link + 动态 tooltip；新增 `.routing-breadcrumb` 编辑上下文（暴露 `--routing-breadcrumb-h`）；三大数值字段补推荐区间 hint 与越界 warn，新增 `.routing-timeline-hint` 重试/熔断时序条 + 预计首轮最长耗时预览。
+  - **阶段 2**：新增 `sceneDiff` / `diffCount` 精细化差异计数（scene 字段 + provider id 粒度；排序变化单独记为 `providers.order`），驱动放弃草稿 tooltip 与面包屑「N 项未保存」；`effectiveChannel` 统一三场景「新路由 / 兼容 / 草稿」链路文案（`{scene}-v2|compat|draft`），面包屑右侧加 3×3 状态矩阵 popover。
+  - **阶段 3**：`el-alert` 升级为 `show-icon` + 右侧「前往配置」按钮；告警条先回退为静态但真实的入口提示，不再基于当前后端未支持的 `alert.fire/since` mock 数据展示“最近 1h 告警数”；`goAlertConfig` 修正为跳 `/settings?group=ai.provider_alert#ai-provider-alert`。
+  - **阶段 4**：策略面板加 `.routing-panel--strategy` + `@media(min-width:1200px)` sticky；`collapsedProviderKeys` 按 localKey 维度管理，`>3` 节点默认仅展开首个，每张节点卡前置折叠按钮，折叠态复用 meta 行展示 Model 等关键信息。
+
+### Notes
+
+- 修改时间：2026-04-18 15:18 CST
+- 影响范围：`admin-web/src/pages/AIProvidersPage.vue`、`docs/admin-ai-provider-ux-review.md`、`CHANGELOG.md`
+- 影响范围补充：`admin-web/src/pages/SettingsPage.vue`
+- 后端依赖：暂未新增接口；真实告警 summary 与 `listAIRoutingScenes` 的 `recentStats` 待单独 issue 跟进
+- 兼容性/风险：sticky + 折叠面板在 Safari 下需真机回归 `overflow:auto` 行为；告警条右侧绝对定位按钮在 720px 以下回落为静态布局
+- 验证情况：已执行 `npm --prefix admin-web run build`
+
 ## 2026-04-18 (文档与初始化脚本口径同步)
 
 ### Changed
