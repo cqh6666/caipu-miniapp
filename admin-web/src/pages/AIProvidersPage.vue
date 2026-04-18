@@ -525,7 +525,7 @@ const testCardRef = ref<HTMLElement | null>(null)
 const routeSceneOverride = ref<AIRoutingSceneKey | null>(null)
 const draggingProviderIndex = ref<number | null>(null)
 const dragOverProviderIndex = ref<number | null>(null)
-const sceneCardRefs = ref<Partial<Record<AIRoutingSceneKey, HTMLButtonElement | null>>>({})
+const sceneCardRefs: Partial<Record<AIRoutingSceneKey, HTMLButtonElement | null>> = {}
 
 const audits = ref<PaginationResult<SettingAuditRecord>>({
   items: [],
@@ -686,7 +686,7 @@ async function loadCurrentScene() {
     testResult.value = null
     testScope.value = ''
     auditPage.value = 1
-    await loadAudits()
+    void loadAudits()
   } catch (error) {
     resetSceneEditor()
     sceneError.value = extractMessage(error)
@@ -1117,15 +1117,12 @@ function handleSceneArrowKey(offset: number) {
 }
 
 function setSceneCardRef(scene: AIRoutingSceneKey, element: Element | null) {
-  sceneCardRefs.value = {
-    ...sceneCardRefs.value,
-    [scene]: element instanceof HTMLButtonElement ? element : null
-  }
+  sceneCardRefs[scene] = element instanceof HTMLButtonElement ? element : null
 }
 
 function focusSceneCard(scene: AIRoutingSceneKey) {
   nextTick(() => {
-    sceneCardRefs.value[scene]?.focus()
+    sceneCardRefs[scene]?.focus()
   })
 }
 

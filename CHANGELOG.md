@@ -1,5 +1,25 @@
 # Project Changelog
 
+## 2026-04-18 (AI Provider 页面卡顿修复)
+
+### Fixed
+
+- 修复后台 `AI Provider` 页面在已登录状态下可能直接卡住的问题：
+  - `admin-web/src/pages/AIProvidersPage.vue` 的场景卡片 `ref` 回调不再写入
+    响应式对象，避免渲染阶段反复触发组件更新，导致页面线程卡死
+  - 当前场景详情加载完成后改为异步拉取路由审计，不再让审计请求阻塞首屏内容
+    展示
+
+### Notes
+
+- 修改时间：2026-04-18 13:52 CST
+- 变更背景：用户反馈后台其他页面可正常打开，但 `AI Provider` 页面会单独卡住；
+  排查发现接口本身返回正常，问题集中在该页前端渲染链路
+- 核心改动：移除模板 `ref` 回调里的响应式写操作，并让审计列表改为后台异步刷新
+- 影响范围：`admin-web/src/pages/AIProvidersPage.vue`、`CHANGELOG.md`
+- 兼容性/风险：仅影响后台前端页面交互，不改后端 API；审计表会在场景卡片之后异步补齐
+- 验证情况：已执行 `npm --prefix admin-web run build`
+
 ## 2026-04-18 (AI Provider P0 收口)
 
 ### Changed
