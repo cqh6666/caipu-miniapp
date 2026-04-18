@@ -99,6 +99,7 @@
   - `ADMIN_JWT_SECRET`（可选，不填时回退 `JWT_SECRET`）
 - 当前后台页面：
   - `概览`
+  - `AI Provider`
   - `服务健康`
   - `AI 任务`
   - `API 调用`

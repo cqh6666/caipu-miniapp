@@ -117,6 +117,12 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
   默认按同一 Provider 连续异常 `3` 次触发一次邮件；QQ 邮箱推荐使用
   `smtp.qq.com:587` + SMTP 授权码
 
+接口口径说明：
+
+- 下列路径均为后端进程原生暴露的路由口径，例如 `http://127.0.0.1:8080/api/...`
+- 当前线上共享域名经 nginx 转发后，后台前端实际访问前缀为 `/caipu-api/*`
+- 现网入口与路径分流约定见 `docs/cloud-server-config-overview.md`
+
 当前可用接口：
 
 - `GET /healthz`
@@ -131,25 +137,33 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `GET /api/admin/ai/jobs`
 - `GET /api/admin/ai/jobs/{id}`
 - `GET /api/admin/ai/calls`
+- `GET /api/admin/ai-routing/scenes`
+- `GET /api/admin/ai-routing/scenes/{scene}`
+- `PUT /api/admin/ai-routing/scenes/{scene}`
+- `POST /api/admin/ai-routing/scenes/{scene}/test`
 - `GET /api/admin/runtime-settings`
 - `PUT /api/admin/runtime-settings/groups/{group}`
 - `POST /api/admin/runtime-settings/groups/{group}/test`
 - `GET /api/admin/runtime-settings/audits`
 - `POST /api/auth/wechat/login`
 - `GET /api/auth/me`
+- `PATCH /api/auth/profile`
 - `GET /api/app-settings/bilibili-session`
 - `PUT /api/app-settings/bilibili-session`
 - `DELETE /api/app-settings/bilibili-session`
+- `GET /api/invite-codes/{code}`
 - `GET /api/kitchens`
 - `POST /api/kitchens`
+- `PATCH /api/kitchens/{kitchenID}`
 - `GET /api/kitchens/{kitchenID}/members`
 - `GET /api/invites/{token}`
 - `GET /api/invites/{token}/share-image`
 - `POST /api/kitchens/{kitchenID}/invites`
 - `POST /api/invites/{token}/accept`
+- `POST /api/invite-codes/{code}/accept`
+- `POST /api/link-parsers/preview`
 - `POST /api/link-parsers/bilibili`
 - `POST /api/link-parsers/xiaohongshu`
-- `POST /api/link-parsers/preview`
 - `GET /api/kitchens/{kitchenID}/meal-plans`
 - `PUT /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft`
 - `DELETE /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft`
@@ -162,6 +176,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `PUT /api/recipes/{recipeID}`
 - `POST /api/recipes/{recipeID}/reparse`
 - `POST /api/recipes/{recipeID}/flowchart`
+- `PATCH /api/recipes/{recipeID}/pin`
 - `PATCH /api/recipes/{recipeID}/status`
 - `DELETE /api/recipes/{recipeID}`
 - `POST /api/uploads/images`

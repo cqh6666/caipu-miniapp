@@ -15,6 +15,13 @@
 - 如果你当前线上环境是“服务器拉源码并本机编译”，还可以使用：
   - `backend/scripts/deploy-server-build.sh`
 - 这些脚本都支持按环境变量覆盖默认值；最常用的是 `SERVER_HOST`，其余变量按脚本场景分别使用
+- `backend/scripts/bootstrap-server.sh` 当前默认按共享域名方案生成 nginx 路由：
+  - `/admin/`
+  - `/caipu-api/`
+  - `/caipu-uploads/`
+  - `/caipu-healthz`
+- 如果你明确要让当前域名直接由本项目独占根路径，可显式带
+  `NGINX_SITE_MODE=standalone`
 
 ## 0.5 更快的脚本方式
 
@@ -116,6 +123,18 @@ APP_PORT=8080 \
 cd /path/to/caipu-miniapp/backend
 SERVER_HOST=root@你的服务器IP \
 DOMAIN=your-domain.example \
+ENABLE_UFW=1 \
+./scripts/bootstrap-server.sh
+```
+
+默认会生成共享域名前缀路由；如果你需要兼容旧的“`/api` + `/uploads` + 根路径”
+独占站点模式，可改为：
+
+```bash
+cd /path/to/caipu-miniapp/backend
+SERVER_HOST=root@你的服务器IP \
+DOMAIN=your-domain.example \
+NGINX_SITE_MODE=standalone \
 ENABLE_UFW=1 \
 ./scripts/bootstrap-server.sh
 ```
@@ -366,8 +385,8 @@ server {
         try_files $uri $uri/ /admin/index.html;
     }
 
-    location /api/ {
-        proxy_pass http://127.0.0.1:8080;
+    location = /caipu-healthz {
+        proxy_pass http://127.0.0.1:8080/healthz;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -375,8 +394,17 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    location /uploads/ {
-        proxy_pass http://127.0.0.1:8080;
+    location ^~ /caipu-api/ {
+        proxy_pass http://127.0.0.1:8080/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ^~ /caipu-uploads/ {
+        proxy_pass http://127.0.0.1:8080/uploads/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -385,18 +413,23 @@ server {
     }
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        return 404;
     }
 }
 EOF
 ```
 
 如果你前面把 `APP_PORT` 改成了别的端口，这里的 `proxy_pass` 也要一起改掉。
+
+说明：
+
+- 上面的 nginx 片段和 `backend/scripts/bootstrap-server.sh` 当前默认模板一致，
+  适用于共享域名或你不想让后端直接占用根路径 `/` 的场景
+- 如果你还需要在同一域名上承载别的根站点，可在脚本初始化时显式带
+  `ROOT_PROXY_PASS=http://127.0.0.1:其他端口`，让 `location /` 反代到目标服务
+- 如果你明确要让当前域名完全由本项目独占，可在初始化时带
+  `NGINX_SITE_MODE=standalone`，脚本会生成旧的 `/api/`、`/uploads/` 和根路径
+  `/` 反代模板
 
 启用配置并检查：
 
@@ -426,11 +459,21 @@ sudo certbot renew --dry-run
 在服务器执行：
 
 ```bash
+curl "https://$DOMAIN/caipu-healthz"
+curl "https://$DOMAIN/caipu-api/healthz"
+```
+
+如果你采用的是本节前面的默认共享域名前缀方案，返回 `status=ok`
+就说明后端已经对外可用了。
+
+如果你采用的是 `NGINX_SITE_MODE=standalone`，请改成：
+
+```bash
 curl "https://$DOMAIN/healthz"
 curl "https://$DOMAIN/api/healthz"
 ```
 
-如果返回 `status=ok`，后端就已经对外可用了。再访问：
+再访问：
 
 ```bash
 curl -I "https://$DOMAIN/admin/"

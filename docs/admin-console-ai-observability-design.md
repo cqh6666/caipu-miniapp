@@ -342,13 +342,19 @@ type Tracker interface {
 
 ## 12. 后台 API 设计
 
-建议新增 `/api/admin/*`：
+> 说明（2026-04-18 同步）：
+> 本节最初是一期设计草案，当前仓库中的后台接口和页面已经落地。
+> 为避免继续误导后续开发，这里统一按当前实现口径更新；若和更早提交中的
+> 描述冲突，以 `backend/internal/app/router.go`、`admin-web/src/api/admin.ts`
+> 和 `docs/cloud-server-config-overview.md` 为准。
+
+当前已落地的后台接口主体位于 `/api/admin/*`：
 
 ### 12.1 认证
 
 - `POST /api/admin/auth/login`
 - `POST /api/admin/auth/logout`
-- `GET /api/admin/me`
+- `GET /api/admin/auth/me`
 
 MVP 认证建议：
 
@@ -367,6 +373,12 @@ MVP 认证建议：
 - `GET /api/admin/dashboard/overview`
 - `GET /api/admin/dashboard/failures`
 - `GET /api/admin/dashboard/trends`
+- `GET /api/admin/server-health/overview`
+
+当前实现补充说明：
+
+- `GET /api/admin/dashboard/overview` 支持可选 `windowHours` 查询参数
+- 当前后台首页已经把概览指标、趋势图和服务健康摘要聚合到同一工作台里
 
 ### 12.3 AI 记录
 
@@ -374,20 +386,35 @@ MVP 认证建议：
 - `GET /api/admin/ai/jobs/{id}`
 - `GET /api/admin/ai/calls`
 
-筛选维度建议支持：
+当前实现已支持的常见筛选维度：
 
 - `scene`
 - `status`
+- `triggerSource`
+- `targetId`
 - `provider`
 - `model`
-- `target_id`
-- 时间范围
+- `requestId`
+- `timeFrom / timeTo`
 
-### 12.4 配置中心
+### 12.4 AI Provider 路由
+
+- `GET /api/admin/ai-routing/scenes`
+- `GET /api/admin/ai-routing/scenes/{scene}`
+- `PUT /api/admin/ai-routing/scenes/{scene}`
+- `POST /api/admin/ai-routing/scenes/{scene}/test`
+
+当前实现说明：
+
+- 场景维度已落地 `summary`、`title`、`flowchart`
+- 支持多 Provider 节点顺序、熔断、重试类型和单场景草稿测试
+- 当前后台前端已提供独立 `AI Provider` 页面承载这组能力
+
+### 12.5 配置中心
 
 - `GET /api/admin/runtime-settings`
-- `PUT /api/admin/runtime-settings/{key}`
-- `POST /api/admin/runtime-settings/test`
+- `PUT /api/admin/runtime-settings/groups/{group}`
+- `POST /api/admin/runtime-settings/groups/{group}/test`
 - `GET /api/admin/runtime-settings/audits`
 
 `test` 接口建议做的事：
@@ -396,25 +423,63 @@ MVP 认证建议：
 - 发起一次最小化探测请求
 - 返回连接结果、耗时和错误摘要
 
+当前实现说明：
+
+- 配置中心仍保留旧单节点 AI / sidecar 兼容入口
+- AI 多 Provider 正式入口已迁移到 `AI Provider` 页面
+- B 站 `SESSDATA` 以 `bilibili.session` 分组形式并入后台运行时配置
+
+### 12.6 访问前缀与部署口径
+
+- 后端服务原生路由口径仍然是 `/api/*`
+- `admin-web` 本地开发默认通过 `/api` 访问后台
+- 当前共享域名现网通过 nginx 把 `/caipu-api/*` 转发到后端 `/api/*`
+- `backend/scripts/bootstrap-server.sh` 当前默认已切到共享域名前缀模式；
+  如需兼容旧的独占站点 `/api` 模板，可显式带 `NGINX_SITE_MODE=standalone`
+
 ## 13. 仪表盘页面设计
 
-推荐一期页面：
+当前已落地页面：
 
 ### 13.1 概览页
 
 展示内容：
 
-- 最近 24 小时任务总数
+- 24h / 7d / 30d 时间窗切换
+- 任务总数
 - 任务成功率
 - API 成功率
 - 超时率
 - 平均耗时
 - P95 耗时
+- 服务健康摘要
+- 趋势图
 - 按场景分布
+- Provider 热点
 - 按模型分布
 - 最近失败记录
 
-### 13.2 AI 任务页
+### 13.2 AI Provider 页
+
+展示内容：
+
+- 路由场景卡片
+- 场景开关、策略、熔断和请求参数
+- Provider 节点排序、启停、复制、删除
+- API Key 更换 / 清空草稿
+- 场景级与单节点测试结果
+- 兼容模式提示与未保存草稿保护
+
+### 13.3 服务健康页
+
+展示内容：
+
+- 主机 CPU / 内存 / 磁盘 / Load
+- `systemd` 服务状态
+- HTTP 健康检查
+- 统一状态汇总与检查时间
+
+### 13.4 AI 任务页
 
 展示内容：
 
@@ -426,7 +491,7 @@ MVP 认证建议：
 - 失败原因
 - 开始 / 完成时间
 
-### 13.3 API 调用页
+### 13.5 API 调用页
 
 展示内容：
 
@@ -436,7 +501,7 @@ MVP 认证建议：
 - 耗时
 - 错误分类和错误摘要
 
-### 13.4 配置中心页
+### 13.6 配置中心页
 
 展示内容：
 

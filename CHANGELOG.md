@@ -1,5 +1,38 @@
 # Project Changelog
 
+## 2026-04-18 (文档与初始化脚本口径同步)
+
+### Changed
+
+- 同步后台相关文档到当前已落地实现：
+  - `README.md` 的后台页面清单补上 `AI Provider`
+  - `backend/README.md` 补齐 `AI Routing`、`invite-codes`、`auth/profile`、
+    `recipes/{id}/pin` 等已存在接口，并补充 `/api` 与 `/caipu-api` 的访问口径说明
+  - `docs/admin-console-ai-observability-design.md` 从早期设计草案口径更新为当前
+    实现口径，修正后台认证、配置中心、服务健康和 `AI Provider` 路由描述
+  - `backend/scripts/bootstrap-server.sh` 默认切到共享域名前缀模式，新增
+    `NGINX_SITE_MODE`、`API_PREFIX`、`UPLOADS_PREFIX`、`HEALTHZ_PATH` 和
+    `ROOT_PROXY_PASS` 参数，并修复 `ADMIN_WEB_DIR` 未传入远端 shell 的问题
+  - `docs/backend-deploy-quickstart.md` 改为和脚本保持同一默认口径，同时说明
+    `standalone` 兼容模式的使用方式
+
+### Notes
+
+- 修改时间：2026-04-18 13:56 CST
+- 变更背景：排查 `admin-web` 与 `backend` 是否同步时，发现接口契约本身已对齐，
+  但部分文档仍停留在旧设计稿或早期部署口径，容易误导后续开发和部署操作
+- 核心改动：统一后台接口清单、页面说明和部署前缀口径，并让初始化脚本默认对齐
+  共享域名现网方案，同时保留显式 `standalone` 兼容模式
+- 影响范围：`README.md`、`backend/README.md`、
+  `backend/scripts/bootstrap-server.sh`、
+  `docs/admin-console-ai-observability-design.md`、
+  `docs/backend-deploy-quickstart.md`、`CHANGELOG.md`
+- 兼容性/风险：初始化脚本默认生成的 nginx 路由与旧版不同；如果目标域名需要继续
+  走独占站点 `/api` 口径，必须显式带 `NGINX_SITE_MODE=standalone`
+- 验证情况：已人工对照 `backend/internal/app/router.go`、
+  `admin-web/src/api/admin.ts`、`docs/cloud-server-config-overview.md`；
+  脚本将通过 `bash -n` 做语法检查
+
 ## 2026-04-18 (AI Provider 页面卡顿修复)
 
 ### Fixed
