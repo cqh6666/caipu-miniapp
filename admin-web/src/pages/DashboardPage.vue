@@ -257,18 +257,18 @@
         <div class="subsection-header">
           <div>
             <h3 class="subsection-title">Provider 热点</h3>
-            <div class="subsection-subtitle">调用量最高的 Provider 与成功率。</div>
+            <div class="subsection-subtitle">调用量与成功率排行榜，优先暴露低成功率热点。</div>
           </div>
           <div class="distribution-header-actions">
             <el-radio-group v-model="distViewMode.provider" size="small">
+              <el-radio-button value="rank">排行</el-radio-button>
               <el-radio-button value="chart">图表</el-radio-button>
-              <el-radio-button value="table">表格</el-radio-button>
             </el-radio-group>
-            <StatusTag tone="neutral" :text="`${overview?.byProvider?.length || 0} 个节点`" />
+            <StatusTag tone="neutral" :text="`${providerRankItems.length} 个节点`" />
           </div>
         </div>
         <PageState
-          v-if="!(overview?.byProvider?.length)"
+          v-if="!providerRankItems.length"
           mode="empty"
           title="暂无 Provider 数据"
           description="当前时间窗口内还没有调用侧热点分布。"
@@ -278,22 +278,51 @@
           v-else-if="distViewMode.provider === 'chart'"
           ref="providerChartRef"
           class="distribution-chart"
-          :style="{ height: distChartHeight(overview?.byProvider?.length || 0) }"
+          :style="{ height: distChartHeight(providerRankItems.length || 0) }"
         ></div>
-        <div v-else class="table-scroll table-scroll--compact">
-          <el-table :data="overview?.byProvider || []" size="small" style="width: 100%">
-            <el-table-column prop="name" label="Provider" min-width="160" show-overflow-tooltip />
-            <el-table-column label="总数" min-width="120">
-              <template #default="{ row }">
-                <TotalCell :total="row.total" :max="maxProviderTotal" />
-              </template>
-            </el-table-column>
-            <el-table-column label="成功率" min-width="180">
-              <template #default="{ row }">
-                <RateCell :rate="row.successRate" />
-              </template>
-            </el-table-column>
-          </el-table>
+        <div v-else class="distribution-rank-list">
+          <div class="distribution-rank-header">
+            <span class="distribution-rank-header__index">#</span>
+            <span>Provider</span>
+            <span>调用量</span>
+            <span>成功率</span>
+          </div>
+          <div
+            v-for="item in providerRankItems"
+            :key="item.key"
+            class="distribution-rank-row"
+          >
+            <span class="distribution-rank-index">{{ item.rankLabel }}</span>
+            <div class="distribution-rank-name" :title="item.label">
+              <span class="distribution-rank-name__text">{{ item.shortLabel }}</span>
+            </div>
+            <div class="distribution-rank-metric distribution-rank-metric--total">
+              <strong class="distribution-rank-metric__value">{{ item.totalText }}</strong>
+              <div class="distribution-rank-meter distribution-rank-meter--total">
+                <div class="distribution-rank-meter__fill distribution-rank-meter__fill--total" :style="{ width: `${item.totalPercent}%` }"></div>
+              </div>
+            </div>
+            <div class="distribution-rank-metric distribution-rank-metric--rate">
+              <div class="distribution-rank-meter distribution-rank-meter--rate">
+                <div
+                  class="distribution-rank-meter__fill"
+                  :class="`distribution-rank-meter__fill--${item.tone}`"
+                  :style="{ width: `${item.ratePercent}%` }"
+                ></div>
+              </div>
+              <div class="distribution-rank-rate-meta">
+                <strong class="distribution-rank-metric__value">{{ item.rateText }}</strong>
+                <el-icon
+                  v-if="item.showAlert"
+                  class="distribution-rank-alert"
+                  :class="`distribution-rank-alert--${item.tone}`"
+                  :title="item.alertText"
+                >
+                  <Warning />
+                </el-icon>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -301,18 +330,18 @@
         <div class="subsection-header">
           <div>
             <h3 class="subsection-title">Model 热点</h3>
-            <div class="subsection-subtitle">调用量最高的模型分布与成功率。</div>
+            <div class="subsection-subtitle">调用量与成功率排行榜，保留模型尾缀辨识度。</div>
           </div>
           <div class="distribution-header-actions">
             <el-radio-group v-model="distViewMode.model" size="small">
+              <el-radio-button value="rank">排行</el-radio-button>
               <el-radio-button value="chart">图表</el-radio-button>
-              <el-radio-button value="table">表格</el-radio-button>
             </el-radio-group>
-            <StatusTag tone="neutral" :text="`${overview?.byModel?.length || 0} 个模型`" />
+            <StatusTag tone="neutral" :text="`${modelRankItems.length} 个模型`" />
           </div>
         </div>
         <PageState
-          v-if="!(overview?.byModel?.length)"
+          v-if="!modelRankItems.length"
           mode="empty"
           title="暂无 Model 数据"
           description="当前时间窗口内还没有模型侧热点分布。"
@@ -322,22 +351,51 @@
           v-else-if="distViewMode.model === 'chart'"
           ref="modelChartRef"
           class="distribution-chart"
-          :style="{ height: distChartHeight(overview?.byModel?.length || 0) }"
+          :style="{ height: distChartHeight(modelRankItems.length || 0) }"
         ></div>
-        <div v-else class="table-scroll table-scroll--compact">
-          <el-table :data="overview?.byModel || []" size="small" style="width: 100%">
-            <el-table-column prop="name" label="Model" min-width="180" show-overflow-tooltip />
-            <el-table-column label="总数" min-width="120">
-              <template #default="{ row }">
-                <TotalCell :total="row.total" :max="maxModelTotal" />
-              </template>
-            </el-table-column>
-            <el-table-column label="成功率" min-width="180">
-              <template #default="{ row }">
-                <RateCell :rate="row.successRate" />
-              </template>
-            </el-table-column>
-          </el-table>
+        <div v-else class="distribution-rank-list">
+          <div class="distribution-rank-header">
+            <span class="distribution-rank-header__index">#</span>
+            <span>Model</span>
+            <span>调用量</span>
+            <span>成功率</span>
+          </div>
+          <div
+            v-for="item in modelRankItems"
+            :key="item.key"
+            class="distribution-rank-row"
+          >
+            <span class="distribution-rank-index">{{ item.rankLabel }}</span>
+            <div class="distribution-rank-name" :title="item.label">
+              <span class="distribution-rank-name__text">{{ item.shortLabel }}</span>
+            </div>
+            <div class="distribution-rank-metric distribution-rank-metric--total">
+              <strong class="distribution-rank-metric__value">{{ item.totalText }}</strong>
+              <div class="distribution-rank-meter distribution-rank-meter--total">
+                <div class="distribution-rank-meter__fill distribution-rank-meter__fill--total" :style="{ width: `${item.totalPercent}%` }"></div>
+              </div>
+            </div>
+            <div class="distribution-rank-metric distribution-rank-metric--rate">
+              <div class="distribution-rank-meter distribution-rank-meter--rate">
+                <div
+                  class="distribution-rank-meter__fill"
+                  :class="`distribution-rank-meter__fill--${item.tone}`"
+                  :style="{ width: `${item.ratePercent}%` }"
+                ></div>
+              </div>
+              <div class="distribution-rank-rate-meta">
+                <strong class="distribution-rank-metric__value">{{ item.rateText }}</strong>
+                <el-icon
+                  v-if="item.showAlert"
+                  class="distribution-rank-alert"
+                  :class="`distribution-rank-alert--${item.tone}`"
+                  :title="item.alertText"
+                >
+                  <Warning />
+                </el-icon>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -360,7 +418,7 @@
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type FunctionalComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, Refresh } from '@element-plus/icons-vue'
+import { ArrowRight, Refresh, Warning } from '@element-plus/icons-vue'
 import { BarChart, LineChart } from 'echarts/charts'
 import {
   AxisPointerComponent,
@@ -443,9 +501,8 @@ function maxTotal(items: Array<{ total?: number | null }> | undefined | null): n
   return items.reduce((acc, item) => Math.max(acc, item?.total ?? 0), 0) || 1
 }
 
+const countFormatter = new Intl.NumberFormat('zh-CN')
 const maxSceneTotal = computed(() => maxTotal(overview.value?.byScene))
-const maxProviderTotal = computed(() => maxTotal(overview.value?.byProvider))
-const maxModelTotal = computed(() => maxTotal(overview.value?.byModel))
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = ref<ECharts | null>(null)
@@ -455,11 +512,11 @@ const modelChartRef = ref<HTMLDivElement | null>(null)
 const sceneChart = ref<ECharts | null>(null)
 const providerChart = ref<ECharts | null>(null)
 const modelChart = ref<ECharts | null>(null)
-type DistViewMode = 'chart' | 'table'
+type DistViewMode = 'chart' | 'table' | 'rank'
 const distViewMode = reactive<{ scene: DistViewMode; provider: DistViewMode; model: DistViewMode }>({
   scene: 'chart',
-  provider: 'chart',
-  model: 'chart'
+  provider: 'rank',
+  model: 'rank'
 })
 const router = useRouter()
 const overview = ref<DashboardOverview | null>(null)
@@ -497,6 +554,115 @@ interface MetricItem {
   note: string
   pending: boolean
 }
+
+interface DistributionRankItem {
+  key: string
+  label: string
+  shortLabel: string
+  total: number
+  totalText: string
+  totalPercent: number
+  successRate: number
+  rateText: string
+  ratePercent: number
+  tone: StatusTone
+  rankLabel: string
+  showAlert: boolean
+  alertText: string
+  isUnknown: boolean
+}
+
+function isUnknownDistributionName(value?: string) {
+  const normalized = String(value || '').trim()
+  return !normalized || normalized === '(empty)'
+}
+
+function normalizeDistributionName(value?: string) {
+  if (isUnknownDistributionName(value)) {
+    return '未指定'
+  }
+  return String(value || '').trim()
+}
+
+function middleEllipsis(value: string, head = 10, tail = 8) {
+  if (value.length <= head + tail + 1) {
+    return value
+  }
+  return `${value.slice(0, head)}…${value.slice(-tail)}`
+}
+
+function formatCount(value?: number | null) {
+  return countFormatter.format(Math.max(Math.round(value ?? 0), 0))
+}
+
+function buildDistributionRankItems(items: DistributionItem[] | undefined | null): DistributionRankItem[] {
+  if (!items?.length) {
+    return []
+  }
+
+  const normalized = items.map((item) => {
+    const total = Math.max(item.total ?? 0, 0)
+    const successRate = Math.max(Math.min(item.successRate ?? 0, 1), 0)
+    const label = normalizeDistributionName(item.name)
+    return {
+      key: `${label}:${total}:${successRate}`,
+      label,
+      total,
+      successRate,
+      isUnknown: isUnknownDistributionName(item.name)
+    }
+  }).sort((a, b) => {
+    if (a.isUnknown !== b.isUnknown) {
+      return a.isUnknown ? 1 : -1
+    }
+    if (b.total !== a.total) {
+      return b.total - a.total
+    }
+    return a.label.localeCompare(b.label, 'zh-CN')
+  })
+
+  const rankedMax = normalized.filter((item) => !item.isUnknown).reduce((acc, item) => Math.max(acc, item.total), 0)
+  const max = rankedMax || normalized.reduce((acc, item) => Math.max(acc, item.total), 0) || 1
+  let rank = 0
+
+  return normalized.map((item) => {
+    const tone = toneForSuccessRate(item.successRate)
+    if (!item.isUnknown) {
+      rank += 1
+    }
+    return {
+      key: item.key,
+      label: item.label,
+      shortLabel: middleEllipsis(item.label),
+      total: item.total,
+      totalText: formatCount(item.total),
+      totalPercent: Math.max(Math.min((item.total / max) * 100, 100), 0),
+      successRate: item.successRate,
+      rateText: formatPercent(item.successRate, 0),
+      ratePercent: Math.max(Math.min(item.successRate * 100, 100), 0),
+      tone,
+      rankLabel: item.isUnknown ? '—' : String(rank),
+      showAlert: tone !== 'success',
+      alertText: tone === 'warning' ? '成功率低于 95%，建议关注。' : '成功率低于 85%，建议优先排查。',
+      isUnknown: item.isUnknown
+    }
+  })
+}
+
+function normalizeDistributionItems(items: DistributionItem[] | undefined | null): DistributionItem[] {
+  if (!items?.length) {
+    return []
+  }
+  return items.map((item) => ({
+    ...item,
+    name: normalizeDistributionName(item.name)
+  }))
+}
+
+const providerRankItems = computed(() => buildDistributionRankItems(overview.value?.byProvider))
+const modelRankItems = computed(() => buildDistributionRankItems(overview.value?.byModel))
+const providerChartItems = computed(() => normalizeDistributionItems(overview.value?.byProvider))
+const modelChartItems = computed(() => normalizeDistributionItems(overview.value?.byModel))
 
 const metricItems = computed<MetricItem[]>(() => {
   const data = overview.value
@@ -758,7 +924,17 @@ function renderDistributionChart(
   if (!instanceRef.value) {
     instanceRef.value = init(container)
   }
-  const sorted = [...items].sort((a, b) => (a.total ?? 0) - (b.total ?? 0))
+  const sorted = [...items].sort((a, b) => {
+    const aUnknown = isUnknownDistributionName(a.name) || a.name === '未指定'
+    const bUnknown = isUnknownDistributionName(b.name) || b.name === '未指定'
+    if (aUnknown !== bUnknown) {
+      return aUnknown ? 1 : -1
+    }
+    if ((a.total ?? 0) !== (b.total ?? 0)) {
+      return (a.total ?? 0) - (b.total ?? 0)
+    }
+    return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN')
+  })
   const labels = sorted.map((item) => (nameFormatter ? nameFormatter(item.name) : item.name))
   const successData = sorted.map((item) => {
     const total = item.total ?? 0
@@ -801,9 +977,9 @@ function renderDistributionChart(
       axisLabel: {
         color: '#334155',
         fontWeight: 500,
-        width: 96,
+        width: 108,
         overflow: 'truncate',
-        formatter: (value: string) => (value.length > 14 ? `${value.slice(0, 13)}…` : value)
+        formatter: (value: string) => middleEllipsis(value, 10, 8)
       }
     },
     series: [
@@ -837,8 +1013,8 @@ async function renderDistributionCharts() {
   await nextTick()
   const pairs: Array<[DistViewMode, typeof sceneChart, HTMLDivElement | null, DistributionItem[] | undefined, ((n: string) => string) | undefined, string]> = [
     [distViewMode.scene, sceneChart, sceneChartRef.value, overview.value?.byScene, displayScene, 'scene'],
-    [distViewMode.provider, providerChart, providerChartRef.value, overview.value?.byProvider, undefined, 'provider'],
-    [distViewMode.model, modelChart, modelChartRef.value, overview.value?.byModel, undefined, 'model']
+    [distViewMode.provider, providerChart, providerChartRef.value, providerChartItems.value, undefined, 'provider'],
+    [distViewMode.model, modelChart, modelChartRef.value, modelChartItems.value, undefined, 'model']
   ]
   for (const [mode, instanceRef, container, items, fmt, label] of pairs) {
     try {
@@ -1080,5 +1256,137 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 160px;
   overflow: hidden;
+}
+
+.distribution-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.distribution-rank-header,
+.distribution-rank-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1.2fr) minmax(88px, 0.9fr) minmax(110px, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.distribution-rank-header {
+  padding: 0 0 4px;
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+
+.distribution-rank-header__index,
+.distribution-rank-index {
+  text-align: center;
+}
+
+.distribution-rank-row {
+  padding: 10px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.distribution-rank-row:first-of-type {
+  border-top: none;
+  padding-top: 2px;
+}
+
+.distribution-rank-index {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-subtle);
+}
+
+.distribution-rank-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.distribution-rank-name__text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.distribution-rank-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.distribution-rank-metric__value {
+  color: var(--color-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.distribution-rank-meter {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+  overflow: hidden;
+}
+
+.distribution-rank-meter__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.22s ease;
+}
+
+.distribution-rank-meter__fill--total {
+  background: linear-gradient(90deg, #93c5fd, #3b82f6);
+}
+
+.distribution-rank-meter__fill--success {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.distribution-rank-meter__fill--warning {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.distribution-rank-meter__fill--danger {
+  background: linear-gradient(90deg, #f87171, #dc2626);
+}
+
+.distribution-rank-meter__fill--neutral,
+.distribution-rank-meter__fill--primary {
+  background: #cbd5e1;
+}
+
+.distribution-rank-rate-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.distribution-rank-alert {
+  font-size: 14px;
+}
+
+.distribution-rank-alert--warning {
+  color: #d97706;
+}
+
+.distribution-rank-alert--danger {
+  color: #dc2626;
+}
+
+@media (max-width: 1280px) {
+  .distribution-rank-header,
+  .distribution-rank-row {
+    grid-template-columns: 24px minmax(0, 1.1fr) minmax(78px, 0.8fr) minmax(96px, 0.9fr);
+    gap: 10px;
+  }
 }
 </style>
