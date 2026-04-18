@@ -1,9 +1,15 @@
 <template>
   <AppShell>
     <template #toolbar>
+      <button v-if="latestTestSummary" type="button" class="test-result-chip" @click="scrollToTestCard">
+        <StatusTag :tone="latestTestSummary.tone" :text="latestTestSummary.text" />
+      </button>
       <el-button :loading="pageRefreshing" @click="refreshPage">
         <el-icon><Refresh /></el-icon>
         <span style="margin-left: 6px">刷新</span>
+      </el-button>
+      <el-button :disabled="!isDirty" @click="handleDiscardDraft">
+        放弃草稿
       </el-button>
       <el-button :loading="testingScene" :disabled="!draftScene" @click="handleTestScene">
         测试当前草稿
@@ -11,21 +17,27 @@
       <el-button
         type="primary"
         :loading="savingScene"
-        :disabled="!draftScene"
+        :disabled="!isDirty || savingScene"
         @click="handleSaveScene"
       >
         保存场景
       </el-button>
     </template>
 
-    <div class="routing-scene-grid">
+    <div class="routing-scene-grid" role="tablist" aria-label="AI 路由场景">
       <button
         v-for="item in sceneCards"
         :key="item.scene"
+        :ref="(el) => setSceneCardRef(item.scene, el)"
         type="button"
         class="page-card routing-scene-card"
         :class="{ 'routing-scene-card--active': item.scene === currentSceneKey }"
+        role="tab"
+        :aria-selected="item.scene === currentSceneKey"
+        :tabindex="item.scene === currentSceneKey ? 0 : -1"
         @click="handleSceneChange(item.scene)"
+        @keydown.left.prevent="handleSceneArrowKey(-1)"
+        @keydown.right.prevent="handleSceneArrowKey(1)"
       >
         <div class="routing-scene-card__header">
           <div>
@@ -185,7 +197,20 @@
           />
 
           <div v-else class="provider-editor-list">
-            <div v-for="(provider, index) in draftScene.providers" :key="provider.id" class="provider-editor-card">
+            <div
+              v-for="(provider, index) in draftScene.providers"
+              :key="getProviderLocalKey(provider)"
+              class="provider-editor-card"
+              :class="{
+                'provider-editor-card--drag-over':
+                  dragOverProviderIndex === index &&
+                  draggingProviderIndex !== null &&
+                  draggingProviderIndex !== index
+              }"
+              @dragover.prevent="handleProviderDragOver(index)"
+              @dragenter.prevent="handleProviderDragOver(index)"
+              @drop.prevent="handleProviderDrop(index)"
+            >
               <div class="provider-editor-card__header">
                 <div>
                   <div class="provider-editor-card__title">
@@ -198,12 +223,69 @@
                     <span>{{ provider.enabled ? '参与调度' : '已停用' }}</span>
                   </div>
                 </div>
-                <div class="provider-editor-card__actions">
+                <div class="provider-editor-card__controls">
                   <el-switch v-model="provider.enabled" inline-prompt active-text="开" inactive-text="关" />
-                  <el-button text :disabled="index === 0" @click="moveProvider(index, -1)">上移</el-button>
-                  <el-button text :disabled="index === draftScene.providers.length - 1" @click="moveProvider(index, 1)">下移</el-button>
-                  <el-button text :loading="singleTestProviderId === provider.id" @click="handleTestSingleProvider(index)">测试</el-button>
-                  <el-button text type="danger" @click="handleRemoveProvider(index)">删除</el-button>
+                  <div class="provider-editor-card__actions">
+                    <el-tooltip content="拖拽排序" placement="top">
+                      <button
+                        type="button"
+                        class="provider-icon-button provider-icon-button--drag"
+                        :class="{ 'provider-icon-button--disabled': draftScene.providers.length < 2 }"
+                        :disabled="draftScene.providers.length < 2"
+                        :draggable="draftScene.providers.length > 1"
+                        aria-label="拖拽排序"
+                        @dragstart="handleProviderDragStart(index, $event)"
+                        @dragend="handleProviderDragEnd"
+                      >
+                        <el-icon><Rank /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip content="上移一位" placement="top">
+                      <button
+                        type="button"
+                        class="provider-icon-button"
+                        :disabled="index === 0"
+                        aria-label="上移一位"
+                        @click="moveProvider(index, -1)"
+                      >
+                        <el-icon><ArrowUp /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip content="下移一位" placement="top">
+                      <button
+                        type="button"
+                        class="provider-icon-button"
+                        :disabled="index === draftScene.providers.length - 1"
+                        aria-label="下移一位"
+                        @click="moveProvider(index, 1)"
+                      >
+                        <el-icon><ArrowDown /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip content="测试当前节点" placement="top">
+                      <button
+                        type="button"
+                        class="provider-icon-button"
+                        :disabled="singleTestProviderId === provider.id"
+                        aria-label="测试当前节点"
+                        @click="handleTestSingleProvider(index)"
+                      >
+                        <el-icon v-if="singleTestProviderId === provider.id" class="is-loading"><Refresh /></el-icon>
+                        <el-icon v-else><Promotion /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-dropdown trigger="click" @command="(command) => handleProviderMenuCommand(String(command), index)">
+                      <button type="button" class="provider-icon-button" aria-label="更多操作">
+                        <el-icon><MoreFilled /></el-icon>
+                      </button>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="duplicate">复制节点</el-dropdown-item>
+                          <el-dropdown-item command="delete" divided>删除节点</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </div>
                 </div>
               </div>
 
@@ -235,21 +317,43 @@
               </div>
 
               <div class="provider-editor-secret">
-                <label class="routing-field" style="flex: 1">
-                  <span>API Key</span>
+                <div class="provider-editor-secret__header">
+                  <div class="provider-editor-secret__label-row">
+                    <span class="provider-editor-secret__label">API Key</span>
+                    <span
+                      v-if="provider.hasAPIKey && !provider.clearApiKey"
+                      class="provider-secret-chip mono-text"
+                    >
+                      当前密钥 · {{ provider.apiKeyMasked || '已保存' }}
+                    </span>
+                    <StatusTag v-else-if="provider.clearApiKey" tone="warning" text="已标记清空" />
+                    <span v-else class="provider-secret-chip provider-secret-chip--empty">当前未配置密钥</span>
+                  </div>
+                  <div v-if="provider.hasAPIKey" class="provider-editor-secret__actions">
+                    <el-button text :disabled="!!provider.apiKey?.trim()" @click="toggleProviderSecretEditor(provider)">
+                      {{ provider.apiKey?.trim() ? '已录入新密钥' : shouldShowProviderSecretEditor(provider) ? '收起更换' : '更换密钥' }}
+                    </el-button>
+                    <el-button text type="danger" @click="handleClearProviderApiKey(provider)">
+                      {{ provider.clearApiKey ? '撤销清空' : '清空密钥' }}
+                    </el-button>
+                  </div>
+                </div>
+
+                <label v-if="shouldShowProviderSecretEditor(provider)" class="routing-field provider-editor-secret__field">
+                  <span>{{ provider.hasAPIKey ? '输入新密钥' : '录入密钥' }}</span>
                   <el-input
                     v-model="provider.apiKey"
                     type="password"
                     show-password
-                    :placeholder="provider.apiKeyMasked || '当前未配置，可输入新密钥'"
+                    :placeholder="provider.hasAPIKey ? '输入新密钥，保存后覆盖旧值' : '输入当前节点要使用的密钥'"
                     @update:model-value="handleProviderApiKeyInput(provider, $event)"
                   />
                 </label>
-                <el-button text @click="handleClearProviderApiKey(provider)">清空旧密钥</el-button>
               </div>
               <div class="provider-editor-secret__hint">
                 <template v-if="provider.clearApiKey">当前已标记为待清空，保存后会彻底移除旧密钥。</template>
-                <template v-else-if="provider.hasAPIKey">当前已保存密钥；这里留空表示继续保留旧值。</template>
+                <template v-else-if="provider.apiKey?.trim()">已录入新的密钥草稿，保存后会覆盖当前值。</template>
+                <template v-else-if="provider.hasAPIKey">当前已保存密钥；不输入新值则继续保留旧值。</template>
                 <template v-else>当前没有已保存密钥，可直接录入新值。</template>
               </div>
             </div>
@@ -257,7 +361,7 @@
         </div>
       </div>
 
-      <div v-if="testResult" class="page-card routing-test-card">
+      <div v-if="testResult" ref="testCardRef" class="page-card routing-test-card">
         <div class="routing-panel__header">
           <div>
             <h3 class="routing-panel__title">最近测试结果</h3>
@@ -368,10 +472,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, MoreFilled, Promotion, Rank, Refresh } from '@element-plus/icons-vue'
 import AppShell from '@/components/AppShell.vue'
 import FilterToolbar from '@/components/FilterToolbar.vue'
 import PageState from '@/components/PageState.vue'
@@ -417,6 +521,11 @@ const pageRefreshing = ref(false)
 const savingScene = ref(false)
 const testingScene = ref(false)
 const singleTestProviderId = ref('')
+const testCardRef = ref<HTMLElement | null>(null)
+const routeSceneOverride = ref<AIRoutingSceneKey | null>(null)
+const draggingProviderIndex = ref<number | null>(null)
+const dragOverProviderIndex = ref<number | null>(null)
+const sceneCardRefs = ref<Partial<Record<AIRoutingSceneKey, HTMLButtonElement | null>>>({})
 
 const audits = ref<PaginationResult<SettingAuditRecord>>({
   items: [],
@@ -428,6 +537,10 @@ const auditsLoading = ref(false)
 const auditsError = ref('')
 const auditAction = ref('')
 const auditPage = ref(1)
+const providerSecretEditorState = ref<Record<string, boolean>>({})
+
+const providerLocalKeys = new WeakMap<AIRoutingProviderConfig, string>()
+let providerLocalKeyCounter = 0
 
 const retryOptions = [
   { label: '超时 timeout', value: 'timeout' },
@@ -466,6 +579,18 @@ const sceneCards = computed(() => {
   })
 })
 
+const latestTestSummary = computed(() => {
+  if (!testResult.value) {
+    return null
+  }
+  const scopePrefix = testScope.value.includes('单节点') ? '单节点' : '草稿'
+  const target = testResult.value.finalProvider || '查看详情'
+  return {
+    tone: testResult.value.ok ? 'success' : 'warning',
+    text: `${scopePrefix}${testResult.value.ok ? '测试通过' : '测试异常'} · ${target}`
+  }
+})
+
 const isDirty = computed(() => {
   if (!draftScene.value || !remoteScene.value) {
     return false
@@ -473,12 +598,28 @@ const isDirty = computed(() => {
   return comparableScene(draftScene.value) !== comparableScene(remoteScene.value)
 })
 
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (isDirty.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
+onBeforeRouteLeave(async () => {
+  return await guardUnsavedChanges('离开页面')
+})
+
 onMounted(async () => {
+  window.addEventListener('beforeunload', onBeforeUnload)
   const queryScene = readQueryString(route.query, 'scene')
   if (sceneKeys.includes(queryScene as AIRoutingSceneKey)) {
     currentSceneKey.value = queryScene as AIRoutingSceneKey
   }
   await refreshPage()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload)
 })
 
 watch(
@@ -491,19 +632,41 @@ watch(
     if (nextScene === currentSceneKey.value) {
       return
     }
-    currentSceneKey.value = nextScene as AIRoutingSceneKey
-    resetSceneEditor()
-    await loadCurrentScene()
+    if (routeSceneOverride.value === nextScene) {
+      routeSceneOverride.value = null
+      await applySceneChange(nextScene as AIRoutingSceneKey)
+      return
+    }
+    const allowed = await guardUnsavedChanges(`切换到「${displayAIRoutingScene(nextScene)}」`)
+    if (!allowed) {
+      await router.replace({ query: buildRouteQuery({ scene: currentSceneKey.value }) })
+      return
+    }
+    await applySceneChange(nextScene as AIRoutingSceneKey)
   }
 )
 
 async function refreshPage() {
+  const allowed = await guardUnsavedChanges('刷新页面')
+  if (!allowed) {
+    return
+  }
   pageRefreshing.value = true
   resetSceneEditor()
   try {
     await Promise.all([loadSceneSummaries(), loadCurrentScene()])
   } finally {
     pageRefreshing.value = false
+  }
+}
+
+async function handleDiscardDraft() {
+  if (!remoteScene.value || !isDirty.value) return
+  try {
+    await ElMessageBox.confirm('确定放弃所有未保存的改动？', '放弃草稿', { type: 'warning' })
+    discardDraftChanges('已恢复到上次保存的状态')
+  } catch {
+    return
   }
 }
 
@@ -519,6 +682,7 @@ async function loadCurrentScene() {
     const response = await adminApi.getAIRoutingScene(currentSceneKey.value)
     remoteScene.value = hydrateScene(response.scene)
     draftScene.value = hydrateScene(response.scene)
+    resetProviderUIState()
     testResult.value = null
     testScope.value = ''
     auditPage.value = 1
@@ -629,10 +793,19 @@ async function handleSceneChange(scene: AIRoutingSceneKey) {
   if (scene === currentSceneKey.value) {
     return
   }
+  const allowed = await guardUnsavedChanges(`切换到「${displayAIRoutingScene(scene)}」`)
+  if (!allowed) {
+    return
+  }
+  routeSceneOverride.value = scene
+  await router.replace({ query: buildRouteQuery({ scene }) })
+}
+
+async function applySceneChange(scene: AIRoutingSceneKey) {
   currentSceneKey.value = scene
   resetSceneEditor()
-  await router.replace({ query: buildRouteQuery({ scene }) })
   await loadCurrentScene()
+  focusSceneCard(scene)
 }
 
 function resetSceneEditor() {
@@ -640,13 +813,16 @@ function resetSceneEditor() {
   draftScene.value = null
   testResult.value = null
   testScope.value = ''
+  resetProviderUIState()
 }
 
 function handleAddProvider() {
   if (!draftScene.value) {
     return
   }
-  draftScene.value.providers.push(createProvider(draftScene.value.scene))
+  const provider = createProvider(draftScene.value.scene)
+  draftScene.value.providers.push(provider)
+  setProviderSecretEditor(provider, true)
 }
 
 async function handleRemoveProvider(index: number) {
@@ -663,6 +839,32 @@ async function handleRemoveProvider(index: number) {
   }
 }
 
+function handleProviderMenuCommand(command: string, index: number) {
+  if (command === 'duplicate') {
+    handleDuplicateProvider(index)
+    return
+  }
+  if (command === 'delete') {
+    handleRemoveProvider(index)
+  }
+}
+
+function handleDuplicateProvider(index: number) {
+  if (!draftScene.value) {
+    return
+  }
+  const source = draftScene.value.providers[index]
+  const copied = JSON.parse(JSON.stringify(source)) as AIRoutingProviderConfig
+  copied.id = buildDuplicateProviderId(source.id || `provider-${index + 1}`)
+  copied.name = source.name ? `${source.name} 副本` : ''
+  copied.apiKey = ''
+  copied.apiKeyMasked = ''
+  copied.hasAPIKey = false
+  copied.clearApiKey = false
+  draftScene.value.providers.splice(index + 1, 0, copied)
+  setProviderSecretEditor(copied, true)
+}
+
 function moveProvider(index: number, offset: number) {
   if (!draftScene.value) {
     return
@@ -676,30 +878,89 @@ function moveProvider(index: number, offset: number) {
   items.splice(target, 0, current)
 }
 
-function handleProviderApiKeyInput(provider: AIRoutingProviderConfig, value: string) {
-  provider.apiKey = value
-  provider.clearApiKey = value.trim() ? false : provider.clearApiKey
+function handleProviderDragStart(index: number, event: DragEvent) {
+  draggingProviderIndex.value = index
+  dragOverProviderIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
 }
 
-function handleClearProviderApiKey(provider: AIRoutingProviderConfig) {
+function handleProviderDragOver(index: number) {
+  if (draggingProviderIndex.value === null || draggingProviderIndex.value === index) {
+    return
+  }
+  dragOverProviderIndex.value = index
+}
+
+function handleProviderDrop(index: number) {
+  if (!draftScene.value || draggingProviderIndex.value === null) {
+    handleProviderDragEnd()
+    return
+  }
+  const sourceIndex = draggingProviderIndex.value
+  if (sourceIndex !== index) {
+    const items = draftScene.value.providers
+    const [current] = items.splice(sourceIndex, 1)
+    items.splice(index, 0, current)
+  }
+  handleProviderDragEnd()
+}
+
+function handleProviderDragEnd() {
+  draggingProviderIndex.value = null
+  dragOverProviderIndex.value = null
+}
+
+function handleProviderApiKeyInput(provider: AIRoutingProviderConfig, value: string) {
+  provider.apiKey = value
+  if (value.trim()) {
+    provider.clearApiKey = false
+    setProviderSecretEditor(provider, true)
+  }
+}
+
+async function handleClearProviderApiKey(provider: AIRoutingProviderConfig) {
+  if (provider.clearApiKey) {
+    provider.clearApiKey = false
+    ElMessage.info('已撤销清空密钥')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('清空后需要保存当前场景才会真正移除旧密钥，是否继续？', '确认清空密钥', {
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
   provider.apiKey = ''
   provider.clearApiKey = true
+  setProviderSecretEditor(provider, false)
+  ElMessage.warning('已标记为清空密钥，保存后生效')
 }
 
 async function handleSaveScene() {
+  await saveCurrentScene()
+}
+
+async function saveCurrentScene(successMessage = '场景配置已保存') {
   if (!draftScene.value) {
-    return
+    return false
   }
   savingScene.value = true
   try {
     const response = await adminApi.updateAIRoutingScene(currentSceneKey.value, buildScenePayload(draftScene.value))
     remoteScene.value = hydrateScene(response.scene)
     draftScene.value = hydrateScene(response.scene)
+    resetProviderUIState()
     await loadSceneSummaries()
     await loadAudits()
-    ElMessage.success('场景配置已保存')
+    ElMessage.success(successMessage)
+    return true
   } catch (error) {
     ElMessage.error(extractMessage(error))
+    return false
   } finally {
     savingScene.value = false
   }
@@ -741,11 +1002,131 @@ async function runSceneTest(scope: string, scene: AIRoutingSceneConfig | null) {
     } else {
       ElMessage.warning(response.result.message || '路由测试失败')
     }
+    await nextTick()
   } catch (error) {
     ElMessage.error(extractMessage(error))
   } finally {
     testingScene.value = false
   }
+}
+
+function getProviderLocalKey(provider: AIRoutingProviderConfig) {
+  const existing = providerLocalKeys.get(provider)
+  if (existing) {
+    return existing
+  }
+  const key = `provider-local-${providerLocalKeyCounter += 1}`
+  providerLocalKeys.set(provider, key)
+  return key
+}
+
+function setProviderSecretEditor(provider: AIRoutingProviderConfig, open: boolean) {
+  providerSecretEditorState.value = {
+    ...providerSecretEditorState.value,
+    [getProviderLocalKey(provider)]: open
+  }
+}
+
+function toggleProviderSecretEditor(provider: AIRoutingProviderConfig) {
+  if (provider.clearApiKey) {
+    provider.clearApiKey = false
+  }
+  setProviderSecretEditor(provider, !shouldShowProviderSecretEditor(provider))
+}
+
+function shouldShowProviderSecretEditor(provider: AIRoutingProviderConfig) {
+  return !provider.hasAPIKey || !!provider.apiKey?.trim() || !!providerSecretEditorState.value[getProviderLocalKey(provider)]
+}
+
+function resetProviderUIState() {
+  providerSecretEditorState.value = {}
+  handleProviderDragEnd()
+}
+
+function discardDraftChanges(message?: string) {
+  if (!remoteScene.value) {
+    return
+  }
+  draftScene.value = hydrateScene(remoteScene.value)
+  testResult.value = null
+  testScope.value = ''
+  resetProviderUIState()
+  if (message) {
+    ElMessage.info(message)
+  }
+}
+
+async function guardUnsavedChanges(actionLabel: string) {
+  if (!isDirty.value) {
+    return true
+  }
+  const decision = await resolveUnsavedDraftAction(actionLabel)
+  if (decision === 'cancel') {
+    return false
+  }
+  if (decision === 'save') {
+    return await saveCurrentScene(`${actionLabel}前已保存当前场景`)
+  }
+  discardDraftChanges('已放弃未保存草稿')
+  return true
+}
+
+async function resolveUnsavedDraftAction(actionLabel: string): Promise<'save' | 'discard' | 'cancel'> {
+  try {
+    await ElMessageBox.confirm(`当前场景有未保存的改动。${actionLabel}前，请先处理这些草稿。`, '处理未保存草稿', {
+      type: 'warning',
+      confirmButtonText: '保存并继续',
+      cancelButtonText: '放弃更改',
+      distinguishCancelAndClose: true,
+      closeOnClickModal: false,
+      closeOnPressEscape: false
+    })
+    return 'save'
+  } catch (error) {
+    return error === 'cancel' ? 'discard' : 'cancel'
+  }
+}
+
+function buildDuplicateProviderId(seed: string) {
+  if (!draftScene.value) {
+    return `${seed}-copy`
+  }
+  const used = new Set(draftScene.value.providers.map((item) => item.id))
+  let candidate = `${seed}-copy`
+  let index = 2
+  while (used.has(candidate)) {
+    candidate = `${seed}-copy-${index}`
+    index += 1
+  }
+  return candidate
+}
+
+function scrollToTestCard() {
+  nextTick(() => {
+    testCardRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function handleSceneArrowKey(offset: number) {
+  const currentIndex = sceneKeys.indexOf(currentSceneKey.value)
+  if (currentIndex < 0) {
+    return
+  }
+  const nextIndex = (currentIndex + offset + sceneKeys.length) % sceneKeys.length
+  handleSceneChange(sceneKeys[nextIndex])
+}
+
+function setSceneCardRef(scene: AIRoutingSceneKey, element: Element | null) {
+  sceneCardRefs.value = {
+    ...sceneCardRefs.value,
+    [scene]: element instanceof HTMLButtonElement ? element : null
+  }
+}
+
+function focusSceneCard(scene: AIRoutingSceneKey) {
+  nextTick(() => {
+    sceneCardRefs.value[scene]?.focus()
+  })
 }
 
 function resetAuditFilters() {
@@ -773,10 +1154,12 @@ function extractMessage(error: unknown) {
 }
 
 .routing-scene-card {
+  position: relative;
   width: 100%;
   padding: 18px 18px 20px;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.18);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.94));
@@ -796,6 +1179,15 @@ function extractMessage(error: unknown) {
   border-color: rgba(37, 99, 235, 0.4);
   background:
     linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 0.96));
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.08);
+}
+
+.routing-scene-card--active::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #2563eb, #60a5fa);
 }
 
 .routing-scene-card__header {
@@ -949,6 +1341,16 @@ function extractMessage(error: unknown) {
   border: 1px solid rgba(148, 163, 184, 0.18);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95));
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.provider-editor-card--drag-over {
+  border-color: rgba(37, 99, 235, 0.34);
+  box-shadow: 0 16px 30px rgba(37, 99, 235, 0.08);
+  transform: translateY(-1px);
 }
 
 .provider-editor-card__header {
@@ -974,11 +1376,59 @@ function extractMessage(error: unknown) {
   font-size: 12px;
 }
 
-.provider-editor-card__actions {
+.provider-editor-card__controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
+  align-items: center;
   justify-content: flex-end;
+}
+
+.provider-editor-card__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--color-text-subtle);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.provider-icon-button:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.3);
+  color: var(--color-primary);
+  background: rgba(239, 246, 255, 0.96);
+  transform: translateY(-1px);
+}
+
+.provider-icon-button:disabled,
+.provider-icon-button--disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.provider-icon-button--drag {
+  cursor: grab;
+}
+
+.provider-icon-button--drag:active {
+  cursor: grabbing;
 }
 
 .provider-editor-grid {
@@ -988,10 +1438,59 @@ function extractMessage(error: unknown) {
 }
 
 .provider-editor-secret {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
   margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.provider-editor-secret__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.provider-editor-secret__label-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.provider-editor-secret__label {
+  color: var(--color-text-subtle);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.provider-secret-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--color-text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.provider-secret-chip--empty {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--color-text-subtle);
+}
+
+.provider-editor-secret__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.provider-editor-secret__field {
+  margin-top: 14px;
 }
 
 .provider-editor-secret__hint {
@@ -1013,6 +1512,15 @@ function extractMessage(error: unknown) {
   margin-bottom: 16px;
   color: var(--color-text-subtle);
   font-size: 13px;
+}
+
+.test-result-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .routing-alert {
@@ -1041,11 +1549,13 @@ function extractMessage(error: unknown) {
 
   .provider-editor-card__header,
   .routing-panel__header,
-  .provider-editor-secret {
+  .provider-editor-secret,
+  .provider-editor-secret__header {
     flex-direction: column;
     align-items: stretch;
   }
 
+  .provider-editor-card__controls,
   .provider-editor-card__actions,
   .routing-panel__tags {
     justify-content: flex-start;

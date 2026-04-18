@@ -1,5 +1,35 @@
 # Project Changelog
 
+## 2026-04-18 (AI Provider P0 收口)
+
+### Changed
+
+- `admin-web/src/pages/AIProvidersPage.vue` 按 `docs/admin-ai-provider-ux-review.md`
+  继续收口 P0 体验问题：
+  - 顶部工具栏新增“放弃草稿”和“最近测试结果”快捷入口，测试结果可一键滚动到详情卡
+  - 未保存草稿保护统一覆盖刷新、场景切换、页面离开和浏览器关闭；场景卡补齐
+    `tab` 语义与左右方向键切换
+  - 放弃草稿时同步清空过期测试结果；方向键切换改为始终基于当前激活场景卡，
+    切换后自动把焦点移到新卡片，避免键盘导航停在旧节点
+  - Provider 节点操作区改为图标按钮 + Tooltip + 更多菜单，删除移入更多菜单，
+    并补充拖拽排序与复制节点
+  - API Key 编辑改为“当前密钥 chip + 更换/清空”两段式交互，去掉 masked
+    placeholder，清空密钥改为二次确认后仅标记待保存
+
+### Notes
+
+- 修改时间：2026-04-18 10:56 CST
+- 变更背景：AI Provider 管理页已经有基础的多 Provider 编辑能力，但保存 / 测试 /
+  草稿边界、Provider 卡操作密度和 API Key 误操作风险仍是 P0 级体验硬伤，
+  需要按 UX 评审文档继续收口
+- 核心改动：统一未保存草稿守卫；把最近测试反馈前置到顶部；收敛 Provider 卡
+  高频操作；重做 API Key 替换与清空链路，降低误触风险
+- 影响范围：`admin-web/src/pages/AIProvidersPage.vue`、`CHANGELOG.md`
+- 兼容性/风险：仅涉及后台前端交互层，不改后端接口；拖拽排序与顶部测试摘要仍建议在
+  浏览器内做一次人工回归，确认鼠标拖放和滚动定位手感符合预期
+- 验证情况：已执行 `npm --prefix admin-web run build`；当前 `admin-web`
+  依赖中未安装 `vue-tsc`，因此本次未做独立的 SFC 类型检查
+
 ## 2026-04-18 (概览分布图表修复)
 
 ### Fixed
