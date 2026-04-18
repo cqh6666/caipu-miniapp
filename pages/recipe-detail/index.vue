@@ -98,7 +98,7 @@
 						<image class="flowchart-panel__image" :src="flowchartImageUrl" mode="widthFix"></image>
 						<view class="flowchart-panel__footer">
 							<text v-if="flowchartUpdatedAtText" class="flowchart-panel__meta">{{ flowchartUpdatedAtText }}</text>
-							<text class="flowchart-panel__preview">横屏查看</text>
+							<text class="flowchart-panel__preview">横屏缩放查看</text>
 						</view>
 					</view>
 

@@ -1,8 +1,19 @@
 <template>
 	<view class="flowchart-viewer">
 		<template v-if="imageUrl && !imageFailed">
-			<view class="flowchart-viewer__stage" @tap="toggleChrome">
-				<view class="flowchart-viewer__image-shell">
+			<movable-area class="flowchart-viewer__stage">
+				<movable-view
+					class="flowchart-viewer__canvas"
+					direction="all"
+					:animation="false"
+					:inertia="true"
+					:out-of-bounds="false"
+					:scale="true"
+					:scale-min="minScale"
+					:scale-max="maxScale"
+					:scale-value="imageScale"
+					@scale="handleViewerScale"
+				>
 					<image
 						class="flowchart-viewer__image"
 						:src="imageUrl"
@@ -10,32 +21,18 @@
 						@load="handleImageLoad"
 						@error="handleImageError"
 					></image>
-				</view>
+				</movable-view>
+			</movable-area>
 
-				<view
-					class="flowchart-viewer__topbar"
-					:class="{ 'flowchart-viewer__topbar--hidden': !chromeVisible }"
-				>
-					<view class="flowchart-viewer__topbar-inner">
-						<view class="flowchart-viewer__back" @tap.stop="goBack">
-							<up-icon name="arrow-left" size="18" color="#f8f3ed"></up-icon>
-							<text class="flowchart-viewer__back-text">返回</text>
-						</view>
-						<view class="flowchart-viewer__meta">
-							<text class="flowchart-viewer__title">{{ pageTitle }}</text>
-							<text class="flowchart-viewer__subtitle">{{ pageSubtitle }}</text>
-						</view>
-					</view>
+			<view v-if="imageLoading" class="flowchart-viewer__loading">
+				<view class="flowchart-viewer__loading-chip">
+					<up-icon name="reload" size="14" color="#f6e5d7" class="flowchart-viewer__loading-icon"></up-icon>
+					<text class="flowchart-viewer__loading-text">步骤图加载中</text>
 				</view>
+			</view>
 
-				<view
-					v-if="chromeVisible"
-					class="flowchart-viewer__hint"
-					:class="{ 'flowchart-viewer__hint--loading': imageLoading }"
-				>
-					<up-icon v-if="imageLoading" name="reload" size="14" color="#f2ded0" class="flowchart-viewer__hint-icon"></up-icon>
-					<text class="flowchart-viewer__hint-text">{{ imageLoading ? '步骤图加载中' : '轻点画面可隐藏操作区' }}</text>
-				</view>
+			<view class="flowchart-viewer__close" @tap="goBack">
+				<up-icon name="close" size="15" color="#fbf5ee"></up-icon>
 			</view>
 		</template>
 
@@ -57,25 +54,22 @@
 <script>
 const FLOWCHART_VIEWER_STORAGE_KEY = 'recipe-flowchart-viewer-payload'
 
+function clampScale(value = 1, min = 1, max = 4) {
+	const parsed = Number(value)
+	if (!Number.isFinite(parsed)) return min
+	return Math.min(Math.max(parsed, min), max)
+}
+
 export default {
 	data() {
 		return {
 			viewerKey: '',
 			imageUrl: '',
-			title: '',
-			updatedAtText: '',
-			chromeVisible: true,
 			imageLoading: true,
-			imageFailed: false
-		}
-	},
-	computed: {
-		pageTitle() {
-			const title = String(this.title || '').trim()
-			return title ? `${title} · 一图看懂` : '菜品步骤图'
-		},
-		pageSubtitle() {
-			return String(this.updatedAtText || '').trim() || '横屏沉浸查看'
+			imageFailed: false,
+			minScale: 1,
+			maxScale: 4,
+			imageScale: 1
 		}
 	},
 	onLoad(options = {}) {
@@ -104,10 +98,9 @@ export default {
 			}
 
 			this.imageUrl = String(payload.imageUrl || '').trim()
-			this.title = String(payload.title || '').trim()
-			this.updatedAtText = String(payload.updatedAtText || '').trim()
 			this.imageFailed = !this.imageUrl
 			this.imageLoading = !!this.imageUrl
+			this.imageScale = this.minScale
 		},
 		setKeepScreenOn(keepScreenOn = false) {
 			if (typeof uni.setKeepScreenOn !== 'function') return
@@ -115,13 +108,13 @@ export default {
 				keepScreenOn: !!keepScreenOn
 			})
 		},
-		toggleChrome() {
-			if (!this.imageUrl || this.imageFailed) return
-			this.chromeVisible = !this.chromeVisible
+		handleViewerScale(event) {
+			this.imageScale = clampScale(event?.detail?.scale, this.minScale, this.maxScale)
 		},
 		handleImageLoad() {
 			this.imageLoading = false
 			this.imageFailed = false
+			this.imageScale = this.minScale
 		},
 		handleImageError() {
 			this.imageLoading = false
@@ -143,37 +136,21 @@ export default {
 <style lang="scss" scoped>
 	.flowchart-viewer {
 		min-height: 100vh;
-		background:
-			radial-gradient(circle at top right, rgba(232, 164, 103, 0.16) 0%, rgba(232, 164, 103, 0) 34%),
-			linear-gradient(180deg, #17110d 0%, #0d0907 100%);
+		background: #050505;
 	}
 
 	.flowchart-viewer__stage {
-		position: relative;
 		width: 100vw;
 		height: 100vh;
 		overflow: hidden;
-	}
-
-	.flowchart-viewer__stage::before {
-		content: '';
-		position: absolute;
-		inset: 0;
 		background:
-			radial-gradient(circle at center, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 56%),
-			linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0, rgba(255, 255, 255, 0) 18%, rgba(255, 255, 255, 0) 82%, rgba(255, 255, 255, 0.025) 100%);
-		pointer-events: none;
+			radial-gradient(circle at center, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 58%),
+			linear-gradient(180deg, #120e0b 0%, #050505 100%);
 	}
 
-	.flowchart-viewer__image-shell {
-		position: absolute;
-		inset: 0;
-		padding:
-			calc(env(safe-area-inset-top) + 30rpx)
-			calc(env(safe-area-inset-right) + 28rpx)
-			calc(env(safe-area-inset-bottom) + 30rpx)
-			calc(env(safe-area-inset-left) + 28rpx);
-		box-sizing: border-box;
+	.flowchart-viewer__canvas {
+		width: 100%;
+		height: 100%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -185,124 +162,56 @@ export default {
 		display: block;
 	}
 
-	.flowchart-viewer__topbar {
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		padding:
-			calc(env(safe-area-inset-top) + 18rpx)
-			calc(env(safe-area-inset-right) + 24rpx)
-			0
-			calc(env(safe-area-inset-left) + 24rpx);
-		box-sizing: border-box;
-		opacity: 1;
-		transform: translateY(0);
-		transition: opacity 0.18s ease, transform 0.18s ease;
-	}
-
-	.flowchart-viewer__topbar--hidden {
-		opacity: 0;
-		transform: translateY(-16rpx);
+	.flowchart-viewer__loading {
+		position: fixed;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		pointer-events: none;
 	}
 
-	.flowchart-viewer__topbar-inner {
-		display: flex;
-		align-items: center;
-		gap: 18rpx;
-		padding: 16rpx 18rpx;
-		border-radius: 24rpx;
-		background: rgba(19, 15, 11, 0.56);
+	.flowchart-viewer__loading-chip {
+		padding: 14rpx 20rpx;
+		border-radius: 999rpx;
+		background: rgba(18, 13, 10, 0.72);
 		border: 1px solid rgba(255, 255, 255, 0.08);
-		backdrop-filter: blur(18rpx);
+		backdrop-filter: blur(16rpx);
+		display: inline-flex;
+		align-items: center;
+		gap: 10rpx;
 		box-shadow:
-			0 18rpx 36rpx rgba(0, 0, 0, 0.18),
+			0 18rpx 32rpx rgba(0, 0, 0, 0.2),
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.08);
 	}
 
-	.flowchart-viewer__back {
-		flex-shrink: 0;
-		min-height: 64rpx;
-		padding: 0 18rpx;
-		border-radius: 999rpx;
-		background:
-			linear-gradient(180deg, rgba(124, 95, 73, 0.92), rgba(89, 67, 50, 0.96));
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 10rpx;
-		box-shadow:
-			0 10rpx 20rpx rgba(0, 0, 0, 0.14),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.12);
-	}
-
-	.flowchart-viewer__back-text {
-		font-size: 24rpx;
-		font-weight: 600;
-		line-height: 1;
-		color: #f8f3ed;
-	}
-
-	.flowchart-viewer__meta {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.flowchart-viewer__title,
-	.flowchart-viewer__subtitle {
-		display: block;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.flowchart-viewer__title {
-		font-size: 28rpx;
-		font-weight: 700;
-		line-height: 1.2;
-		color: #fff8f0;
-	}
-
-	.flowchart-viewer__subtitle {
-		margin-top: 8rpx;
-		font-size: 21rpx;
-		line-height: 1.3;
-		color: rgba(255, 240, 226, 0.72);
-	}
-
-	.flowchart-viewer__hint {
-		position: absolute;
-		left: 50%;
-		bottom: calc(env(safe-area-inset-bottom) + 20rpx);
-		transform: translateX(-50%);
-		max-width: calc(100vw - 80rpx);
-		padding: 12rpx 18rpx;
-		border-radius: 999rpx;
-		background: rgba(21, 16, 11, 0.58);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		backdrop-filter: blur(18rpx);
-		display: inline-flex;
-		align-items: center;
-		gap: 10rpx;
-		box-sizing: border-box;
-	}
-
-	.flowchart-viewer__hint--loading {
-		background: rgba(62, 43, 31, 0.76);
-	}
-
-	.flowchart-viewer__hint-icon {
+	.flowchart-viewer__loading-icon {
 		animation: flowchart-viewer-rotate 0.9s linear infinite;
 	}
 
-	.flowchart-viewer__hint-text {
-		font-size: 21rpx;
-		line-height: 1.3;
-		color: #f2ded0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+	.flowchart-viewer__loading-text {
+		font-size: 22rpx;
+		line-height: 1;
+		color: #f6e5d7;
+	}
+
+	.flowchart-viewer__close {
+		position: fixed;
+		top: calc(env(safe-area-inset-top) + 18rpx);
+		left: calc(env(safe-area-inset-left) + 18rpx);
+		z-index: 5;
+		width: 54rpx;
+		height: 54rpx;
+		border-radius: 999rpx;
+		background: rgba(14, 11, 8, 0.36);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		backdrop-filter: blur(10rpx);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow:
+			0 8rpx 16rpx rgba(0, 0, 0, 0.14),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.06);
 	}
 
 	.flowchart-viewer__empty {
