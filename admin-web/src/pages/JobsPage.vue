@@ -183,6 +183,7 @@ const result = ref<PaginationResult<JobRunRecord>>({
   pageSize: 20
 })
 
+const activeJobId = ref(0)
 const jobDrawerVisible = ref(false)
 const jobDetailLoading = ref(false)
 const jobDetail = ref<{ job: JobRunRecord; calls: CallLogRecord[] } | null>(null)
@@ -197,15 +198,17 @@ function syncStateFromRoute() {
   filters.triggerSource = readQueryString(route.query, 'triggerSource')
   filters.targetId = readQueryString(route.query, 'targetId')
   timeRange.value = readDateRange(route.query)
+  activeJobId.value = readQueryNumber(route.query, 'jobId', 0)
 }
 
-function buildListRouteQuery(nextPage = page.value) {
+function buildListRouteQuery(nextPage = page.value, jobId?: number | null) {
   return buildRouteQuery({
     page: nextPage > 1 ? nextPage : undefined,
     scene: filters.scene || undefined,
     status: filters.status || undefined,
     triggerSource: filters.triggerSource || undefined,
     targetId: filters.targetId || undefined,
+    jobId: jobId || undefined,
     ...writeDateRange(timeRange.value)
   })
 }
@@ -306,7 +309,7 @@ const activeFilters = computed(() => {
 
 const hasActiveFilters = computed(() => activeFilters.value.length > 0)
 
-async function openJobDetail(jobId: number) {
+async function fetchJobDetail(jobId: number) {
   callDrawerVisible.value = false
   jobDrawerVisible.value = true
   jobDetailLoading.value = true
@@ -321,6 +324,18 @@ async function openJobDetail(jobId: number) {
   }
 }
 
+async function openJobDetail(jobId: number, options: { syncRoute?: boolean } = {}) {
+  const { syncRoute = true } = options
+  if (syncRoute) {
+    const nextQuery = buildListRouteQuery(page.value, jobId)
+    if (JSON.stringify(route.query) !== JSON.stringify(nextQuery)) {
+      await router.replace({ query: nextQuery })
+      return
+    }
+  }
+  await fetchJobDetail(jobId)
+}
+
 function openCallDetail(call: CallLogRecord) {
   selectedCall.value = call
   callDrawerVisible.value = true
@@ -328,10 +343,30 @@ function openCallDetail(call: CallLogRecord) {
 
 watch(
   () => route.fullPath,
-  () => {
+  async () => {
     syncStateFromRoute()
-    void loadJobs()
+    await loadJobs()
+    if (activeJobId.value > 0) {
+      await openJobDetail(activeJobId.value, { syncRoute: false })
+      return
+    }
+    jobDrawerVisible.value = false
+    jobDetail.value = null
   },
   { immediate: true }
+)
+
+watch(
+  () => jobDrawerVisible.value,
+  (visible) => {
+    if (visible || activeJobId.value <= 0) {
+      return
+    }
+    const nextQuery = buildListRouteQuery(page.value)
+    if (JSON.stringify(route.query) === JSON.stringify(nextQuery)) {
+      return
+    }
+    void router.replace({ query: nextQuery })
+  }
 )
 </script>

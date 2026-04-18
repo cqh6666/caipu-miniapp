@@ -147,10 +147,15 @@
             <h3 class="subsection-title">最近失败</h3>
             <div class="subsection-subtitle">失败与超时任务优先暴露，支持直接进入详情排障。</div>
           </div>
-          <StatusTag
-            :tone="overview?.recentFailures?.length ? 'warning' : 'success'"
-            :text="overview?.recentFailures?.length ? `${overview.recentFailures.length} 条记录` : '暂无异常'"
-          />
+          <div class="subsection-actions">
+            <StatusTag
+              :tone="overview?.recentFailures?.length ? 'warning' : 'success'"
+              :text="overview?.recentFailures?.length ? `${overview.recentFailures.length} 条记录` : '暂无异常'"
+            />
+            <el-button link type="primary" @click="openJobsPage()">
+              查看 AI 任务
+            </el-button>
+          </div>
         </div>
 
         <PageState
@@ -168,8 +173,25 @@
         />
         <div v-else class="table-scroll">
           <el-table :data="overview?.recentFailures || []" size="small" style="width: 100%">
-            <el-table-column label="场景" min-width="130">
-              <template #default="{ row }">{{ displayScene(row.scene) }}</template>
+            <el-table-column label="场景" min-width="220">
+              <template #default="{ row }">
+                <div class="recent-failure-entry">
+                  <div class="recent-failure-entry__row">
+                    <span>{{ displayScene(row.scene) }}</span>
+                    <el-button
+                      link
+                      type="primary"
+                      size="small"
+                      @click="openJobDetailPage(row)"
+                    >
+                      排障详情
+                    </el-button>
+                  </div>
+                  <div class="recent-failure-entry__meta">
+                    开始于 {{ formatDateTime(row.startedAt) }}
+                  </div>
+                </div>
+              </template>
             </el-table-column>
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
@@ -178,14 +200,6 @@
             </el-table-column>
             <el-table-column label="错误摘要" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">{{ row.errorMessage || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="开始时间" width="180">
-              <template #default="{ row }">{{ formatDateTime(row.startedAt) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="108" :fixed="actionColumnFixed">
-              <template #default="{ row }">
-                <el-button text size="small" @click="openJobDetail(row.id)">查看详情</el-button>
-              </template>
             </el-table-column>
           </el-table>
         </div>
@@ -368,7 +382,6 @@ import PageState from '@/components/PageState.vue'
 import JobDetailDrawer from '@/components/JobDetailDrawer.vue'
 import CallDetailDrawer from '@/components/CallDetailDrawer.vue'
 import * as adminApi from '@/api/admin'
-import { useResponsive } from '@/composables/useResponsive'
 import type { CallLogRecord, DashboardOverview, ServerHealthOverview, TrendBucket } from '@/types'
 import {
   displayHealthStatus,
@@ -384,6 +397,7 @@ import {
   toneForTimeoutRate,
   type StatusTone
 } from '@/utils/admin-display'
+import { buildRouteQuery } from '@/utils/route-query'
 
 type DashboardChartOption = ComposeOption<
   GridComponentOption | TooltipComponentOption | LegendComponentOption | LineSeriesOption | BarSeriesOption
@@ -448,7 +462,6 @@ const distViewMode = reactive<{ scene: DistViewMode; provider: DistViewMode; mod
   model: 'chart'
 })
 const router = useRouter()
-const { isCompactLayout } = useResponsive()
 const overview = ref<DashboardOverview | null>(null)
 const serverHealth = ref<ServerHealthOverview | null>(null)
 const trends = ref<TrendBucket[]>([])
@@ -465,7 +478,6 @@ const jobDetailLoading = ref(false)
 const jobDetail = ref<{ job: DashboardOverview['recentFailures'][number]; calls: CallLogRecord[] } | null>(null)
 const callDrawerVisible = ref(false)
 const selectedCall = ref<CallLogRecord | null>(null)
-const actionColumnFixed = computed(() => (isCompactLayout.value ? false : 'right'))
 
 const trendRange = computed(() => {
   if (overviewWindow.value >= 720) return '30d'
@@ -865,6 +877,25 @@ async function handleWindowChange() {
   await Promise.all([loadOverview(true), loadTrends(true)])
 }
 
+function buildOverviewTimeRange() {
+  const timeTo = new Date()
+  const timeFrom = new Date(timeTo.getTime() - overviewWindow.value * 60 * 60 * 1000)
+  return {
+    timeFrom: timeFrom.toISOString(),
+    timeTo: timeTo.toISOString()
+  }
+}
+
+function buildJobsPageQuery(job?: DashboardOverview['recentFailures'][number]) {
+  const range = buildOverviewTimeRange()
+  return buildRouteQuery({
+    ...range,
+    scene: job?.scene || undefined,
+    status: job?.status || undefined,
+    jobId: job?.id || undefined
+  })
+}
+
 async function openJobDetail(jobId: number) {
   callDrawerVisible.value = false
   jobDrawerVisible.value = true
@@ -883,6 +914,20 @@ async function openJobDetail(jobId: number) {
 function openCallDetail(call: CallLogRecord) {
   selectedCall.value = call
   callDrawerVisible.value = true
+}
+
+function openJobDetailPage(job: DashboardOverview['recentFailures'][number]) {
+  void router.push({
+    path: '/ai-jobs',
+    query: buildJobsPageQuery(job)
+  })
+}
+
+function openJobsPage() {
+  void router.push({
+    path: '/ai-jobs',
+    query: buildJobsPageQuery()
+  })
 }
 
 function openServerHealthPage() {
@@ -936,6 +981,38 @@ onBeforeUnmount(() => {
 
 .rate-cell__fill--danger {
   background: linear-gradient(90deg, #f87171, #dc2626);
+}
+
+.subsection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recent-failure-entry {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-failure-entry__row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recent-failure-entry__row > span:first-child {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.recent-failure-entry__meta {
+  font-size: 12px;
+  color: var(--color-text-subtle);
 }
 
 .rate-cell__fill--primary {
