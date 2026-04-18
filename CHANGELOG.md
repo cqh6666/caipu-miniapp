@@ -1,5 +1,23 @@
 # Project Changelog
 
+## 2026-04-18 (菜品流程图横屏沉浸查看)
+
+### Added
+
+- 菜品详情页的流程图改为支持独立横屏沉浸查看：
+  - `pages/recipe-detail/index.vue` 的流程图卡片入口从原来的单图预览切到专用查看页，入口文案同步改为“横屏查看”
+  - 新增 `pages/flowchart-viewer/index.vue`，仅承接步骤图查看，使用自定义导航 + 深色背景 + 轻点隐藏操作区，避免把整个菜品详情页横过来
+  - `pages.json` 为该查看页单独开启 `pageOrientation: landscape` 与 `disableScroll`，横屏能力只作用于流程图查看链路，不影响原详情页竖屏布局
+
+### Notes
+
+- 修改时间：2026-04-18 15:49 CST
+- 变更背景：当前 AI 生成的步骤图默认是横版 `16:9`，直接在竖屏详情卡片里只能看缩略图；用户明确希望只对流程图提供沉浸式横屏查看，而不是把整个菜品详情页改成横屏版
+- 核心改动：新增流程图专用横屏查看页，并把详情页流程图点击行为切换为跳转该页；查看页会保持亮屏并支持轻点隐藏操作区，优先保证“打开即横屏、只看图、不打扰”
+- 影响范围：`pages/recipe-detail/index.vue`、`pages/flowchart-viewer/index.vue`、`pages.json`、`CHANGELOG.md`
+- 兼容性/风险：横屏能力依赖微信小程序 `pageOrientation`；需在微信开发者工具和真机确认自定义导航、刘海屏安全区和返回手势表现是否符合预期
+- 验证情况：已执行 `git diff --check`
+
 ## 2026-04-18 (概览最近失败支持跳转详情)
 
 ### Changed

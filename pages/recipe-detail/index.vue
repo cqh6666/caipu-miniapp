@@ -94,11 +94,11 @@
 						<text class="flowchart-hint__text">做法已更新，建议重新生成步骤图</text>
 					</view>
 
-					<view v-if="hasFlowchart" class="flowchart-panel" @tap="previewFlowchartImage">
+					<view v-if="hasFlowchart" class="flowchart-panel" @tap="openFlowchartViewer">
 						<image class="flowchart-panel__image" :src="flowchartImageUrl" mode="widthFix"></image>
 						<view class="flowchart-panel__footer">
 							<text v-if="flowchartUpdatedAtText" class="flowchart-panel__meta">{{ flowchartUpdatedAtText }}</text>
-							<text class="flowchart-panel__preview">放大看</text>
+							<text class="flowchart-panel__preview">横屏查看</text>
 						</view>
 					</view>
 
@@ -705,6 +705,7 @@ const serializeComparableEditDraft = (draft = {}) =>
 
 const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
 const ACTIVE_FLOWCHART_STATUSES = ['pending', 'processing']
+const FLOWCHART_VIEWER_STORAGE_KEY = 'recipe-flowchart-viewer-payload'
 const parseStatusMetaMap = {
 	idle: {
 		label: '可自动整理',
@@ -1951,11 +1952,17 @@ export default {
 				urls
 			})
 		},
-		previewFlowchartImage() {
+		openFlowchartViewer() {
 			if (!this.flowchartImageUrl) return
-			uni.previewImage({
-				current: this.flowchartImageUrl,
-				urls: [this.flowchartImageUrl]
+			const key = `${this.recipeId || 'recipe'}-${Date.now()}`
+			uni.setStorageSync(FLOWCHART_VIEWER_STORAGE_KEY, {
+				key,
+				imageUrl: this.flowchartImageUrl,
+				title: String(this.recipe?.title || '').trim(),
+				updatedAtText: this.flowchartUpdatedAtText
+			})
+			uni.navigateTo({
+				url: `/pages/flowchart-viewer/index?key=${encodeURIComponent(key)}`
 			})
 		},
 		goBack() {

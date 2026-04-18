@@ -21,6 +21,15 @@
 			}
 		},
 		{
+			"path": "pages/flowchart-viewer/index",
+			"style": {
+				"navigationStyle": "custom",
+				"backgroundColor": "#111111",
+				"disableScroll": true,
+				"pageOrientation": "landscape"
+			}
+		},
+		{
 			"path": "pages/meal-plan-detail/index",
 			"style": {
 				"navigationBarTitleText": "菜单详情"
