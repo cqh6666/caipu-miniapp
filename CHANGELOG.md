@@ -1,5 +1,31 @@
 # Project Changelog
 
+## 2026-04-20 (抖音 Provider POC 设计稿)
+
+### Added
+
+- 新增 `backend/docs/douyin-provider-poc.md`，整理当前仓库接入抖音链接提取能力的
+  POC 设计方案：
+  - 基于现有 `linkparse-sidecar` 架构评估 `F2 / yt-dlp / you-get` 等开源方案，
+    明确 `F2` 更适合作为第一版抖音 provider
+  - 明确第一期目标是补 `POST /v1/parse/douyin`、提取视频/原声/文案并复用现有
+    `ffmpeg + ASR` 转写链路，而不是重做独立解析总线
+  - 约定 Douyin provider 的返回字段、配置项、错误模型、后端接线点和分阶段落地
+    路线，并额外指出现有 sidecar 需要补 `audioUrls` 等通用字段扩展
+
+### Notes
+
+- 修改时间：2026-04-20 11:58 CST
+- 变更背景：用户希望评估并落一版抖音链接提取能力的 POC 设计文档，用于后续支持
+  音频提取、文字版整理和现有菜谱自动解析链路的抖音接入
+- 核心改动：补充 Douyin provider 的设计文档，统一记录开源方案取舍、sidecar /
+  backend 接口约束、转写复用策略和推荐实现顺序
+- 影响范围：`backend/docs/douyin-provider-poc.md`、`CHANGELOG.md`
+- 兼容性/风险：当前仅为设计稿，尚未真正接入抖音 provider；文档中推荐把
+  `XHS_TRANSCRIPT_*` 逐步抽象为更通用的 `LINKPARSE_TRANSCRIPT_*`，正式实现时需
+  保留兼容回退，避免影响现有小红书转写链路
+- 验证情况：已执行文档静态自检；待后续真实实现时补充接口测试与联调验证
+
 ## 2026-04-18 (概览热点分布改为排行榜主视图)
 
 ### Changed
