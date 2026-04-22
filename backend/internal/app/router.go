@@ -37,13 +37,31 @@ func NewRouter(
 	authMiddleware func(http.Handler) http.Handler,
 	adminAuthMiddleware func(http.Handler) http.Handler,
 ) http.Handler {
+	const (
+		defaultRequestTimeout = 30 * time.Second
+		aiTestRequestTimeout  = 3 * time.Minute
+	)
+
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(appmiddleware.RequestLogger(logger))
 	r.Use(chimiddleware.Recoverer)
-	r.Use(chimiddleware.Timeout(30 * time.Second))
+	r.Use(appmiddleware.ConditionalTimeout(defaultRequestTimeout, []appmiddleware.TimeoutOverride{
+		{
+			Method:  http.MethodPost,
+			Prefix:  "/api/admin/ai-routing/scenes/",
+			Suffix:  "/test",
+			Timeout: aiTestRequestTimeout,
+		},
+		{
+			Method:  http.MethodPost,
+			Prefix:  "/api/admin/runtime-settings/groups/",
+			Suffix:  "/test",
+			Timeout: aiTestRequestTimeout,
+		},
+	}))
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		common.WriteData(w, http.StatusOK, map[string]any{

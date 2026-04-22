@@ -1,5 +1,36 @@
 # Project Changelog
 
+## 2026-04-22 (后台 AI 测试接口长耗时超时修复)
+
+### Fixed
+
+- 修复后台 `admin-web` 在测试 AI 路由 / 运行时配置时，可能被后端全局
+  `30s` HTTP 超时提前截断的问题：
+  - 新增 `backend/internal/middleware/timeout.go`，支持按请求方法 +
+    路由前后缀覆盖请求超时，而不是整站只用单一超时值
+  - `backend/internal/app/router.go` 保持大多数接口默认 `30s` 不变，仅将
+    `POST /api/admin/ai-routing/scenes/{scene}/test` 与
+    `POST /api/admin/runtime-settings/groups/{group}/test` 放宽到 `3m`
+  - 补充 `backend/internal/middleware/timeout_test.go`，覆盖匹配测试路由与普通路由
+    两种超时分支，避免后续再被全局超时误伤
+
+### Notes
+
+- 修改时间：2026-04-22 23:59 CST
+- 变更背景：排查用户在后台配置 `https://api.42w.shop/v1` +
+  `gpt-image-2-1536x1024` 时，发现服务器到上游网络连通正常，但后台测试按钮使用的
+  真实流程图样例 prompt 实测耗时约 `64s`，被后端入口统一 `30s` 请求超时提前取消
+- 核心改动：保留绝大多数 API 的默认超时，仅对后台两个“测试”接口按路由放宽时限，
+  让 AI 生图/探活测试能够真正受配置超时控制，而不是先被网关层抢先超时
+- 影响范围：`backend/internal/app/router.go`、
+  `backend/internal/middleware/timeout.go`、
+  `backend/internal/middleware/timeout_test.go`、`CHANGELOG.md`
+- 兼容性/风险：后台测试接口允许更长时间占用连接；若后续继续把超长任务塞进同步 HTTP
+  请求，仍建议评估异步化或更细粒度的场景超时策略
+- 验证情况：已在当前环境复现实测
+  `POST https://api.42w.shop/v1/chat/completions`，轻量测试约 `24.8s`，
+  后台同款真实流程图样例约 `64.3s`；并执行 `go test ./internal/middleware`
+
 ## 2026-04-22 (流程图记录生成 model 与详情页溯源提示)
 
 ### Added
