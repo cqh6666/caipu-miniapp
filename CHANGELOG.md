@@ -1,5 +1,144 @@
 # Project Changelog
 
+## 2026-04-23 (菜品详情页 P0/P1 回归修复：覆盖确认死代码 + ⋯ 菜单 dead-click)
+
+### Fixed
+
+- 修复 `pages/recipe-detail/index.vue` 中「重新整理」轻确认分支为死代码的回归（CHANGELOG 与实际行为不一致）：
+  - 旧逻辑：`needsParseOverwriteConfirm` 包含了 `hasMeaningfulParsedContent`，导致只要有整理结果就走「覆盖警告」弹窗，下方的「轻确认」分支永远不可达
+  - 修复：将 `needsParseOverwriteConfirm` 收窄为仅 `hasManualParsedContentEdits`，让覆盖警告只在「真有手动改动」时弹出；纯 AI 结果走轻确认分支「重新整理？将再次调用 AI 整理食材与步骤，消耗 1 次额度。」；无结果直接执行
+  - 影响：原本所有重新整理都看到「你手动修改过食材或制作步骤……」的吓人提示（即使没改过），现在恢复为按场景的合适措辞
+- 修复一图看懂 ⋯ 菜单在「旧图仍可看 + 后台正在重生成 / 步骤不足」状态下出现 dead-click 的回归：
+  - 旧逻辑：只要 `hasFlowchart` 就显示 ⋯ 菜单且固定包含「重新生成步骤图」；点击后 `handleGenerateFlowchart` 直接 `return`，UI 零反馈
+  - 修复（多层防御）：
+    1. 模板层新增 `isFlowchartActive` 判定，后台 `pending/processing` 时把 ⋯ 替换为非交互的「生成中…」chip，让用户一眼明白当前状态
+    2. `openFlowchartMenu` 改为按 `canRequestFlowchart && !isFlowchartActive` 动态装配菜单项，无效动作不再暴露
+    3. 兜底：若菜单项全空则降级为 toast `当前无可执行操作` 或 `先补充至少 3 个关键步骤`
+- 同步加固「做法整理」`openParseMenu` 的菜单装配逻辑（按 `canRequestParse / parseStatusSourceLabel` 动态组装），保持两个 AI 卡片菜单行为一致
+
+### Added
+
+- `pages/recipe-detail/index.vue` 新增 computed `isFlowchartActive`（基于 `ACTIVE_FLOWCHART_STATUSES`）与样式 `.detail-card__status-chip`，作为「正在生成」状态的视觉锚点
+
+### Notes
+
+- 修改时间：2026-04-23 11:50 CST
+- 变更背景：用户在 P0/P1 完成后做了二次评审，指出两个中风险问题：① 做法整理的轻确认分支因 `needsParseOverwriteConfirm` 条件过宽永远不可达；② 一图看懂 ⋯ 菜单在「旧图仍在 + 正在重生成」时仍暴露「重新生成」选项但点击无反馈
+- 核心改动：收窄 `needsParseOverwriteConfirm` 语义；菜单按真实可执行性动态装配；模板层用「生成中…」chip 取代不可用的 ⋯ 按钮；菜单空态降级为 toast
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：仅前端逻辑与样式调整，未改后端契约；`hasManualParsedContentEdits` 与 `ACTIVE_FLOWCHART_STATUSES` 都是已存在的依赖；模板新增 `v-if/v-else-if` 条件互斥，不会同时渲染
+- 验证情况：esbuild 静态校验 `<script>` 通过；待真机回归 1) 未手动改动时点重新整理是否弹「重新整理？……消耗 1 次额度」轻确认 2) 手动改过后是否弹覆盖警告 3) 后台生成中时是否显示「生成中…」chip 而非 ⋯ 4) 步骤不足时若旧图存在，⋯ 菜单是否只剩「查看生成详情」
+
+## 2026-04-23 (流程图查看交互拆分：轻点预览 / 胶囊横屏)
+
+### Changed
+
+- 拆分菜品详情页一图看懂卡片的「查看流程图」交互为两个独立热区，与用户心智对齐：
+  - **图片本体点击** → 调用 `uni.previewImage` 系统原生预览，支持双指缩放、左滑切换、长按保存菜单，零跳转、零等待
+  - **右下角胶囊点击** → 跳转 `pages/flowchart-viewer` 横屏沉浸页，文案从「全屏查看 ›」改为更准确的「横屏查看 ›」
+  - 胶囊按钮使用 `@tap.stop` 阻止冒泡，确保点击胶囊不会同时触发图片预览
+  - `pages/recipe-detail/index.vue` 新增方法 `previewFlowchartImage`，移除外层 `flowchart-panel` 的整体 `@tap`/`hover-class`，由内部图片与胶囊各自承担 hover 反馈
+- 微交互打磨：
+  - 图片新增 `flowchart-panel__image--active` hover 态（按下时 `opacity: 0.92`），克制不抢戏
+  - 胶囊新增 `flowchart-panel__cta--active` hover 态（`scale(0.96)` + 加深背景），明确「这是独立按钮」
+  - 轻点图片时附带 `uni.vibrateShort({ type: 'light' })` 触觉反馈，强化「快速预览」的轻交互感
+
+### Notes
+
+- 修改时间：2026-04-23 11:05 CST
+- 变更背景：用户反馈希望「轻点 = 快速看大图，主动选择 = 横屏沉浸」，符合移动端的预期；当前实现把整个图片绑定为「跳横屏」入口过于重，且与「全屏查看」浮层重复
+- 核心改动：把图片本体与右下胶囊拆成两个独立点击热区，分别承担系统原生预览与横屏沉浸两种使用场景，并对齐文案与微交互反馈
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：仅修改前端交互；`uni.previewImage` 是小程序与 H5 通用 API，无新依赖；`@tap.stop` 在 uni-app 标准事件修饰符中支持；`uni.vibrateShort` 在不支持的端做了 `&&` 兜底
+- 验证情况：esbuild 静态校验 `<script>` 通过；待在微信开发者工具与真机回归 1) 轻点图片是否进入系统预览 2) 点击右下胶囊是否仍跳横屏页且不触发预览 3) hover 反馈是否自然 4) 触觉反馈在不支持设备上是否安静降级
+
+## 2026-04-23 (菜品详情页 P1+P3 体验优化：折叠菜单、信息层级、视觉规范)
+
+### Changed
+
+- 菜品详情页两个 AI 卡片右上角的「重新生成 / 重新整理」按钮，在已有产物时折叠为 `⋯` 图标按钮，降低消费场景下的视觉噪声：
+  - `pages/recipe-detail/index.vue` 一图看懂卡片：当 `hasFlowchart` 为真时，原次级按钮替换为 `detail-card__icon-action` 图标按钮，点击弹出 `uni.showActionSheet`，含「重新生成步骤图」「查看生成详情」两项，详情通过 `uni.showModal` 展示完整时间与模型名
+  - 做法整理卡片：当 `canRequestParse && hasMeaningfulParsedContent` 为真时同样折叠到 `⋯` 菜单，含「重新整理」「查看整理详情」
+  - 首次未生成时仍保留主操作按钮，保持初次生成的入口可见性
+- 一图看懂卡片底部元信息精简：
+  - 移除「已生成：完整时间」「由 xxx-pro 生成」「双指缩放 / 拖动查看细节」共四行冗余文案
+  - 改为单行 caption `AI 生成 · MM-DD`（新增 computed `flowchartCaptionText`，仅展示月-日，完整时间收到 `⋯` 菜单的「查看生成详情」）
+  - 卡片可点 + 右下角「全屏查看 ›」浮层已经隐含「可放大」语义，无需重复手势提示
+- 顶部引言区视觉减负：
+  - 移除 `.detail-summary-card::after` 的右上角装饰大引号（截图反馈像孤立 bug）
+  - 加深 `::before` 左侧色条颜色（从 `rgba(198,146,99,0.62)` 强化为 `#d1894f`），让「亮点提示」语义靠左色条独立承载
+  - `detail-summary` 右内边距从 34rpx 收回 8rpx，文本展示更舒展
+- Heading 层级规范化（对齐 ui-ux-pro-max 技能库的 Heading Hierarchy / Font Size Scale 规则）：
+  - `.detail-card__title`：30rpx/700 → 32rpx/600，色值从 `#2f2923` 调到现代深色 `#1e293b`
+  - `.parsed-section__title`：23rpx/700 → 24rpx/600，色值 `#76695d` → `#475569`，扫读层级更清晰
+- 视觉规范化（P3）：
+  - 卡片间距 `.detail-card { margin-top }` 由 `20rpx` 统一到 `24rpx`，对齐 8rpx 网格
+  - `parsed-section--steps` 顶部间距由 `30rpx` 调到 `32rpx`，与 8rpx 网格一致
+  - `.detail-scroll` 底部 padding 由 `188rpx` 调到 `200rpx`，给底部按钮栏留出更明显的呼吸缓冲
+
+### Removed
+
+- 清理一图看懂卡片底部已不再使用的样式类：`.flowchart-panel__meta-group / __meta / __credit / __credit-text / __preview-group / __preview / __preview-tip`，避免 dead code
+
+### Notes
+
+- 修改时间：2026-04-23 10:25 CST
+- 变更背景：在 P0 修复转义符、按钮权重、二次确认之后，详情页仍存在 1) 详情页是消费场景但 AI 操作按钮过显眼 2) 一图看懂卡片底部 4 行元信息冗余、模型名对用户无价值 3) 标题层级粒度接近难以扫读 4) 顶部引言右上孤立装饰引号像 bug 等问题，结合 ui-ux-pro-max 的 Heading Hierarchy / Font Size Scale 规则一并优化
+- 核心改动：AI 操作折叠为 `⋯` 菜单 + ActionSheet；元信息精简为单行 caption；顶部引言去引号、加深色条；标题字号/字重/字色统一；卡片间距规范化到 8rpx 网格；移除 7 个无用 CSS 类
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：仅涉及详情页前端模板与样式；新增 `openFlowchartMenu / openParseMenu` 两个方法均使用 `uni.showActionSheet + uni.showModal` 原生能力，无新依赖；首次未生成场景仍保留原主操作按钮路径，不影响新用户的初次生成入口
+- 验证情况：esbuild 静态校验 `<script>` 语法通过；grep 确认旧字符 `&gt;` / 旧类名全部清除；待在微信开发者工具与真机回归 1) 已有产物时 `⋯` 菜单展开是否正常、二次确认是否串联 2) 顶部引言无右上引号 3) 卡片间距与字号梯度
+
+## 2026-04-23 (菜品详情页 P0 体验修复：转义符、按钮权重、AI 二次确认)
+
+### Fixed
+
+- 修复 `pages/recipe-detail/index.vue` 流程图卡片右下角「全屏查看」浮层中的箭头字符在小程序渲染时被转义显示为 `&gt;` 的问题：
+  - 将 `<text>` 内的 ASCII `>` 替换为 Unicode 单字符箭头 `›`，避开 `<text>` 节点对裸 `>` 的转义陷阱
+
+### Changed
+
+- 重排菜品详情页底部操作栏的视觉权重，建立明确的「危险 → 中性 → 主操作」三级梯度：
+  - `删除` 由通栏文字按钮收紧为 `96rpx` 宽的图标按钮（`up-icon name="trash"`），并加细微红调描边以保留语义
+  - `取消置顶 / 置顶` 维持中等宽度的次按钮风格
+  - `编辑` 由 `flex: 1.16` 提升到 `flex: 1.6`，作为主 CTA 占据视觉重心
+  - 收益：避免出现「删除最显眼、编辑反而像配角」的语义冲突，同时降低误删概率
+
+### Added
+
+- 为详情页两个 AI 操作补充统一的二次确认弹窗，避免误触消耗 AI 额度：
+  - `handleParseAction`：在已有整理结果且非「覆盖手动修改」分支时，新增轻确认弹窗 `重新整理？将再次调用 AI 整理食材与步骤，消耗 1 次额度。`
+  - `handleGenerateFlowchart`：在已有流程图（即「重新生成」语义）时，新增 `重新生成步骤图？将再次调用 AI 生成，消耗 1 次额度，约需 15 秒。` 弹窗，并将原生成主体抽出为 `submitFlowchartGeneration` 方法，确认通过后再发起请求
+
+### Notes
+
+- 修改时间：2026-04-23 09:40 CST
+- 变更背景：用户反馈截图里出现 `&gt;` 转义字符（bug 级），底部三按钮的颜色/宽度梯度未体现「删除最弱、编辑最强」的语义，且「重新生成 / 重新整理」缺少二次确认易误触，结合 ui-ux-pro-max 技能库的 `Confirmation Dialogs (High)` 与 `Color Only (High)` 规则统一处理
+- 核心改动：箭头字符替换为 Unicode `›`；底部按钮重排（删除收紧为图标按钮、编辑加宽为主 CTA）；两个 AI 入口分别补二次确认弹窗
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：仅影响详情页前端交互与样式；二次确认沿用 `uni.showModal`，无新依赖；`submitFlowchartGeneration` 是从 `handleGenerateFlowchart` 内联抽出，主流程逻辑不变；底部按钮宽度变化后请在 375px / 414px 真机上各看一次主按钮文字是否舒展
+- 验证情况：已用 esbuild 静态校验 `<script>` 块语法通过；待在微信开发者工具与真机回归底部按钮布局、二次确认弹窗交互、流程图卡片箭头显示
+
+## 2026-04-23 (流程图查看入口与横屏引导优化)
+
+### Changed
+
+- 优化菜品详情页流程图卡片的查看入口层级：
+  - `pages/recipe-detail/index.vue` 中已有流程图时，顶部操作不再和“查看大图”抢主次，`重新生成` 回落为次级动作
+  - 流程图缩略图本体新增悬浮式 `全屏查看` CTA，并把右下角纯提示文案改为 `双指缩放 / 拖动查看细节` 的手势提示，降低“只是说明文字”的误判
+- 优化横屏查看页的首次上手反馈：
+  - `pages/flowchart-viewer/index.vue` 新增一次性轻提示，首次进入时短暂展示“已进入横屏，双指缩放 · 拖动查看细节”
+  - 左上角关闭入口扩为带 `返回详情` 文案的胶囊按钮，短暂显示后自动收成纯图标，兼顾发现性与沉浸感
+
+### Notes
+
+- 修改时间：2026-04-23 00:26 CST
+- 变更背景：用户反馈流程图卡片里的 `横屏缩放查看` 更像技术说明，不像主操作；进入横屏查看页后，首次使用也缺少足够自然的手势与返回提示
+- 核心改动：把“查看步骤图”从卡片页脚弱文案升级为图片上的显式 CTA，并在横屏查看页补充一次性轻引导和更稳的返回控件，让查看链路更符合“先点开、再放大、看完就退”的直觉
+- 影响范围：`pages/recipe-detail/index.vue`、`pages/flowchart-viewer/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：本次仅调整前端交互与视觉层级；横屏查看页的提示显隐依赖本地存储与 `setTimeout`，仍建议在微信开发者工具和真机各看一次首开、二次进入和安全区表现
+- 验证情况：已执行 `git diff --check`，并完成改动静态自检；待在微信开发者工具和真机补充交互回归
+
 ## 2026-04-22 (后台 AI 测试接口长耗时超时修复)
 
 ### Fixed

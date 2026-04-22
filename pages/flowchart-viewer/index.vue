@@ -31,8 +31,19 @@
 				</view>
 			</view>
 
-			<view class="flowchart-viewer__close" @tap="goBack">
+			<view
+				class="flowchart-viewer__close"
+				:class="{ 'flowchart-viewer__close--compact': !showCloseLabel }"
+				@tap="goBack"
+			>
 				<up-icon name="close" size="15" color="#fbf5ee"></up-icon>
+				<text v-if="showCloseLabel" class="flowchart-viewer__close-text">返回详情</text>
+			</view>
+
+			<view v-if="showGestureHint && !imageLoading" class="flowchart-viewer__guide">
+				<view class="flowchart-viewer__guide-chip">
+					<text class="flowchart-viewer__guide-text">已进入横屏，双指缩放 · 拖动查看细节</text>
+				</view>
 			</view>
 		</template>
 
@@ -53,6 +64,7 @@
 
 <script>
 const FLOWCHART_VIEWER_STORAGE_KEY = 'recipe-flowchart-viewer-payload'
+const FLOWCHART_VIEWER_GUIDE_SEEN_KEY = 'recipe-flowchart-viewer-guide-seen'
 
 function clampScale(value = 1, min = 1, max = 4) {
 	const parsed = Number(value)
@@ -69,7 +81,11 @@ export default {
 			imageFailed: false,
 			minScale: 1,
 			maxScale: 4,
-			imageScale: 1
+			imageScale: 1,
+			showGestureHint: false,
+			showCloseLabel: true,
+			gestureHintTimer: null,
+			closeLabelTimer: null
 		}
 	},
 	onLoad(options = {}) {
@@ -84,6 +100,7 @@ export default {
 	},
 	onUnload() {
 		this.setKeepScreenOn(false)
+		this.clearGuideTimers()
 		const payload = uni.getStorageSync(FLOWCHART_VIEWER_STORAGE_KEY)
 		if (payload && payload.key === this.viewerKey) {
 			uni.removeStorageSync(FLOWCHART_VIEWER_STORAGE_KEY)
@@ -110,15 +127,66 @@ export default {
 		},
 		handleViewerScale(event) {
 			this.imageScale = clampScale(event?.detail?.scale, this.minScale, this.maxScale)
+			this.dismissViewerGuide()
 		},
 		handleImageLoad() {
 			this.imageLoading = false
 			this.imageFailed = false
 			this.imageScale = this.minScale
+			this.primeViewerGuide()
 		},
 		handleImageError() {
 			this.imageLoading = false
 			this.imageFailed = true
+			this.clearGuideTimers()
+			this.showGestureHint = false
+			this.showCloseLabel = false
+		},
+		primeViewerGuide() {
+			this.clearGuideTimers()
+			const hasSeenGuide = !!uni.getStorageSync(FLOWCHART_VIEWER_GUIDE_SEEN_KEY)
+			this.showCloseLabel = true
+			if (!hasSeenGuide) {
+				this.showGestureHint = true
+				uni.setStorageSync(FLOWCHART_VIEWER_GUIDE_SEEN_KEY, 1)
+				this.gestureHintTimer = setTimeout(() => {
+					this.showGestureHint = false
+					this.gestureHintTimer = null
+				}, 2200)
+				this.closeLabelTimer = setTimeout(() => {
+					this.showCloseLabel = false
+					this.closeLabelTimer = null
+				}, 2600)
+				return
+			}
+
+			this.showGestureHint = false
+			this.closeLabelTimer = setTimeout(() => {
+				this.showCloseLabel = false
+				this.closeLabelTimer = null
+			}, 1400)
+		},
+		dismissViewerGuide() {
+			if (!this.showGestureHint && !this.showCloseLabel) return
+			this.showGestureHint = false
+			if (!this.showCloseLabel) return
+			if (this.closeLabelTimer) {
+				clearTimeout(this.closeLabelTimer)
+			}
+			this.closeLabelTimer = setTimeout(() => {
+				this.showCloseLabel = false
+				this.closeLabelTimer = null
+			}, 700)
+		},
+		clearGuideTimers() {
+			if (this.gestureHintTimer) {
+				clearTimeout(this.gestureHintTimer)
+				this.gestureHintTimer = null
+			}
+			if (this.closeLabelTimer) {
+				clearTimeout(this.closeLabelTimer)
+				this.closeLabelTimer = null
+			}
 		},
 		goBack() {
 			if (getCurrentPages().length > 1) {
@@ -200,8 +268,9 @@ export default {
 		top: calc(env(safe-area-inset-top) + 18rpx);
 		left: calc(env(safe-area-inset-left) + 18rpx);
 		z-index: 5;
-		width: 54rpx;
-		height: 54rpx;
+		min-width: 64rpx;
+		height: 64rpx;
+		padding: 0 20rpx;
 		border-radius: 999rpx;
 		background: rgba(14, 11, 8, 0.36);
 		border: 1px solid rgba(255, 255, 255, 0.06);
@@ -209,9 +278,58 @@ export default {
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		gap: 10rpx;
 		box-shadow:
 			0 8rpx 16rpx rgba(0, 0, 0, 0.14),
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.06);
+		transition: opacity 0.18s ease, transform 0.18s ease, padding 0.18s ease, min-width 0.18s ease;
+	}
+
+	.flowchart-viewer__close--compact {
+		min-width: 64rpx;
+		padding: 0;
+	}
+
+	.flowchart-viewer__close-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		line-height: 1;
+		color: #fbf5ee;
+		white-space: nowrap;
+	}
+
+	.flowchart-viewer__guide {
+		position: fixed;
+		left: 50%;
+		bottom: calc(env(safe-area-inset-bottom) + 28rpx);
+		z-index: 5;
+		transform: translateX(-50%);
+		padding: 0 24rpx;
+		box-sizing: border-box;
+		display: flex;
+		justify-content: center;
+		width: 100%;
+		pointer-events: none;
+	}
+
+	.flowchart-viewer__guide-chip {
+		max-width: 100%;
+		padding: 16rpx 24rpx;
+		border-radius: 999rpx;
+		background: rgba(18, 13, 10, 0.76);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		backdrop-filter: blur(16rpx);
+		box-shadow:
+			0 18rpx 32rpx rgba(0, 0, 0, 0.2),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.08);
+	}
+
+	.flowchart-viewer__guide-text {
+		display: block;
+		font-size: 22rpx;
+		line-height: 1.4;
+		color: #fff0e1;
+		text-align: center;
 	}
 
 	.flowchart-viewer__empty {

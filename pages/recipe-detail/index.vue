@@ -67,7 +67,27 @@
 						<view class="detail-card__heading">
 							<text class="detail-card__title">一图看懂</text>
 						</view>
+						<!--
+							已有流程图：
+							  · 后台正在重生成 → 显示非交互的「生成中」chip（避免 dead-click）
+							  · 否则             → 折叠为 ⋯ 菜单
+							尚未生成：保留主操作按钮
+						-->
+						<view v-if="hasFlowchart && isFlowchartActive" class="detail-card__status-chip">
+							<text class="detail-card__status-chip-text">生成中…</text>
+						</view>
 						<view
+							v-else-if="hasFlowchart"
+							class="detail-card__icon-action"
+							:class="{ 'detail-card__icon-action--disabled': isGeneratingFlowchart }"
+							hover-class="detail-card__icon-action--active"
+							hover-stay-time="80"
+							@tap="openFlowchartMenu"
+						>
+							<up-icon name="more-dot-fill" size="16" color="#7b6d62"></up-icon>
+						</view>
+						<view
+							v-else
 							class="detail-card__action detail-card__action--accent"
 							:class="{ 'detail-card__action--disabled': !canRequestFlowchart || isGeneratingFlowchart }"
 							@tap="handleGenerateFlowchart"
@@ -94,16 +114,31 @@
 						<text class="flowchart-hint__text">做法已更新，建议重新生成步骤图</text>
 					</view>
 
-					<view v-if="hasFlowchart" class="flowchart-panel" @tap="openFlowchartViewer">
-						<image class="flowchart-panel__image" :src="flowchartImageUrl" mode="widthFix"></image>
-						<view class="flowchart-panel__footer">
-							<view class="flowchart-panel__meta-group">
-								<text v-if="flowchartUpdatedAtText" class="flowchart-panel__meta">{{ flowchartUpdatedAtText }}</text>
-								<view v-if="flowchartModelTip" class="flowchart-panel__credit">
-									<text class="flowchart-panel__credit-text">{{ flowchartModelTip }}</text>
-								</view>
+					<view v-if="hasFlowchart" class="flowchart-panel">
+						<view class="flowchart-panel__image-shell">
+							<!-- 轻点图片：调系统原生 previewImage 做快速预览（双指缩放、保存、左滑切换） -->
+							<image
+								class="flowchart-panel__image"
+								:src="flowchartImageUrl"
+								mode="widthFix"
+								hover-class="flowchart-panel__image--active"
+								hover-stay-time="80"
+								@tap="previewFlowchartImage"
+							></image>
+							<view class="flowchart-panel__image-shadow"></view>
+							<!-- 右下胶囊：单独热区 → 跳横屏沉浸页；@tap.stop 防止冒泡到图片预览 -->
+							<view
+								class="flowchart-panel__cta"
+								hover-class="flowchart-panel__cta--active"
+								hover-stay-time="80"
+								@tap.stop="openFlowchartViewer"
+							>
+								<text class="flowchart-panel__cta-text">横屏查看</text>
+								<text class="flowchart-panel__cta-arrow">›</text>
 							</view>
-							<text class="flowchart-panel__preview">横屏缩放查看</text>
+						</view>
+						<view v-if="flowchartCaptionText" class="flowchart-panel__footer">
+							<text class="flowchart-panel__caption">{{ flowchartCaptionText }}</text>
 						</view>
 					</view>
 
@@ -120,7 +155,17 @@
 					<view class="detail-card__header">
 						<text class="detail-card__title">做法整理</text>
 						<view
-							v-if="canRequestParse"
+							v-if="canRequestParse && hasMeaningfulParsedContent"
+							class="detail-card__icon-action"
+							:class="{ 'detail-card__icon-action--disabled': isReparseSubmitting }"
+							hover-class="detail-card__icon-action--active"
+							hover-stay-time="80"
+							@tap="openParseMenu"
+						>
+							<up-icon name="more-dot-fill" size="16" color="#7b6d62"></up-icon>
+						</view>
+						<view
+							v-else-if="canRequestParse"
 							class="detail-card__action detail-card__action--accent"
 							:class="{ 'detail-card__action--disabled': isReparseSubmitting }"
 							@tap="handleParseAction"
@@ -215,7 +260,7 @@
 
 			<view class="detail-footer">
 				<view class="detail-footer__action detail-footer__action--ghost detail-footer__action--delete" @tap="confirmDeleteRecipe">
-					<text class="detail-footer__text detail-footer__text--danger">删除</text>
+					<up-icon name="trash" size="18" color="#b4664c"></up-icon>
 				</view>
 				<view
 					class="detail-footer__action detail-footer__action--soft detail-footer__action--pin"
@@ -1028,6 +1073,10 @@ export default {
 		canRequestFlowchart() {
 			return this.canGenerateFlowchart && !ACTIVE_FLOWCHART_STATUSES.includes(this.flowchartStatusValue)
 		},
+		isFlowchartActive() {
+			// 后台正在生成 / 排队中
+			return ACTIVE_FLOWCHART_STATUSES.includes(this.flowchartStatusValue)
+		},
 		flowchartActionText() {
 			if (this.isGeneratingFlowchart) return '提交中...'
 			if (ACTIVE_FLOWCHART_STATUSES.includes(this.flowchartStatusValue)) return '生成中...'
@@ -1072,6 +1121,18 @@ export default {
 		flowchartUpdatedAtText() {
 			const value = formatDateTime(this.recipe?.flowchartUpdatedAt || '')
 			return value ? `已生成：${value}` : ''
+		},
+		flowchartCaptionText() {
+			const raw = String(this.recipe?.flowchartUpdatedAt || '').trim()
+			if (!raw) return ''
+			// 仅取月-日，作为卡片底部一行 caption（完整时间放到「查看生成详情」里）
+			const date = new Date(raw)
+			if (Number.isNaN(date.getTime())) {
+				return 'AI 生成'
+			}
+			const mm = String(date.getMonth() + 1).padStart(2, '0')
+			const dd = String(date.getDate()).padStart(2, '0')
+			return `AI 生成 · ${mm}-${dd}`
 		},
 		flowchartModelTip() {
 			const model = String(this.recipe?.flowchartModel || '').trim()
@@ -1129,7 +1190,8 @@ export default {
 			return this.isAutoParseRecipe && !ACTIVE_PARSE_STATUSES.includes(this.parseStatusValue)
 		},
 		needsParseOverwriteConfirm() {
-			return this.parseStatusValue === 'done' || this.parseStatusValue === 'failed' || this.hasMeaningfulParsedContent
+			// 仅在「手动改过」时才走覆盖警告；纯 AI 结果走下方的「轻确认」分支
+			return this.hasManualParsedContentEdits
 		},
 		parseOverwriteModalContent() {
 			if (this.hasManualParsedContentEdits) {
@@ -1781,21 +1843,36 @@ export default {
 		},
 		handleParseAction() {
 			if (!this.canRequestParse || this.isReparseSubmitting) return
-			if (!this.needsParseOverwriteConfirm) {
-				this.requestAutoParse()
+			if (this.needsParseOverwriteConfirm) {
+				uni.showModal({
+					title: '更新做法整理',
+					content: this.parseOverwriteModalContent,
+					confirmText: '继续整理',
+					confirmColor: '#b4664c',
+					success: ({ confirm }) => {
+						if (!confirm) return
+						this.requestAutoParse()
+					}
+				})
 				return
 			}
 
-			uni.showModal({
-				title: '更新做法整理',
-				content: this.parseOverwriteModalContent,
-				confirmText: '继续整理',
-				confirmColor: '#b4664c',
-				success: ({ confirm }) => {
-					if (!confirm) return
-					this.requestAutoParse()
-				}
-			})
+			// 已有整理结果时，重新整理也会消耗一次 AI 额度，做轻确认
+			if (this.hasMeaningfulParsedContent) {
+				uni.showModal({
+					title: '重新整理？',
+					content: '将再次调用 AI 整理食材与步骤，消耗 1 次额度。',
+					confirmText: '继续整理',
+					confirmColor: '#b4664c',
+					success: ({ confirm }) => {
+						if (!confirm) return
+						this.requestAutoParse()
+					}
+				})
+				return
+			}
+
+			this.requestAutoParse()
 		},
 		async requestAutoParse() {
 			if (!this.canRequestParse || this.isReparseSubmitting) return
@@ -1827,6 +1904,74 @@ export default {
 				uni.hideLoading()
 			}
 		},
+		openFlowchartMenu() {
+			if (this.isGeneratingFlowchart) return
+
+			const items = []
+			// 仅当真的可以再次生成时才暴露入口，避免 dead-click
+			const canRegenerate = this.canRequestFlowchart && !this.isFlowchartActive
+			if (canRegenerate) items.push('重新生成步骤图')
+
+			const hasDetail = !!(this.flowchartUpdatedAtText || this.flowchartModelTip)
+			if (hasDetail) items.push('查看生成详情')
+
+			// 极端兜底：菜单项全空时给个无操作的提示，避免空 ActionSheet
+			if (!items.length) {
+				uni.showToast({
+					title: this.canGenerateFlowchart ? '当前无可执行操作' : '先补充至少 3 个关键步骤',
+					icon: 'none'
+				})
+				return
+			}
+
+			uni.showActionSheet({
+				itemList: items,
+				success: ({ tapIndex }) => {
+					const action = items[tapIndex]
+					if (action === '重新生成步骤图') {
+						this.handleGenerateFlowchart()
+					} else if (action === '查看生成详情') {
+						uni.showModal({
+							title: '生成详情',
+							content: [this.flowchartUpdatedAtText, this.flowchartModelTip].filter(Boolean).join('\n'),
+							showCancel: false,
+							confirmText: '知道了',
+							confirmColor: '#5b4a3b'
+						})
+					}
+				}
+			})
+		},
+		openParseMenu() {
+			if (this.isReparseSubmitting) return
+
+			const items = []
+			if (this.canRequestParse) items.push('重新整理')
+			if (this.parseStatusSourceLabel) items.push('查看整理详情')
+
+			if (!items.length) {
+				uni.showToast({ title: '当前无可执行操作', icon: 'none' })
+				return
+			}
+
+			uni.showActionSheet({
+				itemList: items,
+				success: ({ tapIndex }) => {
+					const action = items[tapIndex]
+					if (action === '重新整理') {
+						this.handleParseAction()
+					} else if (action === '查看整理详情') {
+						uni.showModal({
+							title: '整理详情',
+							content: this.parseStatusSourceLabel,
+							showCancel: false,
+							confirmText: '知道了',
+							confirmColor: '#5b4a3b'
+						})
+					}
+				}
+			})
+		},
 		async handleGenerateFlowchart() {
 			if (!this.recipeId || this.isGeneratingFlowchart || !this.canRequestFlowchart) return
 			if (!this.canGenerateFlowchart) {
@@ -1837,6 +1982,24 @@ export default {
 				return
 			}
 
+			// 已有流程图时，重新生成会消耗一次 AI 额度，做二次确认
+			if (this.hasFlowchart) {
+				const confirmed = await new Promise((resolve) => {
+					uni.showModal({
+						title: '重新生成步骤图？',
+						content: '将再次调用 AI 生成，消耗 1 次额度，约需 15 秒。',
+						confirmText: '继续生成',
+						confirmColor: '#b4664c',
+						success: ({ confirm }) => resolve(!!confirm),
+						fail: () => resolve(false)
+					})
+				})
+				if (!confirmed) return
+			}
+
+			await this.submitFlowchartGeneration()
+		},
+		async submitFlowchartGeneration() {
 			this.isGeneratingFlowchart = true
 			uni.showLoading({
 				title: '提交中',
@@ -1974,6 +2137,16 @@ export default {
 				url: `/pages/flowchart-viewer/index?key=${encodeURIComponent(key)}`
 			})
 		},
+		previewFlowchartImage() {
+			// 轻点图片：用系统原生 previewImage 做快速预览（双指缩放、保存、长按菜单）
+			// 与右下「横屏查看 ›」胶囊的横屏沉浸模式区分：轻 = 快看，重 = 横屏沉浸
+			if (!this.flowchartImageUrl) return
+			uni.vibrateShort && uni.vibrateShort({ type: 'light' })
+			uni.previewImage({
+				urls: [this.flowchartImageUrl],
+				current: this.flowchartImageUrl
+			})
+		},
 		goBack() {
 			if (getCurrentPages().length > 1) {
 				uni.navigateBack()
@@ -1998,7 +2171,7 @@ export default {
 	.detail-scroll {
 		height: 100vh;
 		box-sizing: border-box;
-		padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 188rpx);
+		padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 200rpx);
 	}
 
 	.hero-card,
@@ -2245,38 +2418,29 @@ export default {
 		content: '';
 		position: absolute;
 		left: 0;
-		top: 16rpx;
-		bottom: 16rpx;
+		top: 14rpx;
+		bottom: 14rpx;
 		width: 6rpx;
 		border-radius: 999rpx;
-		background: linear-gradient(180deg, rgba(198, 146, 99, 0.62), rgba(226, 189, 150, 0.18));
+		background: linear-gradient(180deg, #d1894f 0%, rgba(209, 137, 79, 0.42) 100%);
 	}
 
-	.detail-summary-card::after {
-		content: '“';
-		position: absolute;
-		right: 20rpx;
-		top: 10rpx;
-		font-size: 72rpx;
-		font-weight: 700;
-		line-height: 1;
-		color: rgba(180, 143, 110, 0.11);
-		pointer-events: none;
-	}
+	/* P1-4: 移除原右上角装饰引号 ::after（截图反馈像孤立 bug），亮点语义改由加深的左色条承载 */
 
 	.detail-summary {
 		position: relative;
 		z-index: 1;
 		display: block;
 		margin-top: 0;
-		padding-right: 34rpx;
+		padding-right: 8rpx;
 		font-size: 26rpx;
 		line-height: 1.74;
 		color: #5e544b;
 	}
 
 	.detail-card {
-		margin-top: 20rpx;
+		/* P3-1: 卡片间距规范化为 24rpx，对齐 8 网格 */
+		margin-top: 24rpx;
 		padding: 28rpx;
 		background:
 			linear-gradient(180deg, rgba(255, 254, 252, 0.98), rgba(255, 251, 246, 0.95));
@@ -2326,10 +2490,11 @@ export default {
 	}
 
 	.detail-card__title {
-		font-size: 30rpx;
-		font-weight: 700;
-		line-height: 1.2;
-		color: #2f2923;
+		font-size: 32rpx;
+		font-weight: 600;
+		line-height: 1.25;
+		color: #1e293b;
+		letter-spacing: 0.2rpx;
 	}
 
 	.detail-card__action {
@@ -2377,6 +2542,54 @@ export default {
 
 	.detail-card__action-text--accent {
 		color: #b4664c;
+	}
+
+	/* P1: 卡片右上角折叠菜单的图标按钮（⋯），降低视觉权重 */
+	.detail-card__icon-action {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 999rpx;
+		border: 1px solid rgba(99, 79, 60, 0.08);
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(245, 239, 232, 0.94));
+		box-shadow:
+			0 6rpx 14rpx rgba(68, 52, 38, 0.04),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: transform 0.16s ease, background 0.16s ease;
+	}
+
+	.detail-card__icon-action--active {
+		transform: scale(0.94);
+		background: rgba(245, 239, 232, 0.96);
+	}
+
+	.detail-card__icon-action--disabled {
+		opacity: 0.5;
+		pointer-events: none;
+	}
+
+	/* 后台生成中：非交互 chip，明确告知用户「正在生成」，避免点击 ⋯ 后跳出无意义的 dead-click 菜单 */
+	.detail-card__status-chip {
+		min-height: 56rpx;
+		padding: 0 18rpx;
+		border-radius: 999rpx;
+		background: rgba(244, 233, 218, 0.92);
+		border: 1px solid rgba(186, 145, 81, 0.18);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.detail-card__status-chip-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #9a7343;
+		letter-spacing: 0.2rpx;
 	}
 
 	.link-panel {
@@ -2440,6 +2653,7 @@ export default {
 
 	.flowchart-panel {
 		margin-top: 18rpx;
+		position: relative;
 		border-radius: 24rpx;
 		overflow: hidden;
 		background:
@@ -2448,63 +2662,101 @@ export default {
 		box-shadow:
 			0 12rpx 24rpx rgba(70, 54, 40, 0.045),
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.42);
+		transform: scale(1);
+		transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+	}
+
+	.flowchart-panel--active {
+		border-color: rgba(123, 96, 72, 0.12);
+		box-shadow:
+			0 10rpx 20rpx rgba(70, 54, 40, 0.052),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.42);
+		transform: scale(0.994);
+	}
+
+	.flowchart-panel__image-shell {
+		position: relative;
 	}
 
 	.flowchart-panel__image {
 		width: 100%;
 		display: block;
 		background: #f6f2ed;
+		transition: opacity 0.18s ease;
+	}
+
+	/* 轻点图片：调系统原生预览，按下时给一个克制的透明度反馈 */
+	.flowchart-panel__image--active {
+		opacity: 0.92;
+	}
+
+	.flowchart-panel__image-shadow {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 120rpx;
+		background: linear-gradient(180deg, rgba(38, 28, 21, 0), rgba(38, 28, 21, 0.42));
+		pointer-events: none;
+	}
+
+	.flowchart-panel__cta {
+		position: absolute;
+		right: 20rpx;
+		bottom: 20rpx;
+		z-index: 1;
+		min-height: 64rpx;
+		padding: 0 18rpx 0 22rpx;
+		border-radius: 999rpx;
+		background: rgba(29, 22, 17, 0.82);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		backdrop-filter: blur(14rpx);
+		display: inline-flex;
+		align-items: center;
+		gap: 10rpx;
+		box-shadow:
+			0 12rpx 26rpx rgba(0, 0, 0, 0.16),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.08);
+		transition: transform 0.16s ease, background 0.16s ease;
+	}
+
+	/* 胶囊按下：轻微 scale + 加深背景，明确「这是个独立按钮」 */
+	.flowchart-panel__cta--active {
+		transform: scale(0.96);
+		background: rgba(15, 10, 7, 0.92);
+	}
+
+	.flowchart-panel__cta-text,
+	.flowchart-panel__cta-arrow {
+		display: block;
+		line-height: 1;
+		color: #fff9f2;
+	}
+
+	.flowchart-panel__cta-text {
+		font-size: 24rpx;
+		font-weight: 700;
+		letter-spacing: 0.5rpx;
+	}
+
+	.flowchart-panel__cta-arrow {
+		font-size: 24rpx;
+		font-weight: 700;
+		color: rgba(255, 249, 242, 0.84);
 	}
 
 	.flowchart-panel__footer {
-		padding: 16rpx 18rpx 18rpx;
+		padding: 14rpx 20rpx 18rpx;
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 16rpx;
+		justify-content: flex-start;
 	}
 
-	.flowchart-panel__meta-group {
-		display: flex;
-		flex-direction: column;
-		gap: 4rpx;
-		min-width: 0;
-		flex: 1;
-	}
-
-	.flowchart-panel__meta,
-	.flowchart-panel__preview {
-		font-size: 21rpx;
-		line-height: 1.5;
-		color: #8f8275;
-	}
-
-	.flowchart-panel__meta {
-		word-break: break-all;
-	}
-
-	.flowchart-panel__credit {
-		align-self: flex-start;
-		max-width: 100%;
-		padding: 6rpx 14rpx;
-		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.7);
-		border: 1px solid rgba(91, 74, 59, 0.08);
-		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.52);
-	}
-
-	.flowchart-panel__credit-text {
-		display: block;
-		font-size: 19rpx;
+	.flowchart-panel__caption {
+		font-size: 22rpx;
 		line-height: 1.4;
-		color: #7b6d62;
-		word-break: break-all;
-	}
-
-	.flowchart-panel__preview {
-		flex-shrink: 0;
-		font-weight: 600;
-		color: #6d6155;
+		color: #94a3b8;
+		letter-spacing: 0.2rpx;
 	}
 
 	.flowchart-empty {
@@ -2624,7 +2876,7 @@ export default {
 	}
 
 	.parsed-section--steps {
-		margin-top: 30rpx;
+		margin-top: 32rpx;
 	}
 
 	.parsed-section__title {
@@ -2636,9 +2888,10 @@ export default {
 		border-radius: 999rpx;
 		background: rgba(242, 235, 226, 0.88);
 		border: 1px solid rgba(122, 98, 74, 0.08);
-		font-size: 23rpx;
-		font-weight: 700;
-		color: #76695d;
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #475569;
+		letter-spacing: 0.2rpx;
 	}
 
 	.parsed-item,
@@ -2831,7 +3084,12 @@ export default {
 	}
 
 	.detail-footer__action--delete {
-		flex: 0.86;
+		flex: 0 0 96rpx;
+		background: rgba(255, 255, 255, 0.86);
+		border-color: rgba(180, 102, 76, 0.18);
+		box-shadow:
+			0 8rpx 16rpx rgba(180, 102, 76, 0.05),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
 	}
 
 	.detail-footer__action--pin {
@@ -2839,7 +3097,7 @@ export default {
 	}
 
 	.detail-footer__action--edit {
-		flex: 1.16;
+		flex: 1.6;
 	}
 
 	.detail-footer__action--disabled {
