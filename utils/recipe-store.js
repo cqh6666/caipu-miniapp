@@ -331,6 +331,8 @@ export function normalizeRecipe(recipe = {}) {
 		images: imageUrls,
 		imageUrls,
 		flowchartImageUrl,
+		flowchartProvider: (recipe.flowchartProvider || '').trim(),
+		flowchartModel: (recipe.flowchartModel || '').trim(),
 		flowchartStatus: (recipe.flowchartStatus || '').trim(),
 		flowchartError: (recipe.flowchartError || '').trim(),
 		flowchartRequestedAt: recipe.flowchartRequestedAt || '',

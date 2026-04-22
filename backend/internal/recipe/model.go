@@ -115,6 +115,8 @@ type Recipe struct {
 	ImageURLs              []string          `json:"imageUrls"`
 	ImageMetas             []RecipeImageMeta `json:"-"`
 	FlowchartImageURL      string            `json:"flowchartImageUrl"`
+	FlowchartProvider      string            `json:"flowchartProvider"`
+	FlowchartModel         string            `json:"flowchartModel"`
 	FlowchartStatus        string            `json:"flowchartStatus"`
 	FlowchartError         string            `json:"flowchartError"`
 	FlowchartRequestedAt   string            `json:"flowchartRequestedAt"`

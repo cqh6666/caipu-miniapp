@@ -169,6 +169,8 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	next.KitchenID = current.KitchenID
 	next.PinnedAt = current.PinnedAt
 	next.FlowchartImageURL = current.FlowchartImageURL
+	next.FlowchartProvider = current.FlowchartProvider
+	next.FlowchartModel = current.FlowchartModel
 	next.FlowchartStatus = current.FlowchartStatus
 	next.FlowchartError = current.FlowchartError
 	next.FlowchartRequestedAt = current.FlowchartRequestedAt

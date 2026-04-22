@@ -272,7 +272,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 	}
 
 	finishedAt := time.Now().Format(time.RFC3339)
-	if err := w.repo.ApplyFlowchartResult(ctx, recipeID, result.ImageURL, result.SourceHash, finishedAt); err != nil {
+	if err := w.repo.ApplyFlowchartResult(ctx, recipeID, result.ImageURL, result.Provider, result.Model, result.SourceHash, finishedAt); err != nil {
 		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
 			w.logger.Error("mark recipe flowchart apply failure failed", "recipeID", recipeID, "error", markErr)
 		}

@@ -1,5 +1,62 @@
 # Project Changelog
 
+## 2026-04-22 (流程图记录生成 model 与详情页溯源提示)
+
+### Added
+
+- 流程图结果新增生成来源落库能力：
+  - 新增迁移 `backend/migrations/017_add_recipe_flowchart_generator.sql`
+  - `recipes` 表补充 `flowchart_provider`、`flowchart_model` 字段，用于记录当前这张步骤图生成时实际发出的 provider / model
+  - 流程图 worker 在成功写回图片时会同步保存本次请求的 provider / model，后续重新生成会覆盖为最新映射
+- 菜品详情页 `pages/recipe-detail/index.vue` 的流程图卡片底部新增轻量 provenance 提示：
+  - 在已生成时间下方以小胶囊形式展示 `由 {model} 生成`
+  - 视觉上保持为次级信息，不抢主图和“横屏缩放查看”主操作的注意力
+
+### Notes
+
+- 修改时间：2026-04-22 23:41 CST
+- 变更背景：用户希望后续每张流程图都能直接追溯到当时请求使用的 model，并在前端详情页以简单提示形式可见，而不是只能去 AI 任务审计页排查
+- 核心改动：把流程图生成的 provider / model 从仅存在于 AI 审计记录，扩展为同步保存到菜谱主记录，并在详情页补一个轻量的“由 {model} 生成”溯源提示
+- 影响范围：`backend/migrations/017_add_recipe_flowchart_generator.sql`、
+  `backend/internal/recipe/*.go`、`pages/recipe-detail/index.vue`、
+  `utils/recipe-store.js`、`CHANGELOG.md`
+- 兼容性/风险：旧数据默认没有 `flowchart_model`，详情页只会不展示该提示，不影响已有流程图查看；当前按用户要求记录的是“请求时发出的 model”，不是上游网关回显的真实执行模型
+- 验证情况：已执行 `go test ./internal/recipe`、`go test ./internal/airouter`、
+  `go test ./internal/upload`，并完成详情页样式静态自检
+
+## 2026-04-22 (流程图中转站 `message.images` 兼容修复)
+
+### Fixed
+
+- 补齐 OpenAI-compatible 流程图生图对 `message.images` 返回格式的兼容：
+  - `backend/internal/airouter/service.go` 在 `flowchart` 场景下优先读取
+    `choices[0].message.images[*].image_url.url`，不再只依赖 `message.content`
+  - `backend/internal/recipe/flowchart.go` 同步支持从 `images` 数组提取图片引用，
+    并允许识别 `data:image/...;base64,...` 形式的图片结果
+  - `backend/internal/upload/service.go` 新增对 base64 `data:` 图片地址的落盘支持，
+    避免中转站返回内嵌图片时流程卡在“无法下载远端 URL”
+- 新增测试覆盖：
+  - `backend/internal/airouter/service_test.go` 验证 `flowchart` 场景可消费
+    `message.images`
+  - `backend/internal/recipe/flowchart_test.go` 验证流程图图片提取支持 `data:` URL
+  - `backend/internal/upload/service_test.go` 验证上传服务可直接保存 base64 图片
+
+### Notes
+
+- 修改时间：2026-04-22 23:12 CST
+- 变更背景：实测新的流程图中转站在 `chat/completions` 下返回的是
+  `message.images[0].image_url.url = data:image/...;base64,...`，而不是仓库原先假设的
+  Markdown 图片或公网 URL，导致流程图生成链路实际不兼容
+- 核心改动：后端流程图链路统一补齐 `message.images` + `data:` 图片兼容，确保 AI
+  返回内嵌图片时也能进入现有上传、存储和前端展示流程
+- 影响范围：`backend/internal/airouter/service.go`、
+  `backend/internal/recipe/flowchart.go`、
+  `backend/internal/upload/service.go`、对应测试文件、`CHANGELOG.md`
+- 兼容性/风险：当前仍按配置项记录 provider/model；若中转站内部把 `gpt-image-2`
+  映射到别的真实模型，后台观测里展示的仍是配置模型名，和上游最终执行模型可能存在偏差
+- 验证情况：已用实际中转站 `https://api.42w.shop/v1` + `gpt-image-2` 做真实流程图生图，
+  并执行后端相关单元测试确认 `message.images` / `data:` 图片链路可用
+
 ## 2026-04-20 (抖音 Provider POC 设计稿)
 
 ### Added

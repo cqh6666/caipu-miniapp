@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
@@ -33,7 +34,7 @@ func TestBuildSceneTestInputUsesSceneSpecificValidator(t *testing.T) {
 		{
 			name:    "flowchart",
 			scene:   SceneFlowchart,
-			valid:   `![test](https://example.com/test.png)`,
+			valid:   `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII=`,
 			invalid: `{"message":"no image"}`,
 		},
 	}
@@ -194,6 +195,51 @@ func TestRouteChatRouteTestSkipsProviderAlerts(t *testing.T) {
 	}
 	if alerts.successCount != 0 || alerts.failureCount != 0 {
 		t.Fatalf("alerts = %+v, want zero", alerts)
+	}
+}
+
+func TestRouteChatFlowchartUsesMessageImagesWhenContentIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":null,"images":[{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}}]}}]}`))
+	}))
+	defer server.Close()
+
+	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+		return SceneConfig{}
+	}, nil, nil)
+
+	result, err := service.routeChat(context.Background(), SceneConfig{
+		Scene:       SceneFlowchart,
+		Enabled:     true,
+		Strategy:    StrategyPriorityFailover,
+		MaxAttempts: 1,
+		RetryOn:     DefaultRetryOn(),
+		Breaker:     DefaultBreakerConfig(),
+		Providers: []ProviderConfig{
+			{
+				ID:             "flowchart-main",
+				Name:           "主节点",
+				Adapter:        AdapterOpenAICompatible,
+				Enabled:        true,
+				Priority:       10,
+				BaseURL:        server.URL,
+				Model:          "gpt-test",
+				TimeoutSeconds: 5,
+				Scene:          SceneFlowchart,
+			},
+		},
+	}, buildSceneTestInput(SceneFlowchart))
+	if err != nil {
+		t.Fatalf("routeChat() error = %v", err)
+	}
+	if !strings.HasPrefix(result.Content, "data:image/png;base64,") {
+		t.Fatalf("routeChat() content = %q, want data image url", result.Content)
 	}
 }
 

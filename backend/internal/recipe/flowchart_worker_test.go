@@ -211,6 +211,8 @@ INSERT INTO recipes (
 		context.Background(),
 		"apply-result",
 		"https://cdn.example.com/flowchart-result.png",
+		"flowchart-compat",
+		"gpt-image-2-1536x1024",
 		"source-hash",
 		"2026-03-25T00:40:00+08:00",
 	); err != nil {
@@ -220,16 +222,24 @@ INSERT INTO recipes (
 	assertFlowchartState(t, db, "apply-result", FlowchartStatusDone, "", "2026-03-25T00:20:00+08:00", "2026-03-25T00:40:00+08:00", "2026-03-25T00:12:00+08:00")
 
 	var imageURL string
+	var provider string
+	var model string
 	var flowchartUpdatedAt sql.NullString
 	if err := db.QueryRow(`
-SELECT flowchart_image_url, flowchart_updated_at
+SELECT flowchart_image_url, flowchart_provider, flowchart_model, flowchart_updated_at
 FROM recipes
 WHERE id = 'apply-result'
-`).Scan(&imageURL, &flowchartUpdatedAt); err != nil {
+`).Scan(&imageURL, &provider, &model, &flowchartUpdatedAt); err != nil {
 		t.Fatalf("query apply-result recipe error = %v", err)
 	}
 	if got, want := imageURL, "https://cdn.example.com/flowchart-result.png"; got != want {
 		t.Fatalf("flowchart_image_url = %q, want %q", got, want)
+	}
+	if got, want := provider, "flowchart-compat"; got != want {
+		t.Fatalf("flowchart_provider = %q, want %q", got, want)
+	}
+	if got, want := model, "gpt-image-2-1536x1024"; got != want {
+		t.Fatalf("flowchart_model = %q, want %q", got, want)
 	}
 	if got, want := flowchartUpdatedAt.String, "2026-03-25T00:40:00+08:00"; got != want {
 		t.Fatalf("flowchart_updated_at = %q, want %q", got, want)
@@ -256,6 +266,8 @@ CREATE TABLE recipes (
   image_urls_json TEXT NOT NULL DEFAULT '[]',
   image_meta_json TEXT NOT NULL DEFAULT '[]',
   flowchart_image_url TEXT NOT NULL DEFAULT '',
+  flowchart_provider TEXT NOT NULL DEFAULT '',
+  flowchart_model TEXT NOT NULL DEFAULT '',
   flowchart_updated_at TEXT,
   flowchart_source_hash TEXT NOT NULL DEFAULT '',
   flowchart_status TEXT NOT NULL DEFAULT '',

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -68,6 +69,14 @@ func (s *Service) SaveRemoteImage(ctx context.Context, sourceURL string) (Image,
 	sourceURL = strings.TrimSpace(sourceURL)
 	if sourceURL == "" {
 		return Image{}, common.NewAppError(common.CodeBadRequest, "remote image url is required", http.StatusBadRequest)
+	}
+	if data, contentType, ok, err := decodeDataImageURL(sourceURL); err != nil {
+		return Image{}, common.NewAppError(common.CodeBadRequest, err.Error(), http.StatusBadRequest)
+	} else if ok {
+		if int64(len(data)) > s.maxImageSizeBytes {
+			return Image{}, common.NewAppError(common.CodeBadRequest, "remote image exceeds upload size limit", http.StatusBadRequest)
+		}
+		return s.saveImageReader("", nopReadSeekCloser{Reader: bytes.NewReader(data)}, contentType)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
@@ -188,6 +197,48 @@ func buildPublicURL(publicBaseURL string, requestBaseURL string, relativePath st
 	}
 
 	return base + relativePath
+}
+
+func decodeDataImageURL(raw string) ([]byte, string, bool, error) {
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(strings.ToLower(raw), "data:") {
+		return nil, "", false, nil
+	}
+
+	comma := strings.Index(raw, ",")
+	if comma <= len("data:") {
+		return nil, "", true, fmt.Errorf("data image url is invalid")
+	}
+
+	meta := raw[len("data:"):comma]
+	payload := raw[comma+1:]
+	if strings.TrimSpace(payload) == "" {
+		return nil, "", true, fmt.Errorf("data image url is empty")
+	}
+
+	parts := strings.Split(meta, ";")
+	contentType := strings.TrimSpace(parts[0])
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return nil, "", true, fmt.Errorf("data image url must use image content type")
+	}
+
+	isBase64 := false
+	for _, part := range parts[1:] {
+		if strings.EqualFold(strings.TrimSpace(part), "base64") {
+			isBase64 = true
+			break
+		}
+	}
+	if !isBase64 {
+		return nil, "", true, fmt.Errorf("data image url must use base64 encoding")
+	}
+
+	data, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, "", true, fmt.Errorf("decode data image url: %w", err)
+	}
+
+	return data, contentType, true, nil
 }
 
 func (s *Service) managedImagePath(raw string) (string, error) {

@@ -24,20 +24,21 @@ type CompatibilityLoader func(context.Context, Scene) SceneConfig
 type TestInputBuilder func(Scene) (ChatCompletionInput, bool)
 
 var (
-	markdownImageURLPattern = regexp.MustCompile(`!\[[^\]]*\]\((https?://[^\s)]+)\)`)
+	markdownImageURLPattern = regexp.MustCompile(`!\[[^\]]*\]\(([^)\s]+)\)`)
 	plainURLPattern         = regexp.MustCompile(`https?://[^\s)]+`)
+	dataImageURLPattern     = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+`)
 )
 
 type Service struct {
-	repo           *Repository
-	cipherBox      *cipherBox
-	compatibility  CompatibilityLoader
+	repo             *Repository
+	cipherBox        *cipherBox
+	compatibility    CompatibilityLoader
 	testInputBuilder TestInputBuilder
-	tracker        audit.Tracker
-	alertTracker   aialert.Tracker
-	breaker        *breakerStore
-	roundRobinMu   sync.Mutex
-	roundRobinNext map[Scene]int
+	tracker          audit.Tracker
+	alertTracker     aialert.Tracker
+	breaker          *breakerStore
+	roundRobinMu     sync.Mutex
+	roundRobinNext   map[Scene]int
 }
 
 func NewService(repo *Repository, secret string, compatibility CompatibilityLoader, tracker audit.Tracker, alertTracker aialert.Tracker) *Service {
@@ -882,9 +883,16 @@ type openAIChatRequest struct {
 }
 
 type openAIChatResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content json.RawMessage `json:"content"`
+			Images  []struct {
+				Type     string `json:"type"`
+				ImageURL struct {
+					URL string `json:"url"`
+				} `json:"image_url"`
+			} `json:"images"`
 		} `json:"message"`
 	} `json:"choices"`
 	Error *struct {
@@ -979,6 +987,11 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 	}
 
 	content := extractMessageContent(parsed.Choices[0].Message.Content)
+	if provider.Scene == SceneFlowchart {
+		if imageURL := extractMessageImageURL(parsed.Choices[0].Message.Images); imageURL != "" {
+			content = imageURL
+		}
+	}
 	if content == "" {
 		return "", resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
 			errorType:  ErrorTypeInvalidResponse,
@@ -1055,6 +1068,20 @@ func extractMessageContent(raw json.RawMessage) string {
 	}
 
 	return strings.TrimSpace(string(raw))
+}
+
+func extractMessageImageURL(images []struct {
+	Type     string `json:"type"`
+	ImageURL struct {
+		URL string `json:"url"`
+	} `json:"image_url"`
+}) string {
+	for _, image := range images {
+		if value := normalizeImageReference(image.ImageURL.URL); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func classifyRequestError(err error, timeout time.Duration) error {
@@ -1216,15 +1243,30 @@ func trimCodeFenceContent(content string) string {
 
 func extractImageURL(content string) string {
 	if matches := markdownImageURLPattern.FindStringSubmatch(content); len(matches) == 2 {
-		return strings.TrimSpace(matches[1])
+		if value := normalizeImageReference(matches[1]); value != "" {
+			return value
+		}
+	}
+	if dataURL := dataImageURLPattern.FindString(content); dataURL != "" {
+		return normalizeImageReference(dataURL)
 	}
 	for _, candidate := range plainURLPattern.FindAllString(content, -1) {
-		value := strings.TrimSpace(candidate)
-		if value != "" {
+		if value := normalizeImageReference(candidate); value != "" {
 			return value
 		}
 	}
 	return ""
+}
+
+func normalizeImageReference(value string) string {
+	value = strings.TrimSpace(strings.TrimRight(value, "])}>.,;!\"'"))
+	lower := strings.ToLower(value)
+	switch {
+	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"), strings.HasPrefix(lower, "data:image/"):
+		return value
+	default:
+		return ""
+	}
 }
 
 func enabledProviders(items []ProviderConfig) []ProviderConfig {

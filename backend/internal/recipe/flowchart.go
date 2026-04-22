@@ -22,8 +22,9 @@ import (
 )
 
 var (
-	flowchartMarkdownImagePattern = regexp.MustCompile(`!\[[^\]]*\]\((https?://[^\s)]+)\)`)
+	flowchartMarkdownImagePattern = regexp.MustCompile(`!\[[^\]]*\]\(([^)\s]+)\)`)
 	flowchartPlainURLPattern      = regexp.MustCompile(`https?://[^\s)]+`)
+	flowchartDataImageURLPattern  = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+`)
 	flowchartTipPattern           = regexp.MustCompile(`(?i)(火候|口味|收汁|调味|腌|焯|大火|中火|小火|慢炖|软烂|嫩|脆|香|辣|酸甜|出汁|分钟|时间)`)
 )
 
@@ -98,6 +99,12 @@ type flowchartChatResponse struct {
 	Choices []struct {
 		Message struct {
 			Content json.RawMessage `json:"content"`
+			Images  []struct {
+				Type     string `json:"type"`
+				ImageURL struct {
+					URL string `json:"url"`
+				} `json:"image_url"`
+			} `json:"images"`
 		} `json:"message"`
 	} `json:"choices"`
 	Error *struct {
@@ -356,6 +363,9 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 	}
 
 	content := extractFlowchartMessageContent(parsed.Choices[0].Message.Content)
+	if imageURL := extractFlowchartMessageImageURL(parsed.Choices[0].Message.Images); imageURL != "" {
+		content = imageURL
+	}
 	if content == "" {
 		callErr := common.NewAppError(common.CodeInternalServer, "flowchart response was empty", http.StatusBadGateway)
 		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
@@ -698,6 +708,20 @@ func extractFlowchartMessageContent(raw json.RawMessage) string {
 	return strings.TrimSpace(string(raw))
 }
 
+func extractFlowchartMessageImageURL(images []struct {
+	Type     string `json:"type"`
+	ImageURL struct {
+		URL string `json:"url"`
+	} `json:"image_url"`
+}) string {
+	for _, image := range images {
+		if value := normalizeFlowchartImageReference(image.ImageURL.URL); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func extractFlowchartImageURL(content string) string {
 	content = strings.TrimSpace(content)
 	if content == "" {
@@ -705,17 +729,32 @@ func extractFlowchartImageURL(content string) string {
 	}
 
 	if matches := flowchartMarkdownImagePattern.FindStringSubmatch(content); len(matches) == 2 {
-		return strings.TrimSpace(matches[1])
+		if value := normalizeFlowchartImageReference(matches[1]); value != "" {
+			return value
+		}
+	}
+	if dataURL := flowchartDataImageURLPattern.FindString(content); dataURL != "" {
+		return normalizeFlowchartImageReference(dataURL)
 	}
 
 	for _, candidate := range flowchartPlainURLPattern.FindAllString(content, -1) {
-		candidate = strings.TrimSpace(strings.TrimRight(candidate, "])}>.,;!\"'"))
-		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
-			return candidate
+		if value := normalizeFlowchartImageReference(candidate); value != "" {
+			return value
 		}
 	}
 
 	return ""
+}
+
+func normalizeFlowchartImageReference(value string) string {
+	value = strings.TrimSpace(strings.TrimRight(value, "])}>.,;!\"'"))
+	lower := strings.ToLower(value)
+	switch {
+	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"), strings.HasPrefix(lower, "data:image/"):
+		return value
+	default:
+		return ""
+	}
 }
 
 func buildFlowchartSourceHash(item Recipe) string {

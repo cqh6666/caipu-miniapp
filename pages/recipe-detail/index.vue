@@ -97,7 +97,12 @@
 					<view v-if="hasFlowchart" class="flowchart-panel" @tap="openFlowchartViewer">
 						<image class="flowchart-panel__image" :src="flowchartImageUrl" mode="widthFix"></image>
 						<view class="flowchart-panel__footer">
-							<text v-if="flowchartUpdatedAtText" class="flowchart-panel__meta">{{ flowchartUpdatedAtText }}</text>
+							<view class="flowchart-panel__meta-group">
+								<text v-if="flowchartUpdatedAtText" class="flowchart-panel__meta">{{ flowchartUpdatedAtText }}</text>
+								<view v-if="flowchartModelTip" class="flowchart-panel__credit">
+									<text class="flowchart-panel__credit-text">{{ flowchartModelTip }}</text>
+								</view>
+							</view>
 							<text class="flowchart-panel__preview">横屏缩放查看</text>
 						</view>
 					</view>
@@ -1067,6 +1072,10 @@ export default {
 		flowchartUpdatedAtText() {
 			const value = formatDateTime(this.recipe?.flowchartUpdatedAt || '')
 			return value ? `已生成：${value}` : ''
+		},
+		flowchartModelTip() {
+			const model = String(this.recipe?.flowchartModel || '').trim()
+			return model ? `由 ${model} 生成` : ''
 		},
 		parseStatusValue() {
 			return String(this.recipe?.parseStatus || '').trim()
@@ -2455,6 +2464,14 @@ export default {
 		gap: 16rpx;
 	}
 
+	.flowchart-panel__meta-group {
+		display: flex;
+		flex-direction: column;
+		gap: 4rpx;
+		min-width: 0;
+		flex: 1;
+	}
+
 	.flowchart-panel__meta,
 	.flowchart-panel__preview {
 		font-size: 21rpx;
@@ -2462,7 +2479,30 @@ export default {
 		color: #8f8275;
 	}
 
+	.flowchart-panel__meta {
+		word-break: break-all;
+	}
+
+	.flowchart-panel__credit {
+		align-self: flex-start;
+		max-width: 100%;
+		padding: 6rpx 14rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.7);
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.52);
+	}
+
+	.flowchart-panel__credit-text {
+		display: block;
+		font-size: 19rpx;
+		line-height: 1.4;
+		color: #7b6d62;
+		word-break: break-all;
+	}
+
 	.flowchart-panel__preview {
+		flex-shrink: 0;
 		font-weight: 600;
 		color: #6d6155;
 	}

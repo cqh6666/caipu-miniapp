@@ -39,3 +39,12 @@ func TestFlowchartGeneratorIsConfiguredIgnoresEmptyRuntimeLoader(t *testing.T) {
 		t.Fatalf("IsConfigured() = true, want false")
 	}
 }
+
+func TestExtractFlowchartImageURLSupportsDataURL(t *testing.T) {
+	t.Parallel()
+
+	content := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
+	if got := extractFlowchartImageURL(content); got != content {
+		t.Fatalf("extractFlowchartImageURL(dataURL) = %q, want %q", got, content)
+	}
+}
