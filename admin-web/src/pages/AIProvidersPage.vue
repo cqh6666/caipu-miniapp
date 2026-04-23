@@ -441,8 +441,8 @@
                   </label>
                 </div>
                 <div v-if="isImageGenerationProvider(provider)" class="provider-editor-secret__hint">
-                  `images/generations` 当前固定按 `quality=high`、`output_format=png`
-                  发请求；这里仅配置返回格式。
+                  `images/generations` 当前固定按 `output_format=png`
+                  发请求；这里仅配置 `response_format` 返回格式。
                 </div>
 
                 <div class="provider-editor-secret">

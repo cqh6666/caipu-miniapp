@@ -984,7 +984,6 @@ func testFlowchartCompatible(ctx context.Context, baseURL, apiKey, model, endpoi
 		payload := map[string]any{
 			"model":         model,
 			"prompt":        "请生成一张最简单的测试流程图图片，只用于验证链路。",
-			"quality":       "high",
 			"output_format": "png",
 		}
 		switch strings.ToLower(strings.TrimSpace(responseFormat)) {

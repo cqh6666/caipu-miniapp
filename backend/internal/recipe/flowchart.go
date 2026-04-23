@@ -30,7 +30,6 @@ var (
 
 const (
 	defaultFlowchartImageOutputFormat = "png"
-	defaultFlowchartImageQuality      = "high"
 )
 
 type FlowchartOptions struct {
@@ -335,7 +334,6 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 		payload := flowchartImageGenerationRequest{
 			Model:        c.model,
 			Prompt:       strings.TrimSpace(prompt),
-			Quality:      defaultFlowchartImageQuality,
 			OutputFormat: defaultFlowchartImageOutputFormat,
 		}
 		if payload.Prompt == "" {

@@ -3,6 +3,7 @@ package appsettings
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,6 +80,19 @@ func TestRuntimeProviderTestRuntimeGroupUsesImageGenerationEndpointForFlowchart(
 		}
 		if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "Bearer flowchart-secret" {
 			t.Fatalf("Authorization header = %q, want %q", got, "Bearer flowchart-secret")
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body error = %v", err)
+		}
+		if _, ok := payload["quality"]; ok {
+			t.Fatalf("request body unexpectedly contains quality: %#v", payload["quality"])
+		}
+		if got := payload["output_format"]; got != "png" {
+			t.Fatalf("request output_format = %#v, want %q", got, "png")
+		}
+		if got := payload["response_format"]; got != "b64_json" {
+			t.Fatalf("request response_format = %#v, want %q", got, "b64_json")
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}]}`))

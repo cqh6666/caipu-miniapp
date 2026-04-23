@@ -1,5 +1,21 @@
 # Project Changelog
 
+## 2026-04-23 (AI Flowchart `images/generations` 去掉默认 `quality=high`)
+
+### Changed
+
+- **修改时间**：2026-04-23
+- **背景**：`admin-web` 的流程图 Provider 配置页长期提示 `images/generations` 会固定带 `quality=high`、`output_format=png`。核对 OpenAI Images API 后，`quality` 属于可选参数，默认由上游按 `auto` 处理；继续强绑 `high` 会抬高请求成本，也让后台提示与真实意图「这里只配返回格式」混在一起。
+- **核心改动**：
+  - **后端正式路由**：`backend/internal/airouter/service.go` 在 `images/generations` 请求体中移除 `quality` 字段，仅保留固定 `output_format=png`，`response_format` 仍按后台节点配置决定是否传 `image_url / b64_json`。
+  - **后端兼容回退链路**：`backend/internal/recipe/flowchart.go` 的直连流程图生成请求同步去掉默认 `quality=high`，确保新旧链路口径一致。
+  - **后台连通性测试**：`backend/internal/appsettings/runtime_provider.go` 的 `testFlowchartCompatible` 也不再带 `quality`，避免“测试请求”和“真实请求”行为不一致。
+  - **后台文案**：`admin-web/src/pages/AIProvidersPage.vue` 提示改为“当前固定按 `output_format=png` 发请求；这里仅配置 `response_format` 返回格式”，显式区分文件输出格式与响应返回格式。
+  - **测试补强**：3 个相关单测新增请求体断言，明确要求 `quality` 不出现，同时继续校验 `output_format=png` 和已配置的 `response_format`。
+- **影响范围**：`admin-web` AI Provider 页面文案、后端流程图正式/兼容请求构造、后台流程图 Provider 测试入口。
+- **兼容性·风险**：低。对支持 OpenAI Images 兼容协议的上游，省略 `quality` 会回到服务端默认策略；若某些三方兼容网关历史上错误依赖显式 `quality` 字段，可能暴露兼容性差异，但后台保留 `output_format` 与 `response_format`，主行为不变。
+- **验证情况**：`GOCACHE=/tmp/caipu-go-build-cache go test ./internal/airouter ./internal/appsettings ./internal/recipe` 全通过；`cd admin-web && npm exec -- vite build` 构建通过。补充说明：当前仓库直接跑 `tsc -p tsconfig.app.json --noEmit` 会因为缺少 `.vue` 模块声明在既有基线上失败，不属于本次改动引入的问题。
+
 ## 2026-04-23 (P2-D 第三阶段补丁 2：公开只读页隐藏「来源链接 / 备注」空卡)
 
 ### Fixed

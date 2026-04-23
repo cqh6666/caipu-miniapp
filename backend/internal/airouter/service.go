@@ -33,7 +33,6 @@ const (
 	providerExtraKeyEndpointMode   = "endpoint_mode"
 	providerExtraKeyResponseFormat = "response_format"
 	defaultImageOutputFormat       = "png"
-	defaultImageQuality            = "high"
 )
 
 type Service struct {
@@ -959,7 +958,6 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 		request := openAIImageGenerationRequest{
 			Model:        provider.Model,
 			Prompt:       buildImageGenerationPrompt(input.Messages),
-			Quality:      defaultImageQuality,
 			OutputFormat: defaultImageOutputFormat,
 		}
 		if request.Prompt == "" {
