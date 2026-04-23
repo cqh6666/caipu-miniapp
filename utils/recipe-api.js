@@ -77,3 +77,27 @@ export function deleteRecipe(recipeId) {
 		method: 'DELETE'
 	})
 }
+
+// ensureRecipeShareToken：为指定菜谱获取或生成永久 share_token
+// 后端幂等：已有 token 直接返回；无则生成后写库返回
+export function ensureRecipeShareToken(recipeId) {
+	return request({
+		url: `/caipu-api/recipes/${recipeId}/share-token`,
+		method: 'POST',
+		data: {}
+	}).then((data) => data?.shareToken || '')
+}
+
+// getRecipeByShareToken：通过 share_token 公开只读访问菜谱
+// 不走鉴权（auth: false），返回 { recipe, kitchenName, creatorName }
+export function getRecipeByShareToken(token) {
+	return request({
+		url: `/caipu-api/public/recipes/by-share-token/${token}`,
+		method: 'GET',
+		auth: false
+	}).then((data) => ({
+		recipe: data?.recipe || null,
+		kitchenName: data?.kitchenName || '',
+		creatorName: data?.creatorName || ''
+	}))
+}

@@ -3,7 +3,9 @@ import { ensureSession, getCurrentKitchenId } from './auth'
 import {
 	createRecipe,
 	deleteRecipe,
+	ensureRecipeShareToken,
 	generateRecipeFlowchart,
+	getRecipeByShareToken,
 	getRecipeDetail,
 	listRecipes,
 	reparseRecipe,
@@ -496,6 +498,27 @@ export async function getRecipeById(recipeId, options = {}) {
 
 	const item = await getRecipeDetail(recipeId)
 	return upsertRecipeInCache(item)
+}
+
+// ensureRecipeShareTokenById：登录态成员调用，幂等返回菜谱永久 share_token
+// 用于详情页进入后后台静默 ensure，分享时直接拼接到 path
+export async function ensureRecipeShareTokenById(recipeId) {
+	await ensureSession()
+	return ensureRecipeShareToken(recipeId)
+}
+
+// fetchPublicRecipeByShareToken：公开只读访问，不触发登录
+// 返回 { recipe, kitchenName, creatorName }；recipe 已经过 normalize
+export async function fetchPublicRecipeByShareToken(token) {
+	const view = await getRecipeByShareToken(token)
+	if (!view || !view.recipe) {
+		return { recipe: null, kitchenName: '', creatorName: '' }
+	}
+	return {
+		recipe: normalizeRecipe(view.recipe),
+		kitchenName: view.kitchenName || '',
+		creatorName: view.creatorName || ''
+	}
 }
 
 export async function createRecipeFromDraft(draft = {}) {

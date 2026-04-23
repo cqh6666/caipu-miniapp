@@ -17,7 +17,9 @@
 		{
 			"path": "pages/recipe-detail/index",
 			"style": {
-				"navigationBarTitleText": "菜品详情"
+				"navigationBarTitleText": "菜品详情",
+				"enableShareTimeline": true,
+				"enableShareAppMessage": true
 			}
 		},
 		{

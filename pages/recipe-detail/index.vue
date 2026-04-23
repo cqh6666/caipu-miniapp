@@ -1,8 +1,24 @@
 <template>
-	<view class="detail-page">
+	<view class="detail-page" :class="{ 'detail-page--public': isPublicView }">
+		<!-- P2-D 分享路径升级：公开只读模式顶部说明 banner -->
+		<!-- 加载成功后显示，给接收者「来自 XX 的空间 · 加入后可参与编辑」语境 -->
+		<view v-if="isPublicView && recipe && !publicViewLoadFailed" class="public-banner">
+			<view class="public-banner__body">
+				<up-icon name="eye" size="14" color="#7b6d62"></up-icon>
+				<text class="public-banner__text">{{ publicBannerText }}</text>
+			</view>
+			<view class="public-banner__action" hover-class="public-banner__action--hover" hover-stay-time="80" @tap="openPublicReadOnlyExplain">
+				<text class="public-banner__action-text">了解</text>
+			</view>
+		</view>
 		<template v-if="recipe">
 			<scroll-view class="detail-scroll" scroll-y>
+				<!-- P2 修复：公开只读模式下「无成品图」菜谱整块跳过 Hero 区，
+				     避免被 .hero-card 的 min-height: 380rpx 撑出大块空白；
+				     无图时下方 detail-head 兜底分支接管标题与 meta 渲染。
+				     私有模式保留原 placeholder（含「上传成品图」CTA），仍需要 380rpx 撑住按钮 -->
 				<view
+					v-if="displayRecipeImages.length || !isPublicView"
 					class="hero-card"
 					:class="{ 'hero-card--empty': !recipeImages.length, 'hero-card--with-overlay': displayRecipeImages.length > 0 }"
 					@tap="handleHeroCardTap"
@@ -27,8 +43,9 @@
 					<!-- H4：底部渐变蒙层，为压图标题/分页器提供读性 -->
 					<view v-if="displayRecipeImages.length" class="hero-card__overlay" @tap.stop="handleHeroCardTap"></view>
 					<!-- Hero 操作菜单：右下角 ⋯ 按钮，按当前位置动态装配「设为封面 / 添加 / 删除」 -->
+					<!-- P2-D：公开只读模式下隐藏，避免接收者点击触发编辑路径 -->
 					<view
-						v-if="canShowHeroActionMenu"
+						v-if="canShowHeroActionMenu && !isPublicView"
 						class="hero-card__action"
 						hover-class="hero-card__action--hover"
 						hover-stay-time="80"
@@ -68,7 +85,7 @@
 							<text class="hero-card__counter-text">{{ heroImageIndex + 1 }} / {{ displayRecipeImages.length }}</text>
 						</view>
 					</view>
-					<view v-if="!displayRecipeImages.length" class="hero-card__placeholder">
+					<view v-if="!displayRecipeImages.length && !isPublicView" class="hero-card__placeholder">
 						<view class="hero-card__placeholder-mask"></view>
 						<view class="hero-card__upload-action" :class="{ 'hero-card__upload-action--loading': isUploadingHeroImage }">
 							<up-icon :name="recipeImages.length ? 'photo' : (isUploadingHeroImage ? 'reload' : 'plus')" size="18" color="#5b4a3b"></up-icon>
@@ -119,7 +136,7 @@
 							<text class="detail-card__status-chip-text">{{ cookingActiveLabel }}</text>
 						</view>
 						<view
-							v-else-if="hasCookingMenuItems"
+							v-else-if="hasCookingMenuItems && !isPublicView"
 							class="detail-card__icon-action"
 							hover-class="detail-card__icon-action--active"
 							hover-stay-time="80"
@@ -128,7 +145,7 @@
 							<up-icon name="more-dot-fill" size="16" color="#7b6d62"></up-icon>
 						</view>
 						<view
-							v-else-if="!hasFlowchart && canRequestFlowchart"
+							v-else-if="!hasFlowchart && canRequestFlowchart && !isPublicView"
 							class="detail-card__action detail-card__action--accent"
 							:class="{ 'detail-card__action--disabled': isGeneratingFlowchart }"
 							@tap="handleGenerateFlowchart"
@@ -216,7 +233,7 @@
 
 					<!-- Tab 内容区：详细步骤（食材 + 步骤） -->
 					<template v-if="showCookingStepsView">
-						<view v-if="!hasFlowchart && canRequestFlowchart && hasMeaningfulParsedContent" class="cooking-flowchart-cta" @tap="handleGenerateFlowchart">
+						<view v-if="!hasFlowchart && canRequestFlowchart && hasMeaningfulParsedContent && !isPublicView" class="cooking-flowchart-cta" @tap="handleGenerateFlowchart">
 							<up-icon name="photo" size="14" color="#9a7343"></up-icon>
 							<text class="cooking-flowchart-cta__text">生成「一图看懂」流程图</text>
 							<text class="cooking-flowchart-cta__arrow">›</text>
@@ -335,7 +352,10 @@
 					</view>
 				</view>
 
-				<view class="detail-card detail-card--quiet">
+				<!-- P2 修复：公开只读模式下后端 DTO 已剔除 link/note，
+				     前端再隐藏整块卡片，避免出现「来源链接 / 暂无链接」「备注 / 暂无备注」空卡，
+				     体验从「没有内容」变为「该内容不公开」 -->
+				<view v-if="!isPublicView" class="detail-card detail-card--quiet">
 					<view class="detail-card__header">
 						<view class="detail-card__heading">
 							<text class="detail-card__title">来源链接</text>
@@ -352,7 +372,7 @@
 					<text v-else class="detail-empty">暂无链接。</text>
 				</view>
 
-				<view class="detail-card detail-card--note detail-card--quiet">
+				<view v-if="!isPublicView" class="detail-card detail-card--note detail-card--quiet">
 					<view class="detail-card__header detail-card__header--stack">
 						<text class="detail-card__title">备注</text>
 					</view>
@@ -361,7 +381,7 @@
 				</view>
 			</scroll-view>
 
-			<view class="detail-footer">
+			<view v-if="!isPublicView" class="detail-footer">
 				<view class="detail-footer__action detail-footer__action--ghost detail-footer__action--delete" @tap="confirmDeleteRecipe">
 					<up-icon name="trash" size="18" color="#b4664c"></up-icon>
 				</view>
@@ -412,10 +432,11 @@
 		<template v-else>
 			<view class="missing-state">
 				<up-icon name="info-circle" size="42" color="#b8aa9b"></up-icon>
-				<text class="missing-state__title">没找到这道菜</text>
-				<text class="missing-state__desc">可能已删除或未保存。</text>
-				<view class="missing-state__action" @tap="goBack">
-					<text class="missing-state__action-text">返回列表</text>
+				<!-- P2-D：区分公开链接失效 vs 私有未找到，给出不同文案 -->
+				<text class="missing-state__title">{{ isPublicView ? '分享链接已失效' : '没找到这道菜' }}</text>
+				<text class="missing-state__desc">{{ isPublicView ? '这道菜谱可能已被删除或分享已收回。' : '可能已删除或未保存。' }}</text>
+				<view class="missing-state__action" @tap="handleMissingStateBack">
+					<text class="missing-state__action-text">{{ isPublicView ? '返回上一页' : '返回列表' }}</text>
 				</view>
 			</view>
 		</template>
@@ -427,6 +448,29 @@
 			:title="actionFeedbackTitle"
 			:description="actionFeedbackDescription"
 		></action-feedback>
+
+		<!-- P2-D 分享路径升级：只读规则说明 popup -->
+		<!-- banner 「了解」按钮触发，解释为何不能编辑 + 如何获得编辑权 -->
+		<up-popup
+			v-if="showPublicReadOnlyExplain"
+			:show="showPublicReadOnlyExplain"
+			mode="center"
+			round="20"
+			overlayOpacity="0.32"
+			:closeOnClickOverlay="true"
+			@close="closePublicReadOnlyExplain"
+		>
+			<view class="public-explain">
+				<view class="public-explain__icon">
+					<up-icon name="eye" size="22" color="#7b6d62"></up-icon>
+				</view>
+				<text class="public-explain__title">这是一份只读分享</text>
+				<text class="public-explain__desc">{{ publicExplainBody }}</text>
+				<view class="public-explain__action" hover-class="public-explain__action--hover" hover-stay-time="80" @tap="closePublicReadOnlyExplain">
+					<text class="public-explain__action-text">我知道了</text>
+				</view>
+			</view>
+		</up-popup>
 
 		<up-popup
 			v-if="showEditSheet"
@@ -761,6 +805,8 @@ import ActionFeedback from '../../components/action-feedback.vue'
 import {
 	MAX_RECIPE_IMAGES,
 	deleteRecipeById,
+	ensureRecipeShareTokenById,
+	fetchPublicRecipeByShareToken,
 	generateRecipeFlowchartById,
 	getCachedRecipeById,
 	getRecipeById,
@@ -1160,12 +1206,41 @@ export default {
 			// 默认值在 watch hasFlowchart / 初次加载时由 ensureCookingTabValid 校正
 			activeCookingTab: 'flowchart',
 			// B2-6：步骤完成状态，按「步骤内容签名」持久化，避免改顺序后串位
-			completedStepKeyMap: {}
+			completedStepKeyMap: {},
+			// P2-D 分享路径升级：share_token 公开只读机制
+			// shareToken：当前菜谱的永久 share_token（私有模式下后台 ensure，分享时拼到 path）
+			// publicViewToken：从 onLoad query 读到的 shareToken，存在则强制走公开只读
+			// isPublicView：是否处于公开只读模式（隐藏所有编辑入口、显示顶部 banner）
+			// publicKitchenName / publicCreatorName：公开模式下 banner 显示的上下文
+			// publicViewLoadFailed：公开拉取失败（token 失效 / 菜谱已删），显示兜底空态
+			// showPublicReadOnlyExplain：banner 「了解」按钮控制的 popup 开关
+			shareToken: '',
+			// 进行中的 ensure share_token Promise（去重 + 供分享时 await 兜底）
+			_shareTokenEnsurePromise: null,
+			publicViewToken: '',
+			isPublicView: false,
+			publicKitchenName: '',
+			publicCreatorName: '',
+			publicViewLoadFailed: false,
+			showPublicReadOnlyExplain: false
 		}
 	},
 	computed: {
 		mealLabel() {
 			return mealTypeLabelMap[this.recipe?.mealType] || '早餐'
+		},
+		// P2-D 分享路径升级：公开只读 banner 文案
+		// 优先「来自 XX 的空间」；空间名缺失时退化为「来自他人的菜谱分享」
+		publicBannerText() {
+			const kitchen = String(this.publicKitchenName || '').trim()
+			if (kitchen) return `来自「${kitchen}」的菜谱 · 加入空间可参与编辑`
+			return '来自他人的菜谱分享 · 加入空间可参与编辑'
+		},
+		// 只读规则 popup 正文，按是否有创建者昵称差异化
+		publicExplainBody() {
+			const creator = String(this.publicCreatorName || '').trim()
+			const owner = creator ? `「${creator}」` : '原作者'
+			return `这道菜由${owner}整理，分享出来仅供查看。如果想一起编辑、调整步骤或补充心得，可以请对方把你加入空间。`
 		},
 		statusLabel() {
 			return statusLabelMap[this.recipe?.status] || '想吃'
@@ -1520,6 +1595,16 @@ export default {
 	},
 	onLoad(options) {
 		this.recipeId = options?.id || ''
+		// P2-D 分享路径升级：query 带 shareToken 即视为公开只读访问
+		// 不论是否同空间成员，统一走公开只读，避免拉起登录、避免编辑误触
+		const shareToken = String(options?.shareToken || '').trim()
+		if (shareToken) {
+			this.publicViewToken = shareToken
+			this.isPublicView = true
+			// P1 修复：把入参 shareToken 同步写到 this.shareToken
+			// 否则公开模式下二次转发时 buildRecipeShareConfig 拿不到 token，发出去的链接会断在第二跳
+			this.shareToken = shareToken
+		}
 	},
 	onShow() {
 		this.loadRecipe()
@@ -1536,6 +1621,37 @@ export default {
 		if (!this.showEditSheet) return false
 		this.requestCloseEditSheet()
 		return true
+	},
+	// P2-D 分享路径升级：开启微信原生右上角胶囊菜单的「转发 / 分享到朋友圈 / 收藏」三项能力
+	// 只要定义这三个生命周期函数，对应菜单项就会出现，无需 UI 改动
+	// P2 修复：分享窗口期兜底
+	//   - 若 token 已就绪：同步返回完整 config（含 shareToken）
+	//   - 若 token 还在 ensure 中：通过 promise 字段（基础库 2.12.0+）等 token 到位再返回
+	//   - 微信侧 promise 超时（约 5s）会回退使用同步返回的兜底 config（不带 token，行为退化为旧版鉴权墙）
+	onShareAppMessage(res) {
+		const fallback = this.buildRecipeShareConfig({ from: res?.from, channel: 'message' })
+		if (this.shareToken || this.isPublicView || !this.recipeId) return fallback
+		return {
+			...fallback,
+			promise: this.ensureShareTokenIfNeeded()
+				.then(() => this.buildRecipeShareConfig({ from: res?.from, channel: 'message' }))
+				.catch(() => fallback)
+		}
+	},
+	onShareTimeline() {
+		const fallback = this.buildRecipeShareConfig({ channel: 'timeline' })
+		if (this.shareToken || this.isPublicView || !this.recipeId) return fallback
+		// 朋友圈 promise 字段需基础库 3.12.0+，老版本会忽略 promise，自动回退到同步配置
+		return {
+			...fallback,
+			promise: this.ensureShareTokenIfNeeded()
+				.then(() => this.buildRecipeShareConfig({ channel: 'timeline' }))
+				.catch(() => fallback)
+		}
+	},
+	onAddToFavorites() {
+		// 收藏夹接口不支持 promise 字段，直接同步返回当前最佳配置
+		return this.buildRecipeShareConfig({ channel: 'favorite' })
 	},
 	methods: {
 		clearActionFeedbackTimer() {
@@ -1565,11 +1681,43 @@ export default {
 			}, Math.max(1200, Number(options?.duration) || 1680))
 		},
 		async loadRecipe() {
+			// P2-D 分享路径升级：公开只读模式优先走 share_token 公开接口
+			// 不进缓存（避免污染同 id 的私有缓存）、不触发 ensureSession
+			if (this.isPublicView && this.publicViewToken) {
+				try {
+					this.isLoadingRecipe = true
+					const view = await fetchPublicRecipeByShareToken(this.publicViewToken)
+					if (!view || !view.recipe) {
+						this.recipe = null
+						this.publicViewLoadFailed = true
+						this.hasResolvedInitialRecipeLoad = true
+						return
+					}
+					this.recipeId = view.recipe.id || this.recipeId
+					this.publicKitchenName = view.kitchenName || ''
+					this.publicCreatorName = view.creatorName || ''
+					this.publicViewLoadFailed = false
+					this.applyRecipe(view.recipe)
+					this.hasResolvedInitialRecipeLoad = true
+				} catch (error) {
+					this.recipe = null
+					this.publicViewLoadFailed = true
+					this.hasResolvedInitialRecipeLoad = true
+				} finally {
+					this.isLoadingRecipe = false
+				}
+				return
+			}
+
 			if (!this.recipeId) {
 				this.recipe = null
 				this.hasResolvedInitialRecipeLoad = true
 				return
 			}
+
+			// P2 修复：进页就立刻 fire ensure share_token（与缓存读取并行）
+			// 缩短「打开详情秒分享」窗口，applyRecipe 末尾的 ensure 作为兜底
+			this.ensureShareTokenIfNeeded()
 
 			const cachedRecipe = getCachedRecipeById(this.recipeId)
 			if (cachedRecipe) {
@@ -1595,6 +1743,59 @@ export default {
 				this.hasResolvedInitialRecipeLoad = true
 			}
 		},
+		// P2-D 分享路径升级：统一构造分享配置
+		// channel: 'message' (微信好友) | 'timeline' (朋友圈) | 'favorite' (收藏)
+		// 文案策略（简洁派，让封面图说话）：
+		//   - message  → 「{菜名} · 完整做法」（有流程图或 ≥3 步）/「{菜名}」（兜底）
+		//   - timeline → 「{菜名}」（朋友圈最克制，封面承担表达）
+		//   - favorite → 「{菜名}」（收藏夹清单识别）
+		// 封面策略（差异化）：
+		//   - message  → 优先流程图，缺则首图：转发场景=「教你做菜」
+		//   - timeline → 优先首图，缺则流程图：朋友圈是炫耀场，成品图传播力更强
+		//   - favorite → 优先流程图，缺则首图：收藏=「以后要用」
+		// 微信会按各渠道比例（5:4 / 1:1）自适应裁切
+		buildRecipeShareConfig({ channel = 'message' } = {}) {
+			const recipe = this.recipe || {}
+			const rawTitle = String(recipe.title || '').trim()
+			const dishName = rawTitle || '一道值得做的菜'
+			// 标题：朋友圈/收藏只用菜名；转发若有「完整做法」价值锚点（流程图或多步骤）则附加
+			let title = dishName
+			if (channel === 'message') {
+				const hasFullRecipe = this.hasFlowchart || (Array.isArray(this.parsedSteps) && this.parsedSteps.length >= 3)
+				if (hasFullRecipe) title = `${dishName} · 完整做法`
+			}
+			// path 带 from=share 留作埋点 / 拉新归因，朋友圈只取 query 部分
+			// P2-D 分享路径升级：若已 ensured share_token，则附带，让接收者可公开只读
+			// P1 修复：双保险——优先 shareToken，缺则回退 publicViewToken（公开模式下二次转发兜底）
+			const recipeId = String(recipe.id || this.recipeId || '').trim()
+			const effectiveToken = String(this.shareToken || this.publicViewToken || '').trim()
+			const tokenSegment = effectiveToken ? `&shareToken=${effectiveToken}` : ''
+			const path = recipeId ? `/pages/recipe-detail/index?id=${recipeId}&from=share${tokenSegment}` : '/pages/index/index'
+			const query = recipeId ? `id=${recipeId}&from=share${tokenSegment}` : ''
+			// 按渠道选封面：朋友圈优先成品首图，其余优先流程图
+			// 注意用 visibleRecipeSourceImages（已过滤掉加载失败被 recipeImageHiddenMap 标记的坏图），
+			// 避免把页面已知失效的 URL 发给微信做封面
+			const flowchart = String(this.flowchartImageUrl || '').trim()
+			const coverImage = String(this.visibleRecipeSourceImages?.[0] || '').trim()
+			const shareImage = channel === 'timeline'
+				? (coverImage || flowchart)
+				: (flowchart || coverImage)
+
+			if (channel === 'timeline') {
+				const config = { title, query }
+				if (shareImage) config.imageUrl = shareImage
+				return config
+			}
+			if (channel === 'favorite') {
+				const config = { title, query }
+				if (shareImage) config.imageUrl = shareImage
+				return config
+			}
+			// channel === 'message'
+			const config = { title, path }
+			if (shareImage) config.imageUrl = shareImage
+			return config
+		},
 		applyRecipe(recipe) {
 			this.recipe = recipe
 			const now = Date.now()
@@ -1614,6 +1815,30 @@ export default {
 				})
 			}
 			this.syncParsePolling()
+			// P2-D 分享路径升级：私有模式下后台静默 ensure share_token
+			// 不阻塞渲染、失败静默；分享时直接用 this.shareToken 拼 path
+			this.ensureShareTokenIfNeeded()
+		},
+		// 后台幂等获取菜谱永久 share_token，仅私有模式且尚未拿到时触发
+		// 失败不打扰用户，分享路径会兜底为不带 token 的链接（行为退化为旧版）
+		// P2 修复：返回 Promise<string|null>，供 onShareAppMessage 在 token 未就绪时 await 兜底
+		ensureShareTokenIfNeeded() {
+			if (this.isPublicView) return Promise.resolve(this.shareToken || null)
+			if (this.shareToken) return Promise.resolve(this.shareToken)
+			const recipeId = String(this.recipe?.id || this.recipeId || '').trim()
+			if (!recipeId) return Promise.resolve(null)
+			// 复用进行中的 ensure 任务，避免重复请求
+			if (this._shareTokenEnsurePromise) return this._shareTokenEnsurePromise
+			this._shareTokenEnsurePromise = ensureRecipeShareTokenById(recipeId)
+				.then((token) => {
+					if (token) this.shareToken = token
+					return token || null
+				})
+				.catch(() => null)
+				.finally(() => {
+					this._shareTokenEnsurePromise = null
+				})
+			return this._shareTokenEnsurePromise
 		},
 		// P2-A 修复：当流程图既不可用也未在生成时，强制回退到「详细步骤」Tab
 		ensureCookingTabValid() {
@@ -1751,6 +1976,8 @@ export default {
 			})
 		},
 		openEditSheet() {
+			// P1 修复：公开只读模式禁止打开编辑面板
+			if (this.isPublicView) return
 			if (!this.recipe) return
 			const draft = this.createDraftFromRecipe(this.recipe)
 			this.editDraft = draft
@@ -1841,6 +2068,8 @@ export default {
 			})
 		},
 		chooseHeroImages() {
+			// P1 修复：公开只读模式禁止上传成品图（模板已 v-if 隐藏入口，此为防御性双重保险）
+			if (this.isPublicView) return
 			if (!this.recipe || this.isUploadingHeroImage) return
 			const remaining = Math.max(this.maxRecipeImages - this.visibleRecipeSourceImages.length, 0)
 			if (!remaining) return
@@ -2156,6 +2385,8 @@ export default {
 			}
 		},
 		handleParseAction() {
+			// P1 修复：公开只读模式禁止触发 AI 整理（消耗额度的写入口）
+			if (this.isPublicView) return
 			if (!this.canRequestParse || this.isReparseSubmitting) return
 			if (this.needsParseOverwriteConfirm) {
 				uni.showModal({
@@ -2232,6 +2463,8 @@ export default {
 			}
 		},
 		openCookingMenu() {
+			// P1 修复：公开只读模式禁止打开做法菜单（含重新生成 / 重整理 / 查看详情写入口）
+			if (this.isPublicView) return
 			// 任一异步任务进行中时，⋯ 已被替换为 chip，此处只是双保险
 			if (this.isCookingActive) return
 			if (this.isGeneratingFlowchart || this.isReparseSubmitting) return
@@ -2410,6 +2643,8 @@ export default {
 			}
 		},
 		async handleGenerateFlowchart() {
+			// P1 修复：公开只读模式禁止生成流程图（防御性兜底，模板已 v-if 隐藏 CTA）
+			if (this.isPublicView) return
 			if (!this.recipeId || this.isGeneratingFlowchart || !this.canRequestFlowchart) return
 			if (!this.canGenerateFlowchart) {
 				uni.showToast({
@@ -2492,6 +2727,8 @@ export default {
 			}
 		},
 		confirmDeleteRecipe() {
+			// P1 修复：公开只读模式禁止删除菜谱
+			if (this.isPublicView) return
 			if (!this.recipe) return
 			uni.showModal({
 				title: '删除菜品',
@@ -2561,6 +2798,8 @@ export default {
 		},
 		// ===== Hero 操作菜单：⋯ 按钮入口 =====
 		openHeroActionMenu() {
+			// P1 修复：公开只读模式禁止 Hero 操作菜单（替换/重排/删除封面图入口）
+			if (this.isPublicView) return
 			if (!this.canShowHeroActionMenu) return
 
 			const items = []
@@ -2730,6 +2969,27 @@ export default {
 			uni.reLaunch({
 				url: '/pages/index/index'
 			})
+		},
+		// P2-D 分享路径升级：失效空态 CTA
+		// 公开模式下优先 navigateBack 关闭当前页（用户期望「关掉这个失效页面」），
+		// 私有路径走 goBack 兜底（reLaunch 到首页）
+		handleMissingStateBack() {
+			if (this.isPublicView) {
+				if (getCurrentPages().length > 1) {
+					uni.navigateBack()
+					return
+				}
+				uni.reLaunch({ url: '/pages/index/index' })
+				return
+			}
+			this.goBack()
+		},
+		// P2-D 分享路径升级：banner 「了解」按钮，弹出只读规则说明
+		openPublicReadOnlyExplain() {
+			this.showPublicReadOnlyExplain = true
+		},
+		closePublicReadOnlyExplain() {
+			this.showPublicReadOnlyExplain = false
 		}
 	}
 }
@@ -2741,6 +3001,112 @@ export default {
 		background:
 			radial-gradient(circle at top right, rgba(255, 235, 214, 0.3) 0%, rgba(255, 235, 214, 0) 32%),
 			linear-gradient(180deg, #f7f4ef 0%, #f4f1ec 100%);
+	}
+
+	/* P2-D 分享路径升级：公开只读模式专属样式 */
+	/* 公开模式下 detail-scroll 顶部留出 banner 高度 */
+	.detail-page--public .detail-scroll {
+		padding-top: 76rpx;
+	}
+
+	/* 顶部 banner：薄薄一条暖灰背景 + 「了解」轻量按钮 */
+	/* 固定在顶部不滚动，z-index 高于 hero-card 但低于 popup */
+	.public-banner {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 8;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 16rpx 28rpx;
+		padding-top: calc(env(safe-area-inset-top) + 12rpx);
+		background: rgba(247, 240, 230, 0.94);
+		backdrop-filter: blur(12px);
+		border-bottom: 1rpx solid rgba(180, 156, 130, 0.18);
+	}
+	.public-banner__body {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		flex: 1;
+		min-width: 0;
+	}
+	.public-banner__text {
+		font-size: 24rpx;
+		color: #6b5b4d;
+		line-height: 1.4;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.public-banner__action {
+		flex: none;
+		padding: 8rpx 20rpx;
+		border-radius: 24rpx;
+		background: rgba(180, 156, 130, 0.16);
+		transition: background 0.16s ease;
+	}
+	.public-banner__action--hover {
+		background: rgba(180, 156, 130, 0.28);
+	}
+	.public-banner__action-text {
+		font-size: 24rpx;
+		color: #7b6d62;
+		font-weight: 500;
+	}
+
+	/* 只读规则 popup 内部布局 */
+	.public-explain {
+		width: 560rpx;
+		padding: 48rpx 40rpx 32rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+	}
+	.public-explain__icon {
+		width: 72rpx;
+		height: 72rpx;
+		border-radius: 50%;
+		background: rgba(180, 156, 130, 0.14);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 20rpx;
+	}
+	.public-explain__title {
+		font-size: 32rpx;
+		font-weight: 600;
+		color: #3f342b;
+		margin-bottom: 16rpx;
+	}
+	.public-explain__desc {
+		font-size: 26rpx;
+		color: #6b5b4d;
+		line-height: 1.6;
+		margin-bottom: 32rpx;
+	}
+	.public-explain__action {
+		width: 100%;
+		padding: 22rpx 0;
+		border-radius: 16rpx;
+		background: linear-gradient(135deg, #c79a72 0%, #b4856a 100%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: opacity 0.16s ease;
+	}
+	.public-explain__action--hover {
+		opacity: 0.86;
+	}
+	.public-explain__action-text {
+		font-size: 28rpx;
+		color: #ffffff;
+		font-weight: 600;
 	}
 
 	.detail-scroll {

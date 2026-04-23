@@ -261,6 +261,50 @@ func (h *Handler) GenerateFlowchart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) EnsureShareToken(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	recipeID := strings.TrimSpace(chi.URLParam(r, "recipeID"))
+	if recipeID == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "recipeID is required", http.StatusBadRequest))
+		return
+	}
+
+	token, err := h.service.EnsureShareToken(r.Context(), userID, recipeID)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"shareToken": token,
+	})
+}
+
+func (h *Handler) PublicByShareToken(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(chi.URLParam(r, "token"))
+	if token == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "token is required", http.StatusBadRequest))
+		return
+	}
+
+	view, err := h.service.GetByShareToken(r.Context(), token)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"recipe":      view.Recipe,
+		"kitchenName": view.KitchenName,
+		"creatorName": view.CreatorName,
+	})
+}
+
 func parseKitchenID(r *http.Request) (int64, error) {
 	kitchenID := strings.TrimSpace(chi.URLParam(r, "kitchenID"))
 	if kitchenID == "" {

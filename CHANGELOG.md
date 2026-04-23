@@ -1,54 +1,126 @@
 # Project Changelog
 
-## 2026-04-23 (菜品详情页 review 回归修复：步骤完成态防串位 + Hero 失效图恢复)
+## 2026-04-23 (P2-D 第三阶段补丁 2：公开只读页隐藏「来源链接 / 备注」空卡)
 
 ### Fixed
 
-- **修改时间**：2026-04-23 16:30 CST
-- **背景**：对本地未提交的 `pages/recipe-detail/index.vue` 做代码 review 时，发现 4 个会落到真实用户链路的回归：① 流程图任务进行中但尚未出图时，页面可能卡在空的 flowchart 视图；② 步骤完成态按 index 持久化，步骤重排/重生成后会串位；③ Hero 首图菜单在“前面图片失效被隐藏”时仍按可见索引判断，导致“设为封面”误判不可用；④ 全部图片失效后，Hero 区既无法直接补图，还会继续尝试预览失效 URL。
-- **核心改动**（`pages/recipe-detail/index.vue`）：
-  - **做法卡片视图兜底**：新增 `showCookingStepsView` / `showCookingFlowchartView` 计算属性，并收紧 `ensureCookingTabValid` 逻辑，只要当前无流程图就强制回退 `steps`，避免“处理中但没出图”时命中空白 flowchart 面板。
-  - **步骤完成态改为稳定键持久化**：废弃旧的“按步骤下标”存储格式，改为按 `title + detail + occurrence` 生成稳定 completion key；读取时仅恢复当前步骤集里仍存在的 key，阻断重排、插入、重新整理后的串位。
-  - **Hero 菜单按原始图索引判断能力**：`canSetCurrentAsCover` / `canDeleteCurrentImage` 改为基于 `resolveOriginalImageIndex(heroImageIndex)` 判断，隐藏图导致的可见索引偏移不再误伤菜单可用性。
-  - **失效图恢复链路补齐**：新增 `visibleRecipeSourceImages`，补图容量改按“仍可显示的图片数”计算；用户重新添加图片时会自动剔除已确认失效的隐藏图；点击 Hero 占位态时优先进入补图，而不是继续预览失效 URL；无可见图但仍可补图时继续展示 Hero ⋯ 菜单。
-- **影响范围**：仅详情页前端逻辑与本地持久化键；不涉及后端 API、数据表或全局配置。
-- **兼容性·风险**：
-  - 旧版本地步骤完成态（按 index 存储）会被主动丢弃一次，这是有意为之，优先避免把完成态错误套到新的步骤上。
-  - 重新补图时会顺手清掉已经被判定为失效并隐藏的旧图片 URL，避免这些“坏槽位”继续占用图片上限。
-- **验证情况**：
-  - `git diff --check` 通过。
-  - 提取 `pages/recipe-detail/index.vue` 的 `<script>` 后使用 `node --check` 做语法检查通过。
+- **修改时间**：2026-04-23
+- **背景**：DTO 收敛后 `link` 和 `note` 已不再吐给公开接口，但前端「来源链接」和「备注」两张卡的外层容器没有 `v-if`，公开模式下仍渲染「暂无链接 / 暂无备注」灰字空卡，体验上像「这里没内容」而不是「该内容不公开」。
+- **核心改动**：`pages/recipe-detail/index.vue:355-380` 两张 `detail-card--quiet` 外层容器各加 `v-if="!isPublicView"`，公开模式整块跳过；私有模式下保留「暂无链接 / 暂无备注」作为「这里可以填」的引导，行为不变。
+- **影响范围**：单文件、单处模板改动。
+- **兼容性·风险**：极低。模板纯 v-if 收敛，不动 JS / 样式 / 数据。
+- **验证情况**：✅ esbuild 校验通过。真机联调建议补：① 公开模式：滚动到底部应只看到做法卡片，无空白「来源链接 / 备注」卡；② 私有模式 + 空 link/note：仍显示「暂无链接 / 暂无备注」灰字卡。
 
-## 2026-04-23 (流程图 AI 节点兼容 images/generations + b64_json)
+## 2026-04-23 (P2-D 第三阶段补丁：公开只读「无图菜谱」首屏空白修复)
 
-### Changed
+### Fixed
 
-- **修改时间**：2026-04-23 15:05 CST
-- **背景**：新增的流程图 Provider 需要兼容 `images/generations` 风格网关；现状只有 `chat/completions` 语义，导致 `admin-web` 新增节点、AI Router 测试链路和旧 `ai.flowchart` 兼容模式都无法正确表达或执行 `gpt-image-2 + b64_json` 这类图片生成节点。
+- **修改时间**：2026-04-23
+- **背景**：第三阶段交付后 review 指出，公开只读页里「无成品图」菜谱会先出现一大块约 380rpx 的空白 Hero 区再显示标题。根因：`.hero-card` 容器始终渲染（`pages/recipe-detail/index.vue:17`），P2-D 阶段把无图占位的「上传成品图」CTA `v-if !isPublicView` 隐藏后（line 83），placeholder 内容空了，但 `.hero-card { min-height: 380rpx }` 还在（line 3121），导致公开分享体验顶部出现裸色块。
+- **核心改动**：`pages/recipe-detail/index.vue:16-25` Hero 容器加 `v-if="displayRecipeImages.length || !isPublicView"`——「公开 + 无图」时整块跳过 Hero 渲染，下方 `detail-head` 兜底分支（line 93）无缝接管标题 + meta 显示，无视觉残留。私有模式（含无图）保留原 380rpx placeholder + 上传 CTA，体验不变。
+- **影响范围**：`pages/recipe-detail/index.vue` 单文件、单处模板改动；不动 JS/computed/样式。
+- **兼容性·风险**：极低。`handleHeroCardTap` 是 Hero 容器的 @tap，容器不渲染则不触发，无副作用。私有模式逻辑完全不变。
+- **验证情况**：✅ esbuild 校验通过。真机联调建议补：① 公开模式 + 无图菜谱：标题应紧贴页面顶部 banner，无空白；② 公开模式 + 有图菜谱：Hero 正常显示；③ 私有模式 + 无图菜谱：「上传成品图」placeholder 仍占满 380rpx，可点击触发上传。
+
+## 2026-04-23 (P2-D 第三阶段：share_token Review 修复 — P1×3 / P2×1 / DTO 收敛 / 补测试)
+
+### Fixed
+
+- **修改时间**：2026-04-23
+- **背景**：上一轮 share_token 公开只读机制交付后，code review 指出 4 条 P1/P2 与 2 条 Open Question：① 公开模式下二次转发时 `buildRecipeShareConfig` 只读 `this.shareToken`，未把 onLoad 入参 token 同步写回，导致接收者再分享发出去的链接不带 token，第二跳被鉴权墙拦回；② Hero 区「上传成品图」与步骤区「生成一图看懂」CTA 漏加 `v-if !isPublicView`，已登录成员从公开链接进入仍可触发写接口（与「只读」承诺冲突）；③ `EnsureShareToken` 实现是「先查空 → 生成 → 无条件 UPDATE」三步非原子，并发下后写者覆盖先写者，先返回给前端的 token 立刻失效；④ `applyRecipe` 末尾才异步 ensure token，用户秒分享会拿到旧版鉴权链接；⑤ 公开接口直接吐完整 `Recipe`（含 `note` 等私人字段），后续给 Recipe 加字段会默认泄漏；⑥ 测试只覆盖 happy path，缺并发与 DTO 字段防御回归。本次一次性修完，避免分批回归成本。
 - **核心改动**：
-  - **AI Router 节点模型补齐显式语义**（`backend/internal/airouter/*`、`admin-web/src/types.ts`、`admin-web/src/pages/AIProvidersPage.vue`）：
-    - 新增节点字段 `endpointMode`（`chat_completions` / `images_generations`）与 `responseFormat`（`auto` / `image_url` / `b64_json`），通过既有 `extra_json` 持久化，无需新增数据库迁移。
-    - `AIProvidersPage` 新增两项可编辑字段，并让「新增节点 / 复制节点 / 保存草稿 / 单节点测试 / 当前草稿测试 / 差异快照」都带上新字段。
-    - flowchart 场景默认新增节点改为 `images_generations + b64_json`，以匹配本次实测可用的 `gpt-image-2` 网关；非 flowchart 场景仍默认 `chat_completions`。
-  - **AI Router 真正支持图片生成分支**（`backend/internal/airouter/service.go`）：
-    - flowchart 节点走 `images_generations` 时，请求路径改为 `/images/generations`，并把消息列表折叠成单一 prompt；当前固定附带 `quality=high`、`output_format=png`。
-    - 支持解析两类响应：`image_url` 与 `b64_json`；`b64_json` 会在后端转成 `data:image/png;base64,...`，复用既有图片提取与上传链路。
-    - 调用审计日志里的 `endpoint` 现在记录真实路径，不再一律写死 `/chat/completions`。
-  - **旧兼容模式同步对齐**（`backend/internal/recipe/flowchart.go`、`backend/internal/appsettings/*`、`backend/internal/app/app.go`、`backend/configs/example.env`、`backend/README.md`）：
-    - 旧 `ai.flowchart` 运行时配置新增 `endpoint_mode`、`response_format`，配置中心测试接口也能按两种 endpoint 分支发请求。
-    - 非 AI Router 模式下的 `FlowchartGenerator` 也支持 `images/generations` + `b64_json`，避免“新路由能用、兼容模式不能用”的口径分裂。
+  - **前端 · P1-1 二次转发兜底**（`pages/recipe-detail/index.vue`）：① `onLoad` 解析到 `shareToken` 时同步写入 `this.shareToken`（不只是 `publicViewToken`）；② `buildRecipeShareConfig` 改为 `effectiveToken = this.shareToken || this.publicViewToken` 双保险，公开模式下任何渠道转发都能正确拼接 token。
+  - **前端 · P1-2 写入口封堵**（`pages/recipe-detail/index.vue`）：① 模板：Hero 上传 placeholder（`hero-card__placeholder`）、步骤区「生成『一图看懂』」CTA（`cooking-flowchart-cta`）补加 `v-if !isPublicView`；② 方法层防御性 guard：`chooseHeroImages / handleGenerateFlowchart / openEditSheet / confirmDeleteRecipe / handleParseAction / openCookingMenu / openHeroActionMenu` 入口处统一加 `if (this.isPublicView) return`，避免极端情况下被代码路径触发写接口。`toggleStepCompleted` 仅写本地 storage 不打后端，保留可用。
+  - **后端 · P1-3 EnsureShareToken 并发原子化**（`backend/internal/recipe/share_token.go` + `repository.go`）：① `Repository.SetShareToken` 改为「条件 UPDATE：仅当 `share_token IS NULL OR share_token = ''` 时才写」，返回 `(written bool, err error)` 区分「本次成功写入」与「并发竞争失败」；② `Service.EnsureShareToken` 在 `SetShareToken` 返回 `written=false` 时调 `GetShareToken` 回查库里真正生效的 token 返回给调用方，确保所有并发请求最终拿到同一个生效 token。
+  - **前端 · P2-1 窗口期修复**（`pages/recipe-detail/index.vue`）：① ensure share_token 时机从「`applyRecipe` 末尾」提前到「`loadRecipe` 拿到 recipeId 后立即 fire」（与缓存读取并行），缩短「打开详情秒分享」窗口；② `ensureShareTokenIfNeeded` 改为返回 `Promise<string|null>` 并用 `_shareTokenEnsurePromise` 字段去重，避免重复请求；③ `onShareAppMessage` / `onShareTimeline` 在 token 未就绪时使用微信 `promise` 字段（基础库 2.12.0+ / 3.12.0+ 兜底）等 ensure 完成后再返回完整 config，老版本会忽略 promise 自动回退到同步配置，行为退化但不报错。
+  - **后端 · Open Q1 公开 DTO 白名单收敛**（`backend/internal/recipe/share_token.go`）：新增 `PublicRecipe` struct 作为公开只读视图白名单 DTO，**仅暴露** `id / title / ingredient / summary / imageUrl / imageUrls / flowchartImageUrl / mealType / status / parsedContent / parsedContentEdited`；**剔除** `note`（私人备注）、`link`（原始链接，可能是私域）、`kitchenId / createdBy / updatedBy`（内部 ID）、`createdAt / updatedAt / pinnedAt`（时间戳/排序）、`flowchartProvider / flowchartModel / flowchartStatus / flowchartError / flowchart*RequestedAt/FinishedAt/UpdatedAt / flowchartStale`（流程图过程字段）、`parseStatus / parseSource / parseError / parse*RequestedAt/FinishedAt`（解析过程字段）、`shareToken`（递归暴露无意义）。`PublicRecipeView.Recipe` 类型从 `Recipe` 收窄为 `PublicRecipe`，编译期保证字段白名单。
+  - **后端 · Open Q2 补测试**（`backend/internal/recipe/share_token_test.go`）：① `TestEnsureShareTokenConcurrentReturnsSameToken`：16 个 goroutine 并发 ensure 同一 recipeID，断言全部拿到同一 token 且与库内 token 一致（验证 P1-3 修复）。SQLite `:memory:` DB 通过 `db.SetMaxOpenConns(1)` 强制单连接，模拟「条件 UPDATE 串行化」场景；② `TestPublicRecipeViewExcludesPrivateFields`：seed 时 note 写入「私人备注：少放盐」，断言 PublicRecipe JSON 不含 `"note" / "link" / "createdBy" / "shareToken" / "flowchartProvider" / "parseStatus"` 等敏感字段（验证 Open Q1 修复）。
 - **影响范围**：
-  - 后端：`airouter`、`recipe flowchart generator`、`runtime settings`、`app` 装配层。
-  - 后台：`AI Provider` 节点编辑器与保存/测试链路。
-  - 文档/配置：`backend/configs/example.env`、`backend/README.md`。
+  - 后端：`backend/internal/recipe/share_token.go`（Service 层 + 新 PublicRecipe DTO）、`backend/internal/recipe/repository.go`（SetShareToken 签名变更）、`backend/internal/recipe/share_token_test.go`（新增 2 个用例 + seed 加 note）。无 migration 改动，无路由改动。
+  - 前端：`pages/recipe-detail/index.vue`（onLoad / loadRecipe / buildRecipeShareConfig / ensureShareTokenIfNeeded / onShareAppMessage / onShareTimeline / 7 个写入口方法 guard / 2 个模板 v-if / data 加 `_shareTokenEnsurePromise` 字段）。无 utils 文件签名变化。
 - **兼容性·风险**：
-  - 旧节点未配置新字段时默认仍按 `chat_completions + auto` 运行，属于向后兼容。
-  - `images_generations` 当前仅允许用于 `flowchart` 场景，防止 summary/title 节点被误配成图片接口。
-  - 当前图片分支固定 `quality=high` 与 `output_format=png`，若后续需要节点级自定义质量或输出格式，需要再扩字段。
+  - **后端 API 兼容性**：`PublicRecipeView.Recipe` 类型由 `Recipe` 改为 `PublicRecipe`，对应公开接口 `GET /api/public/recipes/by-share-token/{token}` 返回的 JSON 中 recipe 字段缺失 `note / link / createdBy / pinnedAt / flowchart*（除 imageUrl）/ parse* / shareToken`；前端 `normalizeRecipe` 对所有缺失字段都用 `||` 兜底为空值，不会报错；上一轮上线尚未真机联调，无线上回归风险。
+  - **后端 Repository 签名变更**：`SetShareToken` 返回值从 `error` 改为 `(bool, error)`，仅 `share_token.go` 一处调用，无外部依赖。
+  - **前端 onShareAppMessage promise**：基础库 2.12.0+ 才识别 `promise` 字段，老版本会忽略并使用同步返回值（不带 token 的旧版链接），行为退化但不报错。
+  - **公开模式写入口防御**：模板 `v-if` + 方法 guard 双保险，即使未来有新写入口被忘记加 v-if，方法层 guard 也能兜底。新增写方法时仍需主动加 `if (this.isPublicView) return`。
+  - **token 永久有效**：本轮未引入 token 主动失效机制，依然是已知遗留风险；除非删除菜谱，token 一旦泄露持有者可永久访问。
 - **验证情况**：
-  - `env GOCACHE=/tmp/caipu-miniapp-gocache go test ./...`（`backend/`）通过。
-  - `npm run build`（`admin-web/`）通过。
-  - `npx tsc --noEmit`（`admin-web/`）通过。
+  - 后端：`GOCACHE=/tmp/caipu-go-build-cache go test ./internal/recipe ./internal/kitchen` 全过（含新增 2 个用例 + 原 4 个用例 = 6 个 share_token 用例）。
+  - 前端：`awk '/^<script>/{flag=1;next} /^<\/script>/{flag=0} flag' pages/recipe-detail/index.vue > /tmp/x.js && npx esbuild /tmp/x.js --log-level=error` 无错。
+  - **未做真机联调**（沿袭上轮挂起项），需用户在真机或微信开发者工具补：① 公开模式下二次转发：A→B→C 链路 C 端能否正常打开（验 P1-1）；② 已登录成员从公开链接进入：Hero 区无「上传成品图」按钮、步骤区无「生成一图看懂」CTA（验 P1-2）；③ 同一 recipeID 多端同时首次访问详情页：所有端拿到同一 token（验 P1-3，需后端日志或 DB 抽查辅助）；④ 打开详情后立即点「转发」：链接应带 shareToken（验 P2-1）。
+
+## 2026-04-23 (P2-D 第二阶段：share_token 公开只读访问机制)
+
+### Added
+
+- **修改时间**：2026-04-23
+- **背景**：上一轮 P2-D 「开启微信原生分享」交付后，遗留 P1 缺陷「分享接收者无空间权限会打不开详情页」。所有菜谱接口都挂在 `protected.Group(authMiddleware)` 下，前端 `getRecipeById` 又必走 `ensureSession`，导致非空间成员（未登录或登录态属于其他空间）打开分享卡时被鉴权墙挡住，看到的是 toast 而非有意义的内容。本次落地 share_token 方案，让分享出去的链接对接收者「即点即看」，不强求登录或加入空间。
+- **核心改动**：
+  - **后端 · 数据层（migration 018）**：`backend/migrations/018_add_recipe_share_token.sql` 给 `recipes` 表新增 `share_token TEXT NOT NULL DEFAULT ''` + `share_token_created_at TEXT NOT NULL DEFAULT ''` 两列，并在 `share_token != ''` 上建唯一部分索引。`Recipe` 结构体加 `ShareToken string \`json:"shareToken,omitempty"\`` 字段，但有意**不进 `scanRecipe` 主流程**——主流程涉及 8 处 SELECT 与多个内嵌 schema fixture，引入新字段牵动面太大；share_token 只在「ensure / 公开查」两个独立路径用单独的轻量方法读写。
+  - **后端 · Repository 三个独立方法**（`backend/internal/recipe/repository.go` 末尾）：① `GetShareToken` 仅读 `share_token` 列；② `SetShareToken` 仅写 token + 时间戳；③ `FindByShareToken` 走 `scanRecipe` 主流程查菜谱（公开接口走这条）；④ 新增 `FindKitchenAndCreatorMeta`，单条 JOIN `recipes / kitchens / users` 取空间名 + 创建者昵称，给公开接口附加上下文。
+  - **后端 · Service（新文件 `share_token.go`）**：① `EnsureShareToken(ctx, userID, recipeID)` 复用 `GetByID` 的成员鉴权链路，幂等返回已有 token 或生成新 token（`crypto/rand` 18 字节 → base64url 截断 22 字符，约 132 位熵）；② `GetByShareToken(ctx, token)` 不做成员鉴权，直接通过 token 反查菜谱 + 元数据，元数据查询失败不致命（降级为空字符串以保证只读体验可用），返回 `PublicRecipeView { Recipe, KitchenName, CreatorName }`。
+  - **后端 · 路由 + Handler**：`POST /api/recipes/{recipeID}/share-token` 挂在 `protected.Group`（仅成员可 ensure）；`GET /api/public/recipes/by-share-token/{token}` 挂在公开 `api.Group`（与已有 `/api/invites/{token}` 同层），完全绕过 `authMiddleware`。
+  - **后端 · 测试 fixture 补字段**：`status_update_test.go:114` 与 `flowchart_worker_test.go:270` 两处内嵌 `CREATE TABLE recipes` 都补 `share_token` + `share_token_created_at` 两列默认值，避免现有测试因 schema drift 失败。
+  - **后端 · 新增单测**（`share_token_test.go`）：4 个用例覆盖 ① EnsureShareToken 幂等性；② 非成员调用 EnsureShareToken 报错；③ GetByShareToken 返回完整空间名 + 创建者昵称；④ token 不存在返回 ErrNotFound。
+  - **前端 · 新 API**（`utils/recipe-api.js`）：`ensureRecipeShareToken(recipeId)` 调 POST 接口取 token；`getRecipeByShareToken(token)` 调公开 GET 接口，**显式 `auth: false`** 跳过 Authorization header 注入。
+  - **前端 · 新 store 包装**（`utils/recipe-store.js`）：`ensureRecipeShareTokenById` 仍走 `ensureSession`（成员才能 ensure）；`fetchPublicRecipeByShareToken` 不走 `ensureSession`，返回 `{ recipe, kitchenName, creatorName }`，recipe 经 `normalizeRecipe` 处理后与现有页面渲染口径一致。
+  - **前端 · 详情页公开模式分支**（`pages/recipe-detail/index.vue`）：① `onLoad` 解析 `shareToken` query 参数，存在则设 `isPublicView = true`；② `loadRecipe` 加公开分支，**优先走 `fetchPublicRecipeByShareToken` 且不进缓存**（避免污染同 id 私有缓存），失败设 `publicViewLoadFailed = true`；③ `applyRecipe` 末尾新增 `ensureShareTokenIfNeeded`，私有模式下后台 fire-and-forget 静默 ensure token，**避免依赖微信 `onShareAppMessage.promise` 字段**（朋友圈基础库 3.12.0+ 才支持）；④ `buildRecipeShareConfig` 拼 path 时，若 `this.shareToken` 已就绪则附加 `&shareToken=xxx`，token 未就绪时退化为旧版链接（功能不退化，仅退化为「需登录成员」体验）。
+  - **前端 · 只读 UI 收敛**：① 顶部固定 banner「来自『XX』的菜谱 · 加入空间可参与编辑」+「了解」按钮，加载成功后才显示，公开模式下 `detail-scroll` 顶部留出 76rpx；② Hero 右下 ⋯ 按钮、做法卡片右上 ⋯ 按钮、「生成流程图」按钮入口、底部整条编辑/置顶/删除 footer 全部 `v-if !isPublicView` 隐藏；③ 步骤打勾、复制食材、流程图横屏、图片预览等只读交互全部保留。
+  - **前端 · 「了解」按钮 popup**：居中 popup 解释「这道菜由『创建者』整理，分享出来仅供查看。如果想一起编辑、调整步骤或补充心得，可以请对方把你加入空间」+「我知道了」按钮收起，遵循 Apple HIG 信息提示风格。
+  - **前端 · 兜底空态**：missing-state 文案按 `isPublicView` 区分——公开失效为「分享链接已失效 / 这道菜谱可能已被删除或分享已收回 / 返回上一页」，私有未找到沿用旧文案；公开模式下 CTA 优先 `navigateBack`（用户期望「关掉这个失效页面」），降级 `reLaunch` 到首页。
+  - **前端 · 公开模式选型**：已是该空间成员的人从分享卡进入也**统一走公开只读**，避免「先 ensureSession 再判空间 id 切回鉴权接口」的体验抖动；想编辑可从首页菜谱列表正常进入。
+- **影响范围**：
+  - 后端：`backend/migrations/018_*.sql`（新建）、`backend/internal/recipe/{model,repository,service,handler,share_token,share_token_test}.go`、`backend/internal/recipe/{status_update_test,flowchart_worker_test}.go`、`backend/internal/app/router.go`；新增公开路由 1 条 + 鉴权路由 1 条。
+  - 前端：`utils/recipe-api.js`、`utils/recipe-store.js`、`pages/recipe-detail/index.vue`；无 npm 依赖变化。
+- **兼容性·风险**：
+  - migration 018 是 ADD COLUMN + 部分唯一索引，无破坏性；老菜谱 `share_token` 默认空字符串，部分唯一索引上 `share_token != ''` 的约束保证不冲突。
+  - 老用户首次分享时 `this.shareToken` 还在后台 ensure 中，可能拿到旧版链接（不带 token），接收者仍会被鉴权墙挡住——这是已知的窗口期降级，进页 1-2 秒内 token 就会就绪，下次分享即正常；不阻塞主功能。
+  - 公开接口完全不鉴权，**任何持有 token 的人都能看到完整菜谱（含个人备注 / 心得）**——这是产品上的明确取舍：分享出去就视为愿意公开。如果未来需要「指定接收者」级别隐私，需要重新设计 token 携带的接收者绑定信息。
+  - 同空间成员从分享卡进入会强制只读，无法直接编辑——按需求决策结果是正向 UX，但需要在首页菜谱列表保留「正常进入即可编辑」入口才不引发用户困惑。
+  - `FindKitchenAndCreatorMeta` 新增一次 JOIN 查询，增加一次 round-trip；只在公开接口路径触发，QPS 可控；元数据失败降级为空字符串保证菜谱正文仍可见。
+- **验证情况**：
+  - 后端：`go build ./...` 通过；`go test ./internal/recipe ./internal/kitchen` 全量通过；`share_token_test.go` 4 个新增用例全部通过（幂等性 / 非成员拒绝 / 元数据完整 / token 失效 NotFound）。
+  - 前端：esbuild 对 `utils/recipe-api.js`、`utils/recipe-store.js`、详情页 `<script>` 块全部静态校验通过。
+  - **未做真机联调**：建议手测三类场景：① A 用户分享 → A 自己点开（公开只读，看到 banner）；② A 分享 → 未登录新用户点开（不弹起登录，能看完整内容）；③ 删除菜谱后访问失效 token（看到「分享链接已失效」空态）；④ 老链接（不带 shareToken）兜底行为是否退化为旧版鉴权墙，符合预期。
+  - **未实现的兜底**：token 主动失效 / 撤回机制未实现，如未来需要「设置过期 / 一键重置 token」需在 service 层加新接口；当前 token 永久有效（除非菜谱被删）。
+
+## 2026-04-23 (P2-D Review 反馈修复：朋友圈开关 + 分享封面用可见首图)
+
+### Fixed
+
+- **修改时间**：2026-04-23
+- **背景**：上一批 P2-D 「开启微信原生分享」的 review 中发现两个未爆雷缺陷，需在用户实际触发前修复。第三个 P1 缺陷（分享接收者无空间权限会打不开详情页）涉及鉴权策略与公开化方案权衡，归为下一轮单独迭代。
+- **核心改动**：
+  - **P1 · 朋友圈入口未生效**（`pages.json`）：上一批只新增了 `onShareTimeline` 生命周期函数，但**微信小程序的硬约束是必须同时在页面配置里开 `enableShareTimeline: true`**，朋友圈菜单项才会真正出现。当前 `pages/recipe-detail/index` 路由项未配置该字段，相当于上一批 CHANGELOG 写的「右上角出现分享到朋友圈」实际未交付。本次补全 `enableShareTimeline: true`；同时显式写出 `enableShareAppMessage: true`（虽默认即 true），便于后续 review 时分享开关在配置里集中可见。
+  - **P2 · 分享封面用了已知失效的首图**（`pages/recipe-detail/index.vue`）：上一批 `buildRecipeShareConfig` 直接取 `recipeImages?.[0]` 作为封面候选，但该数组是原始图片列表，不会过滤掉加载失败被 `recipeImageHiddenMap` 标记的坏图。结果是页面本身已经避开了首张坏图，分享卡却继续把已知失效 URL 发给微信，分享出去就是空封面或加载失败提示。本次改为 `visibleRecipeSourceImages?.[0]`，复用页面已经算好的「已过滤坏图的可见原始 URL 列表」computed，与页面渲染口径完全一致。
+- **影响范围**：`pages.json`、`pages/recipe-detail/index.vue`，无新增依赖，不影响其他页面与后端接口。
+- **兼容性·风险**：纯配置与前端逻辑修复；朋友圈菜单从原本不出现变为出现，属预期修复；分享封面在大多数无坏图场景下行为不变，仅在首图加载失败时改为用第二张可见图（与页面显示口径一致）。
+- **未交付（已记入下一轮）**：分享出去的 path 仍然走鉴权接口 `getRecipeById`，未登录或不在该空间的接收者会被 `ensureSession` + 后端成员校验挡住，看到的是 toast 而非有意义的兜底页。该问题本质是产品定位（私域 vs 公开）的取舍，需要单独评估「公开只读接口 + share_token」「邀请加入空间引导页」「分享时弹出确认框告知接收者范围」三类方案，不在本批次解决。
+- **验证情况**：esbuild 静态语法校验通过；`pages.json` 解析通过（去注释后 JSON.parse 验证）；未做真机回归，建议手测：① 真机右上角胶囊确认「分享到朋友圈」菜单项现在能出现；② 故意让首图 URL 失效后再分享，确认拿到的封面是第二张可见图。
+
+## 2026-04-23 (菜品详情页 P2-D：开启微信原生分享 / 朋友圈 / 收藏)
+
+### Added
+
+- **修改时间**：2026-04-23
+- **背景**：菜品详情页此前完全没有定义 `onShareAppMessage` / `onShareTimeline` / `onAddToFavorites`，导致微信右上角胶囊菜单里**根本不显示「转发 / 分享到朋友圈 / 收藏」三项**——这是微信小程序的硬约束（必须先定义事件处理函数，菜单项才出现）。用户的分享意图被静默丢弃，是详情页最大的能力空白之一。
+- **核心改动**（`pages/recipe-detail/index.vue`）：
+  - 新增 3 个生命周期函数：`onShareAppMessage` / `onShareTimeline` / `onAddToFavorites`，分别对应微信好友转发、朋友圈、收藏夹。定义后右上角胶囊菜单自动出现这三项，无需任何 UI 改动。
+  - 新增 `buildRecipeShareConfig({ channel })` 统一构造分享配置，按 `message` / `timeline` / `favorite` 三种渠道差异化处理 path / query / imageUrl 字段。
+- **文案策略**（简洁派，让封面图说话）：
+  - **微信好友转发**：有「完整做法」价值锚点（已生成流程图，或解析后步骤数 ≥ 3）时为 `{菜名} · 完整做法`，否则只用 `{菜名}`。明确告知接收方点开能看到结构化做法，比单纯菜名多一份点击动机。
+  - **朋友圈**：只用 `{菜名}`，不加任何动作前缀。朋友圈是炫耀场，最克制的文字最高级，让封面图承担表达。
+  - **收藏夹**：只用 `{菜名}`，便于在微信收藏夹中清单式识别。
+  - **菜谱无标题（极端兜底）**：菜名退化为「一道值得做的菜」。
+- **路径与归因**：转发 path 形如 `/pages/recipe-detail/index?id={recipeId}&from=share`，`from=share` 字段为后续埋点（区分自然访问 vs 分享拉来的）和分享拉新归因留口子；朋友圈不支持自定义 path，仅传 `query=id={recipeId}&from=share`，落地页固定为当前页。
+- **图片**：按渠道差异化选封面，由微信端按比例（5:4 / 1:1）自适应裁切；无可用图时不传 `imageUrl`，微信自动截屏兜底。
+  - **微信好友转发（5:4）**：优先 `flowchartImageUrl`（流程步骤图），缺则回退 `recipe.images[0]`（成品首图）。理由：转发场景的心智=「教你做菜」，流程图信息密度更高，朋友打开看一眼就能 get 完整做法。
+  - **朋友圈（1:1）**：优先 `recipe.images[0]`，缺则回退流程图。理由：朋友圈是炫耀场，成品图远比流程图有传播力，心智=「我做了这个」。
+  - **收藏（1:1）**：优先流程图，缺则首图。理由：收藏夹本质是「以后要用」，做法图比成品图实用。
+- **影响范围**：菜品详情页 `pages/recipe-detail/index.vue`，无 UI 改动，无新增依赖，不影响其他页面与后端接口。
+- **兼容性·风险**：纯前端能力新增，与已有功能正交，零回归风险；分享拉来的用户落到详情页时若未登录会沿用现有未登录态处理流程，本轮不变更。
+- **后续可选项**：① 第二期可加自定义分享面板（底部 sheet），覆盖「生成海报 / 复制链接 / 保存图片」等微信原生菜单不支持的场景，需后端动态分享图配合（参考现成的 `backend/internal/invite/share_image.go`）；② 可基于 `from=share` 字段做分享拉新数据看板。
+- **验证情况**：esbuild 静态语法校验通过；未做真机回归，建议手测：① 微信开发者工具中点击右上角胶囊菜单，确认「转发 / 分享到朋友圈 / 收藏」三项均出现；② 实际分享后核对标题、封面、跳转 path 是否符合预期；③ 无图菜谱也走一遍确认 imageUrl 不传时的兜底表现。
 
 ## 2026-04-23 (菜品详情页 P0 缺陷修复：无图回退 Tab + Hero 操作错位)
 

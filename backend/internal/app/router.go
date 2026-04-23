@@ -124,6 +124,7 @@ func NewRouter(
 		api.Get("/invites/{token}", inviteHandler.Preview)
 		api.Get("/invites/{token}/share-image", inviteHandler.ShareImage)
 		api.Get("/invite-codes/{code}", inviteHandler.PreviewByCode)
+		api.Get("/public/recipes/by-share-token/{token}", recipeHandler.PublicByShareToken)
 
 		api.Group(func(protected chi.Router) {
 			protected.Use(authMiddleware)
@@ -152,6 +153,7 @@ func NewRouter(
 			protected.Put("/recipes/{recipeID}", recipeHandler.Update)
 			protected.Post("/recipes/{recipeID}/reparse", recipeHandler.RequeueAutoParse)
 			protected.Post("/recipes/{recipeID}/flowchart", recipeHandler.GenerateFlowchart)
+			protected.Post("/recipes/{recipeID}/share-token", recipeHandler.EnsureShareToken)
 			protected.Patch("/recipes/{recipeID}/pin", recipeHandler.UpdatePinned)
 			protected.Patch("/recipes/{recipeID}/status", recipeHandler.UpdateStatus)
 			protected.Delete("/recipes/{recipeID}", recipeHandler.Delete)

@@ -143,6 +143,10 @@ type Recipe struct {
 	CreatedAt              string            `json:"createdAt"`
 	UpdatedAt              string            `json:"updatedAt"`
 
+	// 仅在 EnsureShareToken / GetByShareToken 路径下填充；scanRecipe 主流程不扫描，
+	// 普通 List/Detail 接口返回不包含此字段（omitempty）
+	ShareToken string `json:"shareToken,omitempty"`
+
 	FlowchartSourceHash string `json:"-"`
 }
 
