@@ -1,5 +1,28 @@
 # Project Changelog
 
+## 2026-04-23 (线上 nginx `/caipu-api/` 代理超时放宽到 300 秒)
+
+### Changed
+
+- **修改时间**：2026-04-23 17:34 CST
+- **背景**：`admin-web` 在 `AI Provider -> flowchart 场景测试` 中新增 `gpt-image-2` 节点后，真实测试 prompt 会触发长耗时出图链路；后端 `/api/admin/ai-routing/scenes/{scene}/test` 已放宽到 3 分钟，但线上 nginx 的 `/caipu-api/` 代理段未单独配置长超时，导致请求在约 60 秒处被反向代理取消，表现为后台测试失败而上游节点本身并非不可用。
+- **核心改动**：
+  - 更新线上 nginx 站点配置 `/etc/nginx/conf.d/www.gxm1227.top.conf`，为 `location /caipu-api/` 增加：
+    - `proxy_read_timeout 300;`
+    - `proxy_send_timeout 300;`
+  - 保持 `/caipu-api/` 的 upstream、header 转发与其他路径路由不变，仅放宽等待时间，覆盖后台 AI 路由测试与其他长耗时 API 请求。
+  - 同步更新 `docs/cloud-server-config-overview.md`，把 `/caipu-api/` 的当前实际超时口径记入项目文档。
+- **影响范围**：
+  - 线上 nginx 反向代理。
+  - `admin-web` 经 `/caipu-api/` 发起的长耗时后台测试请求，尤其是 `flowchart` 场景的图片生成测试。
+- **兼容性·风险**：
+  - 这是代理层等待时间放宽，不改变后端 API 契约、不改变业务逻辑。
+  - `/caipu-api/` 下其他接口也会继承 300 秒等待时间；若未来出现真正卡死的请求，前端等待时间会更长，但当前优先解决 AI 测试被 60 秒截断的问题。
+- **验证情况**：
+  - `nginx -t` 通过。
+  - `systemctl reload nginx` 成功。
+  - `systemctl status nginx --no-pager` 显示 reload 于 `2026-04-23 17:34:20 CST` 成功执行。
+
 ## 2026-04-23 (AI Flowchart `images/generations` 去掉默认 `quality=high`)
 
 ### Changed

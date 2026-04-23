@@ -4,7 +4,7 @@
 方便后续排障、发版和迁移。文档只记录结构、路径、端口、服务名和配置
 入口，不记录任何真实密钥。
 
-最后核对时间：`2026-04-09 23:33 CST`
+最后核对时间：`2026-04-23 17:34 CST`
 
 ## 1. 服务器基础信息
 
@@ -60,7 +60,7 @@ Internet
 | --- | --- | --- |
 | `/` | `http://127.0.0.1:3006` | Hapi 根站点 |
 | `/admin/` | `/srv/caipu-miniapp/admin-web/dist/` | 后台管理前端静态资源 |
-| `/caipu-api/` | `http://127.0.0.1:8080/api/` | 小程序后端 API 与后台 API |
+| `/caipu-api/` | `http://127.0.0.1:8080/api/` | 小程序后端 API 与后台 API，`proxy_read_timeout / proxy_send_timeout = 300s` |
 | `/caipu-uploads/` | `http://127.0.0.1:8080/uploads/` | 上传文件访问 |
 | `/caipu-healthz` | `http://127.0.0.1:8080/healthz` | 后端健康检查 |
 
@@ -69,6 +69,9 @@ Internet
 - 不要随意改 `location /`，它当前明确承载 Hapi 根站点。
 - `admin-web` 当前生产环境默认把 `VITE_API_BASE` 指到
   `/caipu-api`，这是为了兼容现网 nginx 前缀，而不是标准 `/api`。
+- `/caipu-api/` 当前显式放宽了 `proxy_read_timeout 300` 与
+  `proxy_send_timeout 300`，用于覆盖 `AI Provider` 后台测试等长耗时请求，
+  避免在 60 秒附近被代理层提前截断。
 - 如果将来想统一改回 `/api`，要同时调整：
   - nginx 路由
   - `admin-web/.env.production`
