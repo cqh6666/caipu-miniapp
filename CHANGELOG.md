@@ -1,5 +1,188 @@
 # Project Changelog
 
+## 2026-04-23 (流程图 AI 节点兼容 images/generations + b64_json)
+
+### Changed
+
+- **修改时间**：2026-04-23 15:05 CST
+- **背景**：新增的流程图 Provider 需要兼容 `images/generations` 风格网关；现状只有 `chat/completions` 语义，导致 `admin-web` 新增节点、AI Router 测试链路和旧 `ai.flowchart` 兼容模式都无法正确表达或执行 `gpt-image-2 + b64_json` 这类图片生成节点。
+- **核心改动**：
+  - **AI Router 节点模型补齐显式语义**（`backend/internal/airouter/*`、`admin-web/src/types.ts`、`admin-web/src/pages/AIProvidersPage.vue`）：
+    - 新增节点字段 `endpointMode`（`chat_completions` / `images_generations`）与 `responseFormat`（`auto` / `image_url` / `b64_json`），通过既有 `extra_json` 持久化，无需新增数据库迁移。
+    - `AIProvidersPage` 新增两项可编辑字段，并让「新增节点 / 复制节点 / 保存草稿 / 单节点测试 / 当前草稿测试 / 差异快照」都带上新字段。
+    - flowchart 场景默认新增节点改为 `images_generations + b64_json`，以匹配本次实测可用的 `gpt-image-2` 网关；非 flowchart 场景仍默认 `chat_completions`。
+  - **AI Router 真正支持图片生成分支**（`backend/internal/airouter/service.go`）：
+    - flowchart 节点走 `images_generations` 时，请求路径改为 `/images/generations`，并把消息列表折叠成单一 prompt；当前固定附带 `quality=high`、`output_format=png`。
+    - 支持解析两类响应：`image_url` 与 `b64_json`；`b64_json` 会在后端转成 `data:image/png;base64,...`，复用既有图片提取与上传链路。
+    - 调用审计日志里的 `endpoint` 现在记录真实路径，不再一律写死 `/chat/completions`。
+  - **旧兼容模式同步对齐**（`backend/internal/recipe/flowchart.go`、`backend/internal/appsettings/*`、`backend/internal/app/app.go`、`backend/configs/example.env`、`backend/README.md`）：
+    - 旧 `ai.flowchart` 运行时配置新增 `endpoint_mode`、`response_format`，配置中心测试接口也能按两种 endpoint 分支发请求。
+    - 非 AI Router 模式下的 `FlowchartGenerator` 也支持 `images/generations` + `b64_json`，避免“新路由能用、兼容模式不能用”的口径分裂。
+- **影响范围**：
+  - 后端：`airouter`、`recipe flowchart generator`、`runtime settings`、`app` 装配层。
+  - 后台：`AI Provider` 节点编辑器与保存/测试链路。
+  - 文档/配置：`backend/configs/example.env`、`backend/README.md`。
+- **兼容性·风险**：
+  - 旧节点未配置新字段时默认仍按 `chat_completions + auto` 运行，属于向后兼容。
+  - `images_generations` 当前仅允许用于 `flowchart` 场景，防止 summary/title 节点被误配成图片接口。
+  - 当前图片分支固定 `quality=high` 与 `output_format=png`，若后续需要节点级自定义质量或输出格式，需要再扩字段。
+- **验证情况**：
+  - `env GOCACHE=/tmp/caipu-miniapp-gocache go test ./...`（`backend/`）通过。
+  - `npm run build`（`admin-web/`）通过。
+  - `npx tsc --noEmit`（`admin-web/`）通过。
+
+## 2026-04-23 (菜品详情页 P0 缺陷修复：无图回退 Tab + Hero 操作错位)
+
+### Fixed
+
+- **修改时间**：2026-04-23
+- **背景**：在做 Hero 操作菜单与做法 Tab 合并的代码 review 中发现两个未爆雷但已存在的高风险缺陷，需在用户实际触发前先行修复。
+- **核心改动**（`pages/recipe-detail/index.vue`）：
+  - **P0 · 无图菜谱默认 Tab 落错**：`activeCookingTab` 初始值是 `'flowchart'`，原 watch 只处理「有图变无图」的回退，未覆盖「初次加载就无图」场景，导致进入页面命中流程图空态卡片，把真正的详细步骤和内嵌 CTA 全部挡住，违背 CHANGELOG 写过的「无图时直接展示详细步骤」承诺。
+  - 新增 `ensureCookingTabValid` 方法：当 `!hasFlowchart && !isFlowchartActive` 时强制把 Tab 切到 `'steps'`；在 `applyRecipe`（菜谱数据落定）和两个 watcher（`hasFlowchart` / `isFlowchartActive`）里统一调用，覆盖首次加载、流程图被清空、生成任务结束三类时机。
+  - **P0 · Hero「设为封面 / 删除」操作错图**：`setCurrentImageAsCover` 与 `deleteCurrentImage` 直接拿 `heroImageIndex`（属于「可见列表」`displayRecipeImages` 的索引）去 splice 原始 `recipeImages` 数组，但中间任意一张图加载失败被 `recipeImageHiddenMap` 隐藏后，两数组顺序错位，会**静默删错图或把错图设为封面**且立刻 `updateRecipeById` 落库。
+  - 新增 `resolveOriginalImageIndex(visibleIndex)` 工具方法：通过 `cacheKey` 在 `recipeImages` 中反查真实下标，两个操作前都先做映射；映射失败返回 `-1`，由原有越界判断兜底 return。
+- **影响范围**：菜品详情页 `pages/recipe-detail/index.vue`，无新增依赖；不影响其他页面与后端接口。
+- **兼容性·风险**：纯前端逻辑修复，数据形态与 API 调用无变化。无图菜谱用户进入后看到的内容会从「空态」变成「详细步骤」，属预期修复；图片加载失败场景下的删/设封面行为从「可能错图」变成「正确目标图」。
+- **验证情况**：esbuild 静态语法校验通过；未做真机回归，建议下一次手动覆盖：① 新建无图菜谱进入查看默认 Tab；② 多图菜谱中故意让中间一张图 URL 失效后，对后面的图执行设为封面/删除。
+
+## 2026-04-23 (菜品详情页 Hero 操作菜单：设为封面 / 添加 / 删除)
+
+### Added
+
+- 菜品详情页首图（Hero）右上角新增 ⋯ 操作菜单（`pages/recipe-detail/index.vue`），让用户在浏览图片时就近完成 3 个高频操作，不必跳转编辑页：
+  - **设为封面**：把当前查看的图片移到 `images[0]` 位（仅当 `heroImageIndex > 0` 且图片数量 > 1 时显示）
+  - **添加更多图片**：复用现有 `chooseHeroImages`，仅当 `images.length < MAX_RECIPE_IMAGES` 时显示
+  - **删除这张图**：删除当前查看的图片，需二次确认（`uni.showModal`，文案「删除后无法恢复，仍可重新上传」）
+- 解决「拼图当封面」的根本问题之一：用户从小红书爬来的菜谱第一张往往不是最美的成品图，现在他可以滑到自己喜欢的那张直接「设为封面」，不必进编辑页拖拽
+- 操作完成后：① `heroImageIndex` 自动校正（设为封面时回到 0 / 删除时防越界）② 触觉反馈（设为封面 medium、删除 light）③ ActionFeedback 顶部提示「已设为封面 / 已删除」
+
+### Changed
+
+- 新增 computed：`canShowHeroActionMenu` / `canSetCurrentAsCover` / `canAddMoreHeroImages` / `canDeleteCurrentImage`，按真实可执行性动态装配菜单项，避免 dead-click
+- 新增 methods：`openHeroActionMenu` / `setCurrentImageAsCover` / `confirmDeleteCurrentImage` / `deleteCurrentImage`；统一使用 `updateRecipeById({ images })` 后端契约，无需新增接口
+- 新增样式 `.hero-card__action`：56×56rpx 圆形半透明黑底 + `backdrop-filter: blur(10rpx)`，定位 `top: 22rpx; right: 22rpx`（避开底部蒙层的标题/分页器重读区，放在顶部更易够到且不抢戏）；按下态 `transform: scale(0.92)` + 加深背景
+
+### Notes
+
+- 修改时间：2026-04-23 18:10 CST
+- 变更背景：用户在 Hero 区重构（蒙层 + 标题压图）完成后追问「设为封面」的实现方案。评估后舍弃「长按图片」方案（隐藏交互发现性差 + 与微信预览长按保存冲突）与「全屏预览页加底栏」方案（成本过高），采用「右上角常驻 ⋯ 菜单」方案，发现性高、与现有「做法卡片 ⋯ 菜单」设计语言一致、复用现有 `updateRecipeById` 后端能力
+- 核心改动：模板新增 1 个 `<view>` 按钮（含 v-if 守卫）；script 新增 4 个 computed + 4 个 methods（含 1 个二次确认包装）；样式新增 ~30 行
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：① 上传中（`isUploadingHeroImage`）按钮整体隐藏，避免并发请求；② 设为封面/删除 都会调用 `updateRecipeById` 触发 `applyRecipe`，复用现有图片缓存逻辑；③ 删除有二次确认 + 错误兜底 toast；④ `@tap.stop` 阻止冒泡到 hero 整体的 `previewRecipeImage`，不会误触发大图预览；⑤ 按钮位置在右上而非右下，避开底部蒙层文字密集区，与「做法卡片 ⋯」一致放在卡片顶部右角
+- 验证情况：esbuild 静态校验 `<script>` 通过；待真机回归 1) 单张图：⋯ 菜单仅含「添加更多图片」「删除这张图」（无「设为封面」）2) 滑到第 2+ 张：菜单顶部出现「设为封面」3) 点「设为封面」后是否立即切回第 0 位、是否震动反馈、是否显示「已设为封面」4) 点「删除」是否弹二次确认 5) 删除最后一张后是否回到上传占位态 6) 上传中点 ⋯ 是否被隐藏 7) 图片到达 `MAX_RECIPE_IMAGES` 上限时菜单中是否隐藏「添加更多」8) 网络失败时是否 toast 报错且不破坏现有数据
+
+## 2026-04-23 (菜品详情页 Hero 区重构：标题压图 + 渐变蒙层 + 分页器升级)
+
+### Changed
+
+- 菜品详情页首图（Hero）区视觉与交互重构（`pages/recipe-detail/index.vue`），把「图片浏览器 + 标题区」整合为统一的「沉浸式封面」，提升首屏的情感钩子：
+  - **H1 关闭 swiper 自动轮播**：从 `:autoplay="length > 1" :interval="3600"` 改为 `:autoplay="false" :duration="280"`。理由：菜谱场景下用户在「想吃」决策阶段需要反复看成品图，自动轮播打断思考；业界菜谱类（Yummly / Tasty / 下厨房）全部不自动轮播
+  - **H2 移除「查看大图」chip**：图片本身已经全区域可点 `previewImage`，独立的「📷 查看大图」chip 是冗余功能可见性，造成视觉噪点
+  - **H3 分页器升级**：原左下「1/8」灰底数字 chip → 底部居中「圆点指示器 dots」（≤5 张）或「数字 chip」（>5 张）。激活态 dot 从圆形拉伸为短横线（width 10rpx → 24rpx + border-radius 5rpx），符合 iOS Photos / 主流图库 App 的视觉语言
+  - **H4 底部渐变蒙层**：新增 `.hero-card__overlay`，280rpx 高，从 0 → 0.85 黑色渐变，为压图标题/分页器提供任意背景色下的稳定读性
+  - **H5 标题 + meta chips 压图**：有图时把 `mealLabel / statusLabel / 已置顶` chips + `recipe.title` 从 hero 下方迁移到 hero 内部底部（蒙层之上），节省 ~140rpx 垂直空间，让首屏装下「图 + 标题 + 摘要」三大信息块；无图时回退到原 `.detail-head` 布局
+- Hero 高度从 380rpx 增至 520rpx（仅 `hero-card--with-overlay` 模式），为压图标题预留视觉空间
+
+### Added
+
+- 新增样式：
+  - `.hero-card--with-overlay`：触发增高 + 压图模式
+  - `.hero-card__overlay`：底部渐变蒙层
+  - `.hero-card__title-block` / `.hero-card__title`（44rpx / 800 / `text-shadow`）：压图标题块
+  - `.hero-card__meta` / `.hero-card__chip` / `.hero-card__chip--meal/--done/--wishlist/--pin` / `.hero-card__chip-text`：压图 chip（半透明深色 + 白字 + `backdrop-filter: blur`，确保任意背景下可读）
+  - `.hero-card__pager` / `.hero-card__dot` / `.hero-card__dot--active`：底部居中圆点分页器
+  - `.detail-head--summary-only`：有图时只渲染 summary 的紧凑变体（padding 28rpx → 18rpx）
+
+### Removed
+
+- 删除 `.hero-card__preview-tip` / `.hero-card__preview-tip-text` 样式与对应模板（「查看大图」chip）
+- swiper 上的 `:interval="3600"` autoplay 配置
+
+### Notes
+
+- 修改时间：2026-04-23 17:30 CST
+- 变更背景：用户对详情页首图区截图（番茄肉酱意面，封面是用户拼图含 8 张过程图）发起评审，识别出 5 类问题：① 自动轮播打断思考 ② 「查看大图」chip 冗余 ③ 「1/8」分页器与「查看大图」chip 视觉混淆 ④ 缺少底部蒙层导致压图文字难读 ⑤ 标题与图片分离造成首屏信息密度低。用户决策选择 Quick Win 三项 + Hero 渐变蒙层 + 标题压图共 5 项，深层「拼图当首图」的图片角色分类问题留待后续 P3
+- 核心改动：模板层在 hero-card 内新增 overlay + title-block + pager 三个绝对定位层（z-index 2/3/3），并按 `displayRecipeImages.length` 控制压图模式与回退；样式层新增 ~140 行（新 chip 配色系统、dots 分页器、渐变蒙层），删除旧 preview-tip 相关样式
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：① 占位态（`!displayRecipeImages.length`）保留原 detail-head 布局，标题/chips 不会丢失；② Hero 高度从 380rpx 增至 520rpx 仅在有图时生效，可能轻微改变首屏滚动量，需真机回归是否合适；③ 压图 chip 使用 `backdrop-filter: blur(8rpx)`，部分低端安卓机可能不支持 blur，但半透明背景已能保证基本可读；④ swiper 的 `circular` 仍按图片数量条件保留；⑤ 「番茄肉酱意面」这种「拼图当封面」的内容仍会有信息过载问题，但有了渐变蒙层至少压图标题能读清，根本治理需后端引入 `imageRole` 字段（见 P3）；⑥ overlay 与 title-block 都加了 `@tap.stop="handleHeroCardTap"`，避免压图区域吞掉「点图预览大图」的能力
+- 验证情况：esbuild 静态校验 `<script>` 通过；待真机回归 1) 单图：是否无分页器、压图标题正常显示 2) 2-5 张图：是否显示圆点 dots，激活态拉伸为短横线 3) >5 张图：是否显示数字 chip 4) 切换图片时分页器是否同步 5) 不再自动轮播（手动滑才动）6) 点击图片任意位置仍能预览大图 7) 占位态（无图）：是否回退到原 detail-head 布局、标题/chips/summary 都在 8) 压图标题/chips 在浅色食物图（白米饭、奶油意面）上的可读性 9) 整体首屏垂直空间感受是否更紧凑
+
+## 2026-04-23 (菜品详情页 P2-B：详细步骤 Tab 体验升级 Batch 1+2)
+
+### Changed
+
+- 「详细步骤」Tab 多项产品/UX 优化（`pages/recipe-detail/index.vue`），从「展示导向」转为「使用导向」：
+  - **B1-1 主料紧凑列表**：当主料 < 3 项时，去掉序号胶囊（如「1 多宝鱼 1条」的视觉冗余），改为「· 多宝鱼 1条」点状紧凑列表；≥ 3 项时仍保留序号胶囊
+  - **B1-3 已完成态隐藏 banner**：「已自动整理」绿色横条仅在 `pending / processing / failed` 时显示，`done` 状态下隐藏（用户已经看到内容了，banner 是冗余信息）
+  - **B1-4 Step 序号简化**：去掉「Step」英文前缀，仅保留数字「1 / 2 / 3」；胶囊从横向 999rpx 圆角改为 48×48rpx 正方形小徽章，让步骤标题真正成为视觉锚点
+  - **B2-5 关键参数高亮**：步骤详情中的「数量+单位」「火候」「温度」用正则识别后加粗 + 暖橙色 `#b4664c`，让用户在厨房一手脏的状态下也能瞬间扫到「8分钟」「中火」等关键信息
+
+### Added
+
+- **B1-2 食材清单一键复制**：主料标题行右侧新增「复制清单」按钮（`canCopyIngredientList` / `copyIngredientList`），输出格式化文本：
+  ```
+  多宝鱼 · 食材清单
+
+  主料：多宝鱼 1条
+  配菜：红椒、油、蒸鱼豉油
+  调味：葱、姜、盐
+  ```
+  覆盖「在地铁上看到菜想周末做，要把食材带去超市」的高频离线场景
+- **B2-6 步骤打勾完成 + 本地持久化**：
+  - 点击 step 卡片任意位置切换完成态；已完成步骤 `opacity: 0.55` + 标题加删除线 + 序号胶囊变绿底承载对勾图标
+  - 制作步骤标题行右侧显示进度提示「2 / 4」+ 「重置」按钮（带二次确认）
+  - 状态按 `recipeId` 隔离持久化到 `uni.setStorageSync`，key 前缀 `recipe-step-done:`；多菜谱并行做菜互不干扰
+- 新增 utils：
+  - `STEP_HIGHLIGHT_REGEX`：匹配数量+单位（分钟/秒/克/g/ml/勺/匙/杯/碗/条/个/片/块/颗/粒/根/瓣/只/滴/圈 等）+ 火候（大火/中火/小火/中小火/文火/武火/旺火/微火）+ 温度（°C / 度）
+  - `highlightStepDetailText(detail)`：把步骤详情切成 `[{ text, highlight }]` 段落数组，用于模板循环渲染
+  - `buildStepCompletedStorageKey(recipeId)`：按菜谱 ID 隔离的 storage key 构造器
+- 新增 data：`completedStepIndexMap`
+- 新增 computed：`canCopyIngredientList`、`completedStepCount`
+- 新增 methods：`copyIngredientList`、`highlightStepDetail`、`isStepCompleted`、`toggleStepCompleted`、`resetCompletedSteps`、`loadCompletedSteps`、`persistCompletedSteps`
+- 新增样式：`.parsed-section__head` / `.parsed-section__copy` / `.parsed-section__progress` / `.parsed-main-compact` 等 ~14 个新样式类；`.step-item--done` / `.step-item__index--done` / `.step-item__text--highlight` 等完成态与高亮态样式
+
+### Notes
+
+- 修改时间：2026-04-23 16:10 CST
+- 变更背景：用户对 P2-A 完成后的「详细步骤」Tab 截图发起评审，识别出 8 项产品/UX 问题（主料序号冗余、缺购物清单导出、参数淹没、缺进度感、banner 占位过大、Step 胶囊喧宾夺主、缺烹饪模式、来源不可点击），用户决策选择执行 Batch 1+2（前 6 项中的高 ROI 项），P3 烹饪模式与可点击来源留待 P2-C
+- 核心改动：模板层重构主料/辅料/制作步骤三个分组的结构与交互（标题行支持「标题 + 右侧操作」布局、步骤卡片支持点击切换完成、详情切片渲染高亮）；script 层新增 3 个 utils + 1 个 data + 2 个 computed + 7 个 methods，并在 `applyRecipe` 中集成本地状态加载；style 层新增 ~150 行
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：① `STEP_HIGHLIGHT_REGEX` 是全局正则，每次调用前已 reset `lastIndex`，不会污染下次调用；② 切片函数保证 0 段时也返回 `[{ text: '', highlight: false }]` 兜底；③ 步骤完成状态按 `recipeId` 隔离，多菜谱并行无干扰；④ `uni.setStorageSync` 失败仅 console.warn 不影响主流程；⑤ 整体改动是「分组级重构」，与上层 P2-A 的 Tab 切换逻辑完全解耦，不影响一图看懂 Tab；⑥ 「复制清单」按钮使用现有 `up-icon` 图标库，跨设备渲染一致
+- 验证情况：esbuild 静态校验 `<script>` 通过；待真机回归 1) 主料 1 项时是否显示紧凑点状列表（无「1」胶囊）2) 主料 ≥ 3 项时是否回到序号胶囊样式 3) 「复制清单」点击后剪贴板内容是否包含主料 + 所有辅料分组 4) 「已自动整理」done 态是否隐藏 banner 5) Step 序号是否仅显示数字（无「Step」前缀）6) 步骤详情中「8分钟」「中火」「5g」等关键词是否被加粗高亮 7) 点击 step 卡片是否切换完成态、关页重开后状态是否保留 8) 「重置」是否弹二次确认 9) 切换菜谱后完成进度是否互不干扰
+
+## 2026-04-23 (菜品详情页 P2-A：「一图看懂」与「做法整理」合并为 Tab 卡片)
+
+### Changed
+
+- 将原本两张独立的「一图看懂」与「做法整理」卡片合并为统一的「做法」卡片（`pages/recipe-detail/index.vue`），通过顶部 Tab 在两种视图之间切换：
+  - **顶部 Tab 栏**：分段控制器风格（`.cooking-tabs`），仅在 `hasFlowchart` 为真时渲染；无图时直接展示「详细步骤」内容（无空 Tab）
+  - **默认 Tab**：有图优先选中「一图看懂」，无图时仅显示「详细步骤」
+  - **统一 ⋯ 菜单**（`openCookingMenu`）：合并原 `openFlowchartMenu` / `openParseMenu`，按可执行性动态装配三类操作 —— ① 重新生成一图看懂（`canRequestFlowchart && !isFlowchartActive`）② 重新整理步骤（`canRequestParse`）③ 查看生成详情（合并 flowchart + parse 来源信息）；全空时降级为 toast
+  - **状态条与提示**：`flowchartStatusMeta` / `parseStatusMeta` / `showFlowchartStaleHint` 按当前 Tab 条件渲染，避免无关状态干扰
+  - **底部合并 caption**（`.cooking-footer`）：根据当前 Tab 显示 `flowchartCaptionText`（AI 生成 · MM-DD）或 `parseStatusSourceLabel`，把元信息行从 2 行降为 1 行
+  - **「详细步骤」Tab 内引导**：当无图但可生成时，在步骤内容上方插入弱主色 CTA `生成「一图看懂」流程图`（`.cooking-flowchart-cta`），把生成入口暴露在用户上下文里
+  - **后台进行中状态**：`isCookingActive`（一图生成中 OR 步骤整理中）会把右上 ⋯ 替换为非交互 chip（`cookingActiveLabel`），跨 Tab 也能告知另一任务状态（如「一图生成中…」）
+
+### Added
+
+- `pages/recipe-detail/index.vue` 新增 data `activeCookingTab`（默认 `'flowchart'`）、computed `isCookingActive` / `cookingActiveLabel` / `hasCookingMenuItems` / `cookingFooterText`、watch `hasFlowchart`（图被清空时自动回退到 `steps` Tab）、methods `switchCookingTab(tab)` / `openCookingMenu()`
+- 新增样式：`.detail-card--cooking`、`.cooking-tabs` / `.cooking-tabs__item` / `.cooking-tabs__item--active` / `.cooking-tabs__item--hover` / `.cooking-tabs__text`、`.cooking-flowchart-cta` / `.cooking-flowchart-cta__text` / `.cooking-flowchart-cta__arrow`、`.cooking-footer` / `.cooking-footer__text`
+- 切 Tab 时调用 `uni.vibrateShort({ type: 'light' })`，与底部「横屏查看」胶囊触觉反馈一致
+
+### Removed
+
+- 移除已被取代的 methods `openFlowchartMenu` 与 `openParseMenu`（原模板中的两个 ⋯ 入口已经被统一的 `openCookingMenu` 替代，无外部调用方）
+
+### Notes
+
+- 修改时间：2026-04-23 14:30 CST
+- 变更背景：用户在 P0/P1/P3 完成后选择执行 P2-A，目标是降低详情页的视觉密度（两张卡 → 一张卡 + Tab）、把同一「做法」概念在物理布局上聚拢，并合并冗余的 ⋯ 操作入口
+- 核心改动：模板层将原 65~233 行两个 `detail-card` 合并为单个 `detail-card--cooking`，通过 `activeCookingTab` 控制内部三类区域（状态条 / hint / 内容区）的条件渲染；script 层新增 1 个 data、4 个 computed、1 个 watch、2 个 methods，并删除 2 个旧 methods；style 层新增 ~110 行
+- 影响范围：`pages/recipe-detail/index.vue`、`CHANGELOG.md`
+- 兼容性/风险：① 用户决策已对齐：未生成流程图时隐藏 Tab、仅展示「详细步骤」；② `watch.hasFlowchart` 在图被清空时把 Tab 回退到 `steps`，避免无图却选中空 Tab；③ 旧 `openFlowchartMenu`/`openParseMenu` 已无模板调用方，删除安全；④ 与现有 `parsedSteps` / `parsedMainIngredients` 等数据契约无变更，仅调整渲染父级
+- 验证情况：esbuild 静态校验 `<script>` 通过；待真机回归 1) 有图：默认选「一图看懂」、Tab 切换是否流畅、底部 caption 是否随 Tab 切换 2) 无图：是否仅展示「详细步骤」内容（无 Tab、无空态）3) 无图但 `canRequestFlowchart`：步骤区上方是否出现「生成『一图看懂』」CTA 4) 后台生成中：⋯ 是否被 chip「生成中…」替换 5) 统一 ⋯ 菜单：仅暴露当前可执行项，全空时 toast 6) 流程图被清空（如生成失败）后是否自动切回「详细步骤」
+
 ## 2026-04-23 (菜品详情页 P0/P1 回归修复：覆盖确认死代码 + ⋯ 菜单 dead-click)
 
 ### Fixed

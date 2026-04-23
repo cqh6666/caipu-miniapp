@@ -320,6 +320,8 @@
                     <span>顺序 {{ index + 1 }}</span>
                     <span>{{ provider.adapter }}</span>
                     <span v-if="provider.model">Model: {{ provider.model }}</span>
+                    <span>Endpoint: {{ provider.endpointMode || 'chat_completions' }}</span>
+                    <span v-if="isImageGenerationProvider(provider)">Format: {{ provider.responseFormat || 'auto' }}</span>
                     <span>{{ provider.enabled ? '参与调度' : '已停用' }}</span>
                   </div>
                 </div>
@@ -408,6 +410,17 @@
                     <el-input v-model.trim="provider.model" placeholder="gpt-4.1-mini" />
                   </label>
                   <label class="routing-field">
+                    <span>Endpoint</span>
+                    <el-select v-model="provider.endpointMode" @change="handleEndpointModeChange(provider)">
+                      <el-option
+                        v-for="item in providerEndpointModeOptions"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </el-select>
+                  </label>
+                  <label class="routing-field">
                     <span>超时（秒）</span>
                     <el-input-number v-model="provider.timeoutSeconds" :min="1" :max="600" />
                   </label>
@@ -415,6 +428,21 @@
                     <span>Adapter</span>
                     <el-input v-model="provider.adapter" disabled />
                   </label>
+                  <label class="routing-field">
+                    <span>Response Format</span>
+                    <el-select v-model="provider.responseFormat" :disabled="!isImageGenerationProvider(provider)">
+                      <el-option
+                        v-for="item in providerResponseFormatOptions"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </el-select>
+                  </label>
+                </div>
+                <div v-if="isImageGenerationProvider(provider)" class="provider-editor-secret__hint">
+                  `images/generations` 当前固定按 `quality=high`、`output_format=png`
+                  发请求；这里仅配置返回格式。
                 </div>
 
                 <div class="provider-editor-secret">
@@ -584,7 +612,9 @@ import PageState from '@/components/PageState.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import * as adminApi from '@/api/admin'
 import type {
+  AIRoutingProviderEndpointMode,
   AIRoutingProviderConfig,
+  AIRoutingProviderResponseFormat,
   AIRoutingSceneConfig,
   AIRoutingSceneKey,
   AIRoutingSceneSummary,
@@ -654,6 +684,17 @@ const retryOptions = [
   { label: '响应异常 invalid_response', value: 'invalid_response' }
 ]
 
+const providerEndpointModeOptions: Array<{ label: string; value: AIRoutingProviderEndpointMode }> = [
+  { label: 'chat/completions', value: 'chat_completions' },
+  { label: 'images/generations', value: 'images_generations' }
+]
+
+const providerResponseFormatOptions: Array<{ label: string; value: AIRoutingProviderResponseFormat }> = [
+  { label: 'auto', value: 'auto' },
+  { label: 'image_url', value: 'image_url' },
+  { label: 'b64_json', value: 'b64_json' }
+]
+
 const currentAuditGroup = computed(() => `ai.routing.${currentSceneKey.value}`)
 const enabledProviderCount = computed(() => draftScene.value?.providers.filter((item) => item.enabled).length || 0)
 const maxAttemptCeiling = computed(() => Math.max(enabledProviderCount.value || 1, 1))
@@ -686,6 +727,18 @@ const currentSceneTitle = computed(() => {
   const card = sceneCards.value.find((item) => item.scene === currentSceneKey.value)
   return card?.title || displayAIRoutingScene(currentSceneKey.value)
 })
+
+function isImageGenerationProvider(provider: AIRoutingProviderConfig) {
+  return (provider.endpointMode || 'chat_completions') === 'images_generations'
+}
+
+function handleEndpointModeChange(provider: AIRoutingProviderConfig) {
+  if (!isImageGenerationProvider(provider)) {
+    provider.responseFormat = 'auto'
+  } else if (!provider.responseFormat) {
+    provider.responseFormat = 'auto'
+  }
+}
 
 function goAlertConfig() {
   router.push({ path: '/settings', query: { group: 'ai.provider_alert' }, hash: '#ai-provider-alert' })
@@ -795,6 +848,8 @@ function providerDiffSnapshot(provider: Record<string, unknown>) {
     baseURL: String(provider.baseURL || '').trim(),
     model: String(provider.model || '').trim(),
     timeoutSeconds: Number(provider.timeoutSeconds) || 0,
+    endpointMode: String(provider.endpointMode || 'chat_completions').trim(),
+    responseFormat: String(provider.responseFormat || 'auto').trim(),
     clearApiKey: Boolean(provider.clearApiKey),
     apiKey: typeof provider.apiKey === 'string' && provider.apiKey.trim() ? '[已录入]' : ''
   }
@@ -999,6 +1054,9 @@ function hydrateScene(scene: AIRoutingSceneConfig): AIRoutingSceneConfig {
     hasAPIKey: false,
     apiKeyMasked: '',
     ...provider,
+    extra: provider.extra || {},
+    endpointMode: (provider.endpointMode || 'chat_completions') as AIRoutingProviderEndpointMode,
+    responseFormat: provider.endpointMode === 'images_generations' ? (provider.responseFormat || 'auto') : 'auto',
     apiKey: '',
     clearApiKey: false
   }))
@@ -1021,6 +1079,8 @@ function buildScenePayload(scene: AIRoutingSceneConfig): AIRoutingSceneConfig {
     model: provider.model.trim(),
     priority: (index + 1) * 10,
     timeoutSeconds: Number(provider.timeoutSeconds) || 30,
+    endpointMode: provider.endpointMode || 'chat_completions',
+    responseFormat: provider.endpointMode === 'images_generations' ? (provider.responseFormat || 'auto') : 'auto',
     apiKey: (provider.apiKey || '').trim(),
     apiKeyMasked: provider.apiKeyMasked || '',
     hasAPIKey: !!provider.hasAPIKey,
@@ -1053,7 +1113,10 @@ function createProvider(scene: AIRoutingSceneKey): AIRoutingProviderConfig {
     hasAPIKey: false,
     clearApiKey: false,
     model: '',
-    timeoutSeconds: scene === 'flowchart' ? 120 : scene === 'title' ? 5 : 30
+    timeoutSeconds: scene === 'flowchart' ? 120 : scene === 'title' ? 5 : 30,
+    endpointMode: scene === 'flowchart' ? 'images_generations' : 'chat_completions',
+    responseFormat: scene === 'flowchart' ? 'b64_json' : 'auto',
+    extra: {}
   }
 }
 

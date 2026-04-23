@@ -28,10 +28,17 @@ var (
 	flowchartTipPattern           = regexp.MustCompile(`(?i)(火候|口味|收汁|调味|腌|焯|大火|中火|小火|慢炖|软烂|嫩|脆|香|辣|酸甜|出汁|分钟|时间)`)
 )
 
+const (
+	defaultFlowchartImageOutputFormat = "png"
+	defaultFlowchartImageQuality      = "high"
+)
+
 type FlowchartOptions struct {
 	BaseURL             string
 	APIKey              string
 	Model               string
+	EndpointMode        string
+	ResponseFormat      string
 	Timeout             time.Duration
 	RuntimeConfigLoader RuntimeConfigLoader
 	AIRouter            *airouter.Service
@@ -58,20 +65,24 @@ type FlowchartResult struct {
 }
 
 type flowchartClient struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
-	tracker    audit.Tracker
+	baseURL        string
+	apiKey         string
+	model          string
+	endpointMode   airouter.ProviderEndpointMode
+	responseFormat airouter.ProviderResponseFormat
+	httpClient     *http.Client
+	tracker        audit.Tracker
 }
 
 type RuntimeConfigLoader func(context.Context) FlowchartRuntimeConfig
 
 type FlowchartRuntimeConfig struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	Timeout time.Duration
+	BaseURL        string
+	APIKey         string
+	Model          string
+	EndpointMode   string
+	ResponseFormat string
+	Timeout        time.Duration
 }
 
 type flowchartPromptInput struct {
@@ -112,6 +123,24 @@ type flowchartChatResponse struct {
 	} `json:"error,omitempty"`
 }
 
+type flowchartImageGenerationRequest struct {
+	Model          string `json:"model"`
+	Prompt         string `json:"prompt"`
+	Quality        string `json:"quality,omitempty"`
+	OutputFormat   string `json:"output_format,omitempty"`
+	ResponseFormat string `json:"response_format,omitempty"`
+}
+
+type flowchartImageGenerationResponse struct {
+	Data []struct {
+		URL     string `json:"url"`
+		B64JSON string `json:"b64_json"`
+	} `json:"data"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
 func NewFlowchartGenerator(opts FlowchartOptions, uploader *upload.Service) *FlowchartGenerator {
 	if uploader == nil {
 		return nil
@@ -119,10 +148,12 @@ func NewFlowchartGenerator(opts FlowchartOptions, uploader *upload.Service) *Flo
 
 	return &FlowchartGenerator{
 		defaultConfig: FlowchartRuntimeConfig{
-			BaseURL: strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/"),
-			APIKey:  strings.TrimSpace(opts.APIKey),
-			Model:   strings.TrimSpace(opts.Model),
-			Timeout: opts.Timeout,
+			BaseURL:        strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/"),
+			APIKey:         strings.TrimSpace(opts.APIKey),
+			Model:          strings.TrimSpace(opts.Model),
+			EndpointMode:   strings.TrimSpace(opts.EndpointMode),
+			ResponseFormat: strings.TrimSpace(opts.ResponseFormat),
+			Timeout:        opts.Timeout,
 		},
 		configLoader: opts.RuntimeConfigLoader,
 		aiRouter:     opts.AIRouter,
@@ -239,6 +270,12 @@ func (g *FlowchartGenerator) clientFor(ctx context.Context) *flowchartClient {
 		if strings.TrimSpace(runtimeCfg.Model) != "" {
 			cfg.Model = strings.TrimSpace(runtimeCfg.Model)
 		}
+		if strings.TrimSpace(runtimeCfg.EndpointMode) != "" {
+			cfg.EndpointMode = strings.TrimSpace(runtimeCfg.EndpointMode)
+		}
+		if strings.TrimSpace(runtimeCfg.ResponseFormat) != "" {
+			cfg.ResponseFormat = strings.TrimSpace(runtimeCfg.ResponseFormat)
+		}
 		if runtimeCfg.Timeout > 0 {
 			cfg.Timeout = runtimeCfg.Timeout
 		}
@@ -250,16 +287,22 @@ func (g *FlowchartGenerator) clientFor(ctx context.Context) *flowchartClient {
 		cfg.Timeout = 45 * time.Second
 	}
 	return &flowchartClient{
-		baseURL:    strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		apiKey:     strings.TrimSpace(cfg.APIKey),
-		model:      strings.TrimSpace(cfg.Model),
-		httpClient: &http.Client{Timeout: cfg.Timeout},
-		tracker:    g.tracker,
+		baseURL:        strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		apiKey:         strings.TrimSpace(cfg.APIKey),
+		model:          strings.TrimSpace(cfg.Model),
+		endpointMode:   airouter.NormalizeProviderEndpointMode(cfg.EndpointMode),
+		responseFormat: airouter.NormalizeProviderResponseFormat(cfg.ResponseFormat),
+		httpClient:     &http.Client{Timeout: cfg.Timeout},
+		tracker:        g.tracker,
 	}
 }
 
 func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, error) {
 	startedAt := time.Now()
+	endpointPath := "/chat/completions"
+	if c != nil && c.endpointMode == airouter.EndpointModeImagesGenerations {
+		endpointPath = "/images/generations"
+	}
 	logCall := func(status string, httpStatus int, err error) {
 		if c == nil || c.tracker == nil {
 			return
@@ -272,7 +315,7 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 			JobRunID:     jobCtx.JobRunID,
 			Scene:        jobCtx.Scene,
 			Provider:     "openai-compatible",
-			Endpoint:     "/chat/completions",
+			Endpoint:     endpointPath,
 			Model:        c.model,
 			Status:       status,
 			HTTPStatus:   httpStatus,
@@ -286,28 +329,54 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 		})
 	}
 
-	payload := flowchartChatRequest{
-		Model:       c.model,
-		Temperature: 0.4,
-		Messages: []flowchartChatMessage{
-			{
-				Role:    "system",
-				Content: "你是一个料理流程图生成助手。请严格按用户要求生成手绘风格料理流程信息图，不要输出额外解释。",
+	body := []byte{}
+	switch c.endpointMode {
+	case airouter.EndpointModeImagesGenerations:
+		payload := flowchartImageGenerationRequest{
+			Model:        c.model,
+			Prompt:       strings.TrimSpace(prompt),
+			Quality:      defaultFlowchartImageQuality,
+			OutputFormat: defaultFlowchartImageOutputFormat,
+		}
+		if payload.Prompt == "" {
+			callErr := common.NewAppError(common.CodeBadRequest, "flowchart prompt is empty", http.StatusBadRequest)
+			logCall(audit.CallStatusFailed, 0, callErr)
+			return "", callErr
+		}
+		if c.responseFormat != airouter.ResponseFormatAuto {
+			payload.ResponseFormat = string(c.responseFormat)
+		}
+		marshaled, err := json.Marshal(payload)
+		if err != nil {
+			logCall(audit.CallStatusFailed, 0, err)
+			return "", common.ErrInternal.WithErr(fmt.Errorf("marshal flowchart image request: %w", err))
+		}
+		body = marshaled
+	default:
+		payload := flowchartChatRequest{
+			Model:       c.model,
+			Temperature: 0.4,
+			Messages: []flowchartChatMessage{
+				{
+					Role:    "system",
+					Content: "你是一个料理流程图生成助手。请严格按用户要求生成手绘风格料理流程信息图，不要输出额外解释。",
+				},
+				{
+					Role:    "user",
+					Content: prompt,
+				},
 			},
-			{
-				Role:    "user",
-				Content: prompt,
-			},
-		},
+		}
+
+		marshaled, err := json.Marshal(payload)
+		if err != nil {
+			logCall(audit.CallStatusFailed, 0, err)
+			return "", common.ErrInternal.WithErr(fmt.Errorf("marshal flowchart request: %w", err))
+		}
+		body = marshaled
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		logCall(audit.CallStatusFailed, 0, err)
-		return "", common.ErrInternal.WithErr(fmt.Errorf("marshal flowchart request: %w", err))
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpointPath, bytes.NewReader(body))
 	if err != nil {
 		logCall(audit.CallStatusFailed, 0, err)
 		return "", common.ErrInternal.WithErr(fmt.Errorf("build flowchart request: %w", err))
@@ -337,37 +406,9 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 		return "", callErr
 	}
 
-	var parsed flowchartChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		cause := truncateString(flowchartErrorCause(err), 160)
-		if cause == "" {
-			cause = "decode failed"
-		}
-		callErr := common.NewAppError(
-			common.CodeInternalServer,
-			"invalid flowchart response: "+cause,
-			http.StatusBadGateway,
-		).WithErr(err)
-		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
-		return "", callErr
-	}
-	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
-		callErr := common.NewAppError(common.CodeInternalServer, strings.TrimSpace(parsed.Error.Message), http.StatusBadGateway)
-		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
-		return "", callErr
-	}
-	if len(parsed.Choices) == 0 {
-		callErr := common.NewAppError(common.CodeInternalServer, "flowchart response contained no choices", http.StatusBadGateway)
-		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
-		return "", callErr
-	}
-
-	content := extractFlowchartMessageContent(parsed.Choices[0].Message.Content)
-	if imageURL := extractFlowchartMessageImageURL(parsed.Choices[0].Message.Images); imageURL != "" {
-		content = imageURL
-	}
-	if content == "" {
-		callErr := common.NewAppError(common.CodeInternalServer, "flowchart response was empty", http.StatusBadGateway)
+	content, err := c.decodeResponse(resp)
+	if err != nil {
+		callErr := common.NewAppError(common.CodeInternalServer, err.Error(), http.StatusBadGateway).WithErr(err)
 		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
 		return "", callErr
 	}
@@ -375,6 +416,43 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 	logCall(audit.CallStatusSuccess, resp.StatusCode, nil)
 
 	return content, nil
+}
+
+func (c *flowchartClient) decodeResponse(resp *http.Response) (string, error) {
+	switch c.endpointMode {
+	case airouter.EndpointModeImagesGenerations:
+		var parsed flowchartImageGenerationResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return "", fmt.Errorf("invalid flowchart image response: %w", err)
+		}
+		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
+			return "", errors.New(strings.TrimSpace(parsed.Error.Message))
+		}
+		content := extractFlowchartGeneratedImageContent(parsed.Data, c.responseFormat)
+		if content == "" {
+			return "", fmt.Errorf("flowchart image response contained no image")
+		}
+		return content, nil
+	default:
+		var parsed flowchartChatResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return "", fmt.Errorf("invalid flowchart response: %w", err)
+		}
+		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
+			return "", errors.New(strings.TrimSpace(parsed.Error.Message))
+		}
+		if len(parsed.Choices) == 0 {
+			return "", fmt.Errorf("flowchart response contained no choices")
+		}
+		content := extractFlowchartMessageContent(parsed.Choices[0].Message.Content)
+		if imageURL := extractFlowchartMessageImageURL(parsed.Choices[0].Message.Images); imageURL != "" {
+			content = imageURL
+		}
+		if content == "" {
+			return "", fmt.Errorf("flowchart response was empty")
+		}
+		return content, nil
+	}
 }
 
 func newFlowchartRequestError(err error, timeout time.Duration) error {
@@ -706,6 +784,34 @@ func extractFlowchartMessageContent(raw json.RawMessage) string {
 	}
 
 	return strings.TrimSpace(string(raw))
+}
+
+func extractFlowchartGeneratedImageContent(items []struct {
+	URL     string `json:"url"`
+	B64JSON string `json:"b64_json"`
+}, responseFormat airouter.ProviderResponseFormat) string {
+	for _, item := range items {
+		url := normalizeFlowchartImageReference(item.URL)
+		b64 := strings.TrimSpace(item.B64JSON)
+		switch responseFormat {
+		case airouter.ResponseFormatImageURL:
+			if url != "" {
+				return url
+			}
+		case airouter.ResponseFormatB64JSON:
+			if b64 != "" {
+				return "data:image/" + defaultFlowchartImageOutputFormat + ";base64," + b64
+			}
+		default:
+			if url != "" {
+				return url
+			}
+			if b64 != "" {
+				return "data:image/" + defaultFlowchartImageOutputFormat + ";base64," + b64
+			}
+		}
+	}
+	return ""
 }
 
 func extractFlowchartMessageImageURL(images []struct {

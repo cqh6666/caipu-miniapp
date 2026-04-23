@@ -23,10 +23,12 @@ type SummaryAIConfig struct {
 }
 
 type FlowchartAIConfig struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	Timeout time.Duration
+	BaseURL        string
+	APIKey         string
+	Model          string
+	EndpointMode   string
+	ResponseFormat string
+	Timeout        time.Duration
 }
 
 type TitleAIConfig struct {

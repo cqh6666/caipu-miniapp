@@ -91,10 +91,12 @@ func (p *RuntimeProvider) SummaryAI(ctx context.Context) SummaryAIConfig {
 
 func (p *RuntimeProvider) FlowchartAI(ctx context.Context) FlowchartAIConfig {
 	return FlowchartAIConfig{
-		BaseURL: p.getString(ctx, "ai.flowchart.base_url"),
-		APIKey:  p.getString(ctx, "ai.flowchart.api_key"),
-		Model:   p.getString(ctx, "ai.flowchart.model"),
-		Timeout: time.Duration(p.getInt(ctx, "ai.flowchart.timeout_seconds", 45)) * time.Second,
+		BaseURL:        p.getString(ctx, "ai.flowchart.base_url"),
+		APIKey:         p.getString(ctx, "ai.flowchart.api_key"),
+		Model:          p.getString(ctx, "ai.flowchart.model"),
+		EndpointMode:   p.getString(ctx, "ai.flowchart.endpoint_mode"),
+		ResponseFormat: p.getString(ctx, "ai.flowchart.response_format"),
+		Timeout:        time.Duration(p.getInt(ctx, "ai.flowchart.timeout_seconds", 45)) * time.Second,
 	}
 }
 
@@ -310,12 +312,26 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 	startedAt := time.Now()
 
 	switch groupName {
-	case "ai.summary", "ai.flowchart", "ai.title":
+	case "ai.summary", "ai.title":
 		timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(resolved["timeout_seconds"]))
 		if timeoutSeconds <= 0 {
 			timeoutSeconds = 10
 		}
 		result = testOpenAICompatible(ctx, resolved["base_url"], resolved["api_key"], resolved["model"], time.Duration(timeoutSeconds)*time.Second)
+	case "ai.flowchart":
+		timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(resolved["timeout_seconds"]))
+		if timeoutSeconds <= 0 {
+			timeoutSeconds = 10
+		}
+		result = testFlowchartCompatible(
+			ctx,
+			resolved["base_url"],
+			resolved["api_key"],
+			resolved["model"],
+			resolved["endpoint_mode"],
+			resolved["response_format"],
+			time.Duration(timeoutSeconds)*time.Second,
+		)
 	case "sidecar.linkparse":
 		timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(resolved["timeout_seconds"]))
 		if timeoutSeconds <= 0 {
@@ -714,6 +730,8 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 				{Group: "ai.flowchart", Key: "base_url", Label: "Base URL", Description: "流程图模型接口地址。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartBaseURL)},
 				{Group: "ai.flowchart", Key: "api_key", Label: "API Key", Description: "流程图模型密钥。", ValueType: "string", IsSecret: true, DefaultValue: strings.TrimSpace(cfg.AIFlowchartAPIKey)},
 				{Group: "ai.flowchart", Key: "model", Label: "Model", Description: "流程图生成模型。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartModel)},
+				{Group: "ai.flowchart", Key: "endpoint_mode", Label: "Endpoint Mode", Description: "流程图节点请求路径：chat_completions 或 images_generations。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartEndpointMode)},
+				{Group: "ai.flowchart", Key: "response_format", Label: "Response Format", Description: "images_generations 返回格式：auto / image_url / b64_json。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartResponseFormat)},
 				{Group: "ai.flowchart", Key: "timeout_seconds", Label: "Timeout", Description: "请求超时时间（秒）。", ValueType: "int", DefaultValue: strconv.Itoa(cfg.AIFlowchartTimeoutSeconds)},
 			},
 		},
@@ -912,6 +930,78 @@ func testOpenAICompatible(ctx context.Context, baseURL, apiKey, model string, ti
 		"stream":     false,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return GroupTestResult{OK: false, Message: "创建测试请求失败: " + err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return GroupTestResult{OK: false, Message: "请求失败: " + err.Error()}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		message := strings.TrimSpace(string(data))
+		if message == "" {
+			message = "状态码 " + strconv.Itoa(resp.StatusCode)
+		}
+		return GroupTestResult{OK: false, Message: "测试失败: " + message}
+	}
+
+	return GroupTestResult{OK: true, Message: "连接成功"}
+}
+
+func testFlowchartCompatible(ctx context.Context, baseURL, apiKey, model, endpointMode, responseFormat string, timeout time.Duration) GroupTestResult {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	model = strings.TrimSpace(model)
+	if baseURL == "" || model == "" {
+		return GroupTestResult{OK: false, Message: "缺少 base_url 或 model，无法测试。"}
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+
+	path := "/chat/completions"
+	body := []byte{}
+	switch strings.ToLower(strings.TrimSpace(endpointMode)) {
+	case "", "chat", "chat_completions", "chat/completions":
+		body, _ = json.Marshal(map[string]any{
+			"model": model,
+			"messages": []map[string]string{
+				{"role": "user", "content": "ping"},
+			},
+			"max_tokens": 1,
+			"stream":     false,
+		})
+	case "images", "images_generations", "images/generations":
+		path = "/images/generations"
+		payload := map[string]any{
+			"model":         model,
+			"prompt":        "请生成一张最简单的测试流程图图片，只用于验证链路。",
+			"quality":       "high",
+			"output_format": "png",
+		}
+		switch strings.ToLower(strings.TrimSpace(responseFormat)) {
+		case "", "auto":
+		case "image_url", "image-url", "url":
+			payload["response_format"] = "image_url"
+		case "b64_json", "b64-json", "base64":
+			payload["response_format"] = "b64_json"
+		default:
+			return GroupTestResult{OK: false, Message: "response_format 非法，应为 auto / image_url / b64_json"}
+		}
+		body, _ = json.Marshal(payload)
+	default:
+		return GroupTestResult{OK: false, Message: "endpoint_mode 非法，应为 chat_completions 或 images_generations"}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return GroupTestResult{OK: false, Message: "创建测试请求失败: " + err.Error()}
 	}

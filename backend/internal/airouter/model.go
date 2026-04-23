@@ -19,6 +19,21 @@ const (
 	StrategyRoundRobinFailover Strategy = "round_robin_failover"
 )
 
+type ProviderEndpointMode string
+
+const (
+	EndpointModeChatCompletions   ProviderEndpointMode = "chat_completions"
+	EndpointModeImagesGenerations ProviderEndpointMode = "images_generations"
+)
+
+type ProviderResponseFormat string
+
+const (
+	ResponseFormatAuto     ProviderResponseFormat = "auto"
+	ResponseFormatImageURL ProviderResponseFormat = "image_url"
+	ResponseFormatB64JSON  ProviderResponseFormat = "b64_json"
+)
+
 const (
 	AdapterOpenAICompatible = "openai-compatible"
 
@@ -46,23 +61,25 @@ type RequestOptions struct {
 }
 
 type ProviderConfig struct {
-	ID             string         `json:"id"`
-	Scene          Scene          `json:"scene,omitempty"`
-	Name           string         `json:"name"`
-	Adapter        string         `json:"adapter"`
-	Enabled        bool           `json:"enabled"`
-	Priority       int            `json:"priority"`
-	Weight         int            `json:"weight,omitempty"`
-	BaseURL        string         `json:"baseURL"`
-	APIKey         string         `json:"apiKey,omitempty"`
-	APIKeyMasked   string         `json:"apiKeyMasked,omitempty"`
-	HasAPIKey      bool           `json:"hasAPIKey"`
-	ClearAPIKey    bool           `json:"clearApiKey,omitempty"`
-	Model          string         `json:"model"`
-	TimeoutSeconds int            `json:"timeoutSeconds"`
-	Extra          map[string]any `json:"extra,omitempty"`
-	UpdatedBy      string         `json:"updatedBySubject,omitempty"`
-	UpdatedAt      string         `json:"updatedAt,omitempty"`
+	ID             string                 `json:"id"`
+	Scene          Scene                  `json:"scene,omitempty"`
+	Name           string                 `json:"name"`
+	Adapter        string                 `json:"adapter"`
+	Enabled        bool                   `json:"enabled"`
+	Priority       int                    `json:"priority"`
+	Weight         int                    `json:"weight,omitempty"`
+	BaseURL        string                 `json:"baseURL"`
+	APIKey         string                 `json:"apiKey,omitempty"`
+	APIKeyMasked   string                 `json:"apiKeyMasked,omitempty"`
+	HasAPIKey      bool                   `json:"hasAPIKey"`
+	ClearAPIKey    bool                   `json:"clearApiKey,omitempty"`
+	Model          string                 `json:"model"`
+	TimeoutSeconds int                    `json:"timeoutSeconds"`
+	EndpointMode   ProviderEndpointMode   `json:"endpointMode,omitempty"`
+	ResponseFormat ProviderResponseFormat `json:"responseFormat,omitempty"`
+	Extra          map[string]any         `json:"extra,omitempty"`
+	UpdatedBy      string                 `json:"updatedBySubject,omitempty"`
+	UpdatedAt      string                 `json:"updatedAt,omitempty"`
 }
 
 type SceneConfig struct {
@@ -194,6 +211,56 @@ func DefaultRetryOn() []string {
 		ErrorTypeAuth,
 		ErrorTypeInvalidResponse,
 	}
+}
+
+func ParseProviderEndpointMode(value string) (ProviderEndpointMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "chat", "chat_completions", "chat/completions":
+		return EndpointModeChatCompletions, true
+	case "images", "images_generations", "images/generations":
+		return EndpointModeImagesGenerations, true
+	default:
+		return "", false
+	}
+}
+
+func NormalizeProviderEndpointMode(value string) ProviderEndpointMode {
+	mode, ok := ParseProviderEndpointMode(value)
+	if !ok {
+		return EndpointModeChatCompletions
+	}
+	return mode
+}
+
+func IsValidProviderEndpointMode(value string) bool {
+	_, ok := ParseProviderEndpointMode(value)
+	return ok
+}
+
+func ParseProviderResponseFormat(value string) (ProviderResponseFormat, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "auto":
+		return ResponseFormatAuto, true
+	case "image_url", "image-url", "url":
+		return ResponseFormatImageURL, true
+	case "b64_json", "b64-json", "base64":
+		return ResponseFormatB64JSON, true
+	default:
+		return "", false
+	}
+}
+
+func NormalizeProviderResponseFormat(value string) ProviderResponseFormat {
+	format, ok := ParseProviderResponseFormat(value)
+	if !ok {
+		return ResponseFormatAuto
+	}
+	return format
+}
+
+func IsValidProviderResponseFormat(value string) bool {
+	_, ok := ParseProviderResponseFormat(value)
+	return ok
 }
 
 func DefaultBreakerConfig() BreakerConfig {

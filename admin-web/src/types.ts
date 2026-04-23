@@ -159,6 +159,8 @@ export interface GroupTestResult {
 
 export type AIRoutingSceneKey = 'summary' | 'title' | 'flowchart'
 export type AIRoutingStrategy = 'priority_failover' | 'round_robin_failover'
+export type AIRoutingProviderEndpointMode = 'chat_completions' | 'images_generations'
+export type AIRoutingProviderResponseFormat = 'auto' | 'image_url' | 'b64_json'
 
 export interface AIRoutingBreakerConfig {
   failureThreshold: number
@@ -186,6 +188,9 @@ export interface AIRoutingProviderConfig {
   clearApiKey?: boolean
   model: string
   timeoutSeconds: number
+  endpointMode?: AIRoutingProviderEndpointMode
+  responseFormat?: AIRoutingProviderResponseFormat
+  extra?: Record<string, unknown>
   updatedBySubject?: string
   updatedAt?: string
 }

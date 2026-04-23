@@ -67,6 +67,39 @@ func TestRuntimeProviderTestRuntimeGroupPrefersExplicitValueOverClear(t *testing
 	}
 }
 
+func TestRuntimeProviderTestRuntimeGroupUsesImageGenerationEndpointForFlowchart(t *testing.T) {
+	t.Parallel()
+
+	provider := newRuntimeProviderForTest(t)
+	ctx := context.Background()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/images/generations" {
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+		if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "Bearer flowchart-secret" {
+			t.Fatalf("Authorization header = %q, want %q", got, "Bearer flowchart-secret")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}]}`))
+	}))
+	defer server.Close()
+
+	result, err := provider.TestRuntimeGroup(ctx, "tester", "req-flowchart", "ai.flowchart", map[string]any{
+		"base_url":        server.URL,
+		"model":           "gpt-image-2",
+		"api_key":         "flowchart-secret",
+		"endpoint_mode":   "images_generations",
+		"response_format": "b64_json",
+	}, nil)
+	if err != nil {
+		t.Fatalf("TestRuntimeGroup(ai.flowchart) error = %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("TestRuntimeGroup(ai.flowchart).OK = false, message = %q", result.Message)
+	}
+}
+
 func TestRuntimeProviderTestRuntimeGroupSendsAIProviderAlertTestEmail(t *testing.T) {
 	t.Parallel()
 

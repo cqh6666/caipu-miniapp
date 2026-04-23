@@ -29,6 +29,13 @@ var (
 	dataImageURLPattern     = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+`)
 )
 
+const (
+	providerExtraKeyEndpointMode   = "endpoint_mode"
+	providerExtraKeyResponseFormat = "response_format"
+	defaultImageOutputFormat       = "png"
+	defaultImageQuality            = "high"
+)
+
 type Service struct {
 	repo             *Repository
 	cipherBox        *cipherBox
@@ -407,7 +414,9 @@ func (s *Service) buildSceneConfig(record sceneRecord, providers []providerRecor
 			APIKey:         provider.APIKeyCipher,
 			Model:          strings.TrimSpace(provider.Model),
 			TimeoutSeconds: provider.TimeoutSeconds,
-			Extra:          provider.Extra,
+			EndpointMode:   NormalizeProviderEndpointMode(extraStringValue(provider.Extra, providerExtraKeyEndpointMode)),
+			ResponseFormat: NormalizeProviderResponseFormat(extraStringValue(provider.Extra, providerExtraKeyResponseFormat)),
+			Extra:          cloneProviderExtra(provider.Extra),
 			UpdatedBy:      provider.UpdatedBy,
 			UpdatedAt:      provider.UpdatedAt,
 			HasAPIKey:      strings.TrimSpace(provider.APIKeyCipher) != "",
@@ -460,6 +469,9 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 					BaseURL:        provider.BaseURL,
 					Model:          provider.Model,
 					TimeoutSeconds: provider.TimeoutSeconds,
+					EndpointMode:   NormalizeProviderEndpointMode(extraStringValue(provider.Extra, providerExtraKeyEndpointMode)),
+					ResponseFormat: NormalizeProviderResponseFormat(extraStringValue(provider.Extra, providerExtraKeyResponseFormat)),
+					Extra:          cloneProviderExtra(provider.Extra),
 					APIKey:         provider.APIKeyCipher,
 					HasAPIKey:      strings.TrimSpace(provider.APIKeyCipher) != "",
 				}
@@ -532,6 +544,22 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 		}
 		provider.BaseURL = strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/")
 		provider.Model = strings.TrimSpace(provider.Model)
+		rawEndpointMode := strings.TrimSpace(string(input.Providers[index].EndpointMode))
+		if !IsValidProviderEndpointMode(rawEndpointMode) {
+			return SceneConfig{}, nil, common.NewAppError(common.CodeBadRequest, "provider endpointMode is invalid", http.StatusBadRequest)
+		}
+		provider.EndpointMode = NormalizeProviderEndpointMode(rawEndpointMode)
+		rawResponseFormat := strings.TrimSpace(string(input.Providers[index].ResponseFormat))
+		if !IsValidProviderResponseFormat(rawResponseFormat) {
+			return SceneConfig{}, nil, common.NewAppError(common.CodeBadRequest, "provider responseFormat is invalid", http.StatusBadRequest)
+		}
+		provider.ResponseFormat = NormalizeProviderResponseFormat(rawResponseFormat)
+		if provider.EndpointMode != EndpointModeImagesGenerations {
+			provider.ResponseFormat = ResponseFormatAuto
+		}
+		if provider.EndpointMode == EndpointModeImagesGenerations && scene != SceneFlowchart {
+			return SceneConfig{}, nil, common.NewAppError(common.CodeBadRequest, "images generation endpoint is only supported for flowchart scene", http.StatusBadRequest)
+		}
 		if provider.Priority <= 0 {
 			provider.Priority = (index + 1) * 10
 		}
@@ -577,6 +605,7 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 			provider.APIKeyMasked = existing.APIKeyMasked
 			provider.HasAPIKey = true
 		}
+		provider.Extra = providerExtraForPersistence(provider.Extra, provider.EndpointMode, provider.ResponseFormat)
 		config.Providers[index] = provider
 	}
 
@@ -681,7 +710,7 @@ func (s *Service) routeChat(ctx context.Context, config SceneConfig, input ChatC
 			result.StartedProvider = candidate.ID
 		}
 
-		content, httpStatus, latencyMS, callErr := s.callOpenAICompatible(ctx, config, candidate, input)
+		content, endpoint, httpStatus, latencyMS, callErr := s.callOpenAICompatible(ctx, config, candidate, input)
 		if callErr == nil && input.ValidateContent != nil {
 			callErr = normalizeValidationError(input.ValidateContent(content))
 		}
@@ -701,7 +730,7 @@ func (s *Service) routeChat(ctx context.Context, config SceneConfig, input ChatC
 				HTTPStatus:   httpStatus,
 				LatencyMS:    latencyMS,
 			})
-			s.logCall(ctx, config, candidate, actualAttempts, httpStatus, latencyMS, nil, input)
+			s.logCall(ctx, config, candidate, actualAttempts, endpoint, httpStatus, latencyMS, nil, input)
 			s.trackProviderAlert(ctx, config, candidate, httpStatus, nil, input)
 			if config.Strategy == StrategyRoundRobinFailover {
 				s.setRoundRobinNext(config.Scene, candidate.originalIndex+1, len(providers))
@@ -709,7 +738,7 @@ func (s *Service) routeChat(ctx context.Context, config SceneConfig, input ChatC
 			return result, nil
 		}
 
-		s.logCall(ctx, config, candidate, actualAttempts, httpStatus, latencyMS, callErr, input)
+		s.logCall(ctx, config, candidate, actualAttempts, endpoint, httpStatus, latencyMS, callErr, input)
 		s.trackProviderAlert(ctx, config, candidate, httpStatus, callErr, input)
 		errorType := routeErrorType(callErr)
 		attempt := AttemptResult{
@@ -797,11 +826,11 @@ func buildSceneTestInput(scene Scene) ChatCompletionInput {
 			Messages: []ChatMessage{
 				{
 					Role:    "system",
-					Content: "你是一个流程图生成测试助手。请只返回一个可访问的图片 URL，或 markdown 图片语法，不要输出额外解释。",
+					Content: "你是一个流程图生成测试助手。请生成一张最小可用的测试流程图，允许返回图片 URL、markdown 图片或 data url，不要输出额外解释。",
 				},
 				{
 					Role:    "user",
-					Content: "请返回一个测试图片地址，例如 https://example.com/test.png 。",
+					Content: "请生成一张“西红柿炒鸡蛋”测试流程图，内容尽量简单，只要能验证出图链路即可。",
 				},
 			},
 			MaxTokens:       intPtr(256),
@@ -900,39 +929,85 @@ type openAIChatResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, provider orderedProvider, input ChatCompletionInput) (string, int, int64, error) {
+type openAIImageGenerationRequest struct {
+	Model          string `json:"model"`
+	Prompt         string `json:"prompt"`
+	Quality        string `json:"quality,omitempty"`
+	OutputFormat   string `json:"output_format,omitempty"`
+	ResponseFormat string `json:"response_format,omitempty"`
+}
+
+type openAIImageGenerationResponse struct {
+	Data []struct {
+		URL     string `json:"url"`
+		B64JSON string `json:"b64_json"`
+	} `json:"data"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, provider orderedProvider, input ChatCompletionInput) (string, string, int, int64, error) {
 	startedAt := time.Now()
-	request := openAIChatRequest{
-		Model:    provider.Model,
-		Messages: input.Messages,
-	}
+	endpointMode := NormalizeProviderEndpointMode(string(provider.EndpointMode))
+	endpointPath := "/chat/completions"
+	var body []byte
 
-	stream := config.RequestOptions.Stream
-	if input.Stream != nil {
-		stream = *input.Stream
-	}
-	temperature := config.RequestOptions.Temperature
-	if input.Temperature != nil {
-		temperature = *input.Temperature
-	}
-	maxTokens := config.RequestOptions.MaxTokens
-	if input.MaxTokens != nil {
-		maxTokens = *input.MaxTokens
-	}
+	switch endpointMode {
+	case EndpointModeImagesGenerations:
+		endpointPath = "/images/generations"
+		request := openAIImageGenerationRequest{
+			Model:        provider.Model,
+			Prompt:       buildImageGenerationPrompt(input.Messages),
+			Quality:      defaultImageQuality,
+			OutputFormat: defaultImageOutputFormat,
+		}
+		if request.Prompt == "" {
+			return "", endpointPath, 0, 0, common.NewAppError(common.CodeBadRequest, "image generation prompt is required", http.StatusBadRequest)
+		}
+		responseFormat := NormalizeProviderResponseFormat(string(provider.ResponseFormat))
+		if responseFormat != ResponseFormatAuto {
+			request.ResponseFormat = string(responseFormat)
+		}
+		marshaled, err := json.Marshal(request)
+		if err != nil {
+			return "", endpointPath, 0, 0, common.ErrInternal.WithErr(err)
+		}
+		body = marshaled
+	default:
+		request := openAIChatRequest{
+			Model:    provider.Model,
+			Messages: input.Messages,
+		}
 
-	if provider.Scene == SceneTitle || input.Stream != nil || config.RequestOptions.Stream {
-		request.Stream = &stream
-	}
-	if provider.Scene == SceneTitle || input.Temperature != nil || config.RequestOptions.Temperature != 0 {
-		request.Temperature = &temperature
-	}
-	if maxTokens > 0 {
-		request.MaxTokens = &maxTokens
-	}
+		stream := config.RequestOptions.Stream
+		if input.Stream != nil {
+			stream = *input.Stream
+		}
+		temperature := config.RequestOptions.Temperature
+		if input.Temperature != nil {
+			temperature = *input.Temperature
+		}
+		maxTokens := config.RequestOptions.MaxTokens
+		if input.MaxTokens != nil {
+			maxTokens = *input.MaxTokens
+		}
 
-	body, err := json.Marshal(request)
-	if err != nil {
-		return "", 0, 0, common.ErrInternal.WithErr(err)
+		if provider.Scene == SceneTitle || input.Stream != nil || config.RequestOptions.Stream {
+			request.Stream = &stream
+		}
+		if provider.Scene == SceneTitle || input.Temperature != nil || config.RequestOptions.Temperature != 0 {
+			request.Temperature = &temperature
+		}
+		if maxTokens > 0 {
+			request.MaxTokens = &maxTokens
+		}
+
+		marshaled, err := json.Marshal(request)
+		if err != nil {
+			return "", endpointPath, 0, 0, common.ErrInternal.WithErr(err)
+		}
+		body = marshaled
 	}
 
 	timeout := time.Duration(provider.TimeoutSeconds) * time.Second
@@ -940,9 +1015,9 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 		timeout = 30 * time.Second
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(provider.BaseURL, "/")+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(provider.BaseURL, "/")+endpointPath, bytes.NewReader(body))
 	if err != nil {
-		return "", 0, 0, common.ErrInternal.WithErr(err)
+		return "", endpointPath, 0, 0, common.ErrInternal.WithErr(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(provider.APIKey) != "" {
@@ -957,53 +1032,78 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", 0, time.Since(startedAt).Milliseconds(), classifyRequestError(err, timeout)
+		return "", endpointPath, 0, time.Since(startedAt).Milliseconds(), classifyRequestError(err, timeout)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(string(data)))
+		return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 
-	var parsed openAIChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
-			errorType:  ErrorTypeInvalidResponse,
-			message:    "invalid chat completion response",
-			httpStatus: http.StatusBadGateway,
-			cause:      err,
+	switch endpointMode {
+	case EndpointModeImagesGenerations:
+		var parsed openAIImageGenerationResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
+				errorType:  ErrorTypeInvalidResponse,
+				message:    "invalid image generation response",
+				httpStatus: http.StatusBadGateway,
+				cause:      err,
+			}
 		}
-	}
-	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
-		return "", resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(parsed.Error.Message))
-	}
-	if len(parsed.Choices) == 0 {
-		return "", resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
-			errorType:  ErrorTypeInvalidResponse,
-			message:    "chat completion response contained no choices",
-			httpStatus: http.StatusBadGateway,
+		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(parsed.Error.Message))
 		}
-	}
+		content := extractGeneratedImageContent(parsed.Data, NormalizeProviderResponseFormat(string(provider.ResponseFormat)))
+		if content == "" {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
+				errorType:  ErrorTypeInvalidResponse,
+				message:    "image generation response contained no image",
+				httpStatus: http.StatusBadGateway,
+			}
+		}
+		return content, endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), nil
+	default:
+		var parsed openAIChatResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
+				errorType:  ErrorTypeInvalidResponse,
+				message:    "invalid chat completion response",
+				httpStatus: http.StatusBadGateway,
+				cause:      err,
+			}
+		}
+		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(parsed.Error.Message))
+		}
+		if len(parsed.Choices) == 0 {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
+				errorType:  ErrorTypeInvalidResponse,
+				message:    "chat completion response contained no choices",
+				httpStatus: http.StatusBadGateway,
+			}
+		}
 
-	content := extractMessageContent(parsed.Choices[0].Message.Content)
-	if provider.Scene == SceneFlowchart {
-		if imageURL := extractMessageImageURL(parsed.Choices[0].Message.Images); imageURL != "" {
-			content = imageURL
+		content := extractMessageContent(parsed.Choices[0].Message.Content)
+		if provider.Scene == SceneFlowchart {
+			if imageURL := extractMessageImageURL(parsed.Choices[0].Message.Images); imageURL != "" {
+				content = imageURL
+			}
 		}
-	}
-	if content == "" {
-		return "", resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
-			errorType:  ErrorTypeInvalidResponse,
-			message:    "chat completion response was empty",
-			httpStatus: http.StatusBadGateway,
+		if content == "" {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
+				errorType:  ErrorTypeInvalidResponse,
+				message:    "chat completion response was empty",
+				httpStatus: http.StatusBadGateway,
+			}
 		}
-	}
 
-	return content, resp.StatusCode, time.Since(startedAt).Milliseconds(), nil
+		return content, endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), nil
+	}
 }
 
-func (s *Service) logCall(ctx context.Context, config SceneConfig, provider orderedProvider, attempt int, httpStatus int, latencyMS int64, err error, input ChatCompletionInput) {
+func (s *Service) logCall(ctx context.Context, config SceneConfig, provider orderedProvider, attempt int, endpoint string, httpStatus int, latencyMS int64, err error, input ChatCompletionInput) {
 	if s == nil || s.tracker == nil {
 		return
 	}
@@ -1034,7 +1134,7 @@ func (s *Service) logCall(ctx context.Context, config SceneConfig, provider orde
 		JobRunID:     jobCtx.JobRunID,
 		Scene:        jobCtx.Scene,
 		Provider:     provider.ID,
-		Endpoint:     "/chat/completions",
+		Endpoint:     endpoint,
 		Model:        provider.Model,
 		Status:       status,
 		HTTPStatus:   httpStatus,
@@ -1068,6 +1168,46 @@ func extractMessageContent(raw json.RawMessage) string {
 	}
 
 	return strings.TrimSpace(string(raw))
+}
+
+func buildImageGenerationPrompt(messages []ChatMessage) string {
+	parts := make([]string, 0, len(messages))
+	for _, message := range messages {
+		text := strings.TrimSpace(message.Content)
+		if text == "" {
+			continue
+		}
+		parts = append(parts, text)
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+func extractGeneratedImageContent(items []struct {
+	URL     string `json:"url"`
+	B64JSON string `json:"b64_json"`
+}, responseFormat ProviderResponseFormat) string {
+	for _, item := range items {
+		url := normalizeImageReference(item.URL)
+		b64 := strings.TrimSpace(item.B64JSON)
+		switch responseFormat {
+		case ResponseFormatImageURL:
+			if url != "" {
+				return url
+			}
+		case ResponseFormatB64JSON:
+			if b64 != "" {
+				return "data:image/" + defaultImageOutputFormat + ";base64," + b64
+			}
+		default:
+			if url != "" {
+				return url
+			}
+			if b64 != "" {
+				return "data:image/" + defaultImageOutputFormat + ";base64," + b64
+			}
+		}
+	}
+	return ""
 }
 
 func extractMessageImageURL(images []struct {
@@ -1269,6 +1409,54 @@ func normalizeImageReference(value string) string {
 	}
 }
 
+func extraStringValue(extra map[string]any, key string) string {
+	if len(extra) == 0 {
+		return ""
+	}
+	value, ok := extra[key]
+	if !ok {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func cloneProviderExtra(extra map[string]any) map[string]any {
+	if len(extra) == 0 {
+		return nil
+	}
+	cloned := make(map[string]any, len(extra))
+	for key, value := range extra {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func providerExtraForPersistence(extra map[string]any, endpointMode ProviderEndpointMode, responseFormat ProviderResponseFormat) map[string]any {
+	cloned := cloneProviderExtra(extra)
+	if cloned == nil {
+		cloned = make(map[string]any, 2)
+	}
+	if endpointMode == EndpointModeChatCompletions {
+		delete(cloned, providerExtraKeyEndpointMode)
+	} else {
+		cloned[providerExtraKeyEndpointMode] = string(endpointMode)
+	}
+	if responseFormat == ResponseFormatAuto {
+		delete(cloned, providerExtraKeyResponseFormat)
+	} else {
+		cloned[providerExtraKeyResponseFormat] = string(responseFormat)
+	}
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
 func enabledProviders(items []ProviderConfig) []ProviderConfig {
 	enabled := make([]ProviderConfig, 0, len(items))
 	for _, item := range items {
@@ -1318,6 +1506,16 @@ func normalizeSceneConfig(config *SceneConfig) {
 		if config.Providers[index].Adapter == "" {
 			config.Providers[index].Adapter = AdapterOpenAICompatible
 		}
+		config.Providers[index].EndpointMode = NormalizeProviderEndpointMode(string(config.Providers[index].EndpointMode))
+		config.Providers[index].ResponseFormat = NormalizeProviderResponseFormat(string(config.Providers[index].ResponseFormat))
+		if config.Providers[index].EndpointMode != EndpointModeImagesGenerations {
+			config.Providers[index].ResponseFormat = ResponseFormatAuto
+		}
+		config.Providers[index].Extra = providerExtraForPersistence(
+			config.Providers[index].Extra,
+			config.Providers[index].EndpointMode,
+			config.Providers[index].ResponseFormat,
+		)
 		if config.Providers[index].Priority <= 0 {
 			config.Providers[index].Priority = (index + 1) * 10
 		}
@@ -1379,7 +1577,7 @@ func providerAuditSummary(provider ProviderConfig) string {
 		}
 	}
 	return fmt.Sprintf(
-		"name=%s enabled=%t priority=%d adapter=%s baseURL=%s model=%s timeout=%ds apiKey=%s",
+		"name=%s enabled=%t priority=%d adapter=%s baseURL=%s model=%s timeout=%ds endpoint=%s responseFormat=%s apiKey=%s",
 		provider.Name,
 		provider.Enabled,
 		provider.Priority,
@@ -1387,6 +1585,8 @@ func providerAuditSummary(provider ProviderConfig) string {
 		provider.BaseURL,
 		provider.Model,
 		provider.TimeoutSeconds,
+		provider.EndpointMode,
+		provider.ResponseFormat,
 		apiKey,
 	)
 }

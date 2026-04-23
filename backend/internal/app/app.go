@@ -154,17 +154,21 @@ func New(cfg config.Config) (*App, error) {
 	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
 	uploadHandler := upload.NewHandler(uploadService)
 	recipeFlowchart := recipe.NewFlowchartGenerator(recipe.FlowchartOptions{
-		BaseURL: cfg.AIFlowchartBaseURL,
-		APIKey:  cfg.AIFlowchartAPIKey,
-		Model:   cfg.AIFlowchartModel,
-		Timeout: time.Duration(cfg.AIFlowchartTimeoutSeconds) * time.Second,
+		BaseURL:        cfg.AIFlowchartBaseURL,
+		APIKey:         cfg.AIFlowchartAPIKey,
+		Model:          cfg.AIFlowchartModel,
+		EndpointMode:   cfg.AIFlowchartEndpointMode,
+		ResponseFormat: cfg.AIFlowchartResponseFormat,
+		Timeout:        time.Duration(cfg.AIFlowchartTimeoutSeconds) * time.Second,
 		RuntimeConfigLoader: func(ctx context.Context) recipe.FlowchartRuntimeConfig {
 			flowchartCfg := runtimeProvider.FlowchartAI(ctx)
 			return recipe.FlowchartRuntimeConfig{
-				BaseURL: flowchartCfg.BaseURL,
-				APIKey:  flowchartCfg.APIKey,
-				Model:   flowchartCfg.Model,
-				Timeout: flowchartCfg.Timeout,
+				BaseURL:        flowchartCfg.BaseURL,
+				APIKey:         flowchartCfg.APIKey,
+				Model:          flowchartCfg.Model,
+				EndpointMode:   flowchartCfg.EndpointMode,
+				ResponseFormat: flowchartCfg.ResponseFormat,
+				Timeout:        flowchartCfg.Timeout,
 			}
 		},
 		AIRouter: aiRoutingService,
@@ -360,6 +364,8 @@ func buildAIRoutingCompatibilityLoader(runtimeProvider *appsettings.RuntimeProvi
 						HasAPIKey:      strings.TrimSpace(flowchart.APIKey) != "",
 						Model:          flowchart.Model,
 						TimeoutSeconds: int(flowchart.Timeout.Seconds()),
+						EndpointMode:   airouter.NormalizeProviderEndpointMode(flowchart.EndpointMode),
+						ResponseFormat: airouter.NormalizeProviderResponseFormat(flowchart.ResponseFormat),
 					},
 				},
 			}

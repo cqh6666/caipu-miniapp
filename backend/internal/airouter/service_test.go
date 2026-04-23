@@ -114,6 +114,47 @@ func TestBuildSceneConfigRetainsEncryptedAPIKeyForRuntimeCalls(t *testing.T) {
 	}
 }
 
+func TestBuildSceneConfigPromotesFlowchartExtraFields(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, "unit-test-secret", nil, nil, nil)
+
+	config, err := service.buildSceneConfig(sceneRecord{
+		Scene:       SceneFlowchart,
+		Enabled:     true,
+		Strategy:    StrategyPriorityFailover,
+		MaxAttempts: 1,
+	}, []providerRecord{
+		{
+			ID:             "flowchart-image",
+			Scene:          SceneFlowchart,
+			Name:           "flowchart-image",
+			Adapter:        AdapterOpenAICompatible,
+			Enabled:        true,
+			Priority:       10,
+			BaseURL:        "https://example.com/v1",
+			Model:          "gpt-image-2",
+			TimeoutSeconds: 60,
+			Extra: map[string]any{
+				"endpoint_mode":   "images_generations",
+				"response_format": "b64_json",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildSceneConfig() error = %v", err)
+	}
+	if len(config.Providers) != 1 {
+		t.Fatalf("buildSceneConfig() providers = %d, want 1", len(config.Providers))
+	}
+	if got := config.Providers[0].EndpointMode; got != EndpointModeImagesGenerations {
+		t.Fatalf("provider.EndpointMode = %q, want %q", got, EndpointModeImagesGenerations)
+	}
+	if got := config.Providers[0].ResponseFormat; got != ResponseFormatB64JSON {
+		t.Fatalf("provider.ResponseFormat = %q, want %q", got, ResponseFormatB64JSON)
+	}
+}
+
 func TestSceneTestInputUsesInjectedBuilder(t *testing.T) {
 	t.Parallel()
 
@@ -237,6 +278,56 @@ func TestRouteChatFlowchartUsesMessageImagesWhenContentIsEmpty(t *testing.T) {
 	}, buildSceneTestInput(SceneFlowchart))
 	if err != nil {
 		t.Fatalf("routeChat() error = %v", err)
+	}
+	if !strings.HasPrefix(result.Content, "data:image/png;base64,") {
+		t.Fatalf("routeChat() content = %q, want data image url", result.Content)
+	}
+}
+
+func TestRouteChatFlowchartUsesImageGenerationsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/images/generations" {
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}]}`))
+	}))
+	defer server.Close()
+
+	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+		return SceneConfig{}
+	}, nil, nil)
+
+	result, err := service.routeChat(context.Background(), SceneConfig{
+		Scene:       SceneFlowchart,
+		Enabled:     true,
+		Strategy:    StrategyPriorityFailover,
+		MaxAttempts: 1,
+		RetryOn:     DefaultRetryOn(),
+		Breaker:     DefaultBreakerConfig(),
+		Providers: []ProviderConfig{
+			{
+				ID:             "flowchart-image-main",
+				Name:           "图片节点",
+				Adapter:        AdapterOpenAICompatible,
+				Enabled:        true,
+				Priority:       10,
+				BaseURL:        server.URL,
+				Model:          "gpt-image-2",
+				TimeoutSeconds: 30,
+				Scene:          SceneFlowchart,
+				EndpointMode:   EndpointModeImagesGenerations,
+				ResponseFormat: ResponseFormatB64JSON,
+			},
+		},
+	}, buildSceneTestInput(SceneFlowchart))
+	if err != nil {
+		t.Fatalf("routeChat() error = %v", err)
+	}
+	if result.ProviderID != "flowchart-image-main" {
+		t.Fatalf("routeChat().ProviderID = %q, want %q", result.ProviderID, "flowchart-image-main")
 	}
 	if !strings.HasPrefix(result.Content, "data:image/png;base64,") {
 		t.Fatalf("routeChat() content = %q, want data image url", result.Content)

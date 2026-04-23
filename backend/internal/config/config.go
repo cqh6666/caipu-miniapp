@@ -32,6 +32,8 @@ type Config struct {
 	AIFlowchartBaseURL         string
 	AIFlowchartAPIKey          string
 	AIFlowchartModel           string
+	AIFlowchartEndpointMode    string
+	AIFlowchartResponseFormat  string
 	AIFlowchartTimeoutSeconds  int
 	AITitleEnabled             bool
 	AITitleBaseURL             string
@@ -102,6 +104,8 @@ func Load() (Config, error) {
 		AIFlowchartBaseURL:         strings.TrimSpace(os.Getenv("AI_FLOWCHART_BASE_URL")),
 		AIFlowchartAPIKey:          strings.TrimSpace(os.Getenv("AI_FLOWCHART_API_KEY")),
 		AIFlowchartModel:           strings.TrimSpace(os.Getenv("AI_FLOWCHART_MODEL")),
+		AIFlowchartEndpointMode:    strings.TrimSpace(os.Getenv("AI_FLOWCHART_ENDPOINT_MODE")),
+		AIFlowchartResponseFormat:  strings.TrimSpace(os.Getenv("AI_FLOWCHART_RESPONSE_FORMAT")),
 		AIFlowchartTimeoutSeconds:  getInt("AI_FLOWCHART_TIMEOUT_SECONDS", 45),
 		AITitleEnabled:             getBool("AI_TITLE_ENABLED", false),
 		AITitleBaseURL:             strings.TrimSpace(os.Getenv("AI_TITLE_BASE_URL")),
