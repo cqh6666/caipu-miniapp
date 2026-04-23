@@ -1,5 +1,24 @@
 # Project Changelog
 
+## 2026-04-23 (菜品详情页 review 回归修复：步骤完成态防串位 + Hero 失效图恢复)
+
+### Fixed
+
+- **修改时间**：2026-04-23 16:30 CST
+- **背景**：对本地未提交的 `pages/recipe-detail/index.vue` 做代码 review 时，发现 4 个会落到真实用户链路的回归：① 流程图任务进行中但尚未出图时，页面可能卡在空的 flowchart 视图；② 步骤完成态按 index 持久化，步骤重排/重生成后会串位；③ Hero 首图菜单在“前面图片失效被隐藏”时仍按可见索引判断，导致“设为封面”误判不可用；④ 全部图片失效后，Hero 区既无法直接补图，还会继续尝试预览失效 URL。
+- **核心改动**（`pages/recipe-detail/index.vue`）：
+  - **做法卡片视图兜底**：新增 `showCookingStepsView` / `showCookingFlowchartView` 计算属性，并收紧 `ensureCookingTabValid` 逻辑，只要当前无流程图就强制回退 `steps`，避免“处理中但没出图”时命中空白 flowchart 面板。
+  - **步骤完成态改为稳定键持久化**：废弃旧的“按步骤下标”存储格式，改为按 `title + detail + occurrence` 生成稳定 completion key；读取时仅恢复当前步骤集里仍存在的 key，阻断重排、插入、重新整理后的串位。
+  - **Hero 菜单按原始图索引判断能力**：`canSetCurrentAsCover` / `canDeleteCurrentImage` 改为基于 `resolveOriginalImageIndex(heroImageIndex)` 判断，隐藏图导致的可见索引偏移不再误伤菜单可用性。
+  - **失效图恢复链路补齐**：新增 `visibleRecipeSourceImages`，补图容量改按“仍可显示的图片数”计算；用户重新添加图片时会自动剔除已确认失效的隐藏图；点击 Hero 占位态时优先进入补图，而不是继续预览失效 URL；无可见图但仍可补图时继续展示 Hero ⋯ 菜单。
+- **影响范围**：仅详情页前端逻辑与本地持久化键；不涉及后端 API、数据表或全局配置。
+- **兼容性·风险**：
+  - 旧版本地步骤完成态（按 index 存储）会被主动丢弃一次，这是有意为之，优先避免把完成态错误套到新的步骤上。
+  - 重新补图时会顺手清掉已经被判定为失效并隐藏的旧图片 URL，避免这些“坏槽位”继续占用图片上限。
+- **验证情况**：
+  - `git diff --check` 通过。
+  - 提取 `pages/recipe-detail/index.vue` 的 `<script>` 后使用 `node --check` 做语法检查通过。
+
 ## 2026-04-23 (流程图 AI 节点兼容 images/generations + b64_json)
 
 ### Changed

@@ -4,16 +4,15 @@
 			<scroll-view class="detail-scroll" scroll-y>
 				<view
 					class="hero-card"
-					:class="{ 'hero-card--empty': !recipeImages.length }"
+					:class="{ 'hero-card--empty': !recipeImages.length, 'hero-card--with-overlay': displayRecipeImages.length > 0 }"
 					@tap="handleHeroCardTap"
 				>
 					<swiper
 						v-if="displayRecipeImages.length"
 						class="hero-card__swiper"
 						:circular="displayRecipeImages.length > 1"
-						:autoplay="displayRecipeImages.length > 1"
-						:interval="3600"
-						:duration="320"
+						:autoplay="false"
+						:duration="280"
 						@change="handleHeroSwiperChange"
 					>
 						<swiper-item v-for="(image, index) in displayRecipeImages" :key="image.cacheKey || `hero-image-${index}`">
@@ -25,12 +24,49 @@
 							></image>
 						</swiper-item>
 					</swiper>
-					<view v-if="recipeImages.length" class="hero-card__preview-tip">
-						<up-icon name="photo" size="14" color="#ffffff"></up-icon>
-						<text class="hero-card__preview-tip-text">查看大图</text>
+					<!-- H4：底部渐变蒙层，为压图标题/分页器提供读性 -->
+					<view v-if="displayRecipeImages.length" class="hero-card__overlay" @tap.stop="handleHeroCardTap"></view>
+					<!-- Hero 操作菜单：右下角 ⋯ 按钮，按当前位置动态装配「设为封面 / 添加 / 删除」 -->
+					<view
+						v-if="canShowHeroActionMenu"
+						class="hero-card__action"
+						hover-class="hero-card__action--hover"
+						hover-stay-time="80"
+						@tap.stop="openHeroActionMenu"
+					>
+						<up-icon name="more-dot-fill" size="14" color="#ffffff"></up-icon>
 					</view>
-					<view v-if="displayRecipeImages.length > 1" class="hero-card__counter">
-						<text class="hero-card__counter-text">{{ heroImageIndex + 1 }} / {{ displayRecipeImages.length }}</text>
+					<!-- H5：标题 + meta chips 压图（仅在有图时） -->
+					<view v-if="displayRecipeImages.length" class="hero-card__title-block" @tap.stop="handleHeroCardTap">
+						<view class="hero-card__meta">
+							<view class="hero-card__chip hero-card__chip--meal">
+								<text class="hero-card__chip-text">{{ mealLabel }}</text>
+							</view>
+							<view
+								class="hero-card__chip"
+								:class="recipe?.status === 'done' ? 'hero-card__chip--done' : 'hero-card__chip--wishlist'"
+							>
+								<text class="hero-card__chip-text">{{ statusLabel }}</text>
+							</view>
+							<view v-if="isPinned" class="hero-card__chip hero-card__chip--pin">
+								<text class="hero-card__chip-text">已置顶</text>
+							</view>
+						</view>
+						<text class="hero-card__title">{{ recipe.title }}</text>
+					</view>
+					<!-- H3：底部居中分页器；≤5 张用圆点 dots，>5 张用数字 chip -->
+					<view v-if="displayRecipeImages.length > 1" class="hero-card__pager">
+						<template v-if="displayRecipeImages.length <= 5">
+							<view
+								v-for="i in displayRecipeImages.length"
+								:key="`hero-dot-${i}`"
+								class="hero-card__dot"
+								:class="{ 'hero-card__dot--active': i - 1 === heroImageIndex }"
+							></view>
+						</template>
+						<view v-else class="hero-card__counter">
+							<text class="hero-card__counter-text">{{ heroImageIndex + 1 }} / {{ displayRecipeImages.length }}</text>
+						</view>
 					</view>
 					<view v-if="!displayRecipeImages.length" class="hero-card__placeholder">
 						<view class="hero-card__placeholder-mask"></view>
@@ -41,7 +77,8 @@
 					</view>
 				</view>
 
-				<view class="detail-head">
+				<!-- H5：无图时回退到外部 detail-head 渲染标题 + meta；有图时压在图上 -->
+				<view v-if="!displayRecipeImages.length" class="detail-head">
 					<view class="detail-head__meta">
 						<view class="detail-chip detail-chip--meal">
 							<text class="detail-chip__text">{{ mealLabel }}</text>
@@ -61,43 +98,70 @@
 						<text class="detail-summary">{{ recipe.summary }}</text>
 					</view>
 				</view>
+				<!-- H5：有图时只渲染 summary（标题已经在图上） -->
+				<view v-else-if="recipe.summary" class="detail-head detail-head--summary-only">
+					<view class="detail-summary-card">
+						<text class="detail-summary">{{ recipe.summary }}</text>
+					</view>
+				</view>
 
-				<view class="detail-card detail-card--flowchart">
+				<!--
+					P2-A: 「一图看懂」与「做法整理」合并为统一「做法」卡片
+					- 顶部 Tab：仅当有流程图时显示，默认选中「一图看懂」
+					- 右上 ⋯：合并菜单（重新生成 / 重新整理 / 查看详情）
+					- 底部：合并元信息行（AI 生成 · MM-DD · 来源）
+				-->
+				<view class="detail-card detail-card--cooking">
 					<view class="detail-card__header">
-						<view class="detail-card__heading">
-							<text class="detail-card__title">一图看懂</text>
-						</view>
-						<!--
-							已有流程图：
-							  · 后台正在重生成 → 显示非交互的「生成中」chip（避免 dead-click）
-							  · 否则             → 折叠为 ⋯ 菜单
-							尚未生成：保留主操作按钮
-						-->
-						<view v-if="hasFlowchart && isFlowchartActive" class="detail-card__status-chip">
-							<text class="detail-card__status-chip-text">生成中…</text>
+						<text class="detail-card__title">做法</text>
+						<!-- 后台正在处理时显示状态 chip，避免 dead-click -->
+						<view v-if="isCookingActive" class="detail-card__status-chip">
+							<text class="detail-card__status-chip-text">{{ cookingActiveLabel }}</text>
 						</view>
 						<view
-							v-else-if="hasFlowchart"
+							v-else-if="hasCookingMenuItems"
 							class="detail-card__icon-action"
-							:class="{ 'detail-card__icon-action--disabled': isGeneratingFlowchart }"
 							hover-class="detail-card__icon-action--active"
 							hover-stay-time="80"
-							@tap="openFlowchartMenu"
+							@tap="openCookingMenu"
 						>
 							<up-icon name="more-dot-fill" size="16" color="#7b6d62"></up-icon>
 						</view>
 						<view
-							v-else
+							v-else-if="!hasFlowchart && canRequestFlowchart"
 							class="detail-card__action detail-card__action--accent"
-							:class="{ 'detail-card__action--disabled': !canRequestFlowchart || isGeneratingFlowchart }"
+							:class="{ 'detail-card__action--disabled': isGeneratingFlowchart }"
 							@tap="handleGenerateFlowchart"
 						>
 							<text class="detail-card__action-text detail-card__action-text--accent">{{ flowchartActionText }}</text>
 						</view>
 					</view>
 
+					<!-- Tab 切换：仅当有流程图时显示；无图直接展示「详细步骤」内容 -->
+					<view v-if="hasFlowchart" class="cooking-tabs">
+						<view
+							class="cooking-tabs__item"
+							:class="{ 'cooking-tabs__item--active': activeCookingTab === 'flowchart' }"
+							hover-class="cooking-tabs__item--hover"
+							hover-stay-time="60"
+							@tap="switchCookingTab('flowchart')"
+						>
+							<text class="cooking-tabs__text">一图看懂</text>
+						</view>
+						<view
+							class="cooking-tabs__item"
+							:class="{ 'cooking-tabs__item--active': activeCookingTab === 'steps' }"
+							hover-class="cooking-tabs__item--hover"
+							hover-stay-time="60"
+							@tap="switchCookingTab('steps')"
+						>
+							<text class="cooking-tabs__text">详细步骤</text>
+						</view>
+					</view>
+
+					<!-- 顶部状态条：根据当前 Tab 显示对应的处理状态 -->
 					<view
-						v-if="flowchartStatusMeta"
+						v-if="activeCookingTab === 'flowchart' && flowchartStatusMeta"
 						class="detail-parse"
 						:class="`detail-parse--${flowchartStatusMeta.tone}`"
 					>
@@ -108,15 +172,27 @@
 							<text class="detail-parse__desc">{{ flowchartStatusDescription }}</text>
 						</view>
 					</view>
+					<view
+						v-else-if="showCookingStepsView && parseStatusMeta && parseStatusValue !== 'done'"
+						class="detail-parse"
+						:class="`detail-parse--${parseStatusMeta.tone}`"
+					>
+						<view class="detail-parse__body">
+							<view class="detail-parse__badge">
+								<text class="detail-parse__badge-text">{{ parseStatusMeta.label }}</text>
+							</view>
+							<text class="detail-parse__desc">{{ parseStatusDescription }}</text>
+						</view>
+					</view>
 
-					<view v-if="showFlowchartStaleHint" class="flowchart-hint">
+					<view v-if="activeCookingTab === 'flowchart' && showFlowchartStaleHint" class="flowchart-hint">
 						<up-icon name="info-circle" size="14" color="#b4664c"></up-icon>
 						<text class="flowchart-hint__text">做法已更新，建议重新生成步骤图</text>
 					</view>
 
-					<view v-if="hasFlowchart" class="flowchart-panel">
+					<!-- Tab 内容区：一图看懂 -->
+					<view v-if="showCookingFlowchartView" class="flowchart-panel">
 						<view class="flowchart-panel__image-shell">
-							<!-- 轻点图片：调系统原生 previewImage 做快速预览（双指缩放、保存、左滑切换） -->
 							<image
 								class="flowchart-panel__image"
 								:src="flowchartImageUrl"
@@ -126,7 +202,6 @@
 								@tap="previewFlowchartImage"
 							></image>
 							<view class="flowchart-panel__image-shadow"></view>
-							<!-- 右下胶囊：单独热区 → 跳横屏沉浸页；@tap.stop 防止冒泡到图片预览 -->
 							<view
 								class="flowchart-panel__cta"
 								hover-class="flowchart-panel__cta--active"
@@ -137,98 +212,126 @@
 								<text class="flowchart-panel__cta-arrow">›</text>
 							</view>
 						</view>
-						<view v-if="flowchartCaptionText" class="flowchart-panel__footer">
-							<text class="flowchart-panel__caption">{{ flowchartCaptionText }}</text>
-						</view>
 					</view>
 
-					<view v-else class="flowchart-empty" :class="{ 'flowchart-empty--disabled': !canGenerateFlowchart }">
+					<!-- Tab 内容区：详细步骤（食材 + 步骤） -->
+					<template v-if="showCookingStepsView">
+						<view v-if="!hasFlowchart && canRequestFlowchart && hasMeaningfulParsedContent" class="cooking-flowchart-cta" @tap="handleGenerateFlowchart">
+							<up-icon name="photo" size="14" color="#9a7343"></up-icon>
+							<text class="cooking-flowchart-cta__text">生成「一图看懂」流程图</text>
+							<text class="cooking-flowchart-cta__arrow">›</text>
+						</view>
+
+						<view class="parsed-section">
+							<view class="parsed-section__head">
+								<text class="parsed-section__title">主料</text>
+								<!-- B1-2：「复制清单」覆盖主料 + 辅料，方便用户一次性带走购物清单 -->
+								<view
+									v-if="canCopyIngredientList"
+									class="parsed-section__copy"
+									hover-class="parsed-section__copy--hover"
+									hover-stay-time="80"
+									@tap="copyIngredientList"
+								>
+									<up-icon name="file-text" size="12" color="#9a7343"></up-icon>
+									<text class="parsed-section__copy-text">复制清单</text>
+								</view>
+							</view>
+							<!-- B1-1：主料 ≥ 3 项时上序号胶囊以强化数量感；< 3 项时改为紧凑点状列表，避免单条「1」的视觉冗余 -->
+							<template v-if="parsedMainIngredients.length >= 3">
+								<view
+									v-for="(ingredient, index) in parsedMainIngredients"
+									:key="`main-ingredient-${index}`"
+									class="parsed-item"
+								>
+									<view class="parsed-item__index">
+										<text class="parsed-item__index-text">{{ index + 1 }}</text>
+									</view>
+									<text class="parsed-item__text">{{ ingredient }}</text>
+								</view>
+							</template>
+							<view v-else class="parsed-main-compact">
+								<view
+									v-for="(ingredient, index) in parsedMainIngredients"
+									:key="`main-compact-${index}`"
+									class="parsed-main-compact__item"
+								>
+									<view class="parsed-main-compact__dot"></view>
+									<text class="parsed-main-compact__text">{{ ingredient }}</text>
+								</view>
+							</view>
+						</view>
+
+						<view v-if="parsedSecondaryGroups.length" class="parsed-section">
+							<text class="parsed-section__title">辅料</text>
+							<view
+								v-for="group in parsedSecondaryGroups"
+								:key="group.key"
+								class="parsed-group"
+							>
+								<text class="parsed-group__label">{{ group.label }}</text>
+								<text class="parsed-group__text">{{ group.text }}</text>
+							</view>
+						</view>
+
+						<view class="parsed-section parsed-section--steps">
+							<view class="parsed-section__head">
+								<text class="parsed-section__title">制作步骤</text>
+								<!-- B2-6：完成进度提示，仅当至少勾过 1 步时显示 -->
+								<view v-if="completedStepCount > 0" class="parsed-section__progress">
+									<text class="parsed-section__progress-text">{{ completedStepCount }} / {{ parsedSteps.length }}</text>
+									<view
+										class="parsed-section__progress-reset"
+										hover-class="parsed-section__progress-reset--hover"
+										hover-stay-time="80"
+										@tap="resetCompletedSteps"
+									>
+										<text class="parsed-section__progress-reset-text">重置</text>
+									</view>
+								</view>
+							</view>
+							<view
+								v-for="(step, index) in parsedSteps"
+								:key="`step-${index}`"
+								class="step-item"
+								:class="{ 'step-item--done': isStepCompleted(index) }"
+								hover-class="step-item--hover"
+								hover-stay-time="60"
+								@tap="toggleStepCompleted(index)"
+							>
+								<view class="step-item__index" :class="{ 'step-item__index--done': isStepCompleted(index) }">
+									<!-- B1-4：去掉「Step」英文前缀，中文用户不需要，纯数字更聚焦 -->
+									<!-- B2-6：已完成时显示对勾图标替代序号 -->
+									<up-icon v-if="isStepCompleted(index)" name="checkmark" size="14" color="#6f8266"></up-icon>
+									<text v-else class="step-item__index-text">{{ index + 1 }}</text>
+								</view>
+								<view class="step-item__body">
+									<text class="step-item__title">{{ step.title }}</text>
+									<!-- B2-5：把详情切成 segments，关键参数（时间/克数/火候）加粗高亮 -->
+									<view class="step-item__text">
+										<text
+											v-for="(seg, segIndex) in highlightStepDetail(step.detail)"
+											:key="`step-${index}-seg-${segIndex}`"
+											:class="seg.highlight ? 'step-item__text--highlight' : 'step-item__text--normal'"
+										>{{ seg.text }}</text>
+									</view>
+								</view>
+							</view>
+						</view>
+					</template>
+
+					<!-- 流程图空态：无图且选中流程图 Tab 时（理论上不会出现，因为无图 Tab 隐藏；这里保险起见保留） -->
+					<view v-if="activeCookingTab === 'flowchart' && !hasFlowchart" class="flowchart-empty" :class="{ 'flowchart-empty--disabled': !canGenerateFlowchart }">
 						<view class="flowchart-empty__icon">
 							<up-icon name="photo" size="24" color="#b08c72"></up-icon>
 						</view>
 						<text class="flowchart-empty__title">还没生成步骤图</text>
 						<text class="flowchart-empty__desc">{{ flowchartEmptyText }}</text>
 					</view>
-				</view>
 
-				<view class="detail-card detail-card--content">
-					<view class="detail-card__header">
-						<text class="detail-card__title">做法整理</text>
-						<view
-							v-if="canRequestParse && hasMeaningfulParsedContent"
-							class="detail-card__icon-action"
-							:class="{ 'detail-card__icon-action--disabled': isReparseSubmitting }"
-							hover-class="detail-card__icon-action--active"
-							hover-stay-time="80"
-							@tap="openParseMenu"
-						>
-							<up-icon name="more-dot-fill" size="16" color="#7b6d62"></up-icon>
-						</view>
-						<view
-							v-else-if="canRequestParse"
-							class="detail-card__action detail-card__action--accent"
-							:class="{ 'detail-card__action--disabled': isReparseSubmitting }"
-							@tap="handleParseAction"
-						>
-							<text class="detail-card__action-text detail-card__action-text--accent">{{ parseActionText }}</text>
-						</view>
-					</view>
-
-					<view
-						v-if="parseStatusMeta"
-						class="detail-parse"
-						:class="`detail-parse--${parseStatusMeta.tone}`"
-					>
-						<view class="detail-parse__body">
-							<view class="detail-parse__badge">
-								<text class="detail-parse__badge-text">{{ parseStatusMeta.label }}</text>
-							</view>
-							<text class="detail-parse__desc">{{ parseStatusDescription }}</text>
-							<text v-if="parseStatusSourceLabel" class="detail-parse__meta">{{ parseStatusSourceLabel }}</text>
-						</view>
-					</view>
-
-					<view class="parsed-section">
-						<text class="parsed-section__title">主料</text>
-						<view
-							v-for="(ingredient, index) in parsedMainIngredients"
-							:key="`main-ingredient-${index}`"
-							class="parsed-item"
-						>
-							<view class="parsed-item__index">
-								<text class="parsed-item__index-text">{{ index + 1 }}</text>
-							</view>
-							<text class="parsed-item__text">{{ ingredient }}</text>
-						</view>
-					</view>
-
-					<view v-if="parsedSecondaryGroups.length" class="parsed-section">
-						<text class="parsed-section__title">辅料</text>
-						<view
-							v-for="group in parsedSecondaryGroups"
-							:key="group.key"
-							class="parsed-group"
-						>
-							<text class="parsed-group__label">{{ group.label }}</text>
-							<text class="parsed-group__text">{{ group.text }}</text>
-						</view>
-					</view>
-
-					<view class="parsed-section parsed-section--steps">
-						<text class="parsed-section__title">制作步骤</text>
-						<view
-							v-for="(step, index) in parsedSteps"
-							:key="`step-${index}`"
-							class="step-item"
-						>
-							<view class="step-item__index">
-								<text class="step-item__index-text">Step {{ index + 1 }}</text>
-							</view>
-							<view class="step-item__body">
-								<text class="step-item__title">{{ step.title }}</text>
-								<text class="step-item__text">{{ step.detail }}</text>
-							</view>
-						</view>
+					<!-- 底部合并元信息行 -->
+					<view v-if="cookingFooterText" class="cooking-footer">
+						<text class="cooking-footer__text">{{ cookingFooterText }}</text>
 					</view>
 				</view>
 
@@ -919,6 +1022,103 @@ function buildRecipeImageVersion(recipe = {}) {
 	return String(recipe?.updatedAt || recipe?.parseFinishedAt || '').trim()
 }
 
+// B2-5：步骤详情中需要高亮的关键参数模式
+// - 数量+单位：8分钟 / 5g / 100ml / 2勺 / 3条 ...
+// - 火候：大火 / 中火 / 小火 / 中小火 / 文火 / 武火 / 旺火
+// - 温度：180度 / 180°C / 摄氏180度
+// 注意：使用 m 与 g 标志，逐段匹配；优先匹配长 token（火候 + 温度），再匹配数量+单位
+const STEP_HIGHLIGHT_REGEX = /(\d+(?:\.\d+)?\s?(?:分钟|秒|小时|分|克|斤|g|kg|毫升|ml|L|勺|匙|杯|碗|条|个|片|块|颗|粒|根|瓣|只|滴|圈)|大火|中火|小火|中小火|大小火|文火|武火|旺火|微火|小炖|\d+\s?°?C|\d+\s?度)/g
+
+function highlightStepDetailText(detail) {
+	const raw = String(detail || '').trim()
+	if (!raw) return [{ text: '', highlight: false }]
+
+	const segments = []
+	let lastIndex = 0
+	let match
+
+	// 重置 lastIndex 防止全局正则状态污染（多次调用同一正则实例）
+	STEP_HIGHLIGHT_REGEX.lastIndex = 0
+	while ((match = STEP_HIGHLIGHT_REGEX.exec(raw)) !== null) {
+		const start = match.index
+		const end = start + match[0].length
+		if (start > lastIndex) {
+			segments.push({ text: raw.slice(lastIndex, start), highlight: false })
+		}
+		segments.push({ text: match[0], highlight: true })
+		lastIndex = end
+	}
+	if (lastIndex < raw.length) {
+		segments.push({ text: raw.slice(lastIndex), highlight: false })
+	}
+	return segments.length ? segments : [{ text: raw, highlight: false }]
+}
+
+// B2-6：步骤完成状态本地持久化 key 前缀，按 recipeId 隔离
+const STEP_COMPLETED_STORAGE_PREFIX = 'recipe-step-done:'
+const STEP_COMPLETED_STORAGE_VERSION = 2
+
+function buildStepCompletedStorageKey(recipeId) {
+	const id = String(recipeId || '').trim()
+	return id ? `${STEP_COMPLETED_STORAGE_PREFIX}${id}` : ''
+}
+
+function buildComparableStepIdentity(step = {}) {
+	const normalized = createStepDraftItem(step)
+	return JSON.stringify({
+		title: normalized.title.trim(),
+		detail: normalized.detail.trim()
+	})
+}
+
+function buildStepCompletionKeyList(steps = []) {
+	const occurrenceMap = {}
+	return normalizeParsedSteps(steps).map((step) => {
+		const identity = buildComparableStepIdentity(step)
+		const nextOccurrence = (occurrenceMap[identity] || 0) + 1
+		occurrenceMap[identity] = nextOccurrence
+		return `${identity}#${nextOccurrence}`
+	})
+}
+
+function normalizeCompletedStepKeyMap(rawValue, currentStepKeys = []) {
+	const allowedKeys = new Set(Array.isArray(currentStepKeys) ? currentStepKeys : [])
+	const nextMap = {}
+	const markCompleted = (value = '') => {
+		const key = String(value || '').trim()
+		if (!key || !allowedKeys.has(key)) return
+		nextMap[key] = true
+	}
+
+	let payload = rawValue
+	if (typeof payload === 'string' && payload) {
+		try {
+			payload = JSON.parse(payload)
+		} catch (error) {
+			return {}
+		}
+	}
+
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+		return {}
+	}
+
+	if (Number(payload.version) >= STEP_COMPLETED_STORAGE_VERSION && Array.isArray(payload.completedKeys)) {
+		payload.completedKeys.forEach((value) => markCompleted(value))
+		return nextMap
+	}
+
+	// 旧版「按步骤下标」存储在步骤改顺序/改内容后会把完成态错套到别的步骤上，直接丢弃更安全。
+	return {}
+}
+
+function createCompletedStepStoragePayload(stepKeyMap = {}) {
+	return {
+		version: STEP_COMPLETED_STORAGE_VERSION,
+		completedKeys: Object.keys(stepKeyMap).filter((key) => stepKeyMap[key])
+	}
+}
+
 export default {
 	components: {
 		ActionFeedback
@@ -955,7 +1155,12 @@ export default {
 			cachedRecipeImageMap: {},
 			recipeImageFallbackMap: {},
 			recipeImageHiddenMap: {},
-			recipeImageCacheRequestID: 0
+			recipeImageCacheRequestID: 0,
+			// P2-A：「做法」卡片当前激活的 Tab；'flowchart' | 'steps'
+			// 默认值在 watch hasFlowchart / 初次加载时由 ensureCookingTabValid 校正
+			activeCookingTab: 'flowchart',
+			// B2-6：步骤完成状态，按「步骤内容签名」持久化，避免改顺序后串位
+			completedStepKeyMap: {}
 		}
 	},
 	computed: {
@@ -1057,6 +1262,13 @@ export default {
 					}
 				})
 				.filter(Boolean)
+		},
+		visibleRecipeSourceImages() {
+			const version = this.recipeImageVersion
+			return this.recipeImages.filter((remoteURL) => {
+				const cacheKey = buildImageCacheKey(remoteURL, version)
+				return !this.recipeImageHiddenMap[cacheKey]
+			})
 		},
 		flowchartImageUrl() {
 			return String(this.recipe?.flowchartImageUrl || '').trim()
@@ -1217,6 +1429,93 @@ export default {
 		},
 		actionFeedbackKey() {
 			return `${this.actionFeedbackTone || 'idle'}:${this.actionFeedbackTick}`
+		},
+		// ===== P2-A：「做法」合并卡片相关 =====
+		// 是否处于后台异步进行中（一图生成 or 步骤整理），用于把右上 ⋯ 替换为 chip
+		isCookingActive() {
+			return this.isFlowchartActive || ACTIVE_PARSE_STATUSES.includes(this.parseStatusValue)
+		},
+		// chip 文案，根据当前激活的 Tab 选择对应任务的标签
+		cookingActiveLabel() {
+			if (this.activeCookingTab === 'flowchart' && this.isFlowchartActive) {
+				return '生成中…'
+			}
+			if (this.activeCookingTab === 'steps' && ACTIVE_PARSE_STATUSES.includes(this.parseStatusValue)) {
+				return '整理中…'
+			}
+			// 跨 Tab 的兜底：另一 Tab 在跑也提示用户
+			if (this.isFlowchartActive) return '一图生成中…'
+			if (ACTIVE_PARSE_STATUSES.includes(this.parseStatusValue)) return '步骤整理中…'
+			return ''
+		},
+		// 统一 ⋯ 菜单是否至少有一个可执行项；为空则隐藏入口
+		hasCookingMenuItems() {
+			if (this.canRequestFlowchart && !this.isFlowchartActive) return true
+			if (this.canRequestParse) return true
+			if (this.flowchartUpdatedAtText || this.flowchartModelTip) return true
+			if (this.parseStatusSourceLabel) return true
+			return false
+		},
+		showCookingFlowchartView() {
+			return this.hasFlowchart && this.activeCookingTab === 'flowchart'
+		},
+		showCookingStepsView() {
+			return !this.hasFlowchart || this.activeCookingTab === 'steps'
+		},
+		// 卡片底部一行 caption：根据当前 Tab 选择对应来源
+		cookingFooterText() {
+			if (this.showCookingFlowchartView) {
+				return this.flowchartCaptionText || ''
+			}
+			if (this.showCookingStepsView) {
+				return this.parseStatusSourceLabel || ''
+			}
+			return ''
+		},
+		// B1-2：是否可复制食材清单（至少要有 1 项主料或 1 个辅料分组）
+		canCopyIngredientList() {
+			return this.parsedMainIngredients.length > 0 || this.parsedSecondaryGroups.length > 0
+		},
+		// B2-6：已完成步骤数（用于「2 / 4」进度提示）
+		completedStepCount() {
+			const stepKeys = this.buildCurrentStepCompletionKeys()
+			if (!stepKeys.length) return 0
+			let count = 0
+			for (let i = 0; i < stepKeys.length; i += 1) {
+				if (this.completedStepKeyMap[stepKeys[i]]) count += 1
+			}
+			return count
+		},
+		// ===== Hero 操作菜单：当前位置图片是否可设为封面 =====
+		canSetCurrentAsCover() {
+			return this.recipeImages.length > 1 && this.resolveOriginalImageIndex(this.heroImageIndex) > 0
+		},
+		// 是否可以再添加图片（未到上限）
+		canAddMoreHeroImages() {
+			return this.recipeImages.length > 0 && this.visibleRecipeSourceImages.length < this.maxRecipeImages
+		},
+		// 是否可以删除当前图片（至少要有 1 张存在）
+		canDeleteCurrentImage() {
+			return this.resolveOriginalImageIndex(this.heroImageIndex) >= 0
+		},
+		// 是否显示 Hero ⋯ 按钮：上传中隐藏；菜单全空（理论上 length > 0 至少有「删除」）也隐藏
+		canShowHeroActionMenu() {
+			if (this.isUploadingHeroImage) return false
+			if (!this.displayRecipeImages.length) {
+				return this.canAddMoreHeroImages
+			}
+			return this.canSetCurrentAsCover || this.canAddMoreHeroImages || this.canDeleteCurrentImage
+		}
+	},
+	watch: {
+		// P2-A：当流程图从「有」变「无」（如生成失败被清空）且当前正停留在「一图」Tab，
+		// 自动回退到「详细步骤」Tab，避免显示空内容
+		hasFlowchart() {
+			this.ensureCookingTabValid()
+		},
+		// P2-A 修复：流程图任务终止（active -> idle/failed）后也要回退一次
+		isFlowchartActive() {
+			this.ensureCookingTabValid()
 		}
 	},
 	onLoad(options) {
@@ -1302,15 +1601,29 @@ export default {
 			this.statusEstimateSyncedAt = now
 			this.statusEstimateNow = now
 			this.syncRecipeImageCache(recipe)
+			// B2-6：每次加载菜谱时同步读取本地步骤完成进度
+			this.loadCompletedSteps()
 			if (this.heroImageIndex >= this.displayRecipeImages.length) {
 				this.heroImageIndex = 0
 			}
+			// P2-A 修复：菜谱数据落定后再校正一次「做法」Tab，避免无图时初次加载落到空态
+			this.ensureCookingTabValid()
 			if (this.recipe?.title) {
 				uni.setNavigationBarTitle({
 					title: this.recipe.title
 				})
 			}
 			this.syncParsePolling()
+		},
+		// P2-A 修复：当流程图既不可用也未在生成时，强制回退到「详细步骤」Tab
+		ensureCookingTabValid() {
+			if (this.activeCookingTab !== 'flowchart' && this.activeCookingTab !== 'steps') {
+				this.activeCookingTab = this.hasFlowchart ? 'flowchart' : 'steps'
+				return
+			}
+			if (!this.hasFlowchart && this.activeCookingTab !== 'steps') {
+				this.activeCookingTab = 'steps'
+			}
 		},
 		buildRecipeImageCacheEntries(recipe = this.recipe) {
 			const source = recipe || {}
@@ -1446,7 +1759,7 @@ export default {
 		},
 		handleHeroCardTap() {
 			if (!this.recipe) return
-			if (this.recipeImages.length) {
+			if (this.displayRecipeImages.length) {
 				this.previewRecipeImage()
 				return
 			}
@@ -1529,7 +1842,7 @@ export default {
 		},
 		chooseHeroImages() {
 			if (!this.recipe || this.isUploadingHeroImage) return
-			const remaining = Math.max(this.maxRecipeImages - this.recipeImages.length, 0)
+			const remaining = Math.max(this.maxRecipeImages - this.visibleRecipeSourceImages.length, 0)
 			if (!remaining) return
 
 			uni.chooseImage({
@@ -1553,7 +1866,8 @@ export default {
 			})
 
 			try {
-				const nextImages = [...this.recipeImages]
+				// 隐藏态图片代表缓存与远端都已加载失败；用户下次补图时顺手把这些失效图清掉，避免卡住上限。
+				const nextImages = [...this.visibleRecipeSourceImages]
 				incoming.forEach((path) => {
 					if (path && !nextImages.includes(path) && nextImages.length < this.maxRecipeImages) {
 						nextImages.push(path)
@@ -1904,50 +2218,49 @@ export default {
 				uni.hideLoading()
 			}
 		},
-		openFlowchartMenu() {
-			if (this.isGeneratingFlowchart) return
+		// ===== P2-A：合并卡片 Tab 切换 + 统一 ⋯ 菜单 =====
+		// 备注：原 openFlowchartMenu / openParseMenu 已被 openCookingMenu 取代并移除
+		switchCookingTab(tab) {
+			if (tab !== 'flowchart' && tab !== 'steps') return
+			if (this.activeCookingTab === tab) return
+			// 「一图看懂」Tab 仅在有图时可用；无图时静默忽略以防误触
+			if (tab === 'flowchart' && !this.hasFlowchart) return
+			this.activeCookingTab = tab
+			// 轻触觉反馈，与底部「横屏查看」胶囊一致
+			if (typeof uni !== 'undefined' && typeof uni.vibrateShort === 'function') {
+				uni.vibrateShort({ type: 'light' })
+			}
+		},
+		openCookingMenu() {
+			// 任一异步任务进行中时，⋯ 已被替换为 chip，此处只是双保险
+			if (this.isCookingActive) return
+			if (this.isGeneratingFlowchart || this.isReparseSubmitting) return
 
 			const items = []
-			// 仅当真的可以再次生成时才暴露入口，避免 dead-click
-			const canRegenerate = this.canRequestFlowchart && !this.isFlowchartActive
-			if (canRegenerate) items.push('重新生成步骤图')
+			const actions = []
 
-			const hasDetail = !!(this.flowchartUpdatedAtText || this.flowchartModelTip)
-			if (hasDetail) items.push('查看生成详情')
-
-			// 极端兜底：菜单项全空时给个无操作的提示，避免空 ActionSheet
-			if (!items.length) {
-				uni.showToast({
-					title: this.canGenerateFlowchart ? '当前无可执行操作' : '先补充至少 3 个关键步骤',
-					icon: 'none'
-				})
-				return
+			// 1) 重新生成一图（仅可执行时暴露）
+			if (this.canRequestFlowchart && !this.isFlowchartActive) {
+				items.push(this.hasFlowchart ? '重新生成一图看懂' : '生成一图看懂')
+				actions.push('regen-flowchart')
 			}
 
-			uni.showActionSheet({
-				itemList: items,
-				success: ({ tapIndex }) => {
-					const action = items[tapIndex]
-					if (action === '重新生成步骤图') {
-						this.handleGenerateFlowchart()
-					} else if (action === '查看生成详情') {
-						uni.showModal({
-							title: '生成详情',
-							content: [this.flowchartUpdatedAtText, this.flowchartModelTip].filter(Boolean).join('\n'),
-							showCancel: false,
-							confirmText: '知道了',
-							confirmColor: '#5b4a3b'
-						})
-					}
-				}
-			})
-		},
-		openParseMenu() {
-			if (this.isReparseSubmitting) return
+			// 2) 重新整理步骤
+			if (this.canRequestParse) {
+				items.push('重新整理步骤')
+				actions.push('reparse')
+			}
 
-			const items = []
-			if (this.canRequestParse) items.push('重新整理')
-			if (this.parseStatusSourceLabel) items.push('查看整理详情')
+			// 3) 查看详情（合并 flowchart + parse 来源信息）
+			const detailLines = [
+				this.flowchartUpdatedAtText,
+				this.flowchartModelTip,
+				this.parseStatusSourceLabel
+			].filter(Boolean)
+			if (detailLines.length) {
+				items.push('查看生成详情')
+				actions.push('detail')
+			}
 
 			if (!items.length) {
 				uni.showToast({ title: '当前无可执行操作', icon: 'none' })
@@ -1957,13 +2270,15 @@ export default {
 			uni.showActionSheet({
 				itemList: items,
 				success: ({ tapIndex }) => {
-					const action = items[tapIndex]
-					if (action === '重新整理') {
+					const action = actions[tapIndex]
+					if (action === 'regen-flowchart') {
+						this.handleGenerateFlowchart()
+					} else if (action === 'reparse') {
 						this.handleParseAction()
-					} else if (action === '查看整理详情') {
+					} else if (action === 'detail') {
 						uni.showModal({
-							title: '整理详情',
-							content: this.parseStatusSourceLabel,
+							title: '生成详情',
+							content: detailLines.join('\n'),
 							showCancel: false,
 							confirmText: '知道了',
 							confirmColor: '#5b4a3b'
@@ -1971,6 +2286,128 @@ export default {
 					}
 				}
 			})
+		},
+		// ===== B1-2：复制食材清单到剪贴板 =====
+		copyIngredientList() {
+			if (!this.canCopyIngredientList) return
+
+			const lines = []
+			const title = String(this.recipe?.title || '').trim()
+			if (title) {
+				lines.push(`${title} · 食材清单`)
+				lines.push('')
+			}
+
+			if (this.parsedMainIngredients.length) {
+				lines.push(`主料：${this.parsedMainIngredients.join('、')}`)
+			}
+
+			this.parsedSecondaryGroups.forEach((group) => {
+				if (group?.text) {
+					lines.push(`${group.label}：${group.text}`)
+				}
+			})
+
+			const text = lines.join('\n').trim()
+			if (!text) {
+				uni.showToast({ title: '清单为空', icon: 'none' })
+				return
+			}
+
+			uni.setClipboardData({
+				data: text,
+				success: () => {
+					if (typeof uni.vibrateShort === 'function') {
+						uni.vibrateShort({ type: 'light' })
+					}
+					// uni.setClipboardData 默认会弹「已复制」toast，这里再补一句更具体的提示
+					uni.showToast({
+						title: '已复制，可去备忘录粘贴',
+						icon: 'none',
+						duration: 1600
+					})
+				},
+				fail: () => {
+					uni.showToast({ title: '复制失败，请重试', icon: 'none' })
+				}
+			})
+		},
+		// ===== B2-5：步骤详情高亮切片代理（透传到外部纯函数）=====
+		highlightStepDetail(detail) {
+			return highlightStepDetailText(detail)
+		},
+		buildCurrentStepCompletionKeys() {
+			return buildStepCompletionKeyList(this.parsedSteps)
+		},
+		getStepCompletionKey(index) {
+			const stepKeys = this.buildCurrentStepCompletionKeys()
+			return stepKeys[index] || ''
+		},
+		// ===== B2-6：步骤完成状态管理 =====
+		isStepCompleted(index) {
+			const stepKey = this.getStepCompletionKey(index)
+			return !!(stepKey && this.completedStepKeyMap[stepKey])
+		},
+		toggleStepCompleted(index) {
+			if (typeof index !== 'number' || index < 0) return
+			const stepKey = this.getStepCompletionKey(index)
+			if (!stepKey) return
+			// 触发 Vue 响应式更新：使用 $set 或对象重建（这里直接重建以兼容 Vue 3 / 2.x）
+			const next = { ...this.completedStepKeyMap }
+			if (next[stepKey]) {
+				delete next[stepKey]
+			} else {
+				next[stepKey] = true
+			}
+			this.completedStepKeyMap = next
+			this.persistCompletedSteps()
+			if (typeof uni.vibrateShort === 'function') {
+				uni.vibrateShort({ type: 'light' })
+			}
+		},
+		resetCompletedSteps() {
+			if (!this.completedStepCount) return
+			uni.showModal({
+				title: '重置完成进度？',
+				content: '将清除当前菜谱所有步骤的「已完成」标记。',
+				confirmText: '重置',
+				confirmColor: '#b4664c',
+				success: ({ confirm }) => {
+					if (!confirm) return
+					this.completedStepKeyMap = {}
+					this.persistCompletedSteps()
+				}
+			})
+		},
+		loadCompletedSteps() {
+			const key = buildStepCompletedStorageKey(this.recipeId)
+			if (!key) {
+				this.completedStepKeyMap = {}
+				return
+			}
+			const currentStepKeys = this.buildCurrentStepCompletionKeys()
+			try {
+				const raw = uni.getStorageSync(key)
+				this.completedStepKeyMap = normalizeCompletedStepKeyMap(raw, currentStepKeys)
+			} catch (error) {
+				// 存储读失败不致命，回退到空状态
+				this.completedStepKeyMap = {}
+			}
+		},
+		persistCompletedSteps() {
+			const key = buildStepCompletedStorageKey(this.recipeId)
+			if (!key) return
+			try {
+				if (Object.keys(this.completedStepKeyMap).length === 0) {
+					uni.removeStorageSync(key)
+				} else {
+					uni.setStorageSync(key, createCompletedStepStoragePayload(this.completedStepKeyMap))
+				}
+			} catch (error) {
+				// 存储写失败不致命，仅记录到 console（生产环境无影响）
+				// eslint-disable-next-line no-console
+				console.warn('[recipe-detail] persistCompletedSteps failed:', error)
+			}
 		},
 		async handleGenerateFlowchart() {
 			if (!this.recipeId || this.isGeneratingFlowchart || !this.canRequestFlowchart) return
@@ -2114,15 +2551,153 @@ export default {
 			})
 		},
 		previewRecipeImage() {
-			const urls = this.displayRecipeImages.length
-				? this.displayRecipeImages.map((item) => item.displayURL).filter(Boolean)
-				: this.recipeImages
+			const urls = this.displayRecipeImages.map((item) => item.displayURL).filter(Boolean)
 			if (!urls.length) return
 
 			uni.previewImage({
 				current: urls[this.heroImageIndex] || urls[0],
 				urls
 			})
+		},
+		// ===== Hero 操作菜单：⋯ 按钮入口 =====
+		openHeroActionMenu() {
+			if (!this.canShowHeroActionMenu) return
+
+			const items = []
+			const actions = []
+
+			if (this.canSetCurrentAsCover) {
+				items.push('设为封面')
+				actions.push('set-cover')
+			}
+			if (this.canAddMoreHeroImages) {
+				items.push('添加更多图片')
+				actions.push('add-more')
+			}
+			if (this.canDeleteCurrentImage) {
+				items.push('删除这张图')
+				actions.push('delete')
+			}
+
+			if (!items.length) return
+
+			uni.showActionSheet({
+				itemList: items,
+				success: ({ tapIndex }) => {
+					const action = actions[tapIndex]
+					if (action === 'set-cover') {
+						this.setCurrentImageAsCover()
+					} else if (action === 'add-more') {
+						this.chooseHeroImages()
+					} else if (action === 'delete') {
+						this.confirmDeleteCurrentImage()
+					}
+				}
+			})
+		},
+		// Hero 修复：把「可见列表」(displayRecipeImages) 索引映射回 recipeImages 原始索引
+		// 当某些图加载失败被 recipeImageHiddenMap 标记时，两个数组长度/顺序会错位
+		// 返回 -1 表示无法映射（越界或可见列表为空）
+		resolveOriginalImageIndex(visibleIndex) {
+			const visibleList = this.displayRecipeImages
+			if (!Array.isArray(visibleList) || visibleIndex < 0 || visibleIndex >= visibleList.length) {
+				return -1
+			}
+			const target = visibleList[visibleIndex]
+			const targetKey = target && target.cacheKey
+			if (!targetKey) return -1
+			const version = this.recipeImageVersion
+			for (let i = 0; i < this.recipeImages.length; i += 1) {
+				const cacheKey = buildImageCacheKey(this.recipeImages[i], version)
+				if (cacheKey === targetKey) return i
+			}
+			return -1
+		},
+		async setCurrentImageAsCover() {
+			if (!this.canSetCurrentAsCover || !this.recipeId) return
+			if (this.isUploadingHeroImage) return
+
+			// Hero 修复：heroImageIndex 是「可见列表」索引，必须映射回原始 recipeImages 索引，
+			// 否则前面有图加载失败被隐藏时会操作到错图
+			const fromIndex = this.resolveOriginalImageIndex(this.heroImageIndex)
+			const list = [...this.recipeImages]
+			if (fromIndex <= 0 || fromIndex >= list.length) return
+			// 把当前位置图片移到第 0 位（其余顺序保持不变）
+			const [picked] = list.splice(fromIndex, 1)
+			list.unshift(picked)
+
+			this.isUploadingHeroImage = true
+			uni.showLoading({ title: '设置中', mask: true })
+			try {
+				const recipe = await updateRecipeById(this.recipeId, { images: list })
+				this.applyRecipe(recipe)
+				// 把视图切回第 0 位，让用户立刻看到「新封面」生效
+				this.heroImageIndex = 0
+				if (typeof uni.vibrateShort === 'function') {
+					uni.vibrateShort({ type: 'medium' })
+				}
+				this.showActionFeedback({
+					tone: 'done',
+					title: '已设为封面'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '设置失败，请重试',
+					icon: 'none'
+				})
+			} finally {
+				this.isUploadingHeroImage = false
+				uni.hideLoading()
+			}
+		},
+		confirmDeleteCurrentImage() {
+			if (!this.canDeleteCurrentImage) return
+			uni.showModal({
+				title: '删除这张图？',
+				content: '删除后无法恢复，仍可重新上传。',
+				confirmText: '删除',
+				confirmColor: '#b4664c',
+				success: ({ confirm }) => {
+					if (!confirm) return
+					this.deleteCurrentImage()
+				}
+			})
+		},
+		async deleteCurrentImage() {
+			if (!this.canDeleteCurrentImage || !this.recipeId) return
+			if (this.isUploadingHeroImage) return
+
+			// Hero 修复：同样需要把可见索引映射回原始数组索引，避免删错图
+			const removeIndex = this.resolveOriginalImageIndex(this.heroImageIndex)
+			const list = [...this.recipeImages]
+			if (removeIndex < 0 || removeIndex >= list.length) return
+			list.splice(removeIndex, 1)
+
+			this.isUploadingHeroImage = true
+			uni.showLoading({ title: '删除中', mask: true })
+			try {
+				const recipe = await updateRecipeById(this.recipeId, { images: list })
+				this.applyRecipe(recipe)
+				// 调整 heroImageIndex 防止越界（applyRecipe 也有兜底，此处再保险一次）
+				if (this.heroImageIndex >= this.displayRecipeImages.length) {
+					this.heroImageIndex = Math.max(this.displayRecipeImages.length - 1, 0)
+				}
+				if (typeof uni.vibrateShort === 'function') {
+					uni.vibrateShort({ type: 'light' })
+				}
+				this.showActionFeedback({
+					tone: 'done',
+					title: '已删除'
+				})
+			} catch (error) {
+				uni.showToast({
+					title: error?.message || '删除失败，请重试',
+					icon: 'none'
+				})
+			} finally {
+				this.isUploadingHeroImage = false
+				uni.hideLoading()
+			}
 		},
 		openFlowchartViewer() {
 			if (!this.flowchartImageUrl) return
@@ -2194,6 +2769,11 @@ export default {
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.34);
 	}
 
+	/* H5：有图时增高 Hero，为压图标题预留 ~140rpx 空间 */
+	.hero-card--with-overlay {
+		min-height: 520rpx;
+	}
+
 	.hero-card::before,
 	.hero-card::after {
 		content: '';
@@ -2223,6 +2803,10 @@ export default {
 		height: 380rpx;
 	}
 
+	.hero-card--with-overlay .hero-card__swiper {
+		height: 520rpx;
+	}
+
 	.hero-card__image {
 		position: relative;
 		z-index: 0;
@@ -2231,43 +2815,162 @@ export default {
 		display: block;
 	}
 
-	.hero-card__preview-tip {
+	.hero-card--with-overlay .hero-card__image {
+		height: 520rpx;
+	}
+
+	/* H4：底部渐变蒙层，从 0 → 0.82 黑色，为压图文字提供读性 */
+	.hero-card__overlay {
 		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 280rpx;
+		background:
+			linear-gradient(180deg,
+				rgba(20, 14, 10, 0) 0%,
+				rgba(20, 14, 10, 0.32) 38%,
+				rgba(20, 14, 10, 0.72) 78%,
+				rgba(20, 14, 10, 0.85) 100%
+			);
+		pointer-events: none;
+		z-index: 2;
+	}
+
+	/* Hero 操作菜单按钮：右上角圆形 ⋯，与压图标题/分页器同层 z-index 3 */
+	.hero-card__action {
+		position: absolute;
+		top: 22rpx;
 		right: 22rpx;
-		bottom: 22rpx;
-		padding: 10rpx 16rpx;
-		border-radius: 999rpx;
-		background: rgba(47, 41, 35, 0.42);
-		border: 1px solid rgba(255, 255, 255, 0.14);
+		z-index: 3;
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 50%;
+		background: rgba(20, 14, 10, 0.42);
+		border: 1px solid rgba(255, 255, 255, 0.18);
 		backdrop-filter: blur(10rpx);
 		display: flex;
 		align-items: center;
-		gap: 8rpx;
-		z-index: 2;
+		justify-content: center;
+		transition: transform 0.16s ease, background 0.16s ease;
 	}
 
-	.hero-card__preview-tip-text {
-		font-size: 21rpx;
-		font-weight: 600;
+	.hero-card__action--hover {
+		transform: scale(0.92);
+		background: rgba(15, 10, 7, 0.62);
+	}
+
+	/* H5：标题压图块；定位在 Hero 底部、分页器上方 */
+	.hero-card__title-block {
+		position: absolute;
+		left: 28rpx;
+		right: 28rpx;
+		bottom: 60rpx;
+		z-index: 3;
+		display: flex;
+		flex-direction: column;
+		gap: 14rpx;
+	}
+
+	.hero-card__meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10rpx;
+	}
+
+	/* 压图 chip：半透明深底 + 白字，确保在任意配色背景上的可读性 */
+	.hero-card__chip {
+		min-height: 40rpx;
+		padding: 0 14rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.22);
+		border: 1px solid rgba(255, 255, 255, 0.28);
+		backdrop-filter: blur(8rpx);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.hero-card__chip--meal {
+		background: rgba(180, 102, 76, 0.78);
+		border-color: rgba(255, 255, 255, 0.32);
+	}
+
+	.hero-card__chip--done {
+		background: rgba(111, 130, 102, 0.78);
+		border-color: rgba(255, 255, 255, 0.32);
+	}
+
+	.hero-card__chip--wishlist {
+		background: rgba(154, 115, 67, 0.78);
+		border-color: rgba(255, 255, 255, 0.32);
+	}
+
+	.hero-card__chip--pin {
+		background: rgba(186, 145, 81, 0.82);
+		border-color: rgba(255, 255, 255, 0.32);
+	}
+
+	.hero-card__chip-text {
+		font-size: 22rpx;
+		font-weight: 700;
+		line-height: 1;
+		color: #fff;
+		letter-spacing: 0.4rpx;
+	}
+
+	.hero-card__title {
+		display: block;
+		font-size: 44rpx;
+		font-weight: 800;
+		line-height: 1.25;
 		color: #ffffff;
+		letter-spacing: 0.5rpx;
+		text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.36);
+	}
+
+	/* H3：分页器 —— 底部居中圆点 dots / 数字 chip，与压图标题分层（下方 ~22rpx） */
+	.hero-card__pager {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 22rpx;
+		z-index: 3;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 10rpx;
+		pointer-events: none;
+	}
+
+	.hero-card__dot {
+		width: 10rpx;
+		height: 10rpx;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.42);
+		transition: width 0.2s ease, background 0.2s ease;
+	}
+
+	.hero-card__dot--active {
+		width: 24rpx;
+		border-radius: 5rpx;
+		background: rgba(255, 255, 255, 0.95);
 	}
 
 	.hero-card__counter {
-		position: absolute;
-		left: 22rpx;
-		bottom: 22rpx;
-		padding: 10rpx 16rpx;
+		padding: 6rpx 14rpx;
 		border-radius: 999rpx;
-		background: rgba(47, 41, 35, 0.42);
-		border: 1px solid rgba(255, 255, 255, 0.14);
+		background: rgba(20, 14, 10, 0.42);
+		border: 1px solid rgba(255, 255, 255, 0.18);
 		backdrop-filter: blur(10rpx);
-		z-index: 2;
 	}
 
 	.hero-card__counter-text {
 		font-size: 21rpx;
 		font-weight: 600;
 		color: #ffffff;
+		letter-spacing: 0.4rpx;
 	}
 
 	.hero-card__placeholder {
@@ -2322,6 +3025,11 @@ export default {
 
 	.detail-head {
 		padding: 28rpx 6rpx 10rpx;
+	}
+
+	/* H5：有图时只渲染 summary，把上 padding 收紧避免空隙过大 */
+	.detail-head--summary-only {
+		padding: 18rpx 6rpx 10rpx;
 	}
 
 	.detail-head__meta {
@@ -2589,6 +3297,110 @@ export default {
 		font-size: 22rpx;
 		font-weight: 600;
 		color: #9a7343;
+		letter-spacing: 0.2rpx;
+	}
+
+	/* ===== P2-A：「做法」合并卡片 ===== */
+	.detail-card--cooking {
+		overflow: hidden;
+	}
+
+	/* 顶部 Tab 栏：分段控制器风格，与卡片视觉融为一体 */
+	.cooking-tabs {
+		margin-top: 18rpx;
+		padding: 6rpx;
+		border-radius: 18rpx;
+		background: rgba(244, 233, 218, 0.62);
+		border: 1px solid rgba(180, 102, 76, 0.1);
+		display: flex;
+		align-items: stretch;
+		gap: 4rpx;
+	}
+
+	.cooking-tabs__item {
+		flex: 1;
+		min-height: 64rpx;
+		border-radius: 14rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		transition: background 0.16s ease, transform 0.16s ease;
+	}
+
+	.cooking-tabs__item--active {
+		background: #ffffff;
+		box-shadow:
+			0 4rpx 12rpx rgba(70, 54, 40, 0.06),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.8);
+	}
+
+	.cooking-tabs__item--hover {
+		transform: scale(0.98);
+		background: rgba(255, 255, 255, 0.5);
+	}
+
+	.cooking-tabs__text {
+		font-size: 26rpx;
+		font-weight: 600;
+		color: #8c7a66;
+		letter-spacing: 0.4rpx;
+	}
+
+	.cooking-tabs__item--active .cooking-tabs__text {
+		color: #5b4a3b;
+		font-weight: 700;
+	}
+
+	/* 「详细步骤」Tab 内的「生成一图看懂」CTA：弱主色，引导但不抢戏 */
+	.cooking-flowchart-cta {
+		margin-top: 18rpx;
+		padding: 18rpx 22rpx;
+		border-radius: 18rpx;
+		background:
+			linear-gradient(135deg, rgba(255, 244, 232, 0.96), rgba(249, 232, 215, 0.92));
+		border: 1px dashed rgba(180, 102, 76, 0.28);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12rpx;
+		transition: transform 0.16s ease, background 0.16s ease;
+	}
+
+	.cooking-flowchart-cta:active {
+		transform: scale(0.985);
+		background:
+			linear-gradient(135deg, rgba(255, 240, 224, 0.98), rgba(247, 226, 207, 0.96));
+	}
+
+	.cooking-flowchart-cta__text {
+		font-size: 25rpx;
+		font-weight: 600;
+		color: #b4664c;
+		letter-spacing: 0.4rpx;
+	}
+
+	.cooking-flowchart-cta__arrow {
+		font-size: 26rpx;
+		font-weight: 700;
+		color: #b4664c;
+		line-height: 1;
+	}
+
+	/* 卡片底部统一 caption 行 */
+	.cooking-footer {
+		margin-top: 18rpx;
+		padding-top: 14rpx;
+		border-top: 1px solid rgba(91, 74, 59, 0.06);
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+	}
+
+	.cooking-footer__text {
+		font-size: 22rpx;
+		line-height: 1.4;
+		color: #94a3b8;
 		letter-spacing: 0.2rpx;
 	}
 
@@ -2879,6 +3691,14 @@ export default {
 		margin-top: 32rpx;
 	}
 
+	/* B1-2 / B2-6：分组标题行支持「标题 + 右侧操作」布局 */
+	.parsed-section__head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12rpx;
+	}
+
 	.parsed-section__title {
 		display: inline-flex;
 		align-items: center;
@@ -2892,6 +3712,104 @@ export default {
 		font-weight: 600;
 		color: #475569;
 		letter-spacing: 0.2rpx;
+	}
+
+	/* B1-2：复制清单按钮 —— 与「来源链接 复制」一致的轻量文字按钮 */
+	.parsed-section__copy {
+		display: inline-flex;
+		align-items: center;
+		gap: 6rpx;
+		min-height: 40rpx;
+		padding: 0 14rpx;
+		border-radius: 999rpx;
+		background: rgba(244, 233, 218, 0.62);
+		border: 1px solid rgba(180, 102, 76, 0.12);
+		transition: transform 0.16s ease, background 0.16s ease;
+	}
+
+	.parsed-section__copy--hover {
+		transform: scale(0.96);
+		background: rgba(244, 233, 218, 0.88);
+	}
+
+	.parsed-section__copy-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #9a7343;
+		letter-spacing: 0.2rpx;
+	}
+
+	/* B2-6：步骤进度提示 + 重置 */
+	.parsed-section__progress {
+		display: inline-flex;
+		align-items: center;
+		gap: 10rpx;
+	}
+
+	.parsed-section__progress-text {
+		font-size: 22rpx;
+		font-weight: 600;
+		color: #6f8266;
+		letter-spacing: 0.4rpx;
+	}
+
+	.parsed-section__progress-reset {
+		min-height: 36rpx;
+		padding: 0 12rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.6);
+		border: 1px solid rgba(91, 74, 59, 0.12);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		transition: transform 0.16s ease, background 0.16s ease;
+	}
+
+	.parsed-section__progress-reset--hover {
+		transform: scale(0.94);
+		background: rgba(244, 233, 218, 0.88);
+	}
+
+	.parsed-section__progress-reset-text {
+		font-size: 20rpx;
+		font-weight: 600;
+		color: #94837a;
+	}
+
+	/* B1-1：主料紧凑列表（< 3 项时使用，避免单条「1」的视觉冗余） */
+	.parsed-main-compact {
+		margin-top: 14rpx;
+		padding: 16rpx 20rpx;
+		border-radius: 20rpx;
+		background:
+			linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 243, 237, 0.92));
+		border: 1px solid rgba(91, 74, 59, 0.08);
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.parsed-main-compact__item {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
+	.parsed-main-compact__dot {
+		width: 8rpx;
+		height: 8rpx;
+		border-radius: 50%;
+		background: #b08c72;
+		flex-shrink: 0;
+	}
+
+	.parsed-main-compact__text {
+		flex: 1;
+		min-width: 0;
+		font-size: 26rpx;
+		line-height: 1.6;
+		color: #4d433a;
+		font-weight: 500;
 	}
 
 	.parsed-item,
@@ -2958,8 +3876,7 @@ export default {
 		color: #7d7064;
 	}
 
-	.parsed-item__text,
-	.step-item__text {
+	.parsed-item__text {
 		flex: 1;
 		min-width: 0;
 		font-size: 25rpx;
@@ -2979,6 +3896,24 @@ export default {
 			linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 245, 239, 0.94));
 		border: 1px solid rgba(91, 74, 59, 0.08);
 		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.5);
+		transition: opacity 0.2s ease, transform 0.16s ease, background 0.2s ease;
+	}
+
+	/* B2-6：步骤已完成态 —— 整体淡出，标题加灰，让用户的视觉自然跳过已做完的步骤 */
+	.step-item--done {
+		opacity: 0.55;
+		background:
+			linear-gradient(180deg, rgba(247, 246, 243, 0.86), rgba(243, 240, 234, 0.94));
+	}
+
+	.step-item--done .step-item__title {
+		color: #8a8278;
+		text-decoration: line-through;
+		text-decoration-color: rgba(138, 130, 120, 0.5);
+	}
+
+	.step-item--hover {
+		transform: scale(0.992);
 	}
 
 	.step-item__title {
@@ -2992,25 +3927,53 @@ export default {
 	.step-item__text {
 		display: block;
 		margin-top: 8rpx;
+		font-size: 25rpx;
+		line-height: 1.7;
+		color: #4d433a;
 	}
 
+	/* B2-5：步骤详情中关键参数高亮（时间/克数/火候） */
+	.step-item__text--normal {
+		color: #4d433a;
+		font-weight: 400;
+	}
+
+	.step-item__text--highlight {
+		color: #b4664c;
+		font-weight: 700;
+	}
+
+	.step-item--done .step-item__text--highlight {
+		color: #a89a8a;
+		font-weight: 600;
+	}
+
+	/* B1-4：序号去掉「Step」前缀后改为正方形小徽章；B2-6：完成时变绿底承载对勾 */
 	.step-item__index {
 		flex-shrink: 0;
-		min-height: 54rpx;
-		padding: 0 16rpx;
+		width: 48rpx;
+		height: 48rpx;
+		padding: 0;
 		box-sizing: border-box;
-		border-radius: 999rpx;
+		border-radius: 14rpx;
 		background:
 			linear-gradient(180deg, rgba(245, 239, 231, 0.98), rgba(236, 226, 214, 0.96));
 		border: 1px solid rgba(124, 104, 84, 0.08);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		transition: background 0.2s ease, border-color 0.2s ease;
+	}
+
+	.step-item__index--done {
+		background:
+			linear-gradient(180deg, rgba(232, 240, 230, 0.98), rgba(218, 230, 215, 0.96));
+		border-color: rgba(111, 130, 102, 0.24);
 	}
 
 	.step-item__index-text {
 		display: block;
-		font-size: 20rpx;
+		font-size: 24rpx;
 		line-height: 1;
 		font-weight: 700;
 		color: #786b5f;
