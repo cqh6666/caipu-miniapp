@@ -212,10 +212,11 @@
 						<view class="flowchart-panel__image-shell">
 							<image
 								class="flowchart-panel__image"
-								:src="flowchartImageUrl"
+								:src="flowchartDisplayImageUrl"
 								mode="widthFix"
 								hover-class="flowchart-panel__image--active"
 								hover-stay-time="80"
+								@error="handleFlowchartImageError"
 								@tap="previewFlowchartImage"
 							></image>
 							<view class="flowchart-panel__image-shadow"></view>
@@ -798,6 +799,7 @@
 			</view>
 		</up-popup>
 	</view>
+	<canvas canvas-id="_flowchart_square_canvas" style="position:fixed;left:-9999px;top:-9999px;width:300px;height:300px;"></canvas>
 </template>
 
 <script>
@@ -1165,6 +1167,32 @@ function createCompletedStepStoragePayload(stepKeyMap = {}) {
 	}
 }
 
+function requestImageInfo(src = '') {
+	const target = String(src || '').trim()
+	if (!target) return Promise.resolve(null)
+
+	return new Promise((resolve, reject) => {
+		uni.getImageInfo({
+			src: target,
+			success: resolve,
+			fail: reject
+		})
+	})
+}
+
+function exportCanvasToTempFilePath(options = {}, component) {
+	return new Promise((resolve, reject) => {
+		uni.canvasToTempFilePath(
+			{
+				...options,
+				success: resolve,
+				fail: reject
+			},
+			component
+		)
+	})
+}
+
 export default {
 	components: {
 		ActionFeedback
@@ -1222,7 +1250,14 @@ export default {
 			publicKitchenName: '',
 			publicCreatorName: '',
 			publicViewLoadFailed: false,
-			showPublicReadOnlyExplain: false
+			showPublicReadOnlyExplain: false,
+			cachedFlowchartImagePath: '',
+			flowchartImageCacheVersion: '',
+			flowchartImageCacheRequestID: 0,
+			flowchartSquareImagePath: '',
+			flowchartSquareImageSourceKey: '',
+			flowchartShareImagePendingKey: '',
+			_flowchartShareImagePromise: null
 		}
 	},
 	computed: {
@@ -1347,6 +1382,9 @@ export default {
 		},
 		flowchartImageUrl() {
 			return String(this.recipe?.flowchartImageUrl || '').trim()
+		},
+		flowchartDisplayImageUrl() {
+			return String(this.cachedFlowchartImagePath || '').trim() || this.flowchartImageUrl
 		},
 		flowchartStatusValue() {
 			return String(this.recipe?.flowchartStatus || '').trim()
@@ -1630,11 +1668,13 @@ export default {
 	//   - 微信侧 promise 超时（约 5s）会回退使用同步返回的兜底 config（不带 token，行为退化为旧版鉴权墙）
 	onShareAppMessage(res) {
 		const fallback = this.buildRecipeShareConfig({ from: res?.from, channel: 'message' })
-		if (this.shareToken || this.isPublicView || !this.recipeId) return fallback
+		const needsShareToken = !this.shareToken && !this.isPublicView && !!this.recipeId
+		const needsFlowchartShareCover =
+			this.shouldPreferFlowchartShareCover('message') && this.hasFlowchart && !this.getCurrentFlowchartShareImagePath()
+		if (!needsShareToken && !needsFlowchartShareCover) return fallback
 		return {
 			...fallback,
-			promise: this.ensureShareTokenIfNeeded()
-				.then(() => this.buildRecipeShareConfig({ from: res?.from, channel: 'message' }))
+			promise: this.buildRecipeShareConfigAsync({ from: res?.from, channel: 'message' })
 				.catch(() => fallback)
 		}
 	},
@@ -1650,7 +1690,11 @@ export default {
 		}
 	},
 	onAddToFavorites() {
-		// 收藏夹接口不支持 promise 字段，直接同步返回当前最佳配置
+		// 收藏夹接口不支持 promise 字段，只能同步返回当前最佳配置。
+		// 若这次优先走流程图封面，则在真正触发分享时后台懒裁一份供后续复用。
+		if (this.shouldPreferFlowchartShareCover('favorite') && this.hasFlowchart && !this.getCurrentFlowchartShareImagePath()) {
+			this.ensureFlowchartShareImagePath().catch(() => {})
+		}
 		return this.buildRecipeShareConfig({ channel: 'favorite' })
 	},
 	methods: {
@@ -1743,6 +1787,148 @@ export default {
 				this.hasResolvedInitialRecipeLoad = true
 			}
 		},
+		buildFlowchartImageCacheVersion(recipe = this.recipe) {
+			const updatedAt = String(recipe?.flowchartUpdatedAt || '').trim()
+			if (updatedAt) return updatedAt
+			return String(recipe?.flowchartImageUrl || '').trim()
+		},
+		buildFlowchartImageCacheEntry(recipe = this.recipe) {
+			const url = String(recipe?.flowchartImageUrl || '').trim()
+			const version = this.buildFlowchartImageCacheVersion(recipe)
+			return {
+				url,
+				version,
+				cacheKey: buildImageCacheKey(url, version)
+			}
+		},
+		buildFlowchartPreviewURLs() {
+			const urls = []
+			const appendURL = (value = '') => {
+				const target = String(value || '').trim()
+				if (!target || urls.includes(target)) return
+				urls.push(target)
+			}
+			appendURL(this.cachedFlowchartImagePath)
+			appendURL(this.flowchartImageUrl)
+			return urls
+		},
+		shouldPreferFlowchartShareCover(channel = 'message') {
+			return channel === 'message' || channel === 'favorite'
+		},
+		getCurrentFlowchartShareImagePath() {
+			const currentKey = this.buildFlowchartImageCacheEntry().cacheKey
+			if (!currentKey || this.flowchartSquareImageSourceKey !== currentKey) return ''
+			return String(this.flowchartSquareImagePath || '').trim()
+		},
+		async buildRecipeShareConfigAsync({ channel = 'message' } = {}) {
+			const shouldEnsureToken = !this.shareToken && !this.isPublicView && !!this.recipeId
+			const flowchartShareImageTask =
+				this.shouldPreferFlowchartShareCover(channel) && this.hasFlowchart
+					? this.ensureFlowchartShareImagePath().catch(() => '')
+					: Promise.resolve('')
+
+			const [, flowchartShareImage] = await Promise.all([
+				shouldEnsureToken ? this.ensureShareTokenIfNeeded() : Promise.resolve(this.shareToken || this.publicViewToken || ''),
+				flowchartShareImageTask
+			])
+
+			return this.buildRecipeShareConfig({
+				channel,
+				flowchartShareImage
+			})
+		},
+		async ensureFlowchartShareImagePath() {
+			const entry = this.buildFlowchartImageCacheEntry()
+			if (!entry.url) return ''
+
+			const readyPath = this.getCurrentFlowchartShareImagePath()
+			if (readyPath) return readyPath
+
+			if (this._flowchartShareImagePromise && this.flowchartShareImagePendingKey === entry.cacheKey) {
+				return this._flowchartShareImagePromise
+			}
+
+			this.flowchartShareImagePendingKey = entry.cacheKey
+			const shareImagePromise = this.createFlowchartSquareImage()
+				.then((tempFilePath) => {
+					if (!tempFilePath) return ''
+					if (this.buildFlowchartImageCacheEntry().cacheKey !== entry.cacheKey) return ''
+					this.flowchartSquareImagePath = tempFilePath
+					this.flowchartSquareImageSourceKey = entry.cacheKey
+					return tempFilePath
+				})
+				.catch(() => '')
+				.finally(() => {
+					if (this.flowchartShareImagePendingKey === entry.cacheKey) {
+						this.flowchartShareImagePendingKey = ''
+					}
+					if (this._flowchartShareImagePromise === shareImagePromise) {
+						this._flowchartShareImagePromise = null
+					}
+				})
+
+			this._flowchartShareImagePromise = shareImagePromise
+			return this._flowchartShareImagePromise
+		},
+		async createFlowchartSquareImage() {
+			if (typeof uni.createCanvasContext !== 'function') return ''
+
+			const sourceURLs = this.buildFlowchartPreviewURLs()
+			if (!sourceURLs.length) return ''
+
+			const canvasId = '_flowchart_square_canvas'
+			for (let index = 0; index < sourceURLs.length; index += 1) {
+				const sourceURL = sourceURLs[index]
+				try {
+					const imageInfo = await requestImageInfo(sourceURL)
+					const sourcePath = String(imageInfo?.path || sourceURL || '').trim()
+					const width = Number(imageInfo?.width) || 0
+					const height = Number(imageInfo?.height) || 0
+					const size = Math.min(width, height)
+					if (!sourcePath || !size) continue
+
+					const offsetX = width > size ? -(width - size) / 2 : 0
+					const offsetY = height > size ? -(height - size) / 2 : 0
+					const ctx = uni.createCanvasContext(canvasId, this)
+					if (typeof ctx.clearRect === 'function') {
+						ctx.clearRect(0, 0, size, size)
+					}
+					ctx.drawImage(sourcePath, offsetX, offsetY, width, height)
+					const tempFilePath = await new Promise((resolve) => {
+						ctx.draw(false, async () => {
+							try {
+								const result = await exportCanvasToTempFilePath(
+									{
+										canvasId,
+										width: size,
+										height: size,
+										destWidth: size,
+										destHeight: size
+									},
+									this
+								)
+								resolve(String(result?.tempFilePath || '').trim())
+							} catch (error) {
+								resolve('')
+							}
+						})
+					})
+					if (tempFilePath) return tempFilePath
+				} catch (error) {
+					const currentLocalPath = String(this.cachedFlowchartImagePath || '').trim()
+					if (sourceURL === currentLocalPath) {
+						this.cachedFlowchartImagePath = ''
+						try {
+							await invalidateCachedImage(this.flowchartImageUrl, this.flowchartImageCacheVersion || this.buildFlowchartImageCacheVersion())
+						} catch (invalidateError) {
+							// Ignore stale cache cleanup failures and continue with remote fallback.
+						}
+					}
+				}
+			}
+
+			return ''
+		},
 		// P2-D 分享路径升级：统一构造分享配置
 		// channel: 'message' (微信好友) | 'timeline' (朋友圈) | 'favorite' (收藏)
 		// 文案策略（简洁派，让封面图说话）：
@@ -1754,7 +1940,7 @@ export default {
 		//   - timeline → 优先首图，缺则流程图：朋友圈是炫耀场，成品图传播力更强
 		//   - favorite → 优先流程图，缺则首图：收藏=「以后要用」
 		// 微信会按各渠道比例（5:4 / 1:1）自适应裁切
-		buildRecipeShareConfig({ channel = 'message' } = {}) {
+		buildRecipeShareConfig({ channel = 'message', flowchartShareImage = '' } = {}) {
 			const recipe = this.recipe || {}
 			const rawTitle = String(recipe.title || '').trim()
 			const dishName = rawTitle || '一道值得做的菜'
@@ -1775,10 +1961,11 @@ export default {
 			// 按渠道选封面：朋友圈优先成品首图，其余优先流程图
 			// 注意用 visibleRecipeSourceImages（已过滤掉加载失败被 recipeImageHiddenMap 标记的坏图），
 			// 避免把页面已知失效的 URL 发给微信做封面
-			const flowchart = String(this.flowchartImageUrl || '').trim()
+			const flowchart = String(flowchartShareImage || this.getCurrentFlowchartShareImagePath() || this.flowchartImageUrl || '').trim()
+			const timelineFlowchart = String(this.flowchartImageUrl || '').trim()
 			const coverImage = String(this.visibleRecipeSourceImages?.[0] || '').trim()
 			const shareImage = channel === 'timeline'
-				? (coverImage || flowchart)
+				? (coverImage || timelineFlowchart)
 				: (flowchart || coverImage)
 
 			if (channel === 'timeline') {
@@ -1797,11 +1984,21 @@ export default {
 			return config
 		},
 		applyRecipe(recipe) {
+			const previousFlowchartCacheKey = this.buildFlowchartImageCacheEntry(this.recipe).cacheKey
+			const nextFlowchartCacheKey = this.buildFlowchartImageCacheEntry(recipe).cacheKey
+			if (previousFlowchartCacheKey !== nextFlowchartCacheKey) {
+				this.flowchartSquareImagePath = ''
+				this.flowchartSquareImageSourceKey = ''
+				this.flowchartShareImagePendingKey = ''
+			}
 			this.recipe = recipe
 			const now = Date.now()
 			this.statusEstimateSyncedAt = now
 			this.statusEstimateNow = now
 			this.syncRecipeImageCache(recipe)
+			this.syncFlowchartImageCache(recipe, {
+				previousCacheKey: previousFlowchartCacheKey
+			})
 			// B2-6：每次加载菜谱时同步读取本地步骤完成进度
 			this.loadCompletedSteps()
 			if (this.heroImageIndex >= this.displayRecipeImages.length) {
@@ -1862,6 +2059,42 @@ export default {
 				version,
 				cacheKey: buildImageCacheKey(url, version)
 			})).filter((entry) => entry.url)
+		},
+		async syncFlowchartImageCache(recipe = this.recipe, options = {}) {
+			const entry = this.buildFlowchartImageCacheEntry(recipe)
+			const requestID = this.flowchartImageCacheRequestID + 1
+			const previousCacheKey = String(options.previousCacheKey || '').trim()
+
+			this.flowchartImageCacheRequestID = requestID
+			this.flowchartImageCacheVersion = entry.version
+
+			if (entry.cacheKey !== previousCacheKey) {
+				this.cachedFlowchartImagePath = ''
+			}
+
+			if (!entry.url) {
+				this.cachedFlowchartImagePath = ''
+				this.flowchartImageCacheVersion = ''
+				return
+			}
+
+			const localPath = await getCachedImagePath(entry.url, entry.version)
+			if (requestID !== this.flowchartImageCacheRequestID) return
+
+			if (localPath) {
+				this.cachedFlowchartImagePath = localPath
+				return
+			}
+
+			this.cachedFlowchartImagePath = ''
+			warmImageCache([entry], {
+				concurrency: 1,
+				onResolved: ({ localPath: resolvedPath }) => {
+					if (requestID !== this.flowchartImageCacheRequestID || !resolvedPath) return
+					if (this.buildFlowchartImageCacheEntry().cacheKey !== entry.cacheKey) return
+					this.cachedFlowchartImagePath = resolvedPath
+				}
+			})
 		},
 		async syncRecipeImageCache(recipe = this.recipe) {
 			const entries = this.buildRecipeImageCacheEntries(recipe)
@@ -2939,11 +3172,12 @@ export default {
 			}
 		},
 		openFlowchartViewer() {
-			if (!this.flowchartImageUrl) return
+			if (!this.flowchartDisplayImageUrl) return
 			const key = `${this.recipeId || 'recipe'}-${Date.now()}`
 			uni.setStorageSync(FLOWCHART_VIEWER_STORAGE_KEY, {
 				key,
 				imageUrl: this.flowchartImageUrl,
+				localImagePath: String(this.cachedFlowchartImagePath || '').trim(),
 				title: String(this.recipe?.title || '').trim(),
 				updatedAtText: this.flowchartUpdatedAtText
 			})
@@ -2951,14 +3185,25 @@ export default {
 				url: `/pages/flowchart-viewer/index?key=${encodeURIComponent(key)}`
 			})
 		},
+		async handleFlowchartImageError() {
+			const localPath = String(this.cachedFlowchartImagePath || '').trim()
+			if (!localPath || this.flowchartDisplayImageUrl !== localPath) return
+			this.cachedFlowchartImagePath = ''
+			try {
+				await invalidateCachedImage(this.flowchartImageUrl, this.flowchartImageCacheVersion || this.buildFlowchartImageCacheVersion())
+			} catch (error) {
+				// Ignore stale cache cleanup failures and keep remote fallback usable.
+			}
+		},
 		previewFlowchartImage() {
 			// 轻点图片：用系统原生 previewImage 做快速预览（双指缩放、保存、长按菜单）
 			// 与右下「横屏查看 ›」胶囊的横屏沉浸模式区分：轻 = 快看，重 = 横屏沉浸
-			if (!this.flowchartImageUrl) return
+			const urls = this.buildFlowchartPreviewURLs()
+			if (!urls.length) return
 			uni.vibrateShort && uni.vibrateShort({ type: 'light' })
 			uni.previewImage({
-				urls: [this.flowchartImageUrl],
-				current: this.flowchartImageUrl
+				urls,
+				current: urls[0]
 			})
 		},
 		goBack() {

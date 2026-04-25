@@ -77,6 +77,8 @@ export default {
 		return {
 			viewerKey: '',
 			imageUrl: '',
+			localImagePath: '',
+			remoteImageUrl: '',
 			imageLoading: true,
 			imageFailed: false,
 			minScale: 1,
@@ -114,7 +116,9 @@ export default {
 				return
 			}
 
-			this.imageUrl = String(payload.imageUrl || '').trim()
+			this.localImagePath = String(payload.localImagePath || '').trim()
+			this.remoteImageUrl = String(payload.imageUrl || '').trim()
+			this.imageUrl = this.localImagePath || this.remoteImageUrl
 			this.imageFailed = !this.imageUrl
 			this.imageLoading = !!this.imageUrl
 			this.imageScale = this.minScale
@@ -136,6 +140,18 @@ export default {
 			this.primeViewerGuide()
 		},
 		handleImageError() {
+			const currentImageUrl = String(this.imageUrl || '').trim()
+			if (this.localImagePath && currentImageUrl === this.localImagePath && this.remoteImageUrl && this.remoteImageUrl !== this.localImagePath) {
+				this.localImagePath = ''
+				this.imageUrl = this.remoteImageUrl
+				this.imageLoading = true
+				this.imageFailed = false
+				this.clearGuideTimers()
+				this.showGestureHint = false
+				this.showCloseLabel = true
+				return
+			}
+
 			this.imageLoading = false
 			this.imageFailed = true
 			this.clearGuideTimers()
