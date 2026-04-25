@@ -126,25 +126,6 @@
       </div>
     </section>
 
-    <nav
-      v-if="showAnchorDirectory"
-      class="routing-anchor-nav"
-      aria-label="页面锚点目录"
-    >
-      <button
-        v-for="item in anchorNavItems"
-        :key="item.key"
-        type="button"
-        class="routing-anchor-nav__item"
-        :class="{
-          'routing-anchor-nav__item--active': item.key === activeAnchorKey,
-        }"
-        @click="scrollToAnchorSection(item.key)"
-      >
-        {{ item.label }}
-      </button>
-    </nav>
-
     <div v-if="sceneLoading && !draftScene" class="page-card routing-panel">
       <PageState mode="loading" title="正在加载场景配置" />
     </div>
@@ -1444,8 +1425,102 @@
             /></el-icon>
             <span>{{ bottomBarState.text }}</span>
           </div>
-          <div class="routing-bottom-bar__hint">
-            快捷键：Mod + S 保存 · Mod + Enter 测试 · Alt + ←/→ 切场景
+          <div class="routing-bottom-bar__utilities">
+            <el-popover
+              v-if="showAnchorDirectory"
+              placement="top"
+              :width="320"
+              trigger="click"
+            >
+              <template #reference>
+                <el-button
+                  text
+                  class="routing-utility-button"
+                  aria-label="打开页面目录"
+                >
+                  <el-icon aria-hidden="true"><Menu /></el-icon>
+                  页面目录
+                </el-button>
+              </template>
+              <div class="routing-utility-panel">
+                <div class="routing-utility-panel__header">
+                  <strong>页面目录</strong>
+                  <span>当前高亮会随滚动位置更新</span>
+                </div>
+                <div class="routing-utility-list">
+                  <button
+                    v-for="item in anchorNavItems"
+                    :key="item.key"
+                    type="button"
+                    class="routing-utility-list__item"
+                    :class="{
+                      'routing-utility-list__item--active':
+                        item.key === activeAnchorKey,
+                    }"
+                    @click="scrollToAnchorSection(item.key)"
+                  >
+                    <span>{{ item.label }}</span>
+                    <span
+                      v-if="item.key === activeAnchorKey"
+                      class="routing-utility-list__badge"
+                    >
+                      当前
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </el-popover>
+            <el-popover
+              v-if="showShortcutButton"
+              v-model:visible="shortcutHelpVisible"
+              placement="top"
+              :width="360"
+              trigger="click"
+            >
+              <template #reference>
+                <el-button
+                  text
+                  class="routing-utility-button"
+                  aria-label="查看当前页面快捷键"
+                >
+                  <el-icon aria-hidden="true"><Guide /></el-icon>
+                  快捷键
+                </el-button>
+              </template>
+              <div class="routing-utility-panel">
+                <div class="routing-utility-panel__header">
+                  <strong>当前页快捷键</strong>
+                  <span>快捷键只在 AI Provider 页面内生效</span>
+                </div>
+                <div class="shortcut-list">
+                  <div
+                    v-for="item in shortcutItems"
+                    :key="item.key"
+                    class="shortcut-list__item"
+                  >
+                    <div class="shortcut-list__meta">
+                      <strong>{{ item.label }}</strong>
+                      <span>{{ item.description }}</span>
+                    </div>
+                    <div class="shortcut-list__keys" aria-hidden="true">
+                      <span
+                        v-for="token in item.keys"
+                        :key="`${item.key}-${token}`"
+                        class="shortcut-key"
+                      >
+                        {{ token }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div class="routing-utility-panel__footer">
+                  <span>输入框聚焦、审计抽屉或确认弹窗打开时会自动禁用。</span>
+                  <el-button link @click="shortcutHelpVisible = false"
+                    >知道了</el-button
+                  >
+                </div>
+              </div>
+            </el-popover>
           </div>
           <el-popover
             v-if="isDirty"
@@ -1486,7 +1561,7 @@
                 ><el-icon><Refresh /></el-icon
               ></el-button>
             </el-tooltip>
-            <el-tooltip content="测试当前草稿" placement="top">
+            <el-tooltip :content="testActionTooltip" placement="top">
               <el-button
                 circle
                 :loading="testingScene"
@@ -1496,7 +1571,7 @@
                 ><el-icon><Promotion /></el-icon
               ></el-button>
             </el-tooltip>
-            <el-tooltip content="保存场景" placement="top">
+            <el-tooltip :content="saveActionTooltip" placement="top">
               <el-button
                 circle
                 type="primary"
@@ -1531,7 +1606,9 @@ import {
   ArrowRight,
   Check,
   Clock,
+  Guide,
   InfoFilled,
+  Menu,
   MoreFilled,
   Promotion,
   Rank,
@@ -1602,6 +1679,8 @@ const sceneLatestTestAuditMap = ref<
 >({});
 const alertOverview = ref<AIRoutingAlertOverview | null>(null);
 const activeAnchorKey = ref<AnchorSectionKey>("scene-cards");
+const shortcutHelpVisible = ref(false);
+const isMacLikePlatform = ref(false);
 
 const sceneLoading = ref(false);
 const sceneError = ref("");
@@ -1621,6 +1700,7 @@ const sceneCardRefs: Partial<
 const anchorSectionRefs: Partial<Record<AnchorSectionKey, HTMLElement | null>> =
   {};
 let sceneHealthLoadToken = 0;
+let shortcutCoachmarkTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const audits = ref<PaginationResult<SettingAuditRecord>>({
   items: [],
@@ -2006,6 +2086,56 @@ const anchorNavItems = computed(() => {
   items.push({ key: "recent-audits", label: "最近审计" });
   return items;
 });
+
+function shortcutTokens(kind: "save" | "test" | "scene-prev" | "scene-next") {
+  const modKey = isMacLikePlatform.value ? "⌘" : "Ctrl";
+  if (kind === "save") {
+    return [modKey, "S"];
+  }
+  if (kind === "test") {
+    return [modKey, "Enter"];
+  }
+  const altKey = isMacLikePlatform.value ? "⌥" : "Alt";
+  return [altKey, kind === "scene-prev" ? "←" : "→"];
+}
+
+function shortcutText(kind: "save" | "test" | "scene-prev" | "scene-next") {
+  return shortcutTokens(kind).join(" + ");
+}
+
+const showShortcutButton = computed(() => viewportWidth.value >= 1024);
+
+const shortcutItems = computed(() => [
+  {
+    key: "save",
+    label: "保存当前场景",
+    description: "沿用现有字段校验、未保存草稿保护和 diff 确认。",
+    keys: shortcutTokens("save"),
+  },
+  {
+    key: "test",
+    label: "测试当前草稿",
+    description: "直接复用当前测试入口，不绕过已有测试逻辑。",
+    keys: shortcutTokens("test"),
+  },
+  {
+    key: "scene-prev",
+    label: "切到上一个场景",
+    description: "在三个场景卡之间循环切换。",
+    keys: shortcutTokens("scene-prev"),
+  },
+  {
+    key: "scene-next",
+    label: "切到下一个场景",
+    description: "在三个场景卡之间循环切换。",
+    keys: shortcutTokens("scene-next"),
+  },
+]);
+
+const saveActionTooltip = computed(() => `保存场景 · ${shortcutText("save")}`);
+const testActionTooltip = computed(
+  () => `测试当前草稿 · ${shortcutText("test")}`,
+);
 
 function isImageGenerationProvider(provider: AIRoutingProviderConfig) {
   return (provider.endpointMode || "chat_completions") === "images_generations";
@@ -2682,6 +2812,30 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   }
 }
 
+function updatePlatformShortcutLabels() {
+  if (typeof navigator === "undefined") {
+    isMacLikePlatform.value = false;
+    return;
+  }
+  const platform =
+    navigator.userAgentData?.platform || navigator.platform || "";
+  isMacLikePlatform.value = /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+function maybeShowShortcutCoachmark() {
+  if (
+    typeof window === "undefined" ||
+    !showShortcutButton.value ||
+    window.localStorage.getItem("ai-provider-shortcuts-seen-v1")
+  ) {
+    return;
+  }
+  window.localStorage.setItem("ai-provider-shortcuts-seen-v1", "1");
+  shortcutCoachmarkTimer = window.setTimeout(() => {
+    shortcutHelpVisible.value = true;
+  }, 700);
+}
+
 function onBeforeUnload(e: BeforeUnloadEvent) {
   if (isDirty.value) {
     e.preventDefault();
@@ -2694,6 +2848,7 @@ onBeforeRouteLeave(async () => {
 });
 
 onMounted(async () => {
+  updatePlatformShortcutLabels();
   window.addEventListener("beforeunload", onBeforeUnload);
   window.addEventListener("keydown", handleGlobalKeydown);
   window.addEventListener("scroll", updateActiveAnchorSection, {
@@ -2707,6 +2862,7 @@ onMounted(async () => {
     currentSceneKey.value = queryScene as AIRoutingSceneKey;
   }
   await refreshPage();
+  maybeShowShortcutCoachmark();
 });
 
 onBeforeUnmount(() => {
@@ -2714,6 +2870,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown);
   window.removeEventListener("scroll", updateActiveAnchorSection);
   window.removeEventListener("resize", updateActiveAnchorSection);
+  if (shortcutCoachmarkTimer) {
+    window.clearTimeout(shortcutCoachmarkTimer);
+    shortcutCoachmarkTimer = null;
+  }
   stopTestingTimer();
 });
 
@@ -2756,6 +2916,15 @@ watch(
   async () => {
     await nextTick();
     updateActiveAnchorSection();
+  },
+);
+
+watch(
+  () => showShortcutButton.value,
+  (visible) => {
+    if (!visible) {
+      shortcutHelpVisible.value = false;
+    }
   },
 );
 
@@ -4499,55 +4668,6 @@ function extractMessage(error: unknown) {
   border-radius: 14px;
 }
 
-.routing-anchor-nav {
-  position: fixed;
-  top: 148px;
-  right: max(20px, calc((100vw - 1480px) / 2));
-  z-index: 18;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 164px;
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
-  backdrop-filter: blur(14px);
-}
-
-.routing-anchor-nav__item {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--color-text-subtle, #64748b);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    background 0.18s ease;
-}
-
-.routing-anchor-nav__item:hover {
-  border-color: rgba(37, 99, 235, 0.18);
-  color: var(--color-primary, #2563eb);
-  background: rgba(239, 246, 255, 0.86);
-}
-
-.routing-anchor-nav__item--active {
-  border-color: rgba(37, 99, 235, 0.24);
-  color: var(--color-primary, #2563eb);
-  background: rgba(239, 246, 255, 0.92);
-  box-shadow: inset 3px 0 0 #2563eb;
-}
-
 .routing-scene-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6091,7 +6211,7 @@ function extractMessage(error: unknown) {
 }
 
 .routing-bottom-bar__status,
-.routing-bottom-bar__hint,
+.routing-bottom-bar__utilities,
 .routing-bottom-bar__actions {
   display: inline-flex;
   align-items: center;
@@ -6117,10 +6237,138 @@ function extractMessage(error: unknown) {
   color: var(--color-success, #16a34a);
 }
 
-.routing-bottom-bar__hint {
+.routing-bottom-bar__utilities {
+  flex-wrap: wrap;
+}
+
+.routing-utility-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 10px;
+  color: var(--color-text-subtle, #64748b);
+}
+
+.routing-utility-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.routing-utility-panel__header {
+  display: grid;
+  gap: 4px;
+}
+
+.routing-utility-panel__header strong {
+  color: var(--color-text, #1f2937);
+  font-size: 14px;
+}
+
+.routing-utility-panel__header span,
+.routing-utility-panel__footer span {
   color: var(--color-text-subtle, #64748b);
   font-size: 12px;
-  white-space: nowrap;
+  line-height: 1.6;
+}
+
+.routing-utility-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.routing-utility-list,
+.shortcut-list {
+  display: grid;
+  gap: 8px;
+}
+
+.routing-utility-list__item,
+.shortcut-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.routing-utility-list__item {
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.routing-utility-list__item:hover {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(239, 246, 255, 0.84);
+  color: var(--color-primary, #2563eb);
+}
+
+.routing-utility-list__item--active {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(239, 246, 255, 0.9);
+  color: var(--color-primary, #2563eb);
+}
+
+.routing-utility-list__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.shortcut-list__meta {
+  display: grid;
+  gap: 3px;
+}
+
+.shortcut-list__meta strong {
+  color: var(--color-text, #1f2937);
+  font-size: 13px;
+}
+
+.shortcut-list__meta span {
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.shortcut-list__keys {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.shortcut-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #ffffff;
+  box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.18);
+  color: var(--color-text, #1f2937);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .draft-summary-popover {
@@ -6191,10 +6439,6 @@ function extractMessage(error: unknown) {
   .routing-editor-grid {
     grid-template-columns: 1fr;
   }
-
-  .routing-bottom-bar__hint {
-    display: none;
-  }
 }
 
 @media (max-width: 768px) {
@@ -6220,6 +6464,17 @@ function extractMessage(error: unknown) {
     bottom: max(12px, env(safe-area-inset-bottom));
     transform: none;
     justify-content: space-between;
+  }
+
+  .routing-bottom-bar__utilities,
+  .routing-utility-panel__footer,
+  .shortcut-list__item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shortcut-list__keys {
+    justify-content: flex-start;
   }
 
   .audit-diff-grid {
