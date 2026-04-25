@@ -84,10 +84,14 @@ type SettingAuditRecord struct {
 }
 
 type SettingAuditFilter struct {
-	GroupName string
-	Action    string
-	Page      int
-	PageSize  int
+	GroupName       string
+	Action          string
+	OperatorSubject string
+	SettingKey      string
+	TimeFrom        string
+	TimeTo          string
+	Page            int
+	PageSize        int
 }
 
 type SettingAuditList struct {

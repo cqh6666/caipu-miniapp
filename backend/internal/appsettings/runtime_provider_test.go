@@ -145,6 +145,79 @@ func TestRuntimeProviderTestRuntimeGroupSendsAIProviderAlertTestEmail(t *testing
 	}
 }
 
+func TestRuntimeProviderListSettingAuditsSupportsAdvancedFilters(t *testing.T) {
+	t.Parallel()
+
+	provider := newRuntimeProviderForTest(t)
+	ctx := context.Background()
+
+	records := []settingAuditRecord{
+		{
+			GroupName:       "ai.routing.summary",
+			SettingKey:      "ai.routing.summary.scene",
+			Action:          "update",
+			OldValueMasked:  `{"enabled":"false"}`,
+			NewValueMasked:  `{"enabled":"true"}`,
+			OperatorSubject: "alice",
+			RequestID:       "req-1",
+			CreatedAt:       "2026-04-25T10:00:00Z",
+		},
+		{
+			GroupName:       "ai.routing.summary",
+			SettingKey:      "ai.routing.summary.provider.primary",
+			Action:          "test",
+			OldValueMasked:  "",
+			NewValueMasked:  "timeout",
+			OperatorSubject: "bob",
+			RequestID:       "req-2",
+			CreatedAt:       "2026-04-25T11:00:00Z",
+		},
+		{
+			GroupName:       "ai.routing.flowchart",
+			SettingKey:      "ai.routing.flowchart.provider.fallback",
+			Action:          "update",
+			OldValueMasked:  "",
+			NewValueMasked:  `{"model":"gpt-image-2"}`,
+			OperatorSubject: "alice-admin",
+			RequestID:       "req-3",
+			CreatedAt:       "2026-04-25T12:00:00Z",
+		},
+	}
+
+	for _, record := range records {
+		if err := provider.repo.InsertSettingAudit(ctx, record); err != nil {
+			t.Fatalf("InsertSettingAudit(%q) error = %v", record.SettingKey, err)
+		}
+	}
+
+	result, err := provider.ListSettingAudits(ctx, SettingAuditFilter{
+		GroupName:       "ai.routing.summary",
+		Action:          "test",
+		OperatorSubject: "bo",
+		SettingKey:      "provider",
+		TimeFrom:        "2026-04-25T10:30:00Z",
+		TimeTo:          "2026-04-25T11:30:00Z",
+		Page:            1,
+		PageSize:        50,
+	})
+	if err != nil {
+		t.Fatalf("ListSettingAudits() error = %v", err)
+	}
+
+	if result.Total != 1 {
+		t.Fatalf("ListSettingAudits().Total = %d, want 1", result.Total)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("len(ListSettingAudits().Items) = %d, want 1", len(result.Items))
+	}
+	if got := result.Items[0].RequestID; got != "req-2" {
+		t.Fatalf("ListSettingAudits().Items[0].RequestID = %q, want %q", got, "req-2")
+	}
+	if got := result.PageSize; got != 50 {
+		t.Fatalf("ListSettingAudits().PageSize = %d, want 50", got)
+	}
+}
+
 func newRuntimeProviderForTest(t *testing.T) *RuntimeProvider {
 	t.Helper()
 

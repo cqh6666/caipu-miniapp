@@ -296,10 +296,14 @@ func (h *Handler) TestRuntimeGroup(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListRuntimeAudits(w http.ResponseWriter, r *http.Request) {
 	result, err := h.runtime.ListSettingAudits(r.Context(), appsettings.SettingAuditFilter{
-		GroupName: r.URL.Query().Get("group"),
-		Action:    r.URL.Query().Get("action"),
-		Page:      parseIntQuery(r, "page", 1),
-		PageSize:  parseIntQuery(r, "pageSize", 20),
+		GroupName:       r.URL.Query().Get("group"),
+		Action:          r.URL.Query().Get("action"),
+		OperatorSubject: r.URL.Query().Get("operator"),
+		SettingKey:      r.URL.Query().Get("settingKey"),
+		TimeFrom:        r.URL.Query().Get("timeFrom"),
+		TimeTo:          r.URL.Query().Get("timeTo"),
+		Page:            parseIntQuery(r, "page", 1),
+		PageSize:        parseIntQuery(r, "pageSize", 20),
 	})
 	if err != nil {
 		common.WriteError(w, err)

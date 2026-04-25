@@ -40,6 +40,10 @@
       </div>
     </template>
 
+    <button type="button" class="skip-link" @click="focusMainEditor">
+      跳到主编辑区
+    </button>
+
     <div class="routing-scene-grid" role="tablist" aria-label="AI 路由场景">
       <button
         v-for="item in sceneCards"
@@ -94,1237 +98,1332 @@
       />
     </div>
     <template v-else-if="draftScene">
-      <el-alert
-        v-if="draftScene.compatibilityMode"
-        class="routing-alert"
-        type="warning"
-        :closable="false"
-        title="当前仍处于兼容模式"
-        :description="compatibilityHint"
-      />
-
-      <div class="routing-breadcrumb" aria-live="polite">
-        <span class="routing-breadcrumb__crumbs">
-          场景策略
-          <el-icon class="routing-breadcrumb__sep"><ArrowRight /></el-icon>
-          正在编辑：<strong>{{ currentSceneTitle }}</strong>
-          <el-popover placement="bottom-start" :width="340" trigger="click">
-            <template #reference>
-              <button
-                type="button"
-                class="routing-breadcrumb__channel"
-                :class="`routing-breadcrumb__channel--${currentChannel.tone}`"
-              >
-                线上链路：<code>{{ currentChannel.label }}</code>
-                <el-icon class="routing-breadcrumb__channel-icon"
-                  ><InfoFilled
-                /></el-icon>
-              </button>
-            </template>
-            <div class="channel-popover">
-              <div class="channel-popover__title">
-                当前状态：{{ currentChannel.reason }}
-              </div>
-              <table class="channel-popover__table">
-                <thead>
-                  <tr>
-                    <th>草稿/正式</th>
-                    <th>新路由</th>
-                    <th>实际生效链路</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(row, idx) in channelMatrix"
-                    :key="idx"
-                    :class="{ 'is-hit': row.hit }"
-                  >
-                    <td>{{ row.draft }}</td>
-                    <td>{{ row.toggle }}</td>
-                    <td>
-                      <code>{{ row.effect }}</code>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </el-popover>
-        </span>
-        <StatusTag :tone="bottomBarState.tone" :text="statusBarText" />
-      </div>
-
-      <div
-        class="routing-status-strip"
-        :class="`routing-status-strip--${bottomBarState.tone}`"
-        aria-live="polite"
+      <section
+        id="ai-provider-main-editor"
+        ref="mainEditorRef"
+        class="routing-main-editor"
+        tabindex="-1"
+        aria-label="AI Provider 主编辑区"
       >
-        <div class="routing-status-strip__main">
-          <strong>{{ currentSceneTitle }}</strong>
-          <span
-            ><code>{{ currentChannel.label }}</code></span
+        <el-alert
+          v-if="draftScene.compatibilityMode"
+          class="routing-alert"
+          type="warning"
+          :closable="false"
+          title="当前仍处于兼容模式"
+          :description="compatibilityHint"
+        />
+
+        <div class="routing-breadcrumb" aria-live="polite">
+          <span class="routing-breadcrumb__crumbs">
+            场景策略
+            <el-icon class="routing-breadcrumb__sep"><ArrowRight /></el-icon>
+            正在编辑：<strong>{{ currentSceneTitle }}</strong>
+            <el-popover placement="bottom-start" :width="340" trigger="click">
+              <template #reference>
+                <button
+                  type="button"
+                  class="routing-breadcrumb__channel"
+                  :class="`routing-breadcrumb__channel--${currentChannel.tone}`"
+                >
+                  线上链路：<code>{{ currentChannel.label }}</code>
+                  <el-icon class="routing-breadcrumb__channel-icon"
+                    ><InfoFilled
+                  /></el-icon>
+                </button>
+              </template>
+              <div class="channel-popover">
+                <div class="channel-popover__title">
+                  当前状态：{{ currentChannel.reason }}
+                </div>
+                <table class="channel-popover__table">
+                  <thead>
+                    <tr>
+                      <th>草稿/正式</th>
+                      <th>新路由</th>
+                      <th>实际生效链路</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(row, idx) in channelMatrix"
+                      :key="idx"
+                      :class="{ 'is-hit': row.hit }"
+                    >
+                      <td>{{ row.draft }}</td>
+                      <td>{{ row.toggle }}</td>
+                      <td>
+                        <code>{{ row.effect }}</code>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </el-popover>
+          </span>
+          <StatusTag :tone="bottomBarState.tone" :text="statusBarText" />
+        </div>
+
+        <div
+          class="routing-status-strip"
+          :class="`routing-status-strip--${bottomBarState.tone}`"
+          aria-live="polite"
+        >
+          <div class="routing-status-strip__main">
+            <strong>{{ currentSceneTitle }}</strong>
+            <span
+              ><code>{{ currentChannel.label }}</code></span
+            >
+            <span>{{ currentChannel.reason }}</span>
+          </div>
+          <div class="routing-status-strip__actions">
+            <el-popover placement="bottom-end" :width="340" trigger="click">
+              <template #reference>
+                <el-button link>告警配置</el-button>
+              </template>
+              <div class="channel-popover">
+                <div class="channel-popover__title">连续异常邮件告警</div>
+                <p class="channel-popover__text">
+                  阈值、SMTP 和收件人统一在配置中心维护，不作为首屏常驻提示。
+                </p>
+                <el-button type="primary" link @click="goAlertConfig"
+                  >前往配置 <el-icon><ArrowRight /></el-icon
+                ></el-button>
+              </div>
+            </el-popover>
+          </div>
+        </div>
+
+        <div
+          v-if="blockingRiskItems.length"
+          class="routing-risk-strip"
+          aria-live="polite"
+        >
+          <article
+            v-for="item in blockingRiskItems"
+            :key="item.key"
+            class="routing-risk-strip__item"
+            :class="`routing-risk-strip__item--${item.tone}`"
           >
-          <span>{{ currentChannel.reason }}</span>
+            <StatusTag :tone="item.tone" :text="item.title" />
+            <span class="routing-risk-strip__text">{{ item.description }}</span>
+          </article>
         </div>
-        <div class="routing-status-strip__actions">
-          <el-popover placement="bottom-end" :width="340" trigger="click">
-            <template #reference>
-              <el-button link>告警配置</el-button>
-            </template>
-            <div class="channel-popover">
-              <div class="channel-popover__title">连续异常邮件告警</div>
-              <p class="channel-popover__text">
-                阈值、SMTP 和收件人统一在配置中心维护，不作为首屏常驻提示。
-              </p>
-              <el-button type="primary" link @click="goAlertConfig"
-                >前往配置 <el-icon><ArrowRight /></el-icon
-              ></el-button>
-            </div>
-          </el-popover>
-        </div>
-      </div>
 
-      <div class="routing-editor-grid">
-        <div class="page-card routing-panel routing-panel--strategy">
-          <div class="routing-panel__header">
-            <div>
-              <h3 class="routing-panel__title">
-                场景策略 <HelpTip :content="helpTips.sceneStrategy" />
-              </h3>
-              <div class="routing-panel__subtitle">
-                路由开关、尝试次数、熔断与请求参数。
+        <div class="routing-editor-grid">
+          <div class="page-card routing-panel routing-panel--strategy">
+            <div class="routing-panel__header">
+              <div>
+                <h3 class="routing-panel__title">
+                  场景策略 <HelpTip :content="helpTips.sceneStrategy" />
+                </h3>
+                <div class="routing-panel__subtitle">
+                  路由开关、尝试次数、熔断与请求参数。
+                </div>
               </div>
-            </div>
-            <div class="routing-panel__tags">
-              <StatusTag
-                :tone="draftScene.enabled ? 'primary' : 'neutral'"
-                :text="draftScene.enabled ? '新路由已启用' : '新路由未启用'"
-              />
-              <StatusTag
-                :tone="draftScene.compatibilityMode ? 'warning' : 'success'"
-                :text="draftScene.compatibilityMode ? '兼容模式' : '正式模式'"
-              />
-            </div>
-          </div>
-
-          <div class="routing-form-grid">
-            <label class="routing-field">
-              <span>启用新路由</span>
-              <el-switch
-                v-model="draftScene.enabled"
-                inline-prompt
-                active-text="开"
-                inactive-text="关"
-              />
-            </label>
-            <label class="routing-field">
-              <span
-                >调度策略 <HelpTip :content="helpTips.sceneStrategy"
-              /></span>
-              <el-select v-model="draftScene.strategy">
-                <el-option
-                  v-for="item in aiRoutingStrategyOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+              <div class="routing-panel__tags">
+                <StatusTag
+                  :tone="draftScene.enabled ? 'primary' : 'neutral'"
+                  :text="draftScene.enabled ? '新路由已启用' : '新路由未启用'"
                 />
-              </el-select>
-            </label>
-            <label class="routing-field routing-field--with-hint">
-              <span
-                >最大尝试次数 <HelpTip :content="helpTips.maxAttempts"
-              /></span>
-              <el-input-number
-                v-model="draftScene.maxAttempts"
-                :min="1"
-                :max="maxAttemptCeiling"
-              />
-              <small
-                class="routing-field__hint"
-                :class="{
-                  'routing-field__hint--warn': numericWarn.maxAttempts,
-                }"
-              >
-                {{
-                  numericWarn.maxAttempts || "建议 2–5 次；过大会让失败降级变慢"
-                }}
-              </small>
-            </label>
-            <label class="routing-field routing-field--with-hint">
-              <span>熔断阈值 <HelpTip :content="helpTips.breaker" /></span>
-              <el-input-number
-                v-model="draftScene.breaker.failureThreshold"
-                :min="1"
-                :max="10"
-              />
-              <small
-                class="routing-field__hint"
-                :class="{
-                  'routing-field__hint--warn': numericWarn.failureThreshold,
-                }"
-              >
-                {{
-                  numericWarn.failureThreshold ||
-                  "连续失败达到该次数后触发熔断，建议 3–10"
-                }}
-              </small>
-            </label>
-            <label class="routing-field routing-field--with-hint">
-              <span
-                >冷却时间（秒） <HelpTip :content="helpTips.breaker"
-              /></span>
-              <el-input-number
-                v-model="draftScene.breaker.cooldownSeconds"
-                :min="5"
-                :max="600"
-              />
-              <small
-                class="routing-field__hint"
-                :class="{
-                  'routing-field__hint--warn': numericWarn.cooldownSeconds,
-                }"
-              >
-                {{
-                  numericWarn.cooldownSeconds ||
-                  "熔断冷却时长，低于 30s 容易抖动"
-                }}
-              </small>
-            </label>
-            <div class="routing-field routing-field--meta">
-              <span>最近修改</span>
-              <strong>{{ formatDateTime(draftScene.updatedAt) }}</strong>
-              <small>修改人：{{ draftScene.updatedBySubject || "暂无" }}</small>
-            </div>
-          </div>
-
-          <div class="routing-timeline-hint" aria-label="重试与熔断时序示意">
-            <div class="routing-timeline-hint__track">
-              <span
-                v-for="i in timelineSegments.attempts"
-                :key="`att-${i}`"
-                class="routing-timeline-hint__seg routing-timeline-hint__seg--attempt"
-              >
-                试 {{ i }}
-              </span>
-              <span
-                class="routing-timeline-hint__seg routing-timeline-hint__seg--breaker"
-              >
-                连续失败 {{ draftScene.breaker.failureThreshold }} 次
-              </span>
-              <span
-                class="routing-timeline-hint__seg routing-timeline-hint__seg--cooldown"
-              >
-                冷却 {{ draftScene.breaker.cooldownSeconds }}s
-              </span>
-            </div>
-            <div class="routing-timeline-hint__caption">
-              预计首轮最长 ≈ <strong>{{ expectedFirstRoundSeconds }}s</strong>
-              <span class="routing-timeline-hint__hint"
-                >（最大尝试次数 × 启用节点最大超时）</span
-              >
-            </div>
-          </div>
-
-          <div class="routing-checkbox-block">
-            <div class="routing-checkbox-block__title">
-              允许切换到下一个节点的错误类型
-            </div>
-            <el-checkbox-group
-              v-model="draftScene.retryOn"
-              class="routing-checkbox-grid"
-            >
-              <el-checkbox
-                v-for="item in retryOptions"
-                :key="item.value"
-                :label="item.value"
-              >
-                {{ item.label }}
-              </el-checkbox>
-            </el-checkbox-group>
-          </div>
-
-          <div class="routing-request-block">
-            <div>
-              <div class="routing-checkbox-block__title">
-                场景级请求参数 <HelpTip :content="helpTips.requestOptions" />
+                <StatusTag
+                  :tone="draftScene.compatibilityMode ? 'warning' : 'success'"
+                  :text="draftScene.compatibilityMode ? '兼容模式' : '正式模式'"
+                />
               </div>
             </div>
 
-            <div
-              v-if="draftScene.scene === 'title'"
-              class="routing-form-grid routing-form-grid--request"
-            >
+            <div class="routing-form-grid">
               <label class="routing-field">
-                <span>Stream</span>
+                <span>启用新路由</span>
                 <el-switch
-                  v-model="draftScene.requestOptions.stream"
+                  v-model="draftScene.enabled"
                   inline-prompt
                   active-text="开"
                   inactive-text="关"
                 />
               </label>
               <label class="routing-field">
-                <span>Temperature</span>
-                <el-input-number
-                  v-model="draftScene.requestOptions.temperature"
-                  :min="0"
-                  :max="2"
-                  :step="0.1"
-                />
+                <span
+                  >调度策略 <HelpTip :content="helpTips.sceneStrategy"
+                /></span>
+                <el-select v-model="draftScene.strategy">
+                  <el-option
+                    v-for="item in aiRoutingStrategyOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
               </label>
-              <label class="routing-field">
-                <span>Max Tokens</span>
+              <label class="routing-field routing-field--with-hint">
+                <span
+                  >最大尝试次数 <HelpTip :content="helpTips.maxAttempts"
+                /></span>
                 <el-input-number
-                  v-model="draftScene.requestOptions.maxTokens"
+                  v-model="draftScene.maxAttempts"
                   :min="1"
-                  :max="512"
+                  :max="maxAttemptCeiling"
                 />
+                <small
+                  class="routing-field__hint"
+                  :class="{
+                    'routing-field__hint--warn': numericWarn.maxAttempts,
+                  }"
+                >
+                  {{
+                    numericWarn.maxAttempts ||
+                    "建议 2–5 次；过大会让失败降级变慢"
+                  }}
+                </small>
               </label>
+              <label class="routing-field routing-field--with-hint">
+                <span>熔断阈值 <HelpTip :content="helpTips.breaker" /></span>
+                <el-input-number
+                  v-model="draftScene.breaker.failureThreshold"
+                  :min="1"
+                  :max="10"
+                />
+                <small
+                  class="routing-field__hint"
+                  :class="{
+                    'routing-field__hint--warn': numericWarn.failureThreshold,
+                  }"
+                >
+                  {{
+                    numericWarn.failureThreshold ||
+                    "连续失败达到该次数后触发熔断，建议 3–10"
+                  }}
+                </small>
+              </label>
+              <label class="routing-field routing-field--with-hint">
+                <span
+                  >冷却时间（秒） <HelpTip :content="helpTips.breaker"
+                /></span>
+                <el-input-number
+                  v-model="draftScene.breaker.cooldownSeconds"
+                  :min="5"
+                  :max="600"
+                />
+                <small
+                  class="routing-field__hint"
+                  :class="{
+                    'routing-field__hint--warn': numericWarn.cooldownSeconds,
+                  }"
+                >
+                  {{
+                    numericWarn.cooldownSeconds ||
+                    "熔断冷却时长，低于 30s 容易抖动"
+                  }}
+                </small>
+              </label>
+              <div class="routing-field routing-field--meta">
+                <span>最近修改</span>
+                <strong>{{ formatDateTime(draftScene.updatedAt) }}</strong>
+                <small
+                  >修改人：{{ draftScene.updatedBySubject || "暂无" }}</small
+                >
+              </div>
             </div>
-            <div v-else class="routing-request-block__note">
-              当前场景默认沿用业务层固定 prompt 参数，无需额外请求选项。
+
+            <div class="routing-timeline-hint" aria-label="重试与熔断时序示意">
+              <div class="routing-timeline-hint__track">
+                <span
+                  v-for="i in timelineSegments.attempts"
+                  :key="`att-${i}`"
+                  class="routing-timeline-hint__seg routing-timeline-hint__seg--attempt"
+                >
+                  试 {{ i }}
+                </span>
+                <span
+                  class="routing-timeline-hint__seg routing-timeline-hint__seg--breaker"
+                >
+                  连续失败 {{ draftScene.breaker.failureThreshold }} 次
+                </span>
+                <span
+                  class="routing-timeline-hint__seg routing-timeline-hint__seg--cooldown"
+                >
+                  冷却 {{ draftScene.breaker.cooldownSeconds }}s
+                </span>
+              </div>
+              <div class="routing-timeline-hint__caption">
+                预计首轮最长 ≈ <strong>{{ expectedFirstRoundSeconds }}s</strong>
+                <span class="routing-timeline-hint__hint"
+                  >（最大尝试次数 × 启用节点最大超时）</span
+                >
+              </div>
+            </div>
+
+            <div class="routing-checkbox-block">
+              <div class="routing-checkbox-block__title">
+                允许切换到下一个节点的错误类型
+              </div>
+              <el-checkbox-group
+                v-model="draftScene.retryOn"
+                class="routing-checkbox-grid"
+              >
+                <el-checkbox
+                  v-for="item in retryOptions"
+                  :key="item.value"
+                  :label="item.value"
+                >
+                  {{ item.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+
+            <div class="routing-request-block">
+              <div>
+                <div class="routing-checkbox-block__title">
+                  场景级请求参数 <HelpTip :content="helpTips.requestOptions" />
+                </div>
+              </div>
+
+              <div
+                v-if="draftScene.scene === 'title'"
+                class="routing-form-grid routing-form-grid--request"
+              >
+                <label class="routing-field">
+                  <span>Stream</span>
+                  <el-switch
+                    v-model="draftScene.requestOptions.stream"
+                    inline-prompt
+                    active-text="开"
+                    inactive-text="关"
+                  />
+                </label>
+                <label class="routing-field">
+                  <span>Temperature</span>
+                  <el-input-number
+                    v-model="draftScene.requestOptions.temperature"
+                    :min="0"
+                    :max="2"
+                    :step="0.1"
+                  />
+                </label>
+                <label class="routing-field">
+                  <span>Max Tokens</span>
+                  <el-input-number
+                    v-model="draftScene.requestOptions.maxTokens"
+                    :min="1"
+                    :max="512"
+                  />
+                </label>
+              </div>
+              <div v-else class="routing-request-block__note">
+                当前场景默认沿用业务层固定 prompt 参数，无需额外请求选项。
+              </div>
+            </div>
+          </div>
+
+          <div class="page-card routing-panel">
+            <div class="routing-panel__header">
+              <div>
+                <h3 class="routing-panel__title">
+                  Provider 节点
+                  <HelpTip content="默认行展示关键状态，展开后编辑完整配置。" />
+                </h3>
+                <div class="routing-panel__subtitle">
+                  启停、排序、换密钥和单节点测试。
+                </div>
+              </div>
+              <div class="routing-panel__tags">
+                <StatusTag
+                  tone="neutral"
+                  :text="`${enabledProviderCount}/${draftScene.providers.length} 个启用节点`"
+                />
+                <el-button type="primary" plain @click="handleAddProvider"
+                  >新增节点</el-button
+                >
+              </div>
+            </div>
+
+            <PageState
+              v-if="!draftScene.providers.length"
+              mode="empty"
+              title="当前还没有 Provider 节点"
+              description="先新增一个节点，再决定是否启用新路由。"
+              compact
+            />
+
+            <div v-else class="provider-editor-list">
+              <div
+                v-for="(provider, index) in draftScene.providers"
+                :key="getProviderLocalKey(provider)"
+                class="provider-editor-card"
+                :class="{
+                  'provider-editor-card--drag-over':
+                    dragOverProviderIndex === index &&
+                    draggingProviderIndex !== null &&
+                    draggingProviderIndex !== index,
+                }"
+                @dragover.prevent="handleProviderDragOver(index)"
+                @dragenter.prevent="handleProviderDragOver(index)"
+                @drop.prevent="handleProviderDrop(index)"
+              >
+                <div class="provider-editor-card__header">
+                  <div class="provider-editor-card__main">
+                    <div class="provider-editor-card__title">
+                      <button
+                        type="button"
+                        class="provider-icon-button provider-collapse-toggle"
+                        :aria-expanded="!isProviderCollapsed(provider)"
+                        :aria-label="
+                          isProviderCollapsed(provider)
+                            ? '展开编辑'
+                            : '折叠编辑'
+                        "
+                        @click="toggleProviderCollapsed(provider)"
+                      >
+                        <el-icon
+                          ><ArrowDown
+                            v-if="!isProviderCollapsed(provider)" /><ArrowRight
+                            v-else
+                        /></el-icon>
+                      </button>
+                      <button
+                        type="button"
+                        class="provider-icon-button provider-icon-button--drag provider-drag-handle"
+                        :class="{
+                          'provider-icon-button--disabled':
+                            draftScene.providers.length < 2,
+                        }"
+                        :disabled="draftScene.providers.length < 2"
+                        :draggable="draftScene.providers.length > 1"
+                        aria-label="拖拽排序"
+                        @dragstart="handleProviderDragStart(index, $event)"
+                        @dragend="handleProviderDragEnd"
+                      >
+                        <el-icon><Rank /></el-icon>
+                      </button>
+                      <div class="provider-title-stack">
+                        <div class="provider-title-stack__name-row">
+                          <strong>{{
+                            provider.name || `节点 ${index + 1}`
+                          }}</strong>
+                          <StatusTag
+                            v-if="firstProviderError(provider)"
+                            tone="warning"
+                            text="需修正"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div class="provider-compact-grid">
+                      <span class="provider-compact-grid__item"
+                        >顺序 {{ index + 1 }}</span
+                      >
+                      <span class="provider-compact-grid__item mono-text">{{
+                        provider.model || "未填写 Model"
+                      }}</span>
+                      <span class="provider-compact-grid__item">{{
+                        provider.endpointMode || "chat_completions"
+                      }}</span>
+                      <span class="provider-compact-grid__item"
+                        >{{ provider.timeoutSeconds }}s</span
+                      >
+                      <StatusTag
+                        :tone="getProviderSecretStatus(provider).tone"
+                        :text="getProviderSecretStatus(provider).text"
+                      />
+                      <StatusTag
+                        :tone="provider.enabled ? 'success' : 'neutral'"
+                        :text="provider.enabled ? '参与调度' : '已停用'"
+                      />
+                      <StatusTag
+                        v-if="getProviderTestState(provider)"
+                        :tone="
+                          getProviderTestState(provider)?.ok
+                            ? 'success'
+                            : 'warning'
+                        "
+                        :text="getProviderTestState(provider)?.text || ''"
+                      />
+                      <span v-else class="provider-test-empty">待测试</span>
+                    </div>
+                    <div
+                      v-if="firstProviderError(provider)"
+                      class="provider-inline-error"
+                      role="alert"
+                    >
+                      {{ firstProviderError(provider) }}
+                    </div>
+                  </div>
+                  <div class="provider-editor-card__controls">
+                    <div
+                      class="provider-enable-control"
+                      :class="{
+                        'provider-enable-control--off': !provider.enabled,
+                      }"
+                    >
+                      <span>{{ provider.enabled ? "启用" : "停用" }}</span>
+                      <el-switch
+                        v-model="provider.enabled"
+                        inline-prompt
+                        active-text="开"
+                        inactive-text="关"
+                      />
+                    </div>
+                    <div class="provider-editor-card__actions">
+                      <el-tooltip content="测试当前节点" placement="top">
+                        <button
+                          type="button"
+                          class="provider-icon-button provider-icon-button--primary"
+                          :disabled="testingScene"
+                          aria-label="测试当前节点"
+                          @click="handleTestSingleProvider(index)"
+                        >
+                          <el-icon
+                            v-if="singleTestProviderId === provider.id"
+                            class="is-loading"
+                            ><Refresh
+                          /></el-icon>
+                          <el-icon v-else><Promotion /></el-icon>
+                        </button>
+                      </el-tooltip>
+                      <el-dropdown
+                        trigger="click"
+                        @command="
+                          (command) =>
+                            handleProviderMenuCommand(String(command), index)
+                        "
+                      >
+                        <button
+                          type="button"
+                          class="provider-icon-button"
+                          aria-label="更多操作"
+                        >
+                          <el-icon><MoreFilled /></el-icon>
+                        </button>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item
+                              command="move-up"
+                              :disabled="index === 0"
+                              >上移一位</el-dropdown-item
+                            >
+                            <el-dropdown-item
+                              command="move-down"
+                              :disabled="
+                                index === draftScene.providers.length - 1
+                              "
+                              >下移一位</el-dropdown-item
+                            >
+                            <el-dropdown-item command="duplicate" divided
+                              >复制节点</el-dropdown-item
+                            >
+                            <el-dropdown-item command="delete" divided
+                              >删除节点</el-dropdown-item
+                            >
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
+                    </div>
+                  </div>
+                </div>
+
+                <template v-if="!isProviderCollapsed(provider)">
+                  <section class="provider-editor-section">
+                    <div class="provider-editor-section__header">
+                      <strong>基础信息</strong>
+                      <span>名称、模型与调用身份。</span>
+                    </div>
+                    <div
+                      class="provider-editor-grid provider-editor-grid--basic"
+                    >
+                      <label class="routing-field">
+                        <span
+                          >Provider Name
+                          <HelpTip :content="helpTips.providerName"
+                        /></span>
+                        <el-input
+                          v-model.trim="provider.name"
+                          placeholder="主节点 / 备用节点"
+                          @blur="touchProviderField(provider, 'name')"
+                        />
+                        <small
+                          v-if="providerFieldError(provider, 'name')"
+                          class="routing-field__hint routing-field__hint--warn"
+                          role="alert"
+                          >{{ providerFieldError(provider, "name") }}</small
+                        >
+                      </label>
+                      <label class="routing-field">
+                        <span>Model</span>
+                        <el-input
+                          v-model.trim="provider.model"
+                          placeholder="gpt-4.1-mini"
+                          @blur="touchProviderField(provider, 'model')"
+                        />
+                        <small
+                          v-if="providerFieldError(provider, 'model')"
+                          class="routing-field__hint routing-field__hint--warn"
+                          role="alert"
+                          >{{ providerFieldError(provider, "model") }}</small
+                        >
+                      </label>
+                    </div>
+                  </section>
+
+                  <section class="provider-editor-section">
+                    <div class="provider-editor-section__header">
+                      <strong>请求配置</strong>
+                      <span>Base URL、接口模式、超时与适配器。</span>
+                    </div>
+                    <div
+                      class="provider-editor-grid provider-editor-grid--request"
+                    >
+                      <label class="routing-field provider-editor-grid__wide">
+                        <span
+                          >Base URL <HelpTip :content="helpTips.baseURL"
+                        /></span>
+                        <el-input
+                          v-model.trim="provider.baseURL"
+                          placeholder="https://api.example.com/v1"
+                          @blur="touchProviderField(provider, 'baseURL')"
+                        />
+                        <small
+                          v-if="providerFieldError(provider, 'baseURL')"
+                          class="routing-field__hint routing-field__hint--warn"
+                          role="alert"
+                          >{{ providerFieldError(provider, "baseURL") }}</small
+                        >
+                      </label>
+                      <label class="routing-field">
+                        <span
+                          >Endpoint <HelpTip :content="helpTips.endpoint"
+                        /></span>
+                        <el-select
+                          v-model="provider.endpointMode"
+                          @change="handleEndpointModeChange(provider)"
+                        >
+                          <el-option
+                            v-for="item in providerEndpointModeOptions"
+                            :key="item.value"
+                            :label="item.label"
+                            :value="item.value"
+                          />
+                        </el-select>
+                      </label>
+                      <label class="routing-field">
+                        <span>超时（秒）</span>
+                        <el-input-number
+                          v-model="provider.timeoutSeconds"
+                          :min="1"
+                          :max="600"
+                          @blur="touchProviderField(provider, 'timeoutSeconds')"
+                        />
+                        <small
+                          v-if="providerFieldError(provider, 'timeoutSeconds')"
+                          class="routing-field__hint routing-field__hint--warn"
+                          role="alert"
+                          >{{
+                            providerFieldError(provider, "timeoutSeconds")
+                          }}</small
+                        >
+                      </label>
+                      <label class="routing-field">
+                        <span>Adapter</span>
+                        <el-input v-model="provider.adapter" disabled />
+                      </label>
+                      <label
+                        v-if="isImageGenerationProvider(provider)"
+                        class="routing-field"
+                      >
+                        <span
+                          >Response Format
+                          <HelpTip :content="helpTips.responseFormat"
+                        /></span>
+                        <el-select
+                          v-model="provider.responseFormat"
+                          :disabled="!isImageGenerationProvider(provider)"
+                        >
+                          <el-option
+                            v-for="item in providerResponseFormatOptions"
+                            :key="item.value"
+                            :label="item.label"
+                            :value="item.value"
+                          />
+                        </el-select>
+                      </label>
+                    </div>
+                  </section>
+                  <div class="provider-editor-secret">
+                    <div class="provider-editor-secret__header">
+                      <div class="provider-editor-secret__label-row">
+                        <span class="provider-editor-secret__label"
+                          >API Key <HelpTip :content="helpTips.apiKey"
+                        /></span>
+                        <span
+                          v-if="provider.hasAPIKey && !provider.clearApiKey"
+                          class="provider-secret-chip mono-text"
+                        >
+                          当前密钥 · {{ provider.apiKeyMasked || "已保存" }}
+                        </span>
+                        <StatusTag
+                          v-else-if="provider.clearApiKey"
+                          tone="warning"
+                          text="已标记清空"
+                        />
+                        <span
+                          v-else
+                          class="provider-secret-chip provider-secret-chip--empty"
+                          >当前未配置密钥</span
+                        >
+                      </div>
+                      <div
+                        v-if="provider.hasAPIKey"
+                        class="provider-editor-secret__actions"
+                      >
+                        <el-button
+                          text
+                          :disabled="!!provider.apiKey?.trim()"
+                          @click="toggleProviderSecretEditor(provider)"
+                        >
+                          {{
+                            provider.apiKey?.trim()
+                              ? "已录入新密钥"
+                              : shouldShowProviderSecretEditor(provider)
+                                ? "收起更换"
+                                : "更换密钥"
+                          }}
+                        </el-button>
+                        <el-button
+                          text
+                          type="danger"
+                          @click="handleClearProviderApiKey(provider)"
+                        >
+                          {{ provider.clearApiKey ? "撤销清空" : "清空密钥" }}
+                        </el-button>
+                      </div>
+                    </div>
+
+                    <label
+                      v-if="shouldShowProviderSecretEditor(provider)"
+                      class="routing-field provider-editor-secret__field"
+                    >
+                      <span>{{
+                        provider.hasAPIKey ? "输入新密钥" : "录入密钥"
+                      }}</span>
+                      <el-input
+                        v-model="provider.apiKey"
+                        type="password"
+                        show-password
+                        :placeholder="
+                          provider.hasAPIKey
+                            ? '输入新密钥，保存后覆盖旧值'
+                            : '输入当前节点要使用的密钥'
+                        "
+                        @update:model-value="
+                          handleProviderApiKeyInput(provider, $event)
+                        "
+                      />
+                    </label>
+                  </div>
+                  <div class="provider-editor-secret__hint">
+                    <template v-if="provider.clearApiKey"
+                      >当前已标记为待清空，保存后会彻底移除旧密钥。</template
+                    >
+                    <template v-else-if="provider.apiKey?.trim()"
+                      >已录入新的密钥草稿，保存后会覆盖当前值。</template
+                    >
+                    <template v-else-if="provider.hasAPIKey"
+                      >当前已保存密钥；不输入新值则继续保留旧值。</template
+                    >
+                    <template v-else
+                      >当前没有已保存密钥，可直接录入新值。</template
+                    >
+                  </div>
+                </template>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="page-card routing-panel">
+        <div
+          v-if="testResult"
+          ref="testCardRef"
+          class="page-card routing-test-card"
+        >
           <div class="routing-panel__header">
             <div>
-              <h3 class="routing-panel__title">
-                Provider 节点
-                <HelpTip content="默认行展示关键状态，展开后编辑完整配置。" />
-              </h3>
-              <div class="routing-panel__subtitle">
-                启停、排序、换密钥和单节点测试。
-              </div>
+              <h3 class="routing-panel__title">最近测试结果</h3>
+              <div class="routing-panel__subtitle">{{ testScope }}</div>
             </div>
             <div class="routing-panel__tags">
               <StatusTag
-                tone="neutral"
-                :text="`${enabledProviderCount}/${draftScene.providers.length} 个启用节点`"
+                :tone="testResult.ok ? 'success' : 'warning'"
+                :text="testResult.ok ? '测试成功' : '需要关注'"
               />
-              <el-button type="primary" plain @click="handleAddProvider"
-                >新增节点</el-button
-              >
+              <StatusTag
+                tone="neutral"
+                :text="`总耗时 ${formatDuration(testResult.attempts.reduce((acc, item) => acc + item.latencyMs, 0))}`"
+              />
             </div>
+          </div>
+
+          <div class="routing-test-card__summary">
+            <span>结果：{{ testResult.message }}</span>
+            <span>最终节点：{{ testResult.finalProvider || "-" }}</span>
+            <span>最终模型：{{ testResult.finalModel || "-" }}</span>
+          </div>
+
+          <div class="table-scroll">
+            <el-table
+              :data="testResult.attempts"
+              size="small"
+              style="width: 100%"
+            >
+              <el-table-column
+                label="Provider"
+                min-width="150"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">{{
+                  providerDisplayName(row.providerId)
+                }}</template>
+              </el-table-column>
+              <el-table-column
+                prop="model"
+                label="Model"
+                min-width="140"
+                show-overflow-tooltip
+              />
+              <el-table-column label="状态" width="120">
+                <template #default="{ row }">
+                  <StatusTag
+                    :tone="toneForStatus(row.status)"
+                    :text="displayCallStatus(row.status)"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column prop="httpStatus" label="HTTP" width="90" />
+              <el-table-column prop="latencyMs" label="耗时" width="100">
+                <template #default="{ row }">{{
+                  formatDuration(row.latencyMs)
+                }}</template>
+              </el-table-column>
+              <el-table-column label="错误类型" min-width="120">
+                <template #default="{ row }">{{
+                  row.errorType || "-"
+                }}</template>
+              </el-table-column>
+              <el-table-column
+                label="备注"
+                min-width="220"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{
+                    row.skippedByBreaker
+                      ? `breaker until ${formatDateTime(row.breakerOpenUntil)}`
+                      : row.errorMessage || "-"
+                  }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <div class="page-card audit-section">
+          <div class="page-header">
+            <div>
+              <h2 class="page-title" style="font-size: 22px">
+                最近审计 <HelpTip :content="helpTips.audit" />
+              </h2>
+              <div class="page-subtitle">
+                {{ currentAuditGroup }} · 最近 5 条
+              </div>
+            </div>
+            <el-button
+              :loading="auditsLoading"
+              @click="auditDrawerVisible = true"
+              >完整审计</el-button
+            >
           </div>
 
           <PageState
-            v-if="!draftScene.providers.length"
-            mode="empty"
-            title="当前还没有 Provider 节点"
-            description="先新增一个节点，再决定是否启用新路由。"
+            v-if="recentAuditsLoading && !recentAudits.length"
+            mode="loading"
+            title="正在加载审计记录"
             compact
           />
-
-          <div v-else class="provider-editor-list">
-            <div
-              v-for="(provider, index) in draftScene.providers"
-              :key="getProviderLocalKey(provider)"
-              class="provider-editor-card"
-              :class="{
-                'provider-editor-card--drag-over':
-                  dragOverProviderIndex === index &&
-                  draggingProviderIndex !== null &&
-                  draggingProviderIndex !== index,
-              }"
-              @dragover.prevent="handleProviderDragOver(index)"
-              @dragenter.prevent="handleProviderDragOver(index)"
-              @drop.prevent="handleProviderDrop(index)"
-            >
-              <div class="provider-editor-card__header">
-                <div class="provider-editor-card__main">
-                  <div class="provider-editor-card__title">
-                    <button
-                      type="button"
-                      class="provider-icon-button provider-collapse-toggle"
-                      :aria-expanded="!isProviderCollapsed(provider)"
-                      :aria-label="
-                        isProviderCollapsed(provider) ? '展开编辑' : '折叠编辑'
-                      "
-                      @click="toggleProviderCollapsed(provider)"
-                    >
-                      <el-icon
-                        ><ArrowDown
-                          v-if="!isProviderCollapsed(provider)" /><ArrowRight
-                          v-else
-                      /></el-icon>
-                    </button>
-                    <button
-                      type="button"
-                      class="provider-icon-button provider-icon-button--drag provider-drag-handle"
-                      :class="{
-                        'provider-icon-button--disabled':
-                          draftScene.providers.length < 2,
-                      }"
-                      :disabled="draftScene.providers.length < 2"
-                      :draggable="draftScene.providers.length > 1"
-                      aria-label="拖拽排序"
-                      @dragstart="handleProviderDragStart(index, $event)"
-                      @dragend="handleProviderDragEnd"
-                    >
-                      <el-icon><Rank /></el-icon>
-                    </button>
-                    <div class="provider-title-stack">
-                      <div class="provider-title-stack__name-row">
-                        <strong>{{
-                          provider.name || `节点 ${index + 1}`
-                        }}</strong>
-                        <StatusTag
-                          v-if="firstProviderError(provider)"
-                          tone="warning"
-                          text="需修正"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div class="provider-compact-grid">
-                    <span class="provider-compact-grid__item"
-                      >顺序 {{ index + 1 }}</span
-                    >
-                    <span class="provider-compact-grid__item mono-text">{{
-                      provider.model || "未填写 Model"
-                    }}</span>
-                    <span class="provider-compact-grid__item">{{
-                      provider.endpointMode || "chat_completions"
-                    }}</span>
-                    <span class="provider-compact-grid__item"
-                      >{{ provider.timeoutSeconds }}s</span
-                    >
-                    <StatusTag
-                      :tone="getProviderSecretStatus(provider).tone"
-                      :text="getProviderSecretStatus(provider).text"
-                    />
-                    <StatusTag
-                      :tone="provider.enabled ? 'success' : 'neutral'"
-                      :text="provider.enabled ? '参与调度' : '已停用'"
-                    />
-                    <StatusTag
-                      v-if="getProviderTestState(provider)"
-                      :tone="
-                        getProviderTestState(provider)?.ok
-                          ? 'success'
-                          : 'warning'
-                      "
-                      :text="getProviderTestState(provider)?.text || ''"
-                    />
-                    <span v-else class="provider-test-empty">待测试</span>
-                  </div>
-                  <div
-                    v-if="firstProviderError(provider)"
-                    class="provider-inline-error"
-                    role="alert"
-                  >
-                    {{ firstProviderError(provider) }}
-                  </div>
+          <PageState
+            v-else-if="recentAuditsError && !recentAudits.length"
+            mode="error"
+            title="路由审计加载失败"
+            :description="recentAuditsError"
+            compact
+            @retry="loadRecentAudits"
+          />
+          <PageState
+            v-else-if="!recentAudits.length"
+            mode="empty"
+            title="暂无路由审计"
+            description="当前筛选条件下还没有保存或测试记录。"
+            compact
+          />
+          <template v-else>
+            <div class="audit-timeline-list">
+              <article
+                v-for="item in recentAudits"
+                :key="item.id"
+                class="audit-timeline-item"
+              >
+                <div class="audit-timeline-item__rail" aria-hidden="true">
+                  <span
+                    class="audit-timeline-item__dot"
+                    :class="`audit-timeline-item__dot--${toneForAuditAction(item)}`"
+                  ></span>
                 </div>
-                <div class="provider-editor-card__controls">
-                  <div
-                    class="provider-enable-control"
-                    :class="{
-                      'provider-enable-control--off': !provider.enabled,
-                    }"
-                  >
-                    <span>{{ provider.enabled ? "启用" : "停用" }}</span>
-                    <el-switch
-                      v-model="provider.enabled"
-                      inline-prompt
-                      active-text="开"
-                      inactive-text="关"
-                    />
-                  </div>
-                  <div class="provider-editor-card__actions">
-                    <el-tooltip content="测试当前节点" placement="top">
-                      <button
-                        type="button"
-                        class="provider-icon-button provider-icon-button--primary"
-                        :disabled="testingScene"
-                        aria-label="测试当前节点"
-                        @click="handleTestSingleProvider(index)"
-                      >
-                        <el-icon
-                          v-if="singleTestProviderId === provider.id"
-                          class="is-loading"
-                          ><Refresh
-                        /></el-icon>
-                        <el-icon v-else><Promotion /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-dropdown
-                      trigger="click"
-                      @command="
-                        (command) =>
-                          handleProviderMenuCommand(String(command), index)
-                      "
-                    >
-                      <button
-                        type="button"
-                        class="provider-icon-button"
-                        aria-label="更多操作"
-                      >
-                        <el-icon><MoreFilled /></el-icon>
-                      </button>
-                      <template #dropdown>
-                        <el-dropdown-menu>
-                          <el-dropdown-item
-                            command="move-up"
-                            :disabled="index === 0"
-                            >上移一位</el-dropdown-item
-                          >
-                          <el-dropdown-item
-                            command="move-down"
-                            :disabled="
-                              index === draftScene.providers.length - 1
-                            "
-                            >下移一位</el-dropdown-item
-                          >
-                          <el-dropdown-item command="duplicate" divided
-                            >复制节点</el-dropdown-item
-                          >
-                          <el-dropdown-item command="delete" divided
-                            >删除节点</el-dropdown-item
-                          >
-                        </el-dropdown-menu>
-                      </template>
-                    </el-dropdown>
-                  </div>
-                </div>
-              </div>
-
-              <template v-if="!isProviderCollapsed(provider)">
-                <section class="provider-editor-section">
-                  <div class="provider-editor-section__header">
-                    <strong>基础信息</strong>
-                    <span>名称、模型与调用身份。</span>
-                  </div>
-                  <div class="provider-editor-grid provider-editor-grid--basic">
-                    <label class="routing-field">
-                      <span
-                        >Provider Name
-                        <HelpTip :content="helpTips.providerName"
-                      /></span>
-                      <el-input
-                        v-model.trim="provider.name"
-                        placeholder="主节点 / 备用节点"
-                        @blur="touchProviderField(provider, 'name')"
-                      />
-                      <small
-                        v-if="providerFieldError(provider, 'name')"
-                        class="routing-field__hint routing-field__hint--warn"
-                        role="alert"
-                        >{{ providerFieldError(provider, "name") }}</small
-                      >
-                    </label>
-                    <label class="routing-field">
-                      <span>Model</span>
-                      <el-input
-                        v-model.trim="provider.model"
-                        placeholder="gpt-4.1-mini"
-                        @blur="touchProviderField(provider, 'model')"
-                      />
-                      <small
-                        v-if="providerFieldError(provider, 'model')"
-                        class="routing-field__hint routing-field__hint--warn"
-                        role="alert"
-                        >{{ providerFieldError(provider, "model") }}</small
-                      >
-                    </label>
-                  </div>
-                </section>
-
-                <section class="provider-editor-section">
-                  <div class="provider-editor-section__header">
-                    <strong>请求配置</strong>
-                    <span>Base URL、接口模式、超时与适配器。</span>
-                  </div>
-                  <div
-                    class="provider-editor-grid provider-editor-grid--request"
-                  >
-                    <label class="routing-field provider-editor-grid__wide">
-                      <span
-                        >Base URL <HelpTip :content="helpTips.baseURL"
-                      /></span>
-                      <el-input
-                        v-model.trim="provider.baseURL"
-                        placeholder="https://api.example.com/v1"
-                        @blur="touchProviderField(provider, 'baseURL')"
-                      />
-                      <small
-                        v-if="providerFieldError(provider, 'baseURL')"
-                        class="routing-field__hint routing-field__hint--warn"
-                        role="alert"
-                        >{{ providerFieldError(provider, "baseURL") }}</small
-                      >
-                    </label>
-                    <label class="routing-field">
-                      <span
-                        >Endpoint <HelpTip :content="helpTips.endpoint"
-                      /></span>
-                      <el-select
-                        v-model="provider.endpointMode"
-                        @change="handleEndpointModeChange(provider)"
-                      >
-                        <el-option
-                          v-for="item in providerEndpointModeOptions"
-                          :key="item.value"
-                          :label="item.label"
-                          :value="item.value"
-                        />
-                      </el-select>
-                    </label>
-                    <label class="routing-field">
-                      <span>超时（秒）</span>
-                      <el-input-number
-                        v-model="provider.timeoutSeconds"
-                        :min="1"
-                        :max="600"
-                        @blur="touchProviderField(provider, 'timeoutSeconds')"
-                      />
-                      <small
-                        v-if="providerFieldError(provider, 'timeoutSeconds')"
-                        class="routing-field__hint routing-field__hint--warn"
-                        role="alert"
-                        >{{
-                          providerFieldError(provider, "timeoutSeconds")
-                        }}</small
-                      >
-                    </label>
-                    <label class="routing-field">
-                      <span>Adapter</span>
-                      <el-input v-model="provider.adapter" disabled />
-                    </label>
-                    <label
-                      v-if="isImageGenerationProvider(provider)"
-                      class="routing-field"
-                    >
-                      <span
-                        >Response Format
-                        <HelpTip :content="helpTips.responseFormat"
-                      /></span>
-                      <el-select
-                        v-model="provider.responseFormat"
-                        :disabled="!isImageGenerationProvider(provider)"
-                      >
-                        <el-option
-                          v-for="item in providerResponseFormatOptions"
-                          :key="item.value"
-                          :label="item.label"
-                          :value="item.value"
-                        />
-                      </el-select>
-                    </label>
-                  </div>
-                </section>
-                <div class="provider-editor-secret">
-                  <div class="provider-editor-secret__header">
-                    <div class="provider-editor-secret__label-row">
-                      <span class="provider-editor-secret__label"
-                        >API Key <HelpTip :content="helpTips.apiKey"
-                      /></span>
-                      <span
-                        v-if="provider.hasAPIKey && !provider.clearApiKey"
-                        class="provider-secret-chip mono-text"
-                      >
-                        当前密钥 · {{ provider.apiKeyMasked || "已保存" }}
-                      </span>
-                      <StatusTag
-                        v-else-if="provider.clearApiKey"
-                        tone="warning"
-                        text="已标记清空"
-                      />
-                      <span
-                        v-else
-                        class="provider-secret-chip provider-secret-chip--empty"
-                        >当前未配置密钥</span
-                      >
-                    </div>
-                    <div
-                      v-if="provider.hasAPIKey"
-                      class="provider-editor-secret__actions"
-                    >
-                      <el-button
-                        text
-                        :disabled="!!provider.apiKey?.trim()"
-                        @click="toggleProviderSecretEditor(provider)"
-                      >
-                        {{
-                          provider.apiKey?.trim()
-                            ? "已录入新密钥"
-                            : shouldShowProviderSecretEditor(provider)
-                              ? "收起更换"
-                              : "更换密钥"
-                        }}
-                      </el-button>
-                      <el-button
-                        text
-                        type="danger"
-                        @click="handleClearProviderApiKey(provider)"
-                      >
-                        {{ provider.clearApiKey ? "撤销清空" : "清空密钥" }}
-                      </el-button>
-                    </div>
-                  </div>
-
-                  <label
-                    v-if="shouldShowProviderSecretEditor(provider)"
-                    class="routing-field provider-editor-secret__field"
-                  >
-                    <span>{{
-                      provider.hasAPIKey ? "输入新密钥" : "录入密钥"
-                    }}</span>
-                    <el-input
-                      v-model="provider.apiKey"
-                      type="password"
-                      show-password
-                      :placeholder="
-                        provider.hasAPIKey
-                          ? '输入新密钥，保存后覆盖旧值'
-                          : '输入当前节点要使用的密钥'
-                      "
-                      @update:model-value="
-                        handleProviderApiKeyInput(provider, $event)
-                      "
-                    />
-                  </label>
-                </div>
-                <div class="provider-editor-secret__hint">
-                  <template v-if="provider.clearApiKey"
-                    >当前已标记为待清空，保存后会彻底移除旧密钥。</template
-                  >
-                  <template v-else-if="provider.apiKey?.trim()"
-                    >已录入新的密钥草稿，保存后会覆盖当前值。</template
-                  >
-                  <template v-else-if="provider.hasAPIKey"
-                    >当前已保存密钥；不输入新值则继续保留旧值。</template
-                  >
-                  <template v-else
-                    >当前没有已保存密钥，可直接录入新值。</template
-                  >
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-if="testResult"
-        ref="testCardRef"
-        class="page-card routing-test-card"
-      >
-        <div class="routing-panel__header">
-          <div>
-            <h3 class="routing-panel__title">最近测试结果</h3>
-            <div class="routing-panel__subtitle">{{ testScope }}</div>
-          </div>
-          <div class="routing-panel__tags">
-            <StatusTag
-              :tone="testResult.ok ? 'success' : 'warning'"
-              :text="testResult.ok ? '测试成功' : '需要关注'"
-            />
-            <StatusTag
-              tone="neutral"
-              :text="`总耗时 ${formatDuration(testResult.attempts.reduce((acc, item) => acc + item.latencyMs, 0))}`"
-            />
-          </div>
-        </div>
-
-        <div class="routing-test-card__summary">
-          <span>结果：{{ testResult.message }}</span>
-          <span>最终节点：{{ testResult.finalProvider || "-" }}</span>
-          <span>最终模型：{{ testResult.finalModel || "-" }}</span>
-        </div>
-
-        <div class="table-scroll">
-          <el-table
-            :data="testResult.attempts"
-            size="small"
-            style="width: 100%"
-          >
-            <el-table-column
-              label="Provider"
-              min-width="150"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">{{
-                providerDisplayName(row.providerId)
-              }}</template>
-            </el-table-column>
-            <el-table-column
-              prop="model"
-              label="Model"
-              min-width="140"
-              show-overflow-tooltip
-            />
-            <el-table-column label="状态" width="120">
-              <template #default="{ row }">
-                <StatusTag
-                  :tone="toneForStatus(row.status)"
-                  :text="displayCallStatus(row.status)"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column prop="httpStatus" label="HTTP" width="90" />
-            <el-table-column prop="latencyMs" label="耗时" width="100">
-              <template #default="{ row }">{{
-                formatDuration(row.latencyMs)
-              }}</template>
-            </el-table-column>
-            <el-table-column label="错误类型" min-width="120">
-              <template #default="{ row }">{{ row.errorType || "-" }}</template>
-            </el-table-column>
-            <el-table-column label="备注" min-width="220" show-overflow-tooltip>
-              <template #default="{ row }">
-                {{
-                  row.skippedByBreaker
-                    ? `breaker until ${formatDateTime(row.breakerOpenUntil)}`
-                    : row.errorMessage || "-"
-                }}
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </div>
-
-      <div class="page-card audit-section">
-        <div class="page-header">
-          <div>
-            <h2 class="page-title" style="font-size: 22px">
-              最近审计 <HelpTip :content="helpTips.audit" />
-            </h2>
-            <div class="page-subtitle">{{ currentAuditGroup }} · 最近 5 条</div>
-          </div>
-          <el-button :loading="auditsLoading" @click="auditDrawerVisible = true"
-            >完整审计</el-button
-          >
-        </div>
-
-        <PageState
-          v-if="recentAuditsLoading && !recentAudits.length"
-          mode="loading"
-          title="正在加载审计记录"
-          compact
-        />
-        <PageState
-          v-else-if="recentAuditsError && !recentAudits.length"
-          mode="error"
-          title="路由审计加载失败"
-          :description="recentAuditsError"
-          compact
-          @retry="loadRecentAudits"
-        />
-        <PageState
-          v-else-if="!recentAudits.length"
-          mode="empty"
-          title="暂无路由审计"
-          description="当前筛选条件下还没有保存或测试记录。"
-          compact
-        />
-        <template v-else>
-          <div class="audit-timeline-list">
-            <article
-              v-for="item in recentAudits"
-              :key="item.id"
-              class="audit-timeline-item"
-            >
-              <div class="audit-timeline-item__rail" aria-hidden="true">
-                <span
-                  class="audit-timeline-item__dot"
-                  :class="`audit-timeline-item__dot--${toneForAuditAction(item)}`"
-                ></span>
-              </div>
-              <div class="audit-timeline-item__body">
-                <div class="audit-timeline-item__header">
-                  <div>
-                    <div class="audit-timeline-item__title-row">
-                      <StatusTag
-                        :tone="auditBusinessAction(item).tone"
-                        :text="auditBusinessAction(item).label"
-                      />
-                      <strong>{{ auditTargetTitle(item) }}</strong>
-                    </div>
-                    <div class="audit-timeline-item__meta">
-                      <span>{{ auditEventLabel(item) }}</span>
-                      <span>{{ item.operatorSubject || "未知操作人" }}</span>
-                      <span>{{ formatDateTime(item.createdAt) }}</span>
-                    </div>
-                  </div>
-                  <el-popover
-                    placement="left-start"
-                    :width="680"
-                    trigger="click"
-                  >
-                    <template #reference>
-                      <button
-                        type="button"
-                        class="audit-detail-button"
-                        aria-label="查看审计变化"
-                      >
-                        查看变化
-                      </button>
-                    </template>
-                    <div class="audit-diff-popover">
-                      <div class="audit-diff-popover__header">
-                        <div>
-                          <strong>{{ auditDiffTitle(item) }}</strong>
-                          <span
-                            >{{ auditEventLabel(item) }} ·
-                            {{ item.operatorSubject || "未知操作人" }} ·
-                            {{ formatDateTime(item.createdAt) }}</span
-                          >
-                        </div>
+                <div class="audit-timeline-item__body">
+                  <div class="audit-timeline-item__header">
+                    <div>
+                      <div class="audit-timeline-item__title-row">
                         <StatusTag
                           :tone="auditBusinessAction(item).tone"
-                          :text="auditDiffStatusText(item)"
+                          :text="auditBusinessAction(item).label"
                         />
+                        <strong>{{ auditTargetTitle(item) }}</strong>
                       </div>
-                      <div
-                        v-if="auditChangeSummary(item).length"
-                        class="audit-diff-summary-strip"
-                      >
-                        <span
-                          v-for="stat in auditChangeStats(item)"
-                          :key="stat.kind"
-                          :class="`audit-diff-stat audit-diff-stat--${stat.kind}`"
-                        >
-                          {{ stat.label }} {{ stat.count }} 项
-                        </span>
+                      <div class="audit-timeline-item__meta">
+                        <span>{{ auditEventLabel(item) }}</span>
+                        <span>{{ item.operatorSubject || "未知操作人" }}</span>
+                        <span>{{ formatDateTime(item.createdAt) }}</span>
                       </div>
-                      <div
-                        v-if="auditChangeSummary(item).length"
-                        class="audit-diff-popover__changes"
-                      >
-                        <section
-                          v-for="group in groupedAuditChanges(item)"
-                          :key="group.name"
-                          class="audit-diff-group"
+                    </div>
+                    <el-popover
+                      placement="left-start"
+                      :width="680"
+                      trigger="click"
+                    >
+                      <template #reference>
+                        <button
+                          type="button"
+                          class="audit-detail-button"
+                          aria-label="查看审计变化"
                         >
-                          <div class="audit-diff-group__title">
-                            {{ group.name }}
-                          </div>
-                          <div
-                            v-for="change in group.changes.slice(0, 10)"
-                            :key="change.key"
-                            class="audit-diff-row"
-                            :class="`audit-diff-row--${change.kind}`"
-                          >
-                            <span class="audit-diff-row__field">{{
-                              change.field
-                            }}</span>
+                          查看变化
+                        </button>
+                      </template>
+                      <div class="audit-diff-popover">
+                        <div class="audit-diff-popover__header">
+                          <div>
+                            <strong>{{ auditDiffTitle(item) }}</strong>
                             <span
-                              class="audit-diff-row__value audit-diff-row__value--old"
-                              :title="change.from"
-                              >{{ change.from }}</span
+                              >{{ auditEventLabel(item) }} ·
+                              {{ item.operatorSubject || "未知操作人" }} ·
+                              {{ formatDateTime(item.createdAt) }}</span
                             >
-                            <el-icon aria-hidden="true"><ArrowRight /></el-icon>
-                            <span
-                              class="audit-diff-row__value audit-diff-row__value--new"
-                              :title="change.to"
-                              >{{ change.to }}</span
-                            >
-                            <span class="audit-diff-row__kind">{{
-                              auditChangeKindText(change.kind)
-                            }}</span>
                           </div>
-                        </section>
-                        <div
-                          v-if="auditChangeSummary(item).length > 10"
-                          class="audit-diff-popover__more"
-                        >
-                          另有
-                          {{
-                            auditChangeSummary(item).length - 10
-                          }}
-                          项变化，请在完整审计中查看。
+                          <StatusTag
+                            :tone="auditBusinessAction(item).tone"
+                            :text="auditDiffStatusText(item)"
+                          />
                         </div>
-                      </div>
-                      <div v-else class="audit-diff-popover__fallback">
-                        {{ auditFallbackSummary(item) }}
-                      </div>
-                      <el-collapse class="audit-raw-collapse">
-                        <el-collapse-item title="查看原始值" name="raw">
-                          <div class="audit-diff-grid audit-diff-grid--popover">
-                            <div>
-                              <strong>旧值</strong>
-                              <pre>{{
-                                formatAuditValue(item.oldValueMasked)
-                              }}</pre>
+                        <div
+                          v-if="auditChangeSummary(item).length"
+                          class="audit-diff-summary-strip"
+                        >
+                          <span
+                            v-for="stat in auditChangeStats(item)"
+                            :key="stat.kind"
+                            :class="`audit-diff-stat audit-diff-stat--${stat.kind}`"
+                          >
+                            {{ stat.label }} {{ stat.count }} 项
+                          </span>
+                        </div>
+                        <div
+                          v-if="auditChangeSummary(item).length"
+                          class="audit-diff-popover__changes"
+                        >
+                          <section
+                            v-for="group in groupedAuditChanges(item)"
+                            :key="group.name"
+                            class="audit-diff-group"
+                          >
+                            <div class="audit-diff-group__title">
+                              {{ group.name }}
                             </div>
-                            <div>
-                              <strong>新值</strong>
-                              <pre>{{
-                                formatAuditValue(item.newValueMasked)
-                              }}</pre>
+                            <div
+                              v-for="change in group.changes.slice(0, 10)"
+                              :key="change.key"
+                              class="audit-diff-row"
+                              :class="`audit-diff-row--${change.kind}`"
+                            >
+                              <span class="audit-diff-row__field">{{
+                                change.field
+                              }}</span>
+                              <span
+                                class="audit-diff-row__value audit-diff-row__value--old"
+                                :title="change.from"
+                                >{{ change.from }}</span
+                              >
+                              <el-icon aria-hidden="true"
+                                ><ArrowRight
+                              /></el-icon>
+                              <span
+                                class="audit-diff-row__value audit-diff-row__value--new"
+                                :title="change.to"
+                                >{{ change.to }}</span
+                              >
+                              <span class="audit-diff-row__kind">{{
+                                auditChangeKindText(change.kind)
+                              }}</span>
                             </div>
+                          </section>
+                          <div
+                            v-if="auditChangeSummary(item).length > 10"
+                            class="audit-diff-popover__more"
+                          >
+                            另有
+                            {{ auditChangeSummary(item).length - 10 }}
+                            项变化，请在完整审计中查看。
                           </div>
-                        </el-collapse-item>
-                      </el-collapse>
-                    </div>
-                  </el-popover>
-                </div>
-                <div class="audit-timeline-item__summary">
-                  <template v-if="auditChangeSummary(item).length">
-                    <div class="audit-timeline-item__insight">
-                      {{ auditBusinessAction(item).description }}
-                    </div>
-                    <div
-                      v-for="change in auditChangeSummary(item).slice(0, 3)"
-                      :key="change.key"
-                      class="audit-change-row"
-                      :class="`audit-change-row--${change.kind}`"
-                    >
-                      <span class="audit-change-row__field">{{
-                        change.field
-                      }}</span>
-                      <span class="audit-change-row__value">{{
-                        change.from
-                      }}</span>
-                      <el-icon aria-hidden="true"><ArrowRight /></el-icon>
-                      <span
-                        class="audit-change-row__value audit-change-row__value--new"
-                        >{{ change.to }}</span
-                      >
-                    </div>
-                    <div
-                      v-if="auditChangeSummary(item).length > 3"
-                      class="audit-timeline-item__more"
-                    >
-                      另有 {{ auditChangeSummary(item).length - 3 }} 项变化
-                    </div>
-                  </template>
-                  <span v-else class="audit-timeline-item__fallback">{{
-                    auditFallbackSummary(item)
-                  }}</span>
-                </div>
-              </div>
-            </article>
-          </div>
-        </template>
-      </div>
-
-      <el-drawer
-        v-model="auditDrawerVisible"
-        title="完整路由审计"
-        size="72%"
-        append-to-body
-      >
-        <FilterToolbar>
-          <el-select v-model="auditAction" clearable placeholder="动作">
-            <el-option
-              v-for="item in auditActionOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-          <template #actions>
-            <el-button @click="resetAuditFilters">重置</el-button>
-            <el-button
-              type="primary"
-              :loading="auditsLoading"
-              @click="loadAudits"
-              >筛选</el-button
-            >
-          </template>
-        </FilterToolbar>
-        <div class="table-scroll">
-          <el-table :data="audits.items" size="small" style="width: 100%">
-            <el-table-column type="expand">
-              <template #default="{ row }">
-                <div class="audit-drawer-detail">
-                  <div class="audit-diff-popover__header">
-                    <div>
-                      <strong>{{ auditDiffTitle(row) }}</strong>
-                      <span
-                        >{{ auditEventLabel(row) }} ·
-                        {{ row.operatorSubject || "未知操作人" }} ·
-                        {{ formatDateTime(row.createdAt) }}</span
-                      >
-                    </div>
-                    <StatusTag
-                      :tone="auditBusinessAction(row).tone"
-                      :text="auditDiffStatusText(row)"
-                    />
+                        </div>
+                        <div v-else class="audit-diff-popover__fallback">
+                          {{ auditFallbackSummary(item) }}
+                        </div>
+                        <el-collapse class="audit-raw-collapse">
+                          <el-collapse-item title="查看原始值" name="raw">
+                            <div
+                              class="audit-diff-grid audit-diff-grid--popover"
+                            >
+                              <div>
+                                <strong>旧值</strong>
+                                <pre>{{
+                                  formatAuditValue(item.oldValueMasked)
+                                }}</pre>
+                              </div>
+                              <div>
+                                <strong>新值</strong>
+                                <pre>{{
+                                  formatAuditValue(item.newValueMasked)
+                                }}</pre>
+                              </div>
+                            </div>
+                          </el-collapse-item>
+                        </el-collapse>
+                      </div>
+                    </el-popover>
                   </div>
-                  <div
-                    v-if="auditChangeSummary(row).length"
-                    class="audit-diff-summary-strip"
-                  >
-                    <span
-                      v-for="stat in auditChangeStats(row)"
-                      :key="stat.kind"
-                      :class="`audit-diff-stat audit-diff-stat--${stat.kind}`"
-                    >
-                      {{ stat.label }} {{ stat.count }} 项
-                    </span>
-                  </div>
-                  <div
-                    v-if="auditChangeSummary(row).length"
-                    class="audit-diff-popover__changes"
-                  >
-                    <section
-                      v-for="group in groupedAuditChanges(row)"
-                      :key="group.name"
-                      class="audit-diff-group"
-                    >
-                      <div class="audit-diff-group__title">
-                        {{ group.name }}
+                  <div class="audit-timeline-item__summary">
+                    <template v-if="auditChangeSummary(item).length">
+                      <div class="audit-timeline-item__insight">
+                        {{ auditBusinessAction(item).description }}
                       </div>
                       <div
-                        v-for="change in group.changes"
+                        v-for="change in auditChangeSummary(item).slice(0, 3)"
                         :key="change.key"
-                        class="audit-diff-row"
-                        :class="`audit-diff-row--${change.kind}`"
+                        class="audit-change-row"
+                        :class="`audit-change-row--${change.kind}`"
                       >
-                        <span class="audit-diff-row__field">{{
+                        <span class="audit-change-row__field">{{
                           change.field
                         }}</span>
-                        <span
-                          class="audit-diff-row__value audit-diff-row__value--old"
-                          :title="change.from"
-                          >{{ change.from }}</span
-                        >
+                        <span class="audit-change-row__value">{{
+                          change.from
+                        }}</span>
                         <el-icon aria-hidden="true"><ArrowRight /></el-icon>
                         <span
-                          class="audit-diff-row__value audit-diff-row__value--new"
-                          :title="change.to"
+                          class="audit-change-row__value audit-change-row__value--new"
                           >{{ change.to }}</span
                         >
-                        <span class="audit-diff-row__kind">{{
-                          auditChangeKindText(change.kind)
-                        }}</span>
                       </div>
-                    </section>
-                  </div>
-                  <div v-else class="audit-diff-popover__fallback">
-                    {{ auditFallbackSummary(row) }}
-                  </div>
-                  <el-collapse class="audit-raw-collapse">
-                    <el-collapse-item title="查看原始值" name="raw">
-                      <div class="audit-diff-grid">
-                        <div>
-                          <strong>旧值</strong>
-                          <pre>{{ formatAuditValue(row.oldValueMasked) }}</pre>
-                        </div>
-                        <div>
-                          <strong>新值</strong>
-                          <pre>{{ formatAuditValue(row.newValueMasked) }}</pre>
-                        </div>
+                      <div
+                        v-if="auditChangeSummary(item).length > 3"
+                        class="audit-timeline-item__more"
+                      >
+                        另有 {{ auditChangeSummary(item).length - 3 }} 项变化
                       </div>
-                    </el-collapse-item>
-                  </el-collapse>
+                    </template>
+                    <span v-else class="audit-timeline-item__fallback">{{
+                      auditFallbackSummary(item)
+                    }}</span>
+                  </div>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="对象" min-width="180" show-overflow-tooltip>
-              <template #default="{ row }">{{
-                auditTargetTitle(row)
-              }}</template>
-            </el-table-column>
-            <el-table-column label="动作" width="120">
-              <template #default="{ row }">
-                <StatusTag
-                  :tone="auditBusinessAction(row).tone"
-                  :text="auditBusinessAction(row).label"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="operatorSubject"
-              label="操作人"
-              width="140"
-            />
-            <el-table-column
-              prop="requestId"
-              label="Request ID"
-              min-width="160"
-              show-overflow-tooltip
-            />
-            <el-table-column label="时间" width="180">
-              <template #default="{ row }">{{
-                formatDateTime(row.createdAt)
-              }}</template>
-            </el-table-column>
-          </el-table>
-        </div>
-        <div class="pagination-row">
-          <el-pagination
-            v-model:current-page="auditPage"
-            layout="total, prev, pager, next"
-            background
-            :total="audits.total"
-            @current-change="handleAuditPageChange"
-          />
-        </div>
-      </el-drawer>
-
-      <div
-        class="routing-bottom-bar"
-        :class="`routing-bottom-bar--${bottomBarState.tone}`"
-        aria-live="polite"
-      >
-        <div class="routing-bottom-bar__status">
-          <el-icon aria-hidden="true"
-            ><component :is="bottomBarState.icon"
-          /></el-icon>
-          <span>{{ bottomBarState.text }}</span>
-        </div>
-        <el-popover v-if="isDirty" placement="top" :width="360" trigger="click">
-          <template #reference>
-            <el-button link>草稿摘要</el-button>
+              </article>
+            </div>
           </template>
-          <div class="draft-summary-popover">
-            <div
-              v-for="(item, idx) in sceneDiff.slice(0, 6)"
-              :key="idx"
-              class="draft-summary-popover__item"
-            >
-              <strong>{{ item.scope }} · {{ item.path }}</strong>
-              <span
-                >{{ formatDiffValue(item.from) }} →
-                {{ formatDiffValue(item.to) }}</span
-              >
-            </div>
-            <div
-              v-if="sceneDiff.length > 6"
-              class="draft-summary-popover__more"
-            >
-              另有 {{ sceneDiff.length - 6 }} 项改动
-            </div>
-          </div>
-        </el-popover>
-        <div class="routing-bottom-bar__actions">
-          <el-tooltip content="刷新远端配置" placement="top">
-            <el-button
-              circle
-              :loading="pageRefreshing"
-              aria-label="刷新远端配置"
-              @click="refreshPage"
-              ><el-icon><Refresh /></el-icon
-            ></el-button>
-          </el-tooltip>
-          <el-tooltip content="测试当前草稿" placement="top">
-            <el-button
-              circle
-              :loading="testingScene"
-              :disabled="!draftScene"
-              aria-label="测试当前草稿"
-              @click="handleTestScene"
-              ><el-icon><Promotion /></el-icon
-            ></el-button>
-          </el-tooltip>
-          <el-tooltip content="保存场景" placement="top">
-            <el-button
-              circle
-              type="primary"
-              :loading="savingScene"
-              :disabled="!isDirty || savingScene"
-              aria-label="保存场景"
-              @click="handleSaveScene"
-              ><el-icon><Check /></el-icon
-            ></el-button>
-          </el-tooltip>
         </div>
-      </div>
+
+        <el-drawer
+          v-model="auditDrawerVisible"
+          title="完整路由审计"
+          size="72%"
+          append-to-body
+        >
+          <FilterToolbar
+            :active-filters="activeAuditFilters"
+            :on-clear-all="
+              activeAuditFilters.length ? resetAuditFilters : undefined
+            "
+          >
+            <el-select v-model="auditAction" clearable placeholder="动作">
+              <el-option
+                v-for="item in auditActionOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+            <el-input
+              v-model.trim="auditOperator"
+              clearable
+              placeholder="操作人"
+              @keyup.enter="applyAuditFilters"
+            />
+            <el-input
+              v-model.trim="auditSettingKey"
+              clearable
+              placeholder="配置键搜索"
+              @keyup.enter="applyAuditFilters"
+            />
+            <el-date-picker
+              v-model="auditTimeRange"
+              type="datetimerange"
+              unlink-panels
+              clearable
+              range-separator="至"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+            />
+            <el-select
+              v-model="auditPageSize"
+              placeholder="每页条数"
+              @change="handleAuditPageSizeChange"
+            >
+              <el-option
+                v-for="item in auditPageSizeOptions"
+                :key="item"
+                :label="`每页 ${item} 条`"
+                :value="item"
+              />
+            </el-select>
+            <template #actions>
+              <el-button @click="resetAuditFilters">重置</el-button>
+              <el-button
+                type="primary"
+                :loading="auditsLoading"
+                @click="applyAuditFilters"
+                >筛选</el-button
+              >
+            </template>
+          </FilterToolbar>
+          <div class="table-scroll">
+            <el-table :data="audits.items" size="small" style="width: 100%">
+              <el-table-column type="expand">
+                <template #default="{ row }">
+                  <div class="audit-drawer-detail">
+                    <div class="audit-diff-popover__header">
+                      <div>
+                        <strong>{{ auditDiffTitle(row) }}</strong>
+                        <span
+                          >{{ auditEventLabel(row) }} ·
+                          {{ row.operatorSubject || "未知操作人" }} ·
+                          {{ formatDateTime(row.createdAt) }}</span
+                        >
+                      </div>
+                      <StatusTag
+                        :tone="auditBusinessAction(row).tone"
+                        :text="auditDiffStatusText(row)"
+                      />
+                    </div>
+                    <div
+                      v-if="auditChangeSummary(row).length"
+                      class="audit-diff-summary-strip"
+                    >
+                      <span
+                        v-for="stat in auditChangeStats(row)"
+                        :key="stat.kind"
+                        :class="`audit-diff-stat audit-diff-stat--${stat.kind}`"
+                      >
+                        {{ stat.label }} {{ stat.count }} 项
+                      </span>
+                    </div>
+                    <div
+                      v-if="auditChangeSummary(row).length"
+                      class="audit-diff-popover__changes"
+                    >
+                      <section
+                        v-for="group in groupedAuditChanges(row)"
+                        :key="group.name"
+                        class="audit-diff-group"
+                      >
+                        <div class="audit-diff-group__title">
+                          {{ group.name }}
+                        </div>
+                        <div
+                          v-for="change in group.changes"
+                          :key="change.key"
+                          class="audit-diff-row"
+                          :class="`audit-diff-row--${change.kind}`"
+                        >
+                          <span class="audit-diff-row__field">{{
+                            change.field
+                          }}</span>
+                          <span
+                            class="audit-diff-row__value audit-diff-row__value--old"
+                            :title="change.from"
+                            >{{ change.from }}</span
+                          >
+                          <el-icon aria-hidden="true"><ArrowRight /></el-icon>
+                          <span
+                            class="audit-diff-row__value audit-diff-row__value--new"
+                            :title="change.to"
+                            >{{ change.to }}</span
+                          >
+                          <span class="audit-diff-row__kind">{{
+                            auditChangeKindText(change.kind)
+                          }}</span>
+                        </div>
+                      </section>
+                    </div>
+                    <div v-else class="audit-diff-popover__fallback">
+                      {{ auditFallbackSummary(row) }}
+                    </div>
+                    <el-collapse class="audit-raw-collapse">
+                      <el-collapse-item title="查看原始值" name="raw">
+                        <div class="audit-diff-grid">
+                          <div>
+                            <strong>旧值</strong>
+                            <pre>{{
+                              formatAuditValue(row.oldValueMasked)
+                            }}</pre>
+                          </div>
+                          <div>
+                            <strong>新值</strong>
+                            <pre>{{
+                              formatAuditValue(row.newValueMasked)
+                            }}</pre>
+                          </div>
+                        </div>
+                      </el-collapse-item>
+                    </el-collapse>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column
+                label="对象"
+                min-width="180"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">{{
+                  auditTargetTitle(row)
+                }}</template>
+              </el-table-column>
+              <el-table-column label="动作" width="120">
+                <template #default="{ row }">
+                  <StatusTag
+                    :tone="auditBusinessAction(row).tone"
+                    :text="auditBusinessAction(row).label"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="operatorSubject"
+                label="操作人"
+                width="140"
+              />
+              <el-table-column
+                prop="requestId"
+                label="Request ID"
+                min-width="160"
+                show-overflow-tooltip
+              />
+              <el-table-column label="时间" width="180">
+                <template #default="{ row }">{{
+                  formatDateTime(row.createdAt)
+                }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div class="pagination-row">
+            <el-pagination
+              v-model:current-page="auditPage"
+              layout="total, prev, pager, next"
+              background
+              :total="audits.total"
+              :page-size="audits.pageSize || auditPageSize"
+              @current-change="handleAuditPageChange"
+            />
+          </div>
+        </el-drawer>
+
+        <div
+          class="routing-bottom-bar"
+          :class="`routing-bottom-bar--${bottomBarState.tone}`"
+          aria-live="polite"
+        >
+          <div class="routing-bottom-bar__status">
+            <el-icon aria-hidden="true"
+              ><component :is="bottomBarState.icon"
+            /></el-icon>
+            <span>{{ bottomBarState.text }}</span>
+          </div>
+          <el-popover
+            v-if="isDirty"
+            placement="top"
+            :width="360"
+            trigger="click"
+          >
+            <template #reference>
+              <el-button link>草稿摘要</el-button>
+            </template>
+            <div class="draft-summary-popover">
+              <div
+                v-for="(item, idx) in sceneDiff.slice(0, 6)"
+                :key="idx"
+                class="draft-summary-popover__item"
+              >
+                <strong>{{ item.scope }} · {{ item.path }}</strong>
+                <span
+                  >{{ formatDiffValue(item.from) }} →
+                  {{ formatDiffValue(item.to) }}</span
+                >
+              </div>
+              <div
+                v-if="sceneDiff.length > 6"
+                class="draft-summary-popover__more"
+              >
+                另有 {{ sceneDiff.length - 6 }} 项改动
+              </div>
+            </div>
+          </el-popover>
+          <div class="routing-bottom-bar__actions">
+            <el-tooltip content="刷新远端配置" placement="top">
+              <el-button
+                circle
+                :loading="pageRefreshing"
+                aria-label="刷新远端配置"
+                @click="refreshPage"
+                ><el-icon><Refresh /></el-icon
+              ></el-button>
+            </el-tooltip>
+            <el-tooltip content="测试当前草稿" placement="top">
+              <el-button
+                circle
+                :loading="testingScene"
+                :disabled="!draftScene"
+                aria-label="测试当前草稿"
+                @click="handleTestScene"
+                ><el-icon><Promotion /></el-icon
+              ></el-button>
+            </el-tooltip>
+            <el-tooltip content="保存场景" placement="top">
+              <el-button
+                circle
+                type="primary"
+                :loading="savingScene"
+                :disabled="!isDirty || savingScene"
+                aria-label="保存场景"
+                @click="handleSaveScene"
+                ><el-icon><Check /></el-icon
+              ></el-button>
+            </el-tooltip>
+          </div>
+        </div>
+      </section>
     </template>
   </AppShell>
 </template>
@@ -1371,7 +1470,11 @@ import type {
   PaginationResult,
   SettingAuditRecord,
 } from "@/types";
-import { buildRouteQuery, readQueryString } from "@/utils/route-query";
+import {
+  buildRouteQuery,
+  readQueryString,
+  type DateRangeValue,
+} from "@/utils/route-query";
 import {
   aiRoutingStrategyOptions,
   auditActionOptions,
@@ -1403,6 +1506,7 @@ const savingScene = ref(false);
 const testingScene = ref(false);
 const singleTestProviderId = ref("");
 const testCardRef = ref<HTMLElement | null>(null);
+const mainEditorRef = ref<HTMLElement | null>(null);
 const routeSceneOverride = ref<AIRoutingSceneKey | null>(null);
 const draggingProviderIndex = ref<number | null>(null);
 const dragOverProviderIndex = ref<number | null>(null);
@@ -1423,6 +1527,10 @@ const recentAuditsLoading = ref(false);
 const auditsError = ref("");
 const recentAuditsError = ref("");
 const auditAction = ref("");
+const auditOperator = ref("");
+const auditSettingKey = ref("");
+const auditTimeRange = ref<DateRangeValue>([]);
+const auditPageSize = ref(20);
 const auditPage = ref(1);
 const auditDrawerVisible = ref(false);
 const providerSecretEditorState = ref<Record<string, boolean>>({});
@@ -1450,6 +1558,13 @@ type ProviderValidationError = {
   baseURL?: string;
   model?: string;
   timeoutSeconds?: string;
+};
+
+type BlockingRiskItem = {
+  key: string;
+  tone: "warning" | "danger";
+  title: string;
+  description: string;
 };
 
 const helpTips = {
@@ -1495,6 +1610,7 @@ const providerResponseFormatOptions: Array<{
   { label: "image_url", value: "image_url" },
   { label: "b64_json", value: "b64_json" },
 ];
+const auditPageSizeOptions = [20, 50, 100];
 
 const currentAuditGroup = computed(() => `ai.routing.${currentSceneKey.value}`);
 const enabledProviderCount = computed(
@@ -1941,6 +2057,182 @@ const sceneDiff = computed<SceneDiffItem[]>(() => {
 
 const diffCount = computed(() => sceneDiff.value.length);
 
+const pendingClearKeyCount = computed(() => {
+  return (
+    draftScene.value?.providers.filter((provider) => provider.clearApiKey)
+      .length || 0
+  );
+});
+
+const pendingRemovedProviderCount = computed(() => {
+  return sceneDiff.value.filter(
+    (item) => item.scope.startsWith("provider:") && item.path === "removed",
+  ).length;
+});
+
+const enabledProvidersMissingSecretCount = computed(() => {
+  return (
+    draftScene.value?.providers.filter(
+      (provider) => provider.enabled && !providerHasUsableSecret(provider),
+    ).length || 0
+  );
+});
+
+const allEnabledProvidersCooling = computed(() => {
+  if (!draftScene.value || !testResult.value) {
+    return false;
+  }
+  const enabledProviderIDs = draftScene.value.providers
+    .filter((provider) => provider.enabled)
+    .map((provider) => provider.id.trim())
+    .filter(Boolean);
+  if (!enabledProviderIDs.length) {
+    return false;
+  }
+  const attemptByProviderID = new Map(
+    testResult.value.attempts.map((attempt) => [attempt.providerId, attempt]),
+  );
+  const attempts = enabledProviderIDs
+    .map((providerID) => attemptByProviderID.get(providerID))
+    .filter(Boolean);
+  if (attempts.length !== enabledProviderIDs.length) {
+    return false;
+  }
+  return attempts.every((attempt) => attempt?.skippedByBreaker);
+});
+
+const blockingRiskItems = computed<BlockingRiskItem[]>(() => {
+  const scene = draftScene.value;
+  if (!scene) {
+    return [];
+  }
+  const items: BlockingRiskItem[] = [];
+  if (!enabledProviderCount.value) {
+    items.push({
+      key: "no-enabled-provider",
+      tone: scene.enabled ? "danger" : "warning",
+      title: "当前没有启用节点",
+      description: scene.enabled
+        ? "保存后新路由将没有可调度节点。"
+        : "若后续启用新路由，需要先至少启用一个节点。",
+    });
+  }
+  if (enabledProvidersMissingSecretCount.value > 0) {
+    items.push({
+      key: "missing-secret",
+      tone: "danger",
+      title: `${enabledProvidersMissingSecretCount.value} 个启用节点缺可用密钥`,
+      description: "这些节点当前测试会失败，保存后仍会保持不可用。",
+    });
+  }
+  if (
+    enabledProviderCount.value > 0 &&
+    Number(draftScene.value?.maxAttempts || 0) > enabledProviderCount.value
+  ) {
+    items.push({
+      key: "max-attempts-overflow",
+      tone: "warning",
+      title: "最大尝试次数高于启用节点数",
+      description: `当前仅有 ${enabledProviderCount.value} 个启用节点，测试和保存时会按该值截断。`,
+    });
+  }
+  if (allEnabledProvidersCooling.value) {
+    items.push({
+      key: "all-provider-cooling",
+      tone: "danger",
+      title: "最近一次测试中所有启用节点都在冷却",
+      description:
+        "本轮请求已被 breaker 全部跳过，需要等待冷却结束或调整配置。",
+    });
+  } else if (testResult.value && !testResult.value.ok) {
+    const failedAttempt = testResult.value.attempts.find(
+      (attempt) => attempt.errorType || attempt.errorMessage,
+    );
+    items.push({
+      key: "latest-test-failed",
+      tone: "warning",
+      title: "最近一次测试异常",
+      description:
+        failedAttempt?.errorType ||
+        failedAttempt?.errorMessage ||
+        testResult.value.message ||
+        "请先查看测试详情并排查后再保存。",
+    });
+  }
+  if (pendingClearKeyCount.value > 0) {
+    items.push({
+      key: "clear-secret",
+      tone: "danger",
+      title: `保存将清空 ${pendingClearKeyCount.value} 个密钥`,
+      description: "相关节点保存后会彻底失去旧密钥。",
+    });
+  }
+  if (pendingRemovedProviderCount.value > 0) {
+    items.push({
+      key: "remove-provider",
+      tone: "warning",
+      title: `保存将删除 ${pendingRemovedProviderCount.value} 个节点`,
+      description: "删除后线上只保留当前草稿中的 Provider 列表。",
+    });
+  }
+  return items;
+});
+
+const activeAuditFilters = computed(() => {
+  const items: Array<{ key: string; label: string; onRemove: () => void }> = [];
+  if (auditAction.value) {
+    items.push({
+      key: "action",
+      label: `动作：${displayAuditAction(auditAction.value)}`,
+      onRemove: () => {
+        auditAction.value = "";
+        applyAuditFilters();
+      },
+    });
+  }
+  if (auditOperator.value) {
+    items.push({
+      key: "operator",
+      label: `操作人：${auditOperator.value}`,
+      onRemove: () => {
+        auditOperator.value = "";
+        applyAuditFilters();
+      },
+    });
+  }
+  if (auditSettingKey.value) {
+    items.push({
+      key: "settingKey",
+      label: `配置键：${auditSettingKey.value}`,
+      onRemove: () => {
+        auditSettingKey.value = "";
+        applyAuditFilters();
+      },
+    });
+  }
+  if (auditTimeRange.value.length) {
+    items.push({
+      key: "timeRange",
+      label: `时间：${formatDateTime(auditTimeRange.value[0].toISOString())} 至 ${formatDateTime(auditTimeRange.value[1].toISOString())}`,
+      onRemove: () => {
+        auditTimeRange.value = [];
+        applyAuditFilters();
+      },
+    });
+  }
+  if (auditPageSize.value !== 20) {
+    items.push({
+      key: "pageSize",
+      label: `每页：${auditPageSize.value} 条`,
+      onRemove: () => {
+        auditPageSize.value = 20;
+        applyAuditFilters();
+      },
+    });
+  }
+  return items;
+});
+
 const discardTooltip = computed(() => {
   if (!isDirty.value) return "当前没有未保存改动";
   const n = diffCount.value;
@@ -2058,9 +2350,19 @@ async function loadAudits() {
     const query = new URLSearchParams();
     query.set("group", currentAuditGroup.value);
     query.set("page", String(auditPage.value));
-    query.set("pageSize", "20");
+    query.set("pageSize", String(auditPageSize.value));
     if (auditAction.value) {
       query.set("action", auditAction.value);
+    }
+    if (auditOperator.value) {
+      query.set("operator", auditOperator.value);
+    }
+    if (auditSettingKey.value) {
+      query.set("settingKey", auditSettingKey.value);
+    }
+    if (auditTimeRange.value.length) {
+      query.set("timeFrom", auditTimeRange.value[0].toISOString());
+      query.set("timeTo", auditTimeRange.value[1].toISOString());
     }
     const response = await adminApi.listSettingAudits(query);
     audits.value = response.result;
@@ -2401,6 +2703,16 @@ function getProviderSecretStatus(provider: AIRoutingProviderConfig) {
   return { tone: "neutral" as const, text: "未配置密钥" };
 }
 
+function providerHasUsableSecret(provider: AIRoutingProviderConfig) {
+  if (provider.apiKey?.trim()) {
+    return true;
+  }
+  if (provider.clearApiKey) {
+    return false;
+  }
+  return !!provider.hasAPIKey;
+}
+
 function getProviderTestState(provider: AIRoutingProviderConfig) {
   return providerLastTestState.value[provider.id.trim()];
 }
@@ -2580,7 +2892,8 @@ function auditBusinessAction(record: SettingAuditRecord): AuditBusinessAction {
       return {
         label: "重命名节点",
         tone: "primary",
-        description: "节点名称已更新，页面展示、测试结果和审计标识会使用新名称。",
+        description:
+          "节点名称已更新，页面展示、测试结果和审计标识会使用新名称。",
       };
     if (key === "model")
       return {
@@ -2679,7 +2992,8 @@ function auditEventLabel(record: SettingAuditRecord) {
 }
 
 function providerAddedAuditDescription(after: Record<string, string>) {
-  if (after.enabled === "false") return "已新增停用节点，暂不参与当前场景调度。";
+  if (after.enabled === "false")
+    return "已新增停用节点，暂不参与当前场景调度。";
   return "已新增节点，并参与当前场景调度。";
 }
 
@@ -3505,6 +3819,13 @@ function scrollToTestCard() {
   });
 }
 
+function focusMainEditor() {
+  nextTick(() => {
+    mainEditorRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+    mainEditorRef.value?.focus();
+  });
+}
+
 function handleSceneArrowKey(offset: number) {
   const currentIndex = sceneKeys.indexOf(currentSceneKey.value);
   if (currentIndex < 0) {
@@ -3528,6 +3849,21 @@ function focusSceneCard(scene: AIRoutingSceneKey) {
 
 function resetAuditFilters() {
   auditAction.value = "";
+  auditOperator.value = "";
+  auditSettingKey.value = "";
+  auditTimeRange.value = [];
+  auditPageSize.value = 20;
+  auditPage.value = 1;
+  loadAudits();
+}
+
+function applyAuditFilters() {
+  auditPage.value = 1;
+  loadAudits();
+}
+
+function handleAuditPageSizeChange(value: number | string) {
+  auditPageSize.value = Number(value) || 20;
   auditPage.value = 1;
   loadAudits();
 }
@@ -3555,6 +3891,46 @@ function extractMessage(error: unknown) {
 
 :global(.layout-main:has(.routing-bottom-bar)) {
   padding-bottom: 104px;
+}
+
+.skip-link {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 40;
+  padding: 10px 14px;
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+  transform: translateY(-160%);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.routing-main-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.routing-main-editor:focus,
+.routing-main-editor:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 6px;
+  border-radius: 14px;
 }
 
 .routing-scene-grid {
@@ -3720,6 +4096,40 @@ function extractMessage(error: unknown) {
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.06);
   font-size: 12px;
+}
+
+.routing-risk-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -4px 0 16px;
+}
+
+.routing-risk-strip__item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.routing-risk-strip__item--warning {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: rgba(255, 247, 237, 0.92);
+}
+
+.routing-risk-strip__item--danger {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: rgba(254, 242, 242, 0.94);
+}
+
+.routing-risk-strip__text {
+  color: var(--color-text-subtle, #64748b);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .channel-popover__text {
@@ -4410,10 +4820,9 @@ function extractMessage(error: unknown) {
 
 .audit-diff-row {
   display: grid;
-  grid-template-columns: minmax(92px, 136px) minmax(0, 1fr) 16px minmax(
-      0,
-      1fr
-    ) auto;
+  grid-template-columns:
+    minmax(92px, 136px) minmax(0, 1fr) 16px minmax(0, 1fr)
+    auto;
   align-items: center;
   gap: 8px;
   min-height: 34px;
@@ -4576,7 +4985,7 @@ function extractMessage(error: unknown) {
   height: 6px;
   border-radius: 999px;
   background: var(--color-primary, #2563eb);
-  content: '';
+  content: "";
 }
 
 .audit-diff-row--changed {

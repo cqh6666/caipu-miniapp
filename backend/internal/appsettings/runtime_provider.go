@@ -400,14 +400,30 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 
 func (p *RuntimeProvider) ListSettingAudits(ctx context.Context, filter SettingAuditFilter) (SettingAuditList, error) {
 	filter.Page, filter.PageSize = normalizeAuditPagination(filter.Page, filter.PageSize)
-	whereParts := make([]string, 0, 2)
-	args := make([]any, 0, 2)
+	whereParts := make([]string, 0, 6)
+	args := make([]any, 0, 6)
 	if value := strings.TrimSpace(filter.GroupName); value != "" {
 		whereParts = append(whereParts, "group_name = ?")
 		args = append(args, value)
 	}
 	if value := strings.TrimSpace(filter.Action); value != "" {
 		whereParts = append(whereParts, "action = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.OperatorSubject); value != "" {
+		whereParts = append(whereParts, "operator_subject LIKE ?")
+		args = append(args, "%"+value+"%")
+	}
+	if value := strings.TrimSpace(filter.SettingKey); value != "" {
+		whereParts = append(whereParts, "setting_key LIKE ?")
+		args = append(args, "%"+value+"%")
+	}
+	if value := strings.TrimSpace(filter.TimeFrom); value != "" {
+		whereParts = append(whereParts, "created_at >= ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.TimeTo); value != "" {
+		whereParts = append(whereParts, "created_at <= ?")
 		args = append(args, value)
 	}
 

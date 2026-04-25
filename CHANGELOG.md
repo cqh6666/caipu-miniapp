@@ -1,5 +1,34 @@
 # Project Changelog
 
+## 2026-04-25 (Admin Web AI Provider 剩余 P0 收口：审计高级筛选 / 跳到主编辑区 / 风险状态条)
+
+### Changed
+
+- **修改时间**：2026-04-25 CST
+- **背景**：在 `docs/admin-ai-provider-ui-design-report-2026-04-24.md` 的状态化复核基础上，`AI Provider` 页面还剩三项明确的 `P0`：完整审计高级筛选、`skip link` / 跳到主编辑区，以及“阻塞 / 高风险状态必须常驻可见”的收口。本轮目标是把这三项直接做完，避免后台继续停留在“能看 diff，但排障和键盘访问还差一口气”的状态。
+- **核心改动**：
+  - `backend/internal/appsettings/runtime_types.go`、`backend/internal/appsettings/runtime_provider.go`、`backend/internal/admin/handler.go` 扩展运行时审计列表筛选能力，新增操作人、配置键模糊匹配和时间范围参数，同时保留分页与动作筛选；`runtime_provider_test.go` 补充对应单测覆盖。
+  - `admin-web/src/pages/AIProvidersPage.vue` 的完整审计抽屉新增操作人、配置键、时间范围、page size 和已应用筛选 chips，筛选请求直接透传到后端，分页组件也按真实 `pageSize` 计算页数，不再固定按默认值展示。
+  - `admin-web/src/pages/AIProvidersPage.vue` 新增键盘可达的 `skip link`，“跳到主编辑区”会直接滚动并聚焦到主编辑区容器，补齐当前页面最明显的无障碍缺口。
+  - `admin-web/src/pages/AIProvidersPage.vue` 在编辑区顶部新增风险状态条，直接常驻显示：无启用节点、启用节点缺密钥、最大尝试次数高于启用节点数、最近测试异常、所有节点都在冷却、保存将清空密钥、保存将删除节点等高风险信息，不再只依赖 tooltip 或保存前弹窗。
+  - 同步更新 `docs/admin-ai-provider-ui-design-report-2026-04-24.md`，将上述三项从“尚未完成 / P0”改为“已实现”，并把剩余路线收敛到锚点目录、场景卡健康概览、最近告警状态联动等后续项。
+- **影响范围**：
+  - `admin-web/src/pages/AIProvidersPage.vue`
+  - `backend/internal/admin/handler.go`
+  - `backend/internal/appsettings/runtime_types.go`
+  - `backend/internal/appsettings/runtime_provider.go`
+  - `backend/internal/appsettings/runtime_provider_test.go`
+  - `docs/admin-ai-provider-ui-design-report-2026-04-24.md`
+  - 仅影响 `admin-web` 的 AI Provider 页面与其完整审计接口的筛选能力，不涉及小程序前端、AI 路由正式配置结构、后端保存接口契约或部署配置。
+- **兼容性/风险**：
+  - 审计高级筛选继续复用原有 `/api/admin/runtime-settings/audits` 接口，仅新增可选 query 参数；旧调用方不传这些参数时行为不变。
+  - 风险状态条只做前端聚合展示，不新增后端状态字段；“所有节点冷却中”仍基于最近一次测试结果判断，暂不代表后端实时 breaker 视图。
+  - `skip link` 只增加新的快捷入口，不改变现有鼠标交互和 Tab 顺序主链路。
+- **验证情况**：
+  - `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./internal/appsettings ./internal/admin` 通过。
+  - `cd admin-web && npm exec -- vite build` 通过。
+  - 本次未做浏览器人工回归；建议补测：完整审计筛选组合、键盘 Tab 到 `skip link` 后跳转、风险条在缺密钥 / 清空密钥 / 删除节点 / 测试异常场景下的展示。
+
 ## 2026-04-25 (Admin Web AI Provider UI 设计报告补充：实施状态复核与剩余优先级)
 
 ### Changed
