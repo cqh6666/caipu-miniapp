@@ -49,6 +49,18 @@
       :ref="(el) => setAnchorSectionRef('scene-cards', el)"
       class="routing-anchor-section"
     >
+      <div
+        v-if="viewportWidth >= 1024"
+        class="routing-scene-section-hint"
+        aria-label="场景切换快捷键提示"
+      >
+        <span>切换场景</span>
+        <span class="shortcut-key">{{ shortcutTokens("scene-prev")[0] }}</span>
+        <span class="shortcut-key">{{ shortcutTokens("scene-prev")[1] }}</span>
+        <span class="routing-scene-section-hint__sep">/</span>
+        <span class="shortcut-key">{{ shortcutTokens("scene-next")[0] }}</span>
+        <span class="shortcut-key">{{ shortcutTokens("scene-next")[1] }}</span>
+      </div>
       <div class="routing-scene-grid" role="tablist" aria-label="AI 路由场景">
         <button
           v-for="item in sceneCards"
@@ -201,7 +213,52 @@
               </div>
             </el-popover>
           </span>
-          <StatusTag :tone="bottomBarState.tone" :text="statusBarText" />
+          <div class="routing-breadcrumb__actions">
+            <el-popover
+              v-if="showAnchorDirectory"
+              placement="bottom-end"
+              :width="320"
+              trigger="click"
+            >
+              <template #reference>
+                <el-button
+                  text
+                  class="routing-breadcrumb__directory-button"
+                  aria-label="打开页面目录"
+                >
+                  页面目录
+                </el-button>
+              </template>
+              <div class="routing-utility-panel">
+                <div class="routing-utility-panel__header">
+                  <strong>页面目录</strong>
+                  <span>当前高亮会随滚动位置更新</span>
+                </div>
+                <div class="routing-utility-list">
+                  <button
+                    v-for="item in anchorNavItems"
+                    :key="item.key"
+                    type="button"
+                    class="routing-utility-list__item"
+                    :class="{
+                      'routing-utility-list__item--active':
+                        item.key === activeAnchorKey,
+                    }"
+                    @click="scrollToAnchorSection(item.key)"
+                  >
+                    <span>{{ item.label }}</span>
+                    <span
+                      v-if="item.key === activeAnchorKey"
+                      class="routing-utility-list__badge"
+                    >
+                      当前
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </el-popover>
+            <StatusTag :tone="bottomBarState.tone" :text="statusBarText" />
+          </div>
         </div>
 
         <div
@@ -1425,103 +1482,6 @@
             /></el-icon>
             <span>{{ bottomBarState.text }}</span>
           </div>
-          <div class="routing-bottom-bar__utilities">
-            <el-popover
-              v-if="showAnchorDirectory"
-              placement="top"
-              :width="320"
-              trigger="click"
-            >
-              <template #reference>
-                <el-button
-                  text
-                  class="routing-utility-button"
-                  aria-label="打开页面目录"
-                >
-                  <el-icon aria-hidden="true"><Menu /></el-icon>
-                  页面目录
-                </el-button>
-              </template>
-              <div class="routing-utility-panel">
-                <div class="routing-utility-panel__header">
-                  <strong>页面目录</strong>
-                  <span>当前高亮会随滚动位置更新</span>
-                </div>
-                <div class="routing-utility-list">
-                  <button
-                    v-for="item in anchorNavItems"
-                    :key="item.key"
-                    type="button"
-                    class="routing-utility-list__item"
-                    :class="{
-                      'routing-utility-list__item--active':
-                        item.key === activeAnchorKey,
-                    }"
-                    @click="scrollToAnchorSection(item.key)"
-                  >
-                    <span>{{ item.label }}</span>
-                    <span
-                      v-if="item.key === activeAnchorKey"
-                      class="routing-utility-list__badge"
-                    >
-                      当前
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </el-popover>
-            <el-popover
-              v-if="showShortcutButton"
-              v-model:visible="shortcutHelpVisible"
-              placement="top"
-              :width="360"
-              trigger="click"
-            >
-              <template #reference>
-                <el-button
-                  text
-                  class="routing-utility-button"
-                  aria-label="查看当前页面快捷键"
-                >
-                  <el-icon aria-hidden="true"><Guide /></el-icon>
-                  快捷键
-                </el-button>
-              </template>
-              <div class="routing-utility-panel">
-                <div class="routing-utility-panel__header">
-                  <strong>当前页快捷键</strong>
-                  <span>快捷键只在 AI Provider 页面内生效</span>
-                </div>
-                <div class="shortcut-list">
-                  <div
-                    v-for="item in shortcutItems"
-                    :key="item.key"
-                    class="shortcut-list__item"
-                  >
-                    <div class="shortcut-list__meta">
-                      <strong>{{ item.label }}</strong>
-                      <span>{{ item.description }}</span>
-                    </div>
-                    <div class="shortcut-list__keys" aria-hidden="true">
-                      <span
-                        v-for="token in item.keys"
-                        :key="`${item.key}-${token}`"
-                        class="shortcut-key"
-                      >
-                        {{ token }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div class="routing-utility-panel__footer">
-                  <span>输入框聚焦、审计抽屉或确认弹窗打开时会自动禁用。</span>
-                  <el-button link @click="shortcutHelpVisible = false"
-                    >知道了</el-button
-                  >
-                </div>
-              </div>
-            </el-popover>
-          </div>
           <el-popover
             v-if="isDirty"
             placement="top"
@@ -1606,9 +1566,7 @@ import {
   ArrowRight,
   Check,
   Clock,
-  Guide,
   InfoFilled,
-  Menu,
   MoreFilled,
   Promotion,
   Rank,
@@ -1679,7 +1637,6 @@ const sceneLatestTestAuditMap = ref<
 >({});
 const alertOverview = ref<AIRoutingAlertOverview | null>(null);
 const activeAnchorKey = ref<AnchorSectionKey>("scene-cards");
-const shortcutHelpVisible = ref(false);
 const isMacLikePlatform = ref(false);
 
 const sceneLoading = ref(false);
@@ -1700,7 +1657,6 @@ const sceneCardRefs: Partial<
 const anchorSectionRefs: Partial<Record<AnchorSectionKey, HTMLElement | null>> =
   {};
 let sceneHealthLoadToken = 0;
-let shortcutCoachmarkTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const audits = ref<PaginationResult<SettingAuditRecord>>({
   items: [],
@@ -2102,35 +2058,6 @@ function shortcutTokens(kind: "save" | "test" | "scene-prev" | "scene-next") {
 function shortcutText(kind: "save" | "test" | "scene-prev" | "scene-next") {
   return shortcutTokens(kind).join(" + ");
 }
-
-const showShortcutButton = computed(() => viewportWidth.value >= 1024);
-
-const shortcutItems = computed(() => [
-  {
-    key: "save",
-    label: "保存当前场景",
-    description: "沿用现有字段校验、未保存草稿保护和 diff 确认。",
-    keys: shortcutTokens("save"),
-  },
-  {
-    key: "test",
-    label: "测试当前草稿",
-    description: "直接复用当前测试入口，不绕过已有测试逻辑。",
-    keys: shortcutTokens("test"),
-  },
-  {
-    key: "scene-prev",
-    label: "切到上一个场景",
-    description: "在三个场景卡之间循环切换。",
-    keys: shortcutTokens("scene-prev"),
-  },
-  {
-    key: "scene-next",
-    label: "切到下一个场景",
-    description: "在三个场景卡之间循环切换。",
-    keys: shortcutTokens("scene-next"),
-  },
-]);
 
 const saveActionTooltip = computed(() => `保存场景 · ${shortcutText("save")}`);
 const testActionTooltip = computed(
@@ -2822,20 +2749,6 @@ function updatePlatformShortcutLabels() {
   isMacLikePlatform.value = /mac|iphone|ipad|ipod/i.test(platform);
 }
 
-function maybeShowShortcutCoachmark() {
-  if (
-    typeof window === "undefined" ||
-    !showShortcutButton.value ||
-    window.localStorage.getItem("ai-provider-shortcuts-seen-v1")
-  ) {
-    return;
-  }
-  window.localStorage.setItem("ai-provider-shortcuts-seen-v1", "1");
-  shortcutCoachmarkTimer = window.setTimeout(() => {
-    shortcutHelpVisible.value = true;
-  }, 700);
-}
-
 function onBeforeUnload(e: BeforeUnloadEvent) {
   if (isDirty.value) {
     e.preventDefault();
@@ -2862,7 +2775,6 @@ onMounted(async () => {
     currentSceneKey.value = queryScene as AIRoutingSceneKey;
   }
   await refreshPage();
-  maybeShowShortcutCoachmark();
 });
 
 onBeforeUnmount(() => {
@@ -2870,10 +2782,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown);
   window.removeEventListener("scroll", updateActiveAnchorSection);
   window.removeEventListener("resize", updateActiveAnchorSection);
-  if (shortcutCoachmarkTimer) {
-    window.clearTimeout(shortcutCoachmarkTimer);
-    shortcutCoachmarkTimer = null;
-  }
   stopTestingTimer();
 });
 
@@ -2916,15 +2824,6 @@ watch(
   async () => {
     await nextTick();
     updateActiveAnchorSection();
-  },
-);
-
-watch(
-  () => showShortcutButton.value,
-  (visible) => {
-    if (!visible) {
-      shortcutHelpVisible.value = false;
-    }
   },
 );
 
@@ -4675,6 +4574,24 @@ function extractMessage(error: unknown) {
   margin-bottom: 20px;
 }
 
+.routing-scene-section-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 0 12px auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+}
+
+.routing-scene-section-hint__sep {
+  color: rgba(148, 163, 184, 0.8);
+}
+
 .routing-scene-card {
   position: relative;
   width: 100%;
@@ -4819,9 +4736,33 @@ function extractMessage(error: unknown) {
   font-weight: 600;
 }
 
+.routing-breadcrumb__actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .routing-breadcrumb__sep {
   font-size: 12px;
   color: var(--color-text-subtle, #94a3b8);
+}
+
+.routing-breadcrumb__directory-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(248, 250, 252, 0.86);
+  color: var(--color-text-subtle, #64748b);
+}
+
+.routing-breadcrumb__directory-button:hover,
+.routing-breadcrumb__directory-button:focus-visible {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(239, 246, 255, 0.9);
+  color: var(--color-primary, #2563eb);
 }
 
 .routing-breadcrumb__clean {
@@ -6211,7 +6152,6 @@ function extractMessage(error: unknown) {
 }
 
 .routing-bottom-bar__status,
-.routing-bottom-bar__utilities,
 .routing-bottom-bar__actions {
   display: inline-flex;
   align-items: center;
@@ -6237,20 +6177,6 @@ function extractMessage(error: unknown) {
   color: var(--color-success, #16a34a);
 }
 
-.routing-bottom-bar__utilities {
-  flex-wrap: wrap;
-}
-
-.routing-utility-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 8px;
-  border-radius: 10px;
-  color: var(--color-text-subtle, #64748b);
-}
-
 .routing-utility-panel {
   display: grid;
   gap: 12px;
@@ -6266,30 +6192,18 @@ function extractMessage(error: unknown) {
   font-size: 14px;
 }
 
-.routing-utility-panel__header span,
-.routing-utility-panel__footer span {
+.routing-utility-panel__header span {
   color: var(--color-text-subtle, #64748b);
   font-size: 12px;
   line-height: 1.6;
 }
 
-.routing-utility-panel__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 4px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.routing-utility-list,
-.shortcut-list {
+.routing-utility-list {
   display: grid;
   gap: 8px;
 }
 
-.routing-utility-list__item,
-.shortcut-list__item {
+.routing-utility-list__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6329,30 +6243,6 @@ function extractMessage(error: unknown) {
   background: rgba(37, 99, 235, 0.12);
   font-size: 11px;
   font-weight: 700;
-}
-
-.shortcut-list__meta {
-  display: grid;
-  gap: 3px;
-}
-
-.shortcut-list__meta strong {
-  color: var(--color-text, #1f2937);
-  font-size: 13px;
-}
-
-.shortcut-list__meta span {
-  color: var(--color-text-subtle, #64748b);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.shortcut-list__keys {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
 }
 
 .shortcut-key {
@@ -6449,6 +6339,15 @@ function extractMessage(error: unknown) {
     grid-template-columns: 1fr;
   }
 
+  .routing-breadcrumb {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .routing-breadcrumb__actions {
+    justify-content: space-between;
+  }
+
   .provider-editor-card__header,
   .routing-panel__header,
   .routing-status-strip,
@@ -6464,17 +6363,6 @@ function extractMessage(error: unknown) {
     bottom: max(12px, env(safe-area-inset-bottom));
     transform: none;
     justify-content: space-between;
-  }
-
-  .routing-bottom-bar__utilities,
-  .routing-utility-panel__footer,
-  .shortcut-list__item {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .shortcut-list__keys {
-    justify-content: flex-start;
   }
 
   .audit-diff-grid {
