@@ -1,5 +1,181 @@
 # Project Changelog
 
+## 2026-04-25 (Admin Web AI Provider UI 设计报告补充：实施状态复核与剩余优先级)
+
+### Changed
+
+- **修改时间**：2026-04-25 CST
+- **背景**：在核对 `docs/admin-ai-provider-ui-design-report-2026-04-24.md` 与当前 `admin-web` 实现是否完全一致时，发现文档里仍混杂着“原始设计建议”“已落地实现”“已被后续决策替换的方案”和“尚未完成的项”，继续直接拿来验收容易产生误判，因此需要把报告整理成更适合作为后续执行检查表的状态化版本。
+- **核心改动**：
+  - 更新 `docs/admin-ai-provider-ui-design-report-2026-04-24.md`，新增“实施状态复核（2026-04-25）”补充章节。
+  - 将文档中的建议拆分为三类：`已落地`、`被后续口径替换`、`尚未完成`，明确指出哪些设计已在当前 `AIProvidersPage` / `HelpTip` 实现中覆盖。
+  - 明确标注两项已被后续决策替换的口径：
+    - “测试完成后自动滚动到结果卡”已改为“顶部结果 chip 手动跳转”。
+    - “Provider ID blur 校验”已改为“隐藏内部 ID，校验 Provider Name 唯一性”。
+  - 将原来的“优先级路线 / 推荐实施顺序”改写为基于当前实现状态的“剩余优先级路线 / 推荐后续实施顺序”，把后续任务收敛为：完整审计高级筛选、`skip link` 或等价主内容跳转、条件化锚点目录、场景卡健康概览增强、最近告警状态联动等尚未完成项。
+- **影响范围**：
+  - `docs/admin-ai-provider-ui-design-report-2026-04-24.md`
+  - 当前仅影响 `admin-web` AI Provider 页面设计报告的验收口径与后续任务优先级，不涉及运行时代码、后端接口或部署配置。
+- **兼容性/风险**：
+  - 本次为文档收口，无运行时风险。
+  - 更新后文档更适合做“当前状态核对”与“后续任务排期”，但仍保留原始设计分析段落，阅读时需区分“设计建议”和“已实施状态”。
+- **验证情况**：
+  - 已结合当前仓库中的 `admin-web/src/pages/AIProvidersPage.vue`、`admin-web/src/components/HelpTip.vue` 与现有 `CHANGELOG` 记录完成逐项复核。
+  - 本次仅更新文档和变更记录，未触发新的运行时代码变更验证。
+
+## 2026-04-25 (菜谱详情页流程图查看链路 P0 性能改造落地)
+
+### Changed
+
+- **修改时间**：2026-04-25 CST
+- **背景**：根据 `docs/recipe-flowchart-performance-optimization.md` 的 `P0` 范围，本轮优先解决“流程图已经生成，但详情页和横屏查看打开仍然慢”的前端查看链路问题，同时去掉流程图首屏加载时就触发的分享封面裁图，避免无分享场景下的额外耗时。
+- **核心改动**：
+  - `pages/recipe-detail/index.vue` 为流程图新增独立缓存状态：按 `flowchartUpdatedAt` 优先、`flowchartImageUrl` 回退的版本规则接入现有 `utils/image-cache.js`，详情页流程图展示和轻点预览都改为“本地缓存优先，远程 URL 兜底”。
+  - `pages/recipe-detail/index.vue` 的流程图缓存同步改为在 `applyRecipe` 后触发，并通过 `flowchartImageCacheRequestID` 丢弃旧版本异步结果；本地缓存文件失效时自动清理并回退远程图，不再因为缓存异常把整块流程图隐藏掉。
+  - `pages/recipe-detail/index.vue` 的横屏查看 payload 现在同时写入远程 `imageUrl` 和本地 `localImagePath`，与详情页流程图展示口径保持一致。
+  - `pages/recipe-detail/index.vue` 移除流程图 `<image>` 首屏 `@load` 裁图逻辑，改为仅在真正构造微信分享配置且当前渠道优先使用流程图封面时，才按需执行 canvas 正方形裁图；裁图失败时静默回退到远程 `flowchartImageUrl`，不阻塞分享。
+  - `pages/flowchart-viewer/index.vue` 调整 payload 恢复顺序，优先读取 `localImagePath`，仅当本地图加载失败时再回退 `imageUrl`；只有本地和远程都不可用时才进入失败空态，其余缩放、拖动和关闭交互保持不变。
+- **影响范围**：
+  - `pages/recipe-detail/index.vue`
+  - `pages/flowchart-viewer/index.vue`
+  - 仅影响小程序菜谱详情页的流程图查看、轻点预览、横屏查看和微信分享封面准备链路，不涉及后端 API、worker 调度、流程图生成策略或成品图缓存逻辑。
+- **兼容性/风险**：
+  - 本次继续复用 `utils/image-cache.js`，缓存或本地文件失效时会静默回退远程 URL，主查看链路不应被阻断。
+  - 收藏夹分享接口仍不支持 `promise` 异步配置，因此首次触发“收藏”时若正方形裁图尚未准备完成，会先回退到远程流程图；后续同版本流程图可直接复用已裁好的本地封面。
+  - 本次未改动后端字段和 worker 行为，因此“生成开始前的排队 pickup delay”仍维持现状，属于当前 `P0` 非目标。
+- **验证情况**：
+  - 已对 `pages/recipe-detail/index.vue`、`pages/flowchart-viewer/index.vue` 的 `<script>` 片段分别执行 `node --check`，语法通过。
+  - 已人工复核关键 diff，确认详情页流程图展示、`previewImage`、横屏 viewer payload、分享封面构造都改为本地缓存优先 / 懒裁图口径。
+  - 本次未做真机或微信开发者工具手工回归；建议补测：首次进入详情、二次进入命中缓存、横屏查看本地图优先、轻点预览、好友分享 / 收藏分享裁图回退链路。
+
+## 2026-04-25 (菜谱详情页流程图性能方案收口：暂不做 worker 即时唤醒)
+
+### Changed
+
+- **修改时间**：2026-04-25 CST
+- **背景**：在继续细化菜谱详情页流程图性能方案时，用户明确提出“把流程图 worker 从轮询捞任务改成入队即唤醒”这一项先不做，原因是流程图生图本身耗时和成本都较高，当前更应该优先解决已生成流程图的查看慢问题。
+- **核心改动**：
+  - 更新 `docs/recipe-flowchart-performance-optimization.md`，移除 `P1` 中关于“手动生成请求增加即时唤醒能力”的实施方案、收益描述与后续推进表述。
+  - 将文档中的当前工程目标从“展示版图片、轻量状态接口和即时唤醒 worker”调整为“展示版图片和轻量状态接口”。
+  - 在文档 `非目标` 中明确补充：当前暂不纳入“流程图 worker 入队即唤醒”改造，并写明暂缓原因，避免后续误判为遗漏。
+  - 同步调整实施顺序与结论描述，确保后续默认推进方向聚焦于 `P0` 查看链路优化，以及后续的展示版图片和轻量状态接口。
+- **影响范围**：
+  - `docs/recipe-flowchart-performance-optimization.md`
+  - 当前仅影响文档口径和后续实施优先级，不涉及运行时代码。
+- **兼容性/风险**：
+  - 本次为文档调整，无运行时风险。
+  - 保留当前 worker 轮询机制，短期内“提交后到真正开始处理”的空等现象仍会存在；该问题暂不作为当前阶段的优先处理项。
+- **验证情况**：
+  - 已核对文档中的方案编号、实施顺序、非目标和结论描述，确保不再把 worker 即时唤醒列入默认改造计划。
+
+## 2026-04-25 (菜谱详情页流程图性能改造方案文档)
+
+### Changed
+
+- **修改时间**：2026-04-25 CST
+- **背景**：用户反馈小程序菜谱详情页的流程图打开长期偏慢，需要先把“查看慢”和“生成慢”的问题拆开，明确现状链路、瓶颈判断、改造优先级和验收口径，再进入正式编码阶段。
+- **核心改动**：
+  - 新增 `docs/recipe-flowchart-performance-optimization.md`，沉淀菜谱详情页流程图性能改造方案。
+  - 文档明确区分两类问题：已生成流程图的查看慢、手动生成后的总等待长。
+  - 文档梳理当前前端查看链路与后端生成链路，确认现阶段主要瓶颈包括：流程图未复用本地图片缓存、分享封面裁图过早触发、worker 固定间隔轮询带来的 pickup delay、后端原图直出、状态轮询走完整详情。
+  - 文档给出分阶段改造建议：
+    - `P0`：流程图接入本地图片缓存、分享封面裁图改为懒执行
+    - `P1`：后端增加展示版图片、增加轻量状态接口
+    - `P2`：压缩策略、主动缓存预热、可观测性补强
+  - 文档补充实施顺序、验收标准、风险点与回滚口径，作为后续正式改造的统一依据。
+- **影响范围**：
+  - `docs/recipe-flowchart-performance-optimization.md`
+  - 当前仅影响项目文档与后续实施口径，不涉及运行时代码和接口变更。
+- **兼容性/风险**：
+  - 本次为文档改动，无运行时风险。
+  - 后续若按文档实施，需要重点处理流程图缓存版本键和展示版图片兼容策略。
+- **验证情况**：
+  - 已结合当前前端详情页、横屏查看页、图片缓存工具、后端流程图 service/worker/upload 链路完成方案复核。
+  - 本次未运行构建或测试；当前尚未进入代码改造阶段。
+
+## 2026-04-24 (Admin Web AI Provider UI P0+P1 重构落地)
+
+### Changed
+
+- **修改时间**：2026-04-24 21:54 CST
+- **背景**：根据 `docs/admin-ai-provider-ui-design-report-2026-04-24.md` 的 P0+P1 路线，`admin-web` 的 AI Provider 页面需要从“大表单 + 常驻说明”调整为更适合运维控制台的简洁扫描、渐进披露、贴近触发点反馈与可追溯审计体验。
+- **核心改动**：
+  - 新增 `admin-web/src/components/HelpTip.vue`，统一字段说明的 hover/focus tooltip 行为。
+  - 重构 `admin-web/src/pages/AIProvidersPage.vue` 的场景状态、Provider 行、测试反馈、审计区与底部浮动操作条。
+  - 将常驻告警横幅改为状态条里的按需 popover 入口，移除 emoji 状态符号。
+  - Provider 默认行展示关键字段、密钥状态、启用状态与最近测试微状态；完整配置放入展开编辑区。
+  - 增加 Provider 字段 blur 校验与保存/测试前阻断校验，覆盖 Provider Name、Base URL、Model、Timeout，并保留内部 ID 异常保护。
+  - 测试中显示 elapsed timer，完成后自动定位测试结果；单节点测试结果回写到 Provider 行内微状态。
+  - 审计区默认展示最近 5 条，完整审计迁入抽屉并支持展开查看旧值/新值对比。
+  - 保存前增加 diff 摘要确认，底部 bar 提供草稿摘要、刷新、测试与保存入口。
+  - Review 修复：单节点测试增加全局防重入；最近审计与完整审计分页/筛选状态拆分，避免抽屉操作污染主卡片。
+  - 根据用户反馈移除顶部 `测试当前草稿 / 保存场景` 重复主按钮，保留底部浮动 bar 作为唯一高频测试与保存入口，顶部仅保留刷新、放弃草稿和测试结果状态。
+  - 根据用户反馈将“最近审计”从横向表格改为事件时间线卡片，默认展示动作、目标对象、操作人、时间与字段级变化摘要，完整旧值/新值 diff 通过 popover 按需查看。
+  - 继续优化“查看 diff”popover：默认展示字段级 diff 摘要、变更类型 chip、删除/新增/脱敏语义，原始旧值/新值改为折叠区按需展开。
+  - 根据用户反馈优化保存确认 tips：将纯文本确认改为彩色结构化 diff 摘要，按新增、删除、修改、密钥、顺序调整展示语义标签与影响说明，并将主按钮文案调整为 `保存并发布`。
+  - 根据用户反馈移除测试完成后的自动滚动跳转，测试结果仍同步到顶部状态 chip、底部状态条和 Provider 行内状态，用户可点击顶部 chip 手动查看详情。
+  - 根据用户反馈优化 Provider 卡片：右侧常驻操作收敛为启用、测试和更多菜单，上下移动进入更多菜单；展开编辑区拆为基础信息、请求配置和密钥三组，卡片头部与状态 chips 更紧凑。
+  - 根据用户反馈修复点击后页面下滑体验：场景切换仅在键盘方向键操作后恢复焦点，Provider 展开/密钥编辑时保持当前滚动位置，并禁用 Provider 列表局部 scroll anchoring。
+  - 根据用户反馈将 Provider ID 调整为内部稳定标识：前端不再展示或编辑 ID，新建/复制节点自动生成唯一 ID；Provider Name 作为用户可见主标识并增加必填与场景内唯一校验；测试结果、审计列表和保存确认优先展示 Provider Name，避免误改 ID 导致密钥丢失。
+  - 根据用户反馈优化 Provider 基础信息区：将 Provider Name 说明收敛到字段 HelpTip，并把 Provider Name 与 Model 放在同一行以提升编辑密度。
+  - 根据用户反馈精简保存确认弹窗文案：按测试状态动态展示发布建议，弱化测试通过场景的警告色，Provider diff 改为对象 + 动作 + 当前/发布后状态表达。
+  - 根据用户反馈优化审计可读性：最近审计与完整审计抽屉新增业务动作推导，支持展示新增节点、删除节点、修改配置、启停节点、密钥变化、场景策略调整、测试通过/异常等语义状态；审计详情改为统计 chip + 字段分组 + 旧值/新值可视化对比，原始值继续折叠保留。
+  - 根据用户反馈将审计详情影响说明改为历史审计语气，并对新增节点按启用状态区分“参与调度 / 暂不参与调度”，避免“发布后”文案误导。
+- **影响范围**：
+  - 仅影响 `admin-web` AI Provider 配置页面前端交互与展示。
+  - 不修改后端 API、数据结构、登录态、上传链路或部署配置。
+- **兼容性·风险**：
+  - 前端保持 Element Plus 与既有接口契约；未引入新的运行时依赖。
+  - 保存与测试新增前置校验，历史上依赖“保存时才报错”的非法草稿会更早被阻断。
+  - 构建仍存在既有 chunk size warning，不影响本次构建产物生成。
+- **验证情况**：
+  - `cd admin-web && npm exec -- vite build` 通过；Review 修复后再次构建通过。
+  - 移除顶部重复按钮后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 最近审计改为时间线卡片后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - `查看 diff` popover 优化后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 保存确认 tips 结构化与颜色语义优化后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 移除测试完成自动滚动后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - Provider 卡片结构与视觉密度优化后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 点击后页面下滑体验修复后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - Provider ID 隐藏与 Provider Name 唯一校验调整后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - Provider Name HelpTip 与基础信息两列布局调整后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 保存确认弹窗文案与 diff 表达精简后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 审计业务动作推导与详情可视化优化后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 审计影响说明文案调整后再次执行 `cd admin-web && npm exec -- vite build` 通过。
+  - 2026-04-24 22:03 CST 已执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，本地构建并上传到 `/srv/caipu-miniapp/admin-web/dist`，release id 为 `20260424-220313`。
+  - 2026-04-24 22:07 CST 移除顶部重复按钮后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-220747`，远端 `dist/index.html` 更新时间为 `2026-04-24 22:07 CST`。
+  - 2026-04-24 22:14 CST 最近审计改为时间线卡片后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-221405`，远端 `dist/index.html` 更新时间为 `2026-04-24 22:14 CST`。
+  - 2026-04-24 22:22 CST `查看 diff` popover 优化后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-222244`，远端 `dist/index.html` 更新时间为 `2026-04-24 22:22 CST`。
+  - 2026-04-24 22:31 CST 保存确认 tips 结构化优化后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-223145`，远端 `dist/index.html` 更新时间为 `2026-04-24 22:31 CST`，公网校验 `https://www.gxm1227.top/admin/` 返回 HTTP 200。
+  - 2026-04-24 22:48 CST Provider 卡片结构与视觉密度优化后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-224802`，远端 `dist/index.html` 更新时间为 `2026-04-24 22:48 CST`，公网校验 `https://www.gxm1227.top/admin/` 返回 HTTP 200。
+  - 2026-04-24 22:59 CST 点击后页面下滑体验修复后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-225900`，远端 `dist/index.html` 更新时间为 `2026-04-24 22:59 CST`，公网校验 `https://www.gxm1227.top/admin/` 返回 HTTP 200。
+  - 2026-04-24 23:12 CST Provider ID 隐藏与 Provider Name 唯一校验调整后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-231234`，远端 `dist/index.html` 更新时间为 `2026-04-24 23:12 CST`，公网校验 `https://www.gxm1227.top/admin/` 返回 HTTP 200。
+  - 2026-04-24 23:23 CST 保存确认弹窗文案与 diff 表达精简后再次执行 `SERVER_HOST=my-cloud DOMAIN=www.gxm1227.top bash scripts/upload-admin-web-dist.sh`，release id 为 `20260424-232342`，远端 `dist/index.html` 更新时间为 `2026-04-24 23:23 CST`，公网校验 `https://www.gxm1227.top/admin/` 返回 HTTP 200。
+  - 脚本校验 `https://www.gxm1227.top/admin/` 返回 HTTP 200。
+  - 未做浏览器人工回归；建议后续在后台页面手动检查无草稿、有草稿、测试中、测试失败和审计抽屉场景。
+
+## 2026-04-24 (Admin Web AI Provider UI 设计报告补充：简洁优先与 Tips 渐进披露)
+
+### Changed
+
+- **修改时间**：2026-04-24 CST
+- **背景**：用户明确希望 `admin-web` 的 AI Provider 改造保持整体界面简洁明了；如字段含义、策略说明、错误类型解释等需要补充说明，应优先通过 hover tips、click popover、详情抽屉等渐进披露方式展示，避免把长段说明常驻铺在页面中。
+- **核心改动**：
+  - 更新 `docs/admin-ai-provider-ui-design-report-2026-04-24.md`，新增“简洁优先与 Tips 策略”设计原则。
+  - 明确常驻信息、hover tooltip、click popover、drawer/展开区、modal confirmation 的使用边界。
+  - 将场景状态条、Provider 节点、测试结果、审计区、底部浮动 bar 的改造建议同步调整为“默认短文案 + 按需解释”。
+  - 补充二次评估结论：新增统一 `HelpTip` 组件、说明文案配置表、字段 blur 校验、底部 bar 草稿摘要 popover、Provider 最近测试微状态、flowchart 长耗时测试计时反馈、按需出现的锚点目录、禁用 emoji 状态符号、统一 focus ring 等建议。
+  - 调整 P0/P1 优先级，把“说明文案收敛为 tooltip / popover 策略”“HelpTip 组件”“字段前置校验”“底部 bar 草稿摘要”纳入首批前端优化。
+- **影响范围**：
+  - 文档与后续 UI 改造验收口径。
+  - 不涉及前端代码、后端接口或部署配置变更。
+- **兼容性·风险**：
+  - 无运行时风险。
+  - 后续实现时需注意：关键错误、阻塞状态、保存影响不能只藏在 tooltip 中，仍应常驻可见并满足无障碍要求。
+- **验证情况**：
+  - 已完成文档结构检查与改造建议复核。
+  - 未运行构建或单测；本次仅更新设计文档与变更记录。
+
 ## 2026-04-23 (线上 nginx `/caipu-api/` 代理超时放宽到 300 秒)
 
 ### Changed
