@@ -1,5 +1,36 @@
 # Project Changelog
 
+## 2026-04-25 (Admin Web AI Provider P1 收口：锚点目录 / 健康概览 / 告警联动 / 快捷键)
+
+### Changed
+
+- **修改时间**：2026-04-25 CST
+- **背景**：在上一轮把完整审计、`skip link` 和风险状态条收口后，`AI Provider` 页面仍缺少四个直接影响效率和可见性的点：长页面导航、场景卡健康摘要、最近告警状态联动，以及熟练用户的最小集快捷键。本轮目标是继续沿用现有控制台结构，把这四项补齐，而不重做页面布局或保存 / 测试契约。
+- **核心改动**：
+  - `backend/internal/aialert/model.go`、`backend/internal/aialert/repository.go`、`backend/internal/aialert/service.go` 新增告警概览 DTO 与只读 overview 聚合能力；基于 `ai_provider_alert_states` 按 `thresholdReached DESC, updatedAt DESC` 输出状态列表，补齐 `activeAlertCount`、`latestAlertedAt` 和 `hasDeliveryConfig` 等前端所需字段。
+  - `backend/internal/admin/handler.go`、`backend/internal/app/router.go`、`backend/internal/app/app.go` 新增 `GET /api/admin/ai-routing/alerts/overview` 后台接口，并把告警概览服务注入到 admin handler；`backend/internal/admin/handler_test.go`、`backend/internal/aialert/service_test.go` 补了 handler 返回结构、阈值判断、排序、投递配置完整性和 active count 的测试覆盖。
+  - `admin-web/src/api/admin.ts`、`admin-web/src/types.ts` 新增 `AIRoutingAlertOverview`、`AIRoutingAlertOverviewItem` 和 `SceneCardHealthSnapshot` 类型与接口封装，供 `AIProvidersPage` 统一消费。
+  - `admin-web/src/pages/AIProvidersPage.vue` 在不重排主布局的前提下新增桌面宽屏条件化锚点目录、场景卡健康概览区、顶部状态条告警短状态、场景级告警聚合展示，以及页面级快捷键守卫；同时页面会并行补齐三类场景的详情、最近测试审计和告警概览数据，让三张场景卡都能显示“最近测试 / 配置风险 / 告警状态”三类信号。
+  - `docs/admin-ai-provider-ui-design-report-2026-04-24.md` 同步更新剩余状态与后续优先级，避免继续把已完成的锚点目录、健康概览、告警联动和最小集快捷键误记为“尚未完成”。
+- **影响范围**：
+  - `admin-web/src/pages/AIProvidersPage.vue`
+  - `admin-web/src/api/admin.ts`
+  - `admin-web/src/types.ts`
+  - `backend/internal/aialert/*`
+  - `backend/internal/admin/handler.go`
+  - `backend/internal/app/router.go`
+  - `backend/internal/app/app.go`
+  - `docs/admin-ai-provider-ui-design-report-2026-04-24.md`
+  - 仅影响后台 `AI Provider` 页面与新增的只读告警概览接口，不改变现有场景保存接口、测试接口、审计接口语义，也不影响小程序前端和正式路由配置结构。
+- **兼容性/风险**：
+  - 告警概览仍以 `ai_provider_alert_states` 表为唯一事实来源，不引入新的告警事件流水表；因此当前“24h 内有告警”是基于最近告警状态聚合，而不是完整事件时间线。
+  - 场景卡“最近测试”继续复用 `/api/admin/runtime-settings/audits` 的 `test` 记录，不新增专门的测试摘要接口；若后续测试摘要口径变化，需要同步审计写入语义。
+  - 快捷键仅在 `AIProvidersPage` 生效，并对输入框聚焦、完整审计抽屉、保存/测试进行中和 `ElMessageBox` 打开状态做了守卫，避免误触发浏览器返回或重复提交。
+- **验证情况**：
+  - `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./internal/aialert ./internal/admin ./internal/app` 通过。
+  - `cd admin-web && npm exec -- vite build` 通过。
+  - 本次未做浏览器人工回归；建议补测：宽屏锚点点击与高亮、三张场景卡健康摘要、顶部告警状态映射、`Mod + S` / `Mod + Enter` / `Alt + ←/→` 守卫场景。
+
 ## 2026-04-25 (Admin Web AI Provider 剩余 P0 收口：审计高级筛选 / 跳到主编辑区 / 风险状态条)
 
 ### Changed

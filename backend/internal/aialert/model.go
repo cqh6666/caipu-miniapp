@@ -55,6 +55,33 @@ type State struct {
 	UpdatedAt               string
 }
 
+type Overview struct {
+	GeneratedAt       string         `json:"generatedAt"`
+	Enabled           bool           `json:"enabled"`
+	FailureThreshold  int            `json:"failureThreshold"`
+	HasDeliveryConfig bool           `json:"hasDeliveryConfig"`
+	ActiveAlertCount  int            `json:"activeAlertCount"`
+	LatestAlertedAt   string         `json:"latestAlertedAt"`
+	Items             []OverviewItem `json:"items"`
+}
+
+type OverviewItem struct {
+	ProviderID          string `json:"providerId"`
+	ProviderName        string `json:"providerName"`
+	Scene               string `json:"scene"`
+	Model               string `json:"model"`
+	ConsecutiveFailures int    `json:"consecutiveFailures"`
+	LastStatus          string `json:"lastStatus"`
+	LastErrorType       string `json:"lastErrorType"`
+	LastErrorMessage    string `json:"lastErrorMessage"`
+	LastRequestID       string `json:"lastRequestId"`
+	LastFailedAt        string `json:"lastFailedAt"`
+	LastRecoveredAt     string `json:"lastRecoveredAt"`
+	LastAlertedAt       string `json:"lastAlertedAt"`
+	UpdatedAt           string `json:"updatedAt"`
+	ThresholdReached    bool   `json:"thresholdReached"`
+}
+
 type FailureSummary struct {
 	Scene        string
 	Model        string

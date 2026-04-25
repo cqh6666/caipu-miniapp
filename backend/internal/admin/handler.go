@@ -6,12 +6,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/go-chi/chi/v5"
 )
+
+type AIAlertOverviewProvider interface {
+	Overview(ctx context.Context) (aialert.Overview, error)
+}
 
 type Handler struct {
 	auth           AuthService
@@ -20,6 +25,7 @@ type Handler struct {
 	appSettingsSvc *appsettings.Service
 	serverHealth   *ServerHealthService
 	aiRouting      *airouter.Service
+	aiAlert        AIAlertOverviewProvider
 }
 
 type loginRequest struct {
@@ -39,6 +45,7 @@ func NewHandler(
 	appSettingsService *appsettings.Service,
 	serverHealthService *ServerHealthService,
 	aiRoutingService *airouter.Service,
+	aiAlertService AIAlertOverviewProvider,
 ) *Handler {
 	return &Handler{
 		auth:           auth,
@@ -47,6 +54,7 @@ func NewHandler(
 		appSettingsSvc: appSettingsService,
 		serverHealth:   serverHealthService,
 		aiRouting:      aiRoutingService,
+		aiAlert:        aiAlertService,
 	}
 }
 
@@ -394,6 +402,25 @@ func (h *Handler) TestAIRoutingScene(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteData(w, http.StatusOK, map[string]any{
 		"result": result,
+	})
+}
+
+func (h *Handler) GetAIRoutingAlertsOverview(w http.ResponseWriter, r *http.Request) {
+	if h.aiAlert == nil {
+		common.WriteError(w, common.ErrInternal)
+		return
+	}
+	if _, err := h.auth.CurrentSubject(r.Context()); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	overview, err := h.aiAlert.Overview(r.Context())
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"overview": overview,
 	})
 }
 

@@ -114,6 +114,7 @@ func NewRouter(
 				protected.Get("/ai-routing/scenes/{scene}", adminHandler.GetAIRoutingScene)
 				protected.Put("/ai-routing/scenes/{scene}", adminHandler.UpdateAIRoutingScene)
 				protected.Post("/ai-routing/scenes/{scene}/test", adminHandler.TestAIRoutingScene)
+				protected.Get("/ai-routing/alerts/overview", adminHandler.GetAIRoutingAlertsOverview)
 				protected.Get("/runtime-settings", adminHandler.ListRuntimeSettings)
 				protected.Put("/runtime-settings/groups/{group}", adminHandler.UpdateRuntimeGroup)
 				protected.Post("/runtime-settings/groups/{group}/test", adminHandler.TestRuntimeGroup)

@@ -24,6 +24,59 @@ func NewService(repo *Repository, configProvider ConfigProvider, sender Sender, 
 	}
 }
 
+func (s *Service) Overview(ctx context.Context) (Overview, error) {
+	overview := Overview{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Items:       []OverviewItem{},
+	}
+
+	cfg := Config{}
+	if s != nil && s.configProvider != nil {
+		cfg = s.configProvider.AIProviderAlert(ctx)
+	}
+	cfg = cfg.Normalized()
+	overview.Enabled = cfg.Enabled
+	overview.FailureThreshold = cfg.FailureThreshold
+	overview.HasDeliveryConfig = cfg.ValidateForSend() == nil
+
+	if s == nil || s.repo == nil {
+		return overview, nil
+	}
+
+	states, err := s.repo.ListStates(ctx, cfg.FailureThreshold)
+	if err != nil {
+		return Overview{}, err
+	}
+	items := make([]OverviewItem, 0, len(states))
+	for _, state := range states {
+		item := OverviewItem{
+			ProviderID:          state.ProviderID,
+			ProviderName:        state.ProviderName,
+			Scene:               state.Scene,
+			Model:               state.Model,
+			ConsecutiveFailures: state.ConsecutiveFailures,
+			LastStatus:          state.LastStatus,
+			LastErrorType:       state.LastErrorType,
+			LastErrorMessage:    state.LastErrorMessage,
+			LastRequestID:       state.LastRequestID,
+			LastFailedAt:        state.LastFailedAt,
+			LastRecoveredAt:     state.LastRecoveredAt,
+			LastAlertedAt:       state.LastAlertedAt,
+			UpdatedAt:           state.UpdatedAt,
+			ThresholdReached:    state.ConsecutiveFailures >= cfg.FailureThreshold,
+		}
+		if item.ThresholdReached {
+			overview.ActiveAlertCount++
+		}
+		if laterTimestamp(item.LastAlertedAt, overview.LatestAlertedAt) {
+			overview.LatestAlertedAt = item.LastAlertedAt
+		}
+		items = append(items, item)
+	}
+	overview.Items = items
+	return overview, nil
+}
+
 func (s *Service) RecordSuccess(ctx context.Context, event Event) {
 	if s == nil || s.repo == nil || strings.TrimSpace(event.ProviderID) == "" {
 		return
@@ -238,4 +291,21 @@ func targetLabel(targetType, targetID string) string {
 		return targetID
 	}
 	return fmt.Sprintf("%s / %s", targetType, targetID)
+}
+
+func laterTimestamp(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" {
+		return false
+	}
+	if right == "" {
+		return true
+	}
+	leftTime, leftErr := time.Parse(time.RFC3339, left)
+	rightTime, rightErr := time.Parse(time.RFC3339, right)
+	if leftErr == nil && rightErr == nil {
+		return leftTime.After(rightTime)
+	}
+	return left > right
 }

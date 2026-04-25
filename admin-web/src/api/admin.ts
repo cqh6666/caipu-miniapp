@@ -1,5 +1,6 @@
-import { request } from './http'
+import { request } from "./http";
 import type {
+  AIRoutingAlertOverview,
   AIRoutingSceneConfig,
   AIRoutingSceneSummary,
   AIRoutingTestResult,
@@ -11,93 +12,142 @@ import type {
   RuntimeSettingGroupView,
   ServerHealthOverview,
   SettingAuditRecord,
-  TrendBucket
-} from '@/types'
+  TrendBucket,
+} from "@/types";
 
 export function login(username: string, password: string) {
-  return request<{ username: string }>('/admin/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ username, password })
-  })
+  return request<{ username: string }>("/admin/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
 }
 
 export function logout() {
-  return request<{ ok: boolean }>('/admin/auth/logout', {
-    method: 'POST'
-  })
+  return request<{ ok: boolean }>("/admin/auth/logout", {
+    method: "POST",
+  });
 }
 
 export function getMe() {
-  return request<{ username: string }>('/admin/auth/me')
+  return request<{ username: string }>("/admin/auth/me");
 }
 
 export function getDashboardOverview(windowHours?: number) {
-  const suffix = windowHours && windowHours > 0 ? `?windowHours=${windowHours}` : ''
-  return request<{ overview: DashboardOverview }>(`/admin/dashboard/overview${suffix}`)
+  const suffix =
+    windowHours && windowHours > 0 ? `?windowHours=${windowHours}` : "";
+  return request<{ overview: DashboardOverview }>(
+    `/admin/dashboard/overview${suffix}`,
+  );
 }
 
 export function getDashboardTrends(range: string) {
-  return request<{ items: TrendBucket[] }>(`/admin/dashboard/trends?range=${encodeURIComponent(range)}`)
+  return request<{ items: TrendBucket[] }>(
+    `/admin/dashboard/trends?range=${encodeURIComponent(range)}`,
+  );
 }
 
 export function getServerHealthOverview() {
-  return request<{ overview: ServerHealthOverview }>('/admin/server-health/overview')
+  return request<{ overview: ServerHealthOverview }>(
+    "/admin/server-health/overview",
+  );
 }
 
 export function listJobs(query: URLSearchParams) {
-  return request<{ result: PaginationResult<JobRunRecord> }>(`/admin/ai/jobs?${query.toString()}`)
+  return request<{ result: PaginationResult<JobRunRecord> }>(
+    `/admin/ai/jobs?${query.toString()}`,
+  );
 }
 
 export function getJobDetail(id: number) {
-  return request<{ job: JobRunRecord; calls: CallLogRecord[] }>(`/admin/ai/jobs/${id}`)
+  return request<{ job: JobRunRecord; calls: CallLogRecord[] }>(
+    `/admin/ai/jobs/${id}`,
+  );
 }
 
 export function listCalls(query: URLSearchParams) {
-  return request<{ result: PaginationResult<CallLogRecord> }>(`/admin/ai/calls?${query.toString()}`)
+  return request<{ result: PaginationResult<CallLogRecord> }>(
+    `/admin/ai/calls?${query.toString()}`,
+  );
 }
 
 export function getRuntimeSettings() {
-  return request<{ groups: RuntimeSettingGroupView[] }>('/admin/runtime-settings')
+  return request<{ groups: RuntimeSettingGroupView[] }>(
+    "/admin/runtime-settings",
+  );
 }
 
-export function updateRuntimeGroup(group: string, payload: { values?: Record<string, unknown>; clearKeys?: string[] }) {
-  return request<{ group: RuntimeSettingGroupView }>(`/admin/runtime-settings/groups/${encodeURIComponent(group)}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload)
-  })
+export function updateRuntimeGroup(
+  group: string,
+  payload: { values?: Record<string, unknown>; clearKeys?: string[] },
+) {
+  return request<{ group: RuntimeSettingGroupView }>(
+    `/admin/runtime-settings/groups/${encodeURIComponent(group)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
-export function testRuntimeGroup(group: string, payload: { values?: Record<string, unknown>; clearKeys?: string[] }) {
-  return request<{ result: GroupTestResult }>(`/admin/runtime-settings/groups/${encodeURIComponent(group)}/test`, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
+export function testRuntimeGroup(
+  group: string,
+  payload: { values?: Record<string, unknown>; clearKeys?: string[] },
+) {
+  return request<{ result: GroupTestResult }>(
+    `/admin/runtime-settings/groups/${encodeURIComponent(group)}/test`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function listSettingAudits(query: URLSearchParams) {
   return request<{ result: PaginationResult<SettingAuditRecord> }>(
-    `/admin/runtime-settings/audits?${query.toString()}`
-  )
+    `/admin/runtime-settings/audits?${query.toString()}`,
+  );
 }
 
 export function listAIRoutingScenes() {
-  return request<{ items: AIRoutingSceneSummary[] }>('/admin/ai-routing/scenes')
+  return request<{ items: AIRoutingSceneSummary[] }>(
+    "/admin/ai-routing/scenes",
+  );
 }
 
 export function getAIRoutingScene(scene: string) {
-  return request<{ scene: AIRoutingSceneConfig }>(`/admin/ai-routing/scenes/${encodeURIComponent(scene)}`)
+  return request<{ scene: AIRoutingSceneConfig }>(
+    `/admin/ai-routing/scenes/${encodeURIComponent(scene)}`,
+  );
 }
 
-export function updateAIRoutingScene(scene: string, payload: AIRoutingSceneConfig) {
-  return request<{ scene: AIRoutingSceneConfig }>(`/admin/ai-routing/scenes/${encodeURIComponent(scene)}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload)
-  })
+export function updateAIRoutingScene(
+  scene: string,
+  payload: AIRoutingSceneConfig,
+) {
+  return request<{ scene: AIRoutingSceneConfig }>(
+    `/admin/ai-routing/scenes/${encodeURIComponent(scene)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
-export function testAIRoutingScene(scene: string, payload: AIRoutingSceneConfig) {
-  return request<{ result: AIRoutingTestResult }>(`/admin/ai-routing/scenes/${encodeURIComponent(scene)}/test`, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
+export function testAIRoutingScene(
+  scene: string,
+  payload: AIRoutingSceneConfig,
+) {
+  return request<{ result: AIRoutingTestResult }>(
+    `/admin/ai-routing/scenes/${encodeURIComponent(scene)}/test`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function getAIRoutingAlertsOverview() {
+  return request<{ overview: AIRoutingAlertOverview }>(
+    "/admin/ai-routing/alerts/overview",
+  );
 }

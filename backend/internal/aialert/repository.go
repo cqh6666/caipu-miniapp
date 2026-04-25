@@ -196,6 +196,53 @@ LIMIT ?
 	return items, rows.Err()
 }
 
+func (r *Repository) ListStates(ctx context.Context, failureThreshold int) ([]State, error) {
+	if r == nil || r.db == nil {
+		return nil, nil
+	}
+	if failureThreshold <= 0 {
+		failureThreshold = 3
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+	provider_id,
+	COALESCE(scene, ''),
+	COALESCE(provider_name, ''),
+	COALESCE(model, ''),
+	consecutive_failures,
+	COALESCE(last_status, ''),
+	COALESCE(last_error_type, ''),
+	COALESCE(last_error_message, ''),
+	last_http_status,
+	COALESCE(last_request_id, ''),
+	COALESCE(last_failed_at, ''),
+	COALESCE(last_recovered_at, ''),
+	COALESCE(last_alerted_at, ''),
+	last_alerted_failure_count,
+	COALESCE(updated_at, '')
+FROM ai_provider_alert_states
+ORDER BY
+	CASE WHEN consecutive_failures >= ? THEN 1 ELSE 0 END DESC,
+	updated_at DESC,
+	provider_id ASC
+`, failureThreshold)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]State, 0)
+	for rows.Next() {
+		item, err := scanState(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) getState(ctx context.Context, tx *sql.Tx, providerID string) (State, bool, error) {
 	if strings.TrimSpace(providerID) == "" {
 		return State{}, false, nil
@@ -227,23 +274,7 @@ SELECT
 FROM ai_provider_alert_states
 WHERE provider_id = ?
 LIMIT 1
-`, strings.TrimSpace(providerID)).Scan(
-		&state.ProviderID,
-		&state.Scene,
-		&state.ProviderName,
-		&state.Model,
-		&state.ConsecutiveFailures,
-		&state.LastStatus,
-		&state.LastErrorType,
-		&state.LastErrorMessage,
-		&state.LastHTTPStatus,
-		&state.LastRequestID,
-		&state.LastFailedAt,
-		&state.LastRecoveredAt,
-		&state.LastAlertedAt,
-		&state.LastAlertedFailureCount,
-		&state.UpdatedAt,
-	)
+`, strings.TrimSpace(providerID)).Scan(scanStateTargets(&state)...)
 	if err == sql.ErrNoRows {
 		return State{}, false, nil
 	}
@@ -306,6 +337,36 @@ ON CONFLICT(provider_id) DO UPDATE SET
 
 type queryRunner interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type stateScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanState(scanner stateScanner) (State, error) {
+	var state State
+	err := scanner.Scan(scanStateTargets(&state)...)
+	return state, err
+}
+
+func scanStateTargets(state *State) []any {
+	return []any{
+		&state.ProviderID,
+		&state.Scene,
+		&state.ProviderName,
+		&state.Model,
+		&state.ConsecutiveFailures,
+		&state.LastStatus,
+		&state.LastErrorType,
+		&state.LastErrorMessage,
+		&state.LastHTTPStatus,
+		&state.LastRequestID,
+		&state.LastFailedAt,
+		&state.LastRecoveredAt,
+		&state.LastAlertedAt,
+		&state.LastAlertedFailureCount,
+		&state.UpdatedAt,
+	}
 }
 
 func eventTime(event Event) string {

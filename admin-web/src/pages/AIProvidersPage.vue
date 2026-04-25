@@ -44,47 +44,106 @@
       跳到主编辑区
     </button>
 
-    <div class="routing-scene-grid" role="tablist" aria-label="AI 路由场景">
-      <button
-        v-for="item in sceneCards"
-        :key="item.scene"
-        :ref="(el) => setSceneCardRef(item.scene, el)"
-        type="button"
-        class="page-card routing-scene-card"
-        :class="{
-          'routing-scene-card--active': item.scene === currentSceneKey,
-        }"
-        role="tab"
-        :aria-selected="item.scene === currentSceneKey"
-        :tabindex="item.scene === currentSceneKey ? 0 : -1"
-        @click="handleSceneChange(item.scene)"
-        @keydown.left.prevent="handleSceneArrowKey(-1)"
-        @keydown.right.prevent="handleSceneArrowKey(1)"
-      >
-        <div class="routing-scene-card__header">
-          <div>
-            <div class="routing-scene-card__eyebrow">
-              {{ displayAIRoutingScene(item.scene) }}
+    <section
+      id="ai-provider-scene-cards"
+      :ref="(el) => setAnchorSectionRef('scene-cards', el)"
+      class="routing-anchor-section"
+    >
+      <div class="routing-scene-grid" role="tablist" aria-label="AI 路由场景">
+        <button
+          v-for="item in sceneCards"
+          :key="item.scene"
+          :ref="(el) => setSceneCardRef(item.scene, el)"
+          type="button"
+          class="page-card routing-scene-card"
+          :class="{
+            'routing-scene-card--active': item.scene === currentSceneKey,
+          }"
+          role="tab"
+          :aria-selected="item.scene === currentSceneKey"
+          :tabindex="item.scene === currentSceneKey ? 0 : -1"
+          @click="handleSceneChange(item.scene)"
+          @keydown.left.prevent="handleSceneArrowKey(-1)"
+          @keydown.right.prevent="handleSceneArrowKey(1)"
+        >
+          <div class="routing-scene-card__header">
+            <div>
+              <div class="routing-scene-card__eyebrow">
+                {{ displayAIRoutingScene(item.scene) }}
+              </div>
+              <h3>{{ item.title }}</h3>
             </div>
-            <h3>{{ item.title }}</h3>
+            <StatusTag :tone="item.tone" :text="item.statusText" />
           </div>
-          <StatusTag :tone="item.tone" :text="item.statusText" />
-        </div>
-        <div class="routing-scene-card__meta">
-          <span>策略：{{ displayAIRoutingStrategy(item.strategy) }}</span>
-          <span
-            >节点：{{ item.activeProviderCount }}/{{ item.providerCount }}</span
-          >
-          <span>来源：{{ displaySettingSource(item.source) }}</span>
-        </div>
-        <div class="routing-scene-card__footer">
-          <span>最近修改：{{ formatDateTime(item.updatedAt) }}</span>
-          <span class="routing-scene-card__channel">
-            线上链路：<code>{{ sceneEffectiveChannel(item.scene).label }}</code>
-          </span>
-        </div>
+          <div class="routing-scene-card__meta">
+            <span>策略：{{ displayAIRoutingStrategy(item.strategy) }}</span>
+            <span
+              >节点：{{ item.activeProviderCount }}/{{
+                item.providerCount
+              }}</span
+            >
+            <span>来源：{{ displaySettingSource(item.source) }}</span>
+          </div>
+          <div class="routing-scene-card__health">
+            <div class="routing-scene-card__health-row">
+              <span class="routing-scene-card__health-label">最近测试</span>
+              <StatusTag
+                :tone="item.health.recentTest.tone"
+                :text="item.health.recentTest.text"
+              />
+              <span class="routing-scene-card__health-time">
+                {{
+                  item.health.recentTest.testedAt
+                    ? formatDateTime(item.health.recentTest.testedAt)
+                    : "未记录时间"
+                }}
+              </span>
+            </div>
+            <div class="routing-scene-card__health-row">
+              <span class="routing-scene-card__health-label">配置风险</span>
+              <StatusTag
+                :tone="item.health.configRisk.tone"
+                :text="item.health.configRisk.text"
+              />
+            </div>
+            <div class="routing-scene-card__health-row">
+              <span class="routing-scene-card__health-label">告警状态</span>
+              <StatusTag
+                :tone="item.health.alertStatus.tone"
+                :text="item.health.alertStatus.text"
+              />
+            </div>
+          </div>
+          <div class="routing-scene-card__footer">
+            <span>最近修改：{{ formatDateTime(item.updatedAt) }}</span>
+            <span class="routing-scene-card__channel">
+              线上链路：<code>{{
+                sceneEffectiveChannel(item.scene).label
+              }}</code>
+            </span>
+          </div>
+        </button>
+      </div>
+    </section>
+
+    <nav
+      v-if="showAnchorDirectory"
+      class="routing-anchor-nav"
+      aria-label="页面锚点目录"
+    >
+      <button
+        v-for="item in anchorNavItems"
+        :key="item.key"
+        type="button"
+        class="routing-anchor-nav__item"
+        :class="{
+          'routing-anchor-nav__item--active': item.key === activeAnchorKey,
+        }"
+        @click="scrollToAnchorSection(item.key)"
+      >
+        {{ item.label }}
       </button>
-    </div>
+    </nav>
 
     <div v-if="sceneLoading && !draftScene" class="page-card routing-panel">
       <PageState mode="loading" title="正在加载场景配置" />
@@ -177,6 +236,10 @@
             <span>{{ currentChannel.reason }}</span>
           </div>
           <div class="routing-status-strip__actions">
+            <StatusTag
+              :tone="alertStatusSummary.tone"
+              :text="alertStatusSummary.text"
+            />
             <el-popover placement="bottom-end" :width="340" trigger="click">
               <template #reference>
                 <el-button link>告警配置</el-button>
@@ -184,8 +247,18 @@
               <div class="channel-popover">
                 <div class="channel-popover__title">连续异常邮件告警</div>
                 <p class="channel-popover__text">
-                  阈值、SMTP 和收件人统一在配置中心维护，不作为首屏常驻提示。
+                  {{ alertStatusDescription }}
                 </p>
+                <div v-if="alertOverview" class="routing-alert-overview-meta">
+                  <span>阈值：{{ alertOverview.failureThreshold }} 次</span>
+                  <span>
+                    最近告警：{{
+                      alertOverview.latestAlertedAt
+                        ? formatDateTime(alertOverview.latestAlertedAt)
+                        : "暂无"
+                    }}
+                  </span>
+                </div>
                 <el-button type="primary" link @click="goAlertConfig"
                   >前往配置 <el-icon><ArrowRight /></el-icon
                 ></el-button>
@@ -211,7 +284,10 @@
         </div>
 
         <div class="routing-editor-grid">
-          <div class="page-card routing-panel routing-panel--strategy">
+          <div
+            :ref="(el) => setAnchorSectionRef('scene-strategy', el)"
+            class="page-card routing-panel routing-panel--strategy routing-anchor-section"
+          >
             <div class="routing-panel__header">
               <div>
                 <h3 class="routing-panel__title">
@@ -416,7 +492,10 @@
             </div>
           </div>
 
-          <div class="page-card routing-panel">
+          <div
+            :ref="(el) => setAnchorSectionRef('provider-nodes', el)"
+            class="page-card routing-panel routing-anchor-section"
+          >
             <div class="routing-panel__header">
               <div>
                 <h3 class="routing-panel__title">
@@ -843,7 +922,8 @@
         <div
           v-if="testResult"
           ref="testCardRef"
-          class="page-card routing-test-card"
+          :ref="(el) => setAnchorSectionRef('latest-test', el)"
+          class="page-card routing-test-card routing-anchor-section"
         >
           <div class="routing-panel__header">
             <div>
@@ -925,7 +1005,10 @@
           </div>
         </div>
 
-        <div class="page-card audit-section">
+        <div
+          :ref="(el) => setAnchorSectionRef('recent-audits', el)"
+          class="page-card audit-section routing-anchor-section"
+        >
           <div class="page-header">
             <div>
               <h2 class="page-title" style="font-size: 22px">
@@ -1361,6 +1444,9 @@
             /></el-icon>
             <span>{{ bottomBarState.text }}</span>
           </div>
+          <div class="routing-bottom-bar__hint">
+            快捷键：Mod + S 保存 · Mod + Enter 测试 · Alt + ←/→ 切场景
+          </div>
           <el-popover
             v-if="isDirty"
             placement="top"
@@ -1443,7 +1529,6 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import {
   ArrowDown,
   ArrowRight,
-  ArrowUp,
   Check,
   Clock,
   InfoFilled,
@@ -1459,7 +1544,9 @@ import HelpTip from "@/components/HelpTip.vue";
 import PageState from "@/components/PageState.vue";
 import StatusTag from "@/components/StatusTag.vue";
 import * as adminApi from "@/api/admin";
+import { useResponsive } from "@/composables/useResponsive";
 import type {
+  AIRoutingAlertOverview,
   AIRoutingProviderEndpointMode,
   AIRoutingProviderConfig,
   AIRoutingProviderResponseFormat,
@@ -1468,6 +1555,7 @@ import type {
   AIRoutingSceneSummary,
   AIRoutingTestResult,
   PaginationResult,
+  SceneCardHealthSnapshot,
   SettingAuditRecord,
 } from "@/types";
 import {
@@ -1490,6 +1578,14 @@ import {
 
 const router = useRouter();
 const route = useRoute();
+const { width: viewportWidth } = useResponsive();
+
+type AnchorSectionKey =
+  | "scene-cards"
+  | "scene-strategy"
+  | "provider-nodes"
+  | "latest-test"
+  | "recent-audits";
 
 const sceneKeys: AIRoutingSceneKey[] = ["summary", "title", "flowchart"];
 const currentSceneKey = ref<AIRoutingSceneKey>("summary");
@@ -1498,6 +1594,14 @@ const remoteScene = ref<AIRoutingSceneConfig | null>(null);
 const draftScene = ref<AIRoutingSceneConfig | null>(null);
 const testResult = ref<AIRoutingTestResult | null>(null);
 const testScope = ref("");
+const sceneDetailMap = ref<
+  Partial<Record<AIRoutingSceneKey, AIRoutingSceneConfig>>
+>({});
+const sceneLatestTestAuditMap = ref<
+  Partial<Record<AIRoutingSceneKey, SettingAuditRecord | null>>
+>({});
+const alertOverview = ref<AIRoutingAlertOverview | null>(null);
+const activeAnchorKey = ref<AnchorSectionKey>("scene-cards");
 
 const sceneLoading = ref(false);
 const sceneError = ref("");
@@ -1514,6 +1618,9 @@ const shouldFocusSceneAfterChange = ref(false);
 const sceneCardRefs: Partial<
   Record<AIRoutingSceneKey, HTMLButtonElement | null>
 > = {};
+const anchorSectionRefs: Partial<Record<AnchorSectionKey, HTMLElement | null>> =
+  {};
+let sceneHealthLoadToken = 0;
 
 const audits = ref<PaginationResult<SettingAuditRecord>>({
   items: [],
@@ -1626,6 +1733,152 @@ const compatibilityHint = computed(() => {
   return "当前运行时仍优先走旧单 Provider 配置；保存并启用本场景后，summary / title / flowchart 才会正式切到新的多节点路由。";
 });
 
+function emptySceneCardHealthSnapshot(): SceneCardHealthSnapshot {
+  return {
+    recentTest: {
+      tone: "neutral",
+      text: "加载中",
+      testedAt: "",
+    },
+    configRisk: {
+      tone: "neutral",
+      text: "加载中",
+    },
+    alertStatus: {
+      tone: "neutral",
+      text: "加载中",
+    },
+  };
+}
+
+function summarizeSceneRecentTest(
+  record?: SettingAuditRecord | null,
+): SceneCardHealthSnapshot["recentTest"] {
+  if (!record) {
+    return {
+      tone: "neutral",
+      text: "未测试",
+      testedAt: "",
+    };
+  }
+  const summary =
+    `${record.newValueMasked || ""} ${record.oldValueMasked || ""}`
+      .trim()
+      .toLowerCase();
+  return {
+    tone: summary.startsWith("ok") ? "success" : "warning",
+    text: summary.startsWith("ok") ? "成功" : "异常",
+    testedAt: record.createdAt,
+  };
+}
+
+function summarizeSceneConfigRisk(
+  scene?: AIRoutingSceneConfig,
+): SceneCardHealthSnapshot["configRisk"] {
+  if (!scene) {
+    return {
+      tone: "neutral",
+      text: "加载中",
+    };
+  }
+  const enabledProviders = scene.providers.filter((item) => item.enabled);
+  if (!enabledProviders.length) {
+    return {
+      tone: "danger",
+      text: "无启用节点",
+    };
+  }
+  const missingSecretCount = enabledProviders.filter(
+    (item) => !providerHasUsableSecret(item),
+  ).length;
+  if (missingSecretCount > 0) {
+    return {
+      tone: "warning",
+      text: "启用节点缺密钥",
+    };
+  }
+  return {
+    tone: "success",
+    text: "正常",
+  };
+}
+
+function parseTimeValue(value: string) {
+  const timestamp = Date.parse(String(value || "").trim());
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isWithinLast24Hours(
+  value: string,
+  reference = alertOverview.value?.generatedAt,
+) {
+  const targetTime = parseTimeValue(value);
+  if (targetTime === null) {
+    return false;
+  }
+  const referenceTime = parseTimeValue(reference || "") ?? Date.now();
+  return (
+    referenceTime >= targetTime &&
+    referenceTime - targetTime <= 24 * 60 * 60 * 1000
+  );
+}
+
+function summarizeSceneAlertStatus(
+  scene: AIRoutingSceneKey,
+): SceneCardHealthSnapshot["alertStatus"] {
+  const overview = alertOverview.value;
+  if (!overview) {
+    return {
+      tone: "neutral",
+      text: "加载中",
+    };
+  }
+  const sceneItems = overview.items.filter((item) => item.scene === scene);
+  const activeCount = sceneItems.filter((item) => item.thresholdReached).length;
+  if (activeCount > 0) {
+    return {
+      tone: "danger",
+      text: `告警中 ${activeCount} 个`,
+    };
+  }
+  if (
+    sceneItems.some((item) =>
+      isWithinLast24Hours(item.lastAlertedAt, overview.generatedAt),
+    )
+  ) {
+    return {
+      tone: "warning",
+      text: "24h 内有告警",
+    };
+  }
+  return {
+    tone: "success",
+    text: "无告警",
+  };
+}
+
+const sceneCardHealthMap = computed<
+  Partial<Record<AIRoutingSceneKey, SceneCardHealthSnapshot>>
+>(() => {
+  return sceneKeys.reduce(
+    (acc, scene) => {
+      const detail =
+        scene === currentSceneKey.value && draftScene.value
+          ? draftScene.value
+          : sceneDetailMap.value[scene];
+      acc[scene] = {
+        recentTest: summarizeSceneRecentTest(
+          sceneLatestTestAuditMap.value[scene],
+        ),
+        configRisk: summarizeSceneConfigRisk(detail),
+        alertStatus: summarizeSceneAlertStatus(scene),
+      };
+      return acc;
+    },
+    {} as Partial<Record<AIRoutingSceneKey, SceneCardHealthSnapshot>>,
+  );
+});
+
 const sceneCards = computed(() => {
   return sceneKeys.map((scene) => {
     const summary = sceneSummaries.value.find((item) => item.scene === scene);
@@ -1658,6 +1911,7 @@ const sceneCards = computed(() => {
         : summary?.enabled
           ? "正式模式"
           : "未启用",
+      health: sceneCardHealthMap.value[scene] || emptySceneCardHealthSnapshot(),
     };
   });
 });
@@ -1667,6 +1921,90 @@ const currentSceneTitle = computed(() => {
     (item) => item.scene === currentSceneKey.value,
   );
   return card?.title || displayAIRoutingScene(currentSceneKey.value);
+});
+
+const alertStatusSummary = computed(() => {
+  const overview = alertOverview.value;
+  if (!overview) {
+    return {
+      tone: "neutral" as const,
+      text: "告警状态加载中",
+    };
+  }
+  if (!overview.enabled) {
+    return {
+      tone: "neutral" as const,
+      text: "告警未启用",
+    };
+  }
+  if (!overview.hasDeliveryConfig) {
+    return {
+      tone: "warning" as const,
+      text: "告警配置不完整",
+    };
+  }
+  if (overview.activeAlertCount > 0) {
+    return {
+      tone: "danger" as const,
+      text: `告警中 ${overview.activeAlertCount} 项`,
+    };
+  }
+  if (isWithinLast24Hours(overview.latestAlertedAt, overview.generatedAt)) {
+    return {
+      tone: "warning" as const,
+      text: "24h 内有告警",
+    };
+  }
+  return {
+    tone: "success" as const,
+    text: "最近无告警",
+  };
+});
+
+const alertStatusDescription = computed(() => {
+  const overview = alertOverview.value;
+  if (!overview) {
+    return "正在拉取最近告警概览。";
+  }
+  if (!overview.enabled) {
+    return "当前未启用连续异常邮件告警，可在配置中心开启。";
+  }
+  if (!overview.hasDeliveryConfig) {
+    return "告警已启用，但 SMTP 或收件人配置不完整，当前不会形成有效投递。";
+  }
+  if (overview.activeAlertCount > 0) {
+    return `当前有 ${overview.activeAlertCount} 个 Provider 处于告警中状态。`;
+  }
+  if (isWithinLast24Hours(overview.latestAlertedAt, overview.generatedAt)) {
+    return "最近 24 小时内触发过告警，建议结合调用日志继续复核。";
+  }
+  return "阈值、SMTP 和收件人统一在配置中心维护，当前最近无告警。";
+});
+
+const showAnchorDirectory = computed(() => {
+  const currentCard = sceneCards.value.find(
+    (item) => item.scene === currentSceneKey.value,
+  );
+  return (
+    viewportWidth.value >= 1280 &&
+    ((draftScene.value?.providers.length || currentCard?.providerCount || 0) >=
+      4 ||
+      !!testResult.value ||
+      recentAudits.value.length > 0)
+  );
+});
+
+const anchorNavItems = computed(() => {
+  const items: Array<{ key: AnchorSectionKey; label: string }> = [
+    { key: "scene-cards", label: "场景卡" },
+    { key: "scene-strategy", label: "场景策略" },
+    { key: "provider-nodes", label: "Provider 节点" },
+  ];
+  if (testResult.value) {
+    items.push({ key: "latest-test", label: "最近测试结果" });
+  }
+  items.push({ key: "recent-audits", label: "最近审计" });
+  return items;
 });
 
 function isImageGenerationProvider(provider: AIRoutingProviderConfig) {
@@ -2239,6 +2577,111 @@ const discardTooltip = computed(() => {
   return n > 0 ? `将丢弃 ${n} 项未保存改动` : "将丢弃当前未保存改动";
 });
 
+function setAnchorSectionRef(key: AnchorSectionKey, element: Element | null) {
+  anchorSectionRefs[key] = element instanceof HTMLElement ? element : null;
+}
+
+function scrollToAnchorSection(key: AnchorSectionKey) {
+  const element = anchorSectionRefs[key];
+  if (!element) {
+    return;
+  }
+  element.scrollIntoView({ behavior: "smooth", block: "start" });
+  activeAnchorKey.value = key;
+}
+
+function updateActiveAnchorSection() {
+  if (!showAnchorDirectory.value) {
+    activeAnchorKey.value = "scene-cards";
+    return;
+  }
+  const visibleItems = anchorNavItems.value.filter(
+    (item) => anchorSectionRefs[item.key],
+  );
+  if (!visibleItems.length) {
+    return;
+  }
+  let currentKey = visibleItems[0].key;
+  for (const item of visibleItems) {
+    const top = anchorSectionRefs[item.key]?.getBoundingClientRect().top ?? 0;
+    if (top <= 180) {
+      currentKey = item.key;
+      continue;
+    }
+    break;
+  }
+  activeAnchorKey.value = currentKey;
+}
+
+function activeInteractiveElement(event?: KeyboardEvent) {
+  const target = event?.target;
+  if (target instanceof HTMLElement) {
+    return target;
+  }
+  return document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+}
+
+function isEditingElement(element: HTMLElement | null) {
+  if (!element) {
+    return false;
+  }
+  if (element.matches("input, textarea, select")) {
+    return true;
+  }
+  if (element.isContentEditable) {
+    return true;
+  }
+  return !!element.closest(
+    'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+  );
+}
+
+function hasOpenMessageBox() {
+  return !!document.body.querySelector(
+    ".el-message-box, .el-message-box__wrapper",
+  );
+}
+
+function shouldDisablePageShortcuts(event?: KeyboardEvent) {
+  if (auditDrawerVisible.value || savingScene.value || testingScene.value) {
+    return true;
+  }
+  if (hasOpenMessageBox()) {
+    return true;
+  }
+  return isEditingElement(activeInteractiveElement(event));
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (event.repeat || shouldDisablePageShortcuts(event)) {
+    return;
+  }
+
+  const isMod = event.metaKey || event.ctrlKey;
+  const key = event.key.toLowerCase();
+  if (isMod && !event.altKey && !event.shiftKey && key === "s") {
+    event.preventDefault();
+    void handleSaveScene();
+    return;
+  }
+  if (isMod && !event.altKey && !event.shiftKey && event.key === "Enter") {
+    event.preventDefault();
+    void handleTestScene();
+    return;
+  }
+  if (!isMod && event.altKey && !event.shiftKey && event.key === "ArrowLeft") {
+    event.preventDefault();
+    handleSceneArrowKey(-1);
+    return;
+  }
+  if (!isMod && event.altKey && !event.shiftKey && event.key === "ArrowRight") {
+    event.preventDefault();
+    handleSceneArrowKey(1);
+  }
+}
+
 function onBeforeUnload(e: BeforeUnloadEvent) {
   if (isDirty.value) {
     e.preventDefault();
@@ -2252,6 +2695,13 @@ onBeforeRouteLeave(async () => {
 
 onMounted(async () => {
   window.addEventListener("beforeunload", onBeforeUnload);
+  window.addEventListener("keydown", handleGlobalKeydown);
+  window.addEventListener("scroll", updateActiveAnchorSection, {
+    passive: true,
+  });
+  window.addEventListener("resize", updateActiveAnchorSection, {
+    passive: true,
+  });
   const queryScene = readQueryString(route.query, "scene");
   if (sceneKeys.includes(queryScene as AIRoutingSceneKey)) {
     currentSceneKey.value = queryScene as AIRoutingSceneKey;
@@ -2261,6 +2711,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", onBeforeUnload);
+  window.removeEventListener("keydown", handleGlobalKeydown);
+  window.removeEventListener("scroll", updateActiveAnchorSection);
+  window.removeEventListener("resize", updateActiveAnchorSection);
   stopTestingTimer();
 });
 
@@ -2289,6 +2742,20 @@ watch(
       return;
     }
     await applySceneChange(nextScene as AIRoutingSceneKey);
+  },
+);
+
+watch(
+  () => [
+    showAnchorDirectory.value,
+    anchorNavItems.value.map((item) => item.key).join(","),
+    recentAudits.value.length,
+    testResult.value ? 1 : 0,
+    draftScene.value?.providers.length || 0,
+  ],
+  async () => {
+    await nextTick();
+    updateActiveAnchorSection();
   },
 );
 
@@ -2323,6 +2790,77 @@ async function loadSceneSummaries() {
   sceneSummaries.value = response.items;
 }
 
+async function loadLatestTestAuditForScene(scene: AIRoutingSceneKey) {
+  const query = new URLSearchParams();
+  query.set("group", `ai.routing.${scene}`);
+  query.set("action", "test");
+  query.set("page", "1");
+  query.set("pageSize", "1");
+  const response = await adminApi.listSettingAudits(query);
+  return response.result.items[0] || null;
+}
+
+async function loadSceneCardHealthData(
+  currentScene: AIRoutingSceneKey,
+  currentSceneConfig: AIRoutingSceneConfig,
+) {
+  const requestToken = ++sceneHealthLoadToken;
+  const nextDetailMap: Partial<
+    Record<AIRoutingSceneKey, AIRoutingSceneConfig>
+  > = {
+    ...sceneDetailMap.value,
+    [currentScene]: hydrateScene(currentSceneConfig),
+  };
+  const nextTestAuditMap: Partial<
+    Record<AIRoutingSceneKey, SettingAuditRecord | null>
+  > = {
+    ...sceneLatestTestAuditMap.value,
+  };
+
+  const [detailResults, testAuditResults, alertResult] = await Promise.all([
+    Promise.allSettled(
+      sceneKeys
+        .filter((scene) => scene !== currentScene)
+        .map(async (scene) => {
+          const response = await adminApi.getAIRoutingScene(scene);
+          return {
+            scene,
+            config: hydrateScene(response.scene),
+          };
+        }),
+    ),
+    Promise.allSettled(
+      sceneKeys.map(async (scene) => ({
+        scene,
+        audit: await loadLatestTestAuditForScene(scene),
+      })),
+    ),
+    adminApi.getAIRoutingAlertsOverview().catch(() => null),
+  ]);
+
+  if (requestToken !== sceneHealthLoadToken) {
+    return;
+  }
+
+  detailResults.forEach((result) => {
+    if (result.status === "fulfilled") {
+      nextDetailMap[result.value.scene] = result.value.config;
+    }
+  });
+
+  testAuditResults.forEach((result) => {
+    if (result.status === "fulfilled") {
+      nextTestAuditMap[result.value.scene] = result.value.audit;
+    }
+  });
+
+  sceneDetailMap.value = nextDetailMap;
+  sceneLatestTestAuditMap.value = nextTestAuditMap;
+  if (alertResult?.overview) {
+    alertOverview.value = alertResult.overview;
+  }
+}
+
 async function loadCurrentScene() {
   sceneLoading.value = true;
   sceneError.value = "";
@@ -2334,7 +2872,13 @@ async function loadCurrentScene() {
     testResult.value = null;
     testScope.value = "";
     auditPage.value = 1;
-    void Promise.all([loadRecentAudits(), loadAudits()]);
+    await Promise.all([
+      loadRecentAudits(),
+      loadAudits(),
+      loadSceneCardHealthData(currentSceneKey.value, response.scene),
+    ]);
+    await nextTick();
+    updateActiveAnchorSection();
   } catch (error) {
     resetSceneEditor();
     sceneError.value = extractMessage(error);
@@ -3318,7 +3862,11 @@ async function saveCurrentScene(successMessage = "场景配置已保存") {
     draftScene.value = hydrateScene(response.scene);
     resetProviderUIState();
     await loadSceneSummaries();
-    await Promise.all([loadRecentAudits(), loadAudits()]);
+    await Promise.all([
+      loadRecentAudits(),
+      loadAudits(),
+      loadSceneCardHealthData(currentSceneKey.value, response.scene),
+    ]);
     ElMessage.success(successMessage);
     return true;
   } catch (error) {
@@ -3623,7 +4171,21 @@ async function runSceneTest(scope: string, scene: AIRoutingSceneConfig | null) {
     testResult.value = response.result;
     testScope.value = scope;
     recordProviderTestState(response.result);
-    await Promise.all([loadRecentAudits(), loadAudits()]);
+    const [latestTestAudit, latestAlertOverview] = await Promise.all([
+      loadLatestTestAuditForScene(currentSceneKey.value),
+      adminApi.getAIRoutingAlertsOverview().catch(() => null),
+      loadRecentAudits(),
+      loadAudits(),
+    ]);
+    sceneLatestTestAuditMap.value = {
+      ...sceneLatestTestAuditMap.value,
+      [currentSceneKey.value]: latestTestAudit,
+    };
+    if (latestAlertOverview?.overview) {
+      alertOverview.value = latestAlertOverview.overview;
+    }
+    await nextTick();
+    updateActiveAnchorSection();
     if (response.result.ok) {
       ElMessage.success("路由测试通过");
     } else {
@@ -3926,11 +4488,64 @@ function extractMessage(error: unknown) {
   flex-direction: column;
 }
 
+.routing-anchor-section {
+  scroll-margin-top: 108px;
+}
+
 .routing-main-editor:focus,
 .routing-main-editor:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.45);
   outline-offset: 6px;
   border-radius: 14px;
+}
+
+.routing-anchor-nav {
+  position: fixed;
+  top: 148px;
+  right: max(20px, calc((100vw - 1480px) / 2));
+  z-index: 18;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 164px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(14px);
+}
+
+.routing-anchor-nav__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-subtle, #64748b);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease;
+}
+
+.routing-anchor-nav__item:hover {
+  border-color: rgba(37, 99, 235, 0.18);
+  color: var(--color-primary, #2563eb);
+  background: rgba(239, 246, 255, 0.86);
+}
+
+.routing-anchor-nav__item--active {
+  border-color: rgba(37, 99, 235, 0.24);
+  color: var(--color-primary, #2563eb);
+  background: rgba(239, 246, 255, 0.92);
+  box-shadow: inset 3px 0 0 #2563eb;
 }
 
 .routing-scene-grid {
@@ -4010,6 +4625,35 @@ function extractMessage(error: unknown) {
   margin-top: 14px;
   color: var(--color-text-subtle);
   font-size: 13px;
+}
+
+.routing-scene-card__health {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.routing-scene-card__health-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.routing-scene-card__health-label {
+  min-width: 56px;
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.routing-scene-card__health-time {
+  color: var(--color-text-subtle, #94a3b8);
+  font-size: 12px;
 }
 
 .routing-scene-card__footer {
@@ -4137,6 +4781,14 @@ function extractMessage(error: unknown) {
   color: var(--color-text-subtle, #64748b);
   font-size: 13px;
   line-height: 1.7;
+}
+
+.routing-alert-overview-meta {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
 }
 
 .routing-breadcrumb__channel {
@@ -5439,6 +6091,7 @@ function extractMessage(error: unknown) {
 }
 
 .routing-bottom-bar__status,
+.routing-bottom-bar__hint,
 .routing-bottom-bar__actions {
   display: inline-flex;
   align-items: center;
@@ -5462,6 +6115,12 @@ function extractMessage(error: unknown) {
 
 .routing-bottom-bar--success .routing-bottom-bar__status {
   color: var(--color-success, #16a34a);
+}
+
+.routing-bottom-bar__hint {
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .draft-summary-popover {
@@ -5531,6 +6190,10 @@ function extractMessage(error: unknown) {
 @media (max-width: 1200px) {
   .routing-editor-grid {
     grid-template-columns: 1fr;
+  }
+
+  .routing-bottom-bar__hint {
+    display: none;
   }
 }
 
