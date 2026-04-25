@@ -34,10 +34,10 @@
 		</view>
 
 		<view
-			v-if="!isLibraryMealOrderMode"
+			v-if="!isLibraryMealOrderMode && hasMealOrderSpotlightRecord"
 			class="meal-order-spotlight"
 			:key="spotlightMotionKey"
-			:class="[spotlightMotionClass, { 'meal-order-spotlight--empty': !hasMealOrderSpotlightRecord }]"
+			:class="spotlightMotionClass"
 			@tap="$emit('spotlight-tap')"
 			@touchstart="$emit('spotlight-touchstart', $event)"
 			@touchend="$emit('spotlight-touchend', $event)"

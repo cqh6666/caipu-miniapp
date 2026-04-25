@@ -1,5 +1,25 @@
 # Project Changelog
 
+## 2026-04-25 (首页菜单详情卡片无记录时直接隐藏)
+
+### Changed
+
+- **修改时间**：2026-04-25 CST
+- **背景**：用户反馈首页头部的菜单详情卡片在当前空间没有任何菜单安排时不应继续显示空态卡片，否则会占视觉空间，也容易让“没有菜单”和“有一张可点开的菜单卡”混在一起。
+- **核心改动**：
+  - `pages/index/components/library-header-section.vue` 将首页头部菜单详情卡片改为仅在存在实际菜单记录时才渲染；当前空间没有草稿或已提交菜单时，首页不再展示空态菜单卡片。
+  - `pages/index/components/library-header-section.scss` 同步删除仅用于空态菜单卡片的样式分支，保持头部结构更干净。
+- **影响范围**：
+  - `pages/index/components/library-header-section.vue`
+  - `pages/index/components/library-header-section.scss`
+  - 仅影响小程序首页头部的菜单详情卡片展示条件，不改变菜单草稿/提交数据结构、菜单详情页入口或“安排菜单”主操作。
+- **兼容性/风险**：
+  - 当前仍保留首页右上角 `安排菜单` 入口，因此“没有菜单时隐藏详情卡片”不会影响新建菜单路径。
+  - 已有菜单记录时，轮播、滑动切换和进入详情页逻辑保持不变。
+- **验证情况**：
+  - 已人工核对首页菜单记录计算链路：`pages/index/index.vue` 中 `mealOrderSpotlightRecords` 仅会产出有实际菜品的草稿或已提交记录。
+  - 已执行 `git diff --check` 进行基础变更校验。
+
 ## 2026-04-25 (Admin Web AI Provider 页面目录与快捷键位置再收口)
 
 ### Changed
