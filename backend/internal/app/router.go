@@ -13,6 +13,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/dietassistant"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
@@ -33,6 +34,7 @@ func NewRouter(
 	mealPlanHandler *mealplan.Handler,
 	recipeHandler *recipe.Handler,
 	linkParseHandler *linkparse.Handler,
+	dietAssistantHandler *dietassistant.Handler,
 	uploadHandler *upload.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 	adminAuthMiddleware func(http.Handler) http.Handler,
@@ -59,6 +61,11 @@ func NewRouter(
 			Method:  http.MethodPost,
 			Prefix:  "/api/admin/runtime-settings/groups/",
 			Suffix:  "/test",
+			Timeout: aiTestRequestTimeout,
+		},
+		{
+			Method:  http.MethodPost,
+			Prefix:  "/api/diet-assistant/chat/stream",
 			Timeout: aiTestRequestTimeout,
 		},
 	}))
@@ -142,6 +149,7 @@ func NewRouter(
 			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)
 			protected.Post("/link-parsers/bilibili", linkParseHandler.ParseBilibili)
 			protected.Post("/link-parsers/xiaohongshu", linkParseHandler.ParseXiaohongshu)
+			protected.Post("/diet-assistant/chat/stream", dietAssistantHandler.StreamChat)
 			protected.Get("/kitchens/{kitchenID}/meal-plans", mealPlanHandler.List)
 			protected.Put("/kitchens/{kitchenID}/meal-plans/{planDate}/draft", mealPlanHandler.SaveDraft)
 			protected.Delete("/kitchens/{kitchenID}/meal-plans/{planDate}/draft", mealPlanHandler.DeleteDraft)

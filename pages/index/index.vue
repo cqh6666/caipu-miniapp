@@ -247,9 +247,9 @@
 					hover-start-time="0"
 					hover-stay-time="140"
 					hover-stop-propagation
-					@tap="openAddSheet"
+					@tap="openDietAssistantSheet"
 				>
-					<!-- 星闪 + 小角标图标 -->
+					<!-- 星闪入口：打开饮食管家聊天窗 -->
 					<image
 						class="nav-fab__icon"
 						src="/static/icons/sparkle-plus.svg"
@@ -390,6 +390,12 @@
 			@submit="submitDraft"
 		></add-recipe-sheet>
 
+		<diet-assistant-sheet
+			:show="showDietAssistantSheet"
+			@close="closeDietAssistantSheet"
+			@open-add-recipe="openAddSheetFromAssistant"
+		></diet-assistant-sheet>
+
 		<action-feedback
 			:visible="recipeStatusFeedbackVisible && activeSection === 'library'"
 			:feedback-key="recipeStatusFeedbackKey"
@@ -449,6 +455,7 @@ import {
 } from '../../utils/auth'
 import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
 import AddRecipeSheet from './components/add-recipe-sheet.vue'
+import DietAssistantSheet from './components/diet-assistant-sheet.vue'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import InviteCodeSheet from './components/invite-code-sheet.vue'
 import InviteSheet from './components/invite-sheet.vue'
@@ -515,6 +522,7 @@ export default {
 	components: {
 		ActionFeedback,
 		AddRecipeSheet,
+		DietAssistantSheet,
 		InviteCodeSheet,
 		InviteSheet,
 		KitchenSection,
@@ -540,6 +548,7 @@ export default {
 			searchBlurTimer: null,
 			selectedRecipeId: '',
 			showAddSheet: false,
+			showDietAssistantSheet: false,
 			draftLinkPrefillSource: '',
 			draftClipboardPrefillRequestID: 0,
 			showInviteSheet: false,
@@ -2492,6 +2501,16 @@ export default {
 			this.showAddSheet = true
 			this.draftClipboardPrefillRequestID += 1
 			this.tryAutoPrefillDraftLinkFromClipboard(this.draftClipboardPrefillRequestID)
+		},
+		openDietAssistantSheet() {
+			this.showDietAssistantSheet = true
+		},
+		closeDietAssistantSheet() {
+			this.showDietAssistantSheet = false
+		},
+		openAddSheetFromAssistant() {
+			this.closeDietAssistantSheet()
+			this.openAddSheet()
 		},
 		closeAddSheet() {
 			if (this.isSubmittingDraft) return

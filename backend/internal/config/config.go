@@ -51,6 +51,10 @@ type Config struct {
 	AIAlertSMTPPassword        string
 	AIAlertFromEmail           string
 	AIAlertToEmails            []string
+	DietAssistantAIBaseURL     string
+	DietAssistantAIAPIKey      string
+	DietAssistantAIModel       string
+	DietAssistantAITimeoutSec  int
 	LinkparseSidecarEnabled    bool
 	LinkparseSidecarBaseURL    string
 	LinkparseSidecarTimeoutSec int
@@ -123,6 +127,10 @@ func Load() (Config, error) {
 		AIAlertSMTPPassword:        strings.TrimSpace(os.Getenv("AI_ALERT_SMTP_PASSWORD")),
 		AIAlertFromEmail:           strings.TrimSpace(os.Getenv("AI_ALERT_FROM_EMAIL")),
 		AIAlertToEmails:            splitCSV(os.Getenv("AI_ALERT_TO_EMAILS")),
+		DietAssistantAIBaseURL:     strings.TrimSpace(getEnv("DIET_ASSISTANT_AI_BASE_URL", "https://www.gxm1227.top/dots2api/v1")),
+		DietAssistantAIAPIKey:      strings.TrimSpace(os.Getenv("DIET_ASSISTANT_AI_API_KEY")),
+		DietAssistantAIModel:       strings.TrimSpace(getEnv("DIET_ASSISTANT_AI_MODEL", "dots-ai")),
+		DietAssistantAITimeoutSec:  getInt("DIET_ASSISTANT_AI_TIMEOUT_SECONDS", 90),
 		LinkparseSidecarEnabled:    getBool("LINKPARSE_SIDECAR_ENABLED", false),
 		LinkparseSidecarBaseURL:    strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_BASE_URL")),
 		LinkparseSidecarTimeoutSec: getInt("LINKPARSE_SIDECAR_TIMEOUT_SECONDS", 150),
@@ -181,6 +189,10 @@ func Load() (Config, error) {
 
 	if cfg.AIAlertSMTPPort <= 0 {
 		return Config{}, errors.New("AI_ALERT_SMTP_PORT must be positive")
+	}
+
+	if cfg.DietAssistantAITimeoutSec <= 0 {
+		return Config{}, errors.New("DIET_ASSISTANT_AI_TIMEOUT_SECONDS must be positive")
 	}
 
 	if cfg.LinkparseSidecarTimeoutSec <= 0 {

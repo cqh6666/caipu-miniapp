@@ -19,6 +19,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/bootstrap"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/db"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/dietassistant"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
@@ -151,6 +152,13 @@ func New(cfg config.Config) (*App, error) {
 	})
 	linkParseHandler := linkparse.NewHandler(linkParseService)
 	runtimeProvider.SetBilibiliVerifier(linkParseService.VerifyBilibiliSessdata)
+	dietAssistantService := dietassistant.NewService(dietassistant.Options{
+		BaseURL: cfg.DietAssistantAIBaseURL,
+		APIKey:  cfg.DietAssistantAIAPIKey,
+		Model:   cfg.DietAssistantAIModel,
+		Timeout: time.Duration(cfg.DietAssistantAITimeoutSec) * time.Second,
+	})
+	dietAssistantHandler := dietassistant.NewHandler(dietAssistantService)
 	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
 	uploadHandler := upload.NewHandler(uploadService)
 	recipeFlowchart := recipe.NewFlowchartGenerator(recipe.FlowchartOptions{
@@ -248,6 +256,7 @@ func New(cfg config.Config) (*App, error) {
 		mealPlanHandler,
 		recipeHandler,
 		linkParseHandler,
+		dietAssistantHandler,
 		uploadHandler,
 		authMiddleware,
 		adminAuthMiddleware.Require,

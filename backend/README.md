@@ -73,6 +73,10 @@ go run ./cmd/server
 - `AI_ALERT_SMTP_PASSWORD`
 - `AI_ALERT_FROM_EMAIL`
 - `AI_ALERT_TO_EMAILS`
+- `DIET_ASSISTANT_AI_BASE_URL`
+- `DIET_ASSISTANT_AI_API_KEY`
+- `DIET_ASSISTANT_AI_MODEL`
+- `DIET_ASSISTANT_AI_TIMEOUT_SECONDS`
 - `LINKPARSE_SIDECAR_ENABLED`
 - `LINKPARSE_SIDECAR_BASE_URL`
 - `LINKPARSE_SIDECAR_TIMEOUT_SECONDS`
@@ -166,6 +170,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/link-parsers/preview`
 - `POST /api/link-parsers/bilibili`
 - `POST /api/link-parsers/xiaohongshu`
+- `POST /api/diet-assistant/chat/stream`
 - `GET /api/kitchens/{kitchenID}/meal-plans`
 - `PUT /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft`
 - `DELETE /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft`

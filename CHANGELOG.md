@@ -1,5 +1,101 @@
 # Project Changelog
 
+## 2026-04-29 (饮食管家流式 AI 接口与多轮对话接通)
+
+### Added
+
+- **修改时间**：2026-04-29 CST
+- **背景**：用户希望后端新增一个通过 OpenAI Chat Completions 协议调用 `dots-ai` 的接口，并让小程序饮食管家聊天窗口先接通该接口，实现流式输出和多轮对话。
+- **核心改动**：
+  - 新增 `backend/internal/dietassistant/` 模块，提供受登录态保护的 `POST /api/diet-assistant/chat/stream` SSE 流式接口。
+  - 后端接口向上游 OpenAI-compatible `/chat/completions` 发起 `stream: true` 请求，并把增量内容转换为本项目统一的 SSE 事件：`delta`、`done`、`error`。
+  - 新增配置项 `DIET_ASSISTANT_AI_BASE_URL`、`DIET_ASSISTANT_AI_API_KEY`、`DIET_ASSISTANT_AI_MODEL`、`DIET_ASSISTANT_AI_TIMEOUT_SECONDS`；默认 baseURL 为 `https://www.gxm1227.top/dots2api/v1`，默认 model 为 `dots-ai`，API Key 只读环境变量，不写入仓库。
+  - `backend/internal/app/router.go` 为饮食管家流式接口增加 3 分钟超时覆盖，避免默认 30 秒中断长回复。
+  - 新增 `utils/diet-assistant-api.js`，使用 `uni.request({ enableChunked: true })` 处理小程序 chunk 流；若运行环境没有 chunk 回调，会在请求结束后尝试解析完整 SSE 文本。
+  - `pages/index/components/diet-assistant-sheet.vue` 从本地假回复切换为真实流式回复：发送用户消息后创建助手占位气泡，逐段追加 delta 文本，并把历史 `user / assistant` 消息带给后端实现多轮上下文。
+  - 前端流式解析新增 UTF-8 跨 chunk 解码兜底，降低中文增量片段在低版本运行时乱码或 SSE JSON 帧解析失败的概率。
+  - 手动停止回复或接口失败产生的临时提示不再进入下一轮多轮上下文，避免把错误提示误当作助手回答继续发送给模型。
+- **影响范围**：
+  - `backend/internal/dietassistant/*`
+  - `backend/internal/config/config.go`
+  - `backend/internal/app/app.go`
+  - `backend/internal/app/router.go`
+  - `backend/configs/example.env`
+  - `backend/README.md`
+  - `utils/diet-assistant-api.js`
+  - `pages/index/components/diet-assistant-sheet.vue`
+  - `pages/index/components/diet-assistant-sheet.scss`
+  - 影响饮食管家聊天链路；不改变现有菜谱保存、链接解析、点菜模式、邀请链路或后台 AI Provider 配置。
+- **兼容性/风险**：
+  - 线上必须配置 `DIET_ASSISTANT_AI_API_KEY` 后接口才可用；缺失时后端会通过 SSE 返回配置错误事件。
+  - 小程序流式能力依赖微信运行时 `RequestTask.onChunkReceived`；已提供完整 SSE 文本解析兜底，但不同基础库和 nginx 缓冲策略仍需真机验证。
+  - 前端已补充手写 UTF-8 解码兜底，但流式实时性仍取决于微信基础库、真机网络和网关是否关闭响应缓冲。
+  - 当前接口只负责聊天建议，不会自动保存菜谱、自动解析外部链接或自动安排菜单；这些动作仍需用户走现有入口。
+- **验证情况**：
+  - `cd backend && GOCACHE=/tmp/caipu-go-build-cache go test ./...` 通过。
+  - `node --check utils/diet-assistant-api.js` 通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/index.vue` 与 `pages/index/components/diet-assistant-sheet.vue`，SFC 结构检查通过。
+  - 已对 `pages/index/components/diet-assistant-sheet.vue` 的组件脚本做替换导入后的 `new Function` 语法检查，通过。
+  - `git diff --check` 通过；已做敏感关键字扫描，确认未把用户提供的 API Key 或完整 curl 写入仓库。
+  - 本次未把用户提供的 API Key 写入仓库，也未直接调用线上上游做真实 token 消耗测试；上线前需在运行环境配置 `DIET_ASSISTANT_AI_API_KEY` 后补测真机流式输出。
+
+## 2026-04-29 (饮食管家聊天窗口 UI 初版)
+
+### Changed
+
+- **修改时间**：2026-04-29 CST
+- **背景**：用户希望参考 `我们的美食空间/src/components/AIChatSheet.tsx` 中底部中心入口弹出的“饮食管家”UI，并结合 `ui-ux-pro-max` 的移动端聊天与触控建议，把当前小程序首页底部中心入口先改造成聊天窗口形态；当前阶段暂不接入 AI，只实现 UI 界面。
+- **核心改动**：
+  - 新增 `pages/index/components/diet-assistant-sheet.vue` 与 `diet-assistant-sheet.scss`，实现底部 80vh 聊天抽屉、饮食管家头部、欢迎气泡、模拟用户消息、模拟菜谱灵感卡、快捷建议、底部输入栏和本地发送占位反馈。
+  - 饮食管家弹窗遮罩单独配置暖棕半透明背景与 `backdrop-filter` / `-webkit-backdrop-filter`，让弹窗背后的首页呈现玻璃虚化效果，不影响其他 `up-popup` 弹层。
+  - 参考原型中 `饮食管家` 标题旁的 `brand-terracotta/10` 圆形 Lucide `Sparkles` 图标，新增浅红圆形 logo 视觉，并同步用于聊天管家头像。
+  - 将底部中心 FAB 的 `static/icons/sparkle-plus.svg` 同步为原型同款白色线性 Lucide `Sparkles` 图标，不再使用原来的自定义星闪图形。
+  - 新增 `static/icons/chat-send.svg` 作为聊天发送按钮图标，使用 Lucide `Send` 线性路径并做轻微左移，修正纸飞机图标视觉偏右的问题；`static/icons/diet-assistant-logo.svg` 用于饮食管家标题和聊天头像。
+  - `pages/index/index.vue` 将底部中心 FAB 从直接打开 `add-recipe-sheet` 改为打开 `diet-assistant-sheet`。
+  - 为避免丢失原有添加菜品链路，聊天窗口内保留“记录菜谱 / 先用现有表单加入美食库”入口，点击后关闭饮食管家并复用现有 `openAddSheet` 逻辑，不改变添加菜品表单、链接预填、图片上传或保存契约。
+  - 聊天输入当前只做本地 UI：发送后追加用户消息和“暂未接入 AI”的本地占位回复，不发起后端请求，也不消耗 AI 调用。
+- **影响范围**：
+  - `pages/index/index.vue`
+  - `pages/index/components/diet-assistant-sheet.vue`
+  - `pages/index/components/diet-assistant-sheet.scss`
+  - `static/icons/diet-assistant-logo.svg`
+  - `static/icons/chat-send.svg`
+  - `static/icons/sparkle-plus.svg`
+  - 仅影响首页底部中心入口与新增饮食管家聊天抽屉 UI，不涉及后端接口、菜谱数据结构、点菜模式数据、邀请链路或现有添加菜品提交逻辑。
+- **兼容性/风险**：
+  - 首页中心 FAB 的首层语义从“添加菜品”变为“饮食管家”，用户新增菜品需要在聊天窗中再点“记录菜谱”；该入口已在顶部建议和消息卡片中保留，但操作路径比原先多一步。
+  - 新增聊天抽屉与遮罩使用 `backdrop-filter`、渐变、阴影等视觉增强；低版本微信环境若弱化这些效果，仍有暖白背景、半透明遮罩和边框兜底。
+  - 当前为 UI 占位，不应被理解为已具备真实 AI 推荐、链接解析或菜谱自动写入能力。
+- **验证情况**：
+  - 已运行 `python3 .codex/skills/ui-ux-pro-max/scripts/search.py "food wellness mobile assistant chat window elegant warm minimal" --design-system -p "Caipu Diet Assistant"` 获取设计系统建议，并补充移动触控与 Vue 栈建议。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/index.vue` 与 `pages/index/components/diet-assistant-sheet.vue`，SFC 结构检查通过。
+  - 已将 `pages/index/index.vue` 的 `<script>` 内容抽取到 `/tmp/caipu-index-script-check.mjs` 并执行 `node --check`，语法检查通过。
+  - 已对 `pages/index/components/diet-assistant-sheet.vue` 的组件脚本做 `new Function` 语法检查，通过。
+  - 已执行 `git diff --check`，基础 diff 检查通过。
+  - 本次未运行微信开发者工具或真机预览，建议补测：首页底部中心 FAB 打开聊天窗、关闭抽屉、快捷建议填入输入框、本地发送占位回复、聊天窗内“记录菜谱”能继续打开原添加菜品表单，以及安全区/键盘遮挡表现。
+
+## 2026-04-29 (美食库模块 UI 优化评估文档)
+
+### Added
+
+- **修改时间**：2026-04-29 CST
+- **背景**：用户希望继续优化小程序 `美食库` 模块整体 UI，要求参考 `我们的美食空间/` 原型目录中较优秀的视觉风格，并结合 `ui-ux-pro-max` 的设计建议输出一份改动评估文档。
+- **核心改动**：
+  - 新增 `docs/food-library-ui-optimization-report-2026-04-29.md`，聚焦 `美食库` 模块本体，区别于此前“美食库与空间”总方案。
+  - 文档对比 `我们的美食空间/src/App.tsx`、`RecipeCard.tsx`、`PlanCard.tsx`、`SpaceView.tsx` 与当前 `pages/index/index.vue`、`library-header-section`、`recipe-card-item`、`pages/index/recipe-card.js` 的 UI 差异。
+  - 文档吸收 `ui-ux-pro-max` 中 `Marketplace / Directory`、`Nature Distilled`、`Bento Grids`、移动触控和搜索无结果建议，明确小程序侧不照搬 React/Tailwind/Lucide/Google Fonts 依赖。
+  - 文档给出 `P0 / P1` 改造建议：搜索筛选面板组件化、状态筛选数量反馈、空态动作、菜谱卡触控与摘要兜底、菜单 spotlight 计划卡化、后续 AI 助手入口边界等。
+- **影响范围**：
+  - `docs/food-library-ui-optimization-report-2026-04-29.md`
+  - 当前仅新增 UI 设计优化评估文档，不修改小程序运行时代码、后端接口、点菜模式、邀请链路、菜谱保存契约或构建配置。
+- **兼容性/风险**：
+  - 本次为文档沉淀，无运行时兼容风险。
+  - 后续若进入实现，需要重点保护 `isLibraryMealOrderMode` 分支、搜索/筛选事件链路、菜卡 `@tap.stop`、空态新增流程和菜单 spotlight 点击/滑动逻辑。
+- **验证情况**：
+  - 已读取并对照 `CHANGELOG.md`、`README.md`、`backend/README.md`、相关 `docs/` 文档、`我们的美食空间/` 原型源码与当前小程序美食库/空间组件实现。
+  - 已运行 `ui-ux-pro-max` 本地搜索脚本生成设计系统、移动 UX、Vue 栈、色彩和风格建议。
+  - 本次未运行小程序构建或微信开发者工具预览，因为未修改运行时代码。
+
 ## 2026-04-29 (修复保存菜谱 500：`recipes` INSERT 占位符缺失)
 
 ### Fixed
