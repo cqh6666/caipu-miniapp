@@ -1,5 +1,54 @@
 # Project Changelog
 
+## 2026-04-29 (修复饮食管家流式接口 500)
+
+### Fixed
+
+- **修改时间**：2026-04-29 23:10 CST
+- **背景**：用户在小程序饮食管家输入“你好呀”后，前端提示 `请求失败(500)`；生产日志显示 `POST /api/diet-assistant/chat/stream` 在 `2026-04-29 23:05:55 CST` 以 `0ms` 返回 `500`。
+- **核心改动**：
+  - 定位原因是 `backend/internal/middleware/logger.go` 的 `statusRecorder` 包装了 `http.ResponseWriter`，但没有透传 `http.Flusher`；饮食管家 handler 判断流式响应不受支持后直接返回 `500`，请求尚未进入上游 AI 调用。
+  - 为 `statusRecorder` 增加 `Flush()` 透传，保留底层 `ResponseWriter` 的 SSE 刷新能力。
+  - 新增 `backend/internal/middleware/logger_test.go`，覆盖 `RequestLogger` 包装后仍支持 `http.Flusher` 的回归场景。
+- **影响范围**：
+  - `backend/internal/middleware/logger.go`
+  - `backend/internal/middleware/logger_test.go`
+  - 影响所有依赖 `http.Flusher` 的后端流式响应，当前主要是饮食管家 SSE 接口；不改变接口路径、请求体、鉴权策略、数据库结构或前端调用口径。
+- **兼容性/风险**：
+  - 低。修复仅补齐中间件对标准流式接口的能力透传，普通 JSON 接口状态记录逻辑不变。
+  - 上游 AI 返回内容质量仍取决于 `DIET_ASSISTANT_AI_*` 当前配置的代理与模型，本次修复只解决后端本地 `500`。
+- **验证情况**：
+  - `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache GOCACHE=/tmp/caipu-go-build-cache go test ./...` 通过。
+  - `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache GOCACHE=/tmp/caipu-go-build-cache go build -o bin/server ./cmd/server` 通过。
+  - `systemctl restart caipu-backend` 已完成，服务于 `2026-04-29 23:08:10 CST` 重启为 `MainPID=259672`。
+  - `curl -fsS http://127.0.0.1:8080/healthz` 与 `curl -fsS http://127.0.0.1:8080/api/healthz` 均返回 `code=0`。
+  - 使用临时本机 JWT 对 `POST /api/diet-assistant/chat/stream` 发送“你好呀”，接口返回 `200 OK`，并收到 SSE `delta` 与 `done` 事件。
+
+## 2026-04-29 (生产启用饮食管家 AI 配置)
+
+### Changed
+
+- **修改时间**：2026-04-29 23:04 CST
+- **背景**：用户要求将饮食管家上游 AI 配置写入生产后端配置文件，并重启后端服务，使新接入的流式聊天接口可在线上使用。
+- **核心改动**：
+  - 在未纳入 Git 的 `backend/configs/prod.env` 中配置 `DIET_ASSISTANT_AI_BASE_URL`、`DIET_ASSISTANT_AI_API_KEY`、`DIET_ASSISTANT_AI_MODEL`、`DIET_ASSISTANT_AI_TIMEOUT_SECONDS`；变更记录不记录真实 API Key。
+  - 首次仅重启后端后发现线上 `backend/bin/server` 仍是 2026-04-29 16:16 构建版本，`POST /api/diet-assistant/chat/stream` 返回 `404`，说明当前二进制尚未包含饮食管家路由。
+  - 已使用当前仓库代码重新构建 `backend/bin/server`，并再次重启 `caipu-backend`，使饮食管家路由在生产服务中注册生效。
+- **影响范围**：
+  - 生产后端运行配置：`backend/configs/prod.env`
+  - 生产后端二进制：`backend/bin/server`
+  - systemd 服务：`caipu-backend`
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 接口；不改变小程序前端代码、后台前端、数据库结构或其他业务接口契约。
+- **兼容性/风险**：
+  - `DIET_ASSISTANT_AI_API_KEY` 仅保存在生产配置文件中，未写入 Git 跟踪文件。
+  - 已确认接口路由从 `404` 变为未登录时的 `401`，表示路由已生效且仍受登录态保护；本次未使用真实用户 token 调用上游，避免产生真实 AI token 消耗。
+- **验证情况**：
+  - `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache GOCACHE=/tmp/caipu-go-build-cache go test ./...` 通过。
+  - `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache GOCACHE=/tmp/caipu-go-build-cache go build -o bin/server ./cmd/server` 通过。
+  - `systemctl restart caipu-backend` 已完成，服务于 `2026-04-29 23:04:00 CST` 重启为 `MainPID=258622`。
+  - `curl -fsS http://127.0.0.1:8080/healthz` 与 `curl -fsS http://127.0.0.1:8080/api/healthz` 均返回 `code=0`。
+  - 本机无 token 探测 `POST /api/diet-assistant/chat/stream` 返回 `401 authorization header is required`，确认接口已注册并由登录态保护。
+
 ## 2026-04-29 (饮食管家流式 AI 接口与多轮对话接通)
 
 ### Added
