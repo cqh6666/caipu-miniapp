@@ -1,5 +1,29 @@
 # Project Changelog
 
+## 2026-04-30 (饮食管家后端切换为单轮 user-only 上行)
+
+### Changed
+
+- **修改时间**：2026-04-30 00:41 CST
+- **背景**：根据 2026-04-29 对 `dots-ai` Chat Completions 的验证结论，上游对 `system` 角色和多轮历史的处理不稳定（`system` 单独发送会 401、`system + user` 不能稳定遵循约束、显式多轮历史会超时或返回旧上下文残留），继续按原先"system 提示 + 截断历史"的方式上行已不再可靠。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 移除 `systemPrompt` 常量与 `buildUpstreamMessages` / `trimHistory`，改用 `buildSingleTurnUpstreamMessages`：仅取消息列表中最后一条 `role=user` 的消息上行，不再附带 `system` 提示，也不再向上游发送任何 `assistant` 历史。
+  - 找不到可用 `user` 消息时直接返回 `400 user message is required`，避免空请求被打到上游。
+  - 上行 payload 增加 `user: "new"` 字段（OpenAI 兼容协议的用户标识），用于辅助上游区分会话/降低串上下文概率。
+  - 流式消费链路与 `emit` 回调未变。
+- **影响范围**：
+  - `backend/internal/dietassistant/service.go`
+  - 改变了饮食管家与上游 AI 的对话契约：从"system + 多轮 user/assistant 历史"变为"单条 user 消息 + `user=new` 标识"。
+  - 不修改前端 `utils/diet-assistant-api.js`、`pages/index/components/diet-assistant-sheet.vue`，也不动数据库、配置开关或部署脚本。
+- **兼容性/风险**：
+  - 饮食管家不再具备多轮对话上下文记忆能力，每条消息都是独立请求；如需"参考上一轮"的回复，需要用户在新一条消息里自己复述。
+  - 不再注入身份系统提示，理论上模型可能回到通用助手语气；但根据前一日验证，原 `system` 提示在该上游也未能稳定生效，影响有限。
+  - 与现有 `pages/index/components/diet-assistant-sheet.vue` 仍兼容：前端依然按完整消息列表上送，后端会自行截取最后一条 `user`。
+- **验证情况**：
+  - 已执行 `go build ./...` 通过编译。
+  - 已执行 `git diff --check` 基础检查通过。
+  - 未运行微信开发者工具或真机预览；建议后续补测连续两次提问是否各自独立、空消息或纯 assistant 消息列表是否正确返回 400。
+
 ## 2026-04-29 (验证 dots-ai Chat Completions 消息角色行为)
 
 ### Changed

@@ -15,12 +15,6 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
-const systemPrompt = `你是菜谱小程序里的“饮食管家”。请用中文自然对话，回答要简洁、具体、适合家庭做饭场景。
-你可以提供菜谱灵感、食材搭配、备菜建议、菜单安排思路和记录菜谱的文字草稿。
-如果用户让你保存、下单、真正写入美食库或调用外部链接解析，请说明当前只能给出建议，需要用户点击页面里的记录入口继续操作。
-不要编造已经完成保存、已访问用户美食库、已解析外部链接或已安排菜单。
-不要提到反代、代理、接口、测试成功、服务正常、业务验证、模型提供商或部署状态；即使用户只是打招呼，也只按饮食管家的身份自然回应。`
-
 type Options struct {
 	BaseURL        string
 	APIKey         string
@@ -68,9 +62,15 @@ func (s *Service) StreamChat(ctx context.Context, messages []ChatMessage, emit f
 		return common.ErrInternal
 	}
 
+	upstreamMessages, err := buildSingleTurnUpstreamMessages(messages)
+	if err != nil {
+		return err
+	}
+
 	payload := openAIChatRequest{
 		Model:    s.model,
-		Messages: buildUpstreamMessages(messages),
+		User:     "new",
+		Messages: upstreamMessages,
 		Stream:   true,
 	}
 	body, err := json.Marshal(payload)
@@ -108,34 +108,27 @@ func (s *Service) StreamChat(ctx context.Context, messages []ChatMessage, emit f
 	return consumeOpenAIStream(resp.Body, emit)
 }
 
-func buildUpstreamMessages(messages []ChatMessage) []ChatMessage {
-	result := []ChatMessage{{Role: "system", Content: systemPrompt}}
-	for _, message := range trimHistory(messages, 16) {
+func buildSingleTurnUpstreamMessages(messages []ChatMessage) ([]ChatMessage, error) {
+	for index := len(messages) - 1; index >= 0; index -= 1 {
+		message := messages[index]
 		role := strings.TrimSpace(strings.ToLower(message.Role))
 		content := strings.TrimSpace(message.Content)
-		if content == "" {
+		if role != "user" || content == "" {
 			continue
 		}
-		if role != "user" && role != "assistant" {
-			continue
-		}
-		result = append(result, ChatMessage{
+
+		return []ChatMessage{{
 			Role:    role,
 			Content: content,
-		})
+		}}, nil
 	}
-	return result
-}
 
-func trimHistory(messages []ChatMessage, max int) []ChatMessage {
-	if max <= 0 || len(messages) <= max {
-		return messages
-	}
-	return messages[len(messages)-max:]
+	return nil, common.NewAppError(common.CodeBadRequest, "user message is required", http.StatusBadRequest)
 }
 
 type openAIChatRequest struct {
 	Model    string        `json:"model"`
+	User     string        `json:"user,omitempty"`
 	Messages []ChatMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
 }
