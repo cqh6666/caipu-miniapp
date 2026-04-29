@@ -44,20 +44,21 @@
 				</view>
 				<view
 					v-if="!isLibraryMealOrderMode"
-					class="recipe-switch"
-					:class="'recipe-switch--' + card.status"
+					class="recipe-switch-shell"
 					@tap.stop="$emit('toggle-status', card.id)"
 				>
-					<view class="recipe-switch__track">
-						<view class="recipe-switch__option recipe-switch__option--wishlist">
-							<up-icon name="heart-fill" size="12" :color="card.status === 'wishlist' ? '#986e55' : '#c3b4a7'"></up-icon>
+					<view class="recipe-switch" :class="'recipe-switch--' + card.status">
+						<view class="recipe-switch__track">
+							<view class="recipe-switch__option recipe-switch__option--wishlist">
+								<up-icon name="heart-fill" size="12" :color="card.status === 'wishlist' ? '#986e55' : '#c3b4a7'"></up-icon>
+							</view>
+							<view class="recipe-switch__option recipe-switch__option--done">
+								<up-icon name="checkmark-circle-fill" size="12" :color="card.status === 'done' ? '#617a60' : '#adb7ac'"></up-icon>
+							</view>
 						</view>
-						<view class="recipe-switch__option recipe-switch__option--done">
-							<up-icon name="checkmark-circle-fill" size="12" :color="card.status === 'done' ? '#617a60' : '#adb7ac'"></up-icon>
+						<view class="recipe-switch__thumb">
+							<up-icon :name="statusIcon" size="12" :color="statusIconColor"></up-icon>
 						</view>
-					</view>
-					<view class="recipe-switch__thumb">
-						<up-icon :name="statusIcon" size="12" :color="statusIconColor"></up-icon>
 					</view>
 				</view>
 				<view v-else class="meal-order-control" @tap.stop>
@@ -79,7 +80,11 @@
 					</view>
 				</view>
 			</view>
-			<text v-if="!isLibraryMealOrderMode && card.listSummary" class="recipe-card__summary">{{ card.listSummary }}</text>
+			<text
+				v-if="!isLibraryMealOrderMode && card.listSummary"
+				class="recipe-card__summary"
+				:class="{ 'recipe-card__summary--placeholder': card.listSummaryIsPlaceholder }"
+			>{{ card.listSummary }}</text>
 		</view>
 	</view>
 </template>

@@ -3533,6 +3533,7 @@ export default {
 
 	.hero-card__title {
 		display: block;
+		font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
 		font-size: 44rpx;
 		font-weight: 800;
 		line-height: 1.25;
@@ -3711,6 +3712,7 @@ export default {
 	.detail-title {
 		display: block;
 		margin-top: 20rpx;
+		font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
 		font-size: 44rpx;
 		font-weight: 700;
 		line-height: 1.2;

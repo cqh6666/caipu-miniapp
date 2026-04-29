@@ -42,13 +42,28 @@
 			@touchstart="$emit('spotlight-touchstart', $event)"
 			@touchend="$emit('spotlight-touchend', $event)"
 		>
+			<view class="meal-order-spotlight__icon-mark">
+				<up-icon name="calendar" size="16" color="#bf715f"></up-icon>
+			</view>
 			<view class="meal-order-spotlight__main">
-				<text class="meal-order-spotlight__title">{{ mealOrderSpotlightTitle }}</text>
-				<text class="meal-order-spotlight__desc">{{ mealOrderSpotlightDesc }}</text>
+				<view class="meal-order-spotlight__heading">
+					<text class="meal-order-spotlight__date">{{ mealOrderSpotlightDateText }}</text>
+					<text v-if="mealOrderSpotlightWeekday" class="meal-order-spotlight__weekday">{{ mealOrderSpotlightWeekday }}</text>
+					<view
+						v-if="mealOrderSpotlightStatusText"
+						class="meal-order-spotlight__chip"
+						:class="`meal-order-spotlight__chip--${mealOrderSpotlightStatusKind}`"
+					>
+						<text class="meal-order-spotlight__chip-text">{{ mealOrderSpotlightStatusText }}</text>
+					</view>
+				</view>
+				<text class="meal-order-spotlight__desc">· {{ mealOrderSpotlightDesc }}</text>
 			</view>
 			<view class="meal-order-spotlight__aside">
-				<text v-if="mealOrderSpotlightMetaText" class="meal-order-spotlight__meta-text">{{ mealOrderSpotlightMetaText }}</text>
-				<up-icon name="arrow-right" size="16" color="#8a7968"></up-icon>
+				<view v-if="mealOrderSpotlightMetaText" class="meal-order-spotlight__progress">
+					<text class="meal-order-spotlight__progress-text">{{ mealOrderSpotlightMetaText }}</text>
+				</view>
+				<up-icon name="arrow-right" size="14" color="#8a7968"></up-icon>
 			</view>
 		</view>
 	</view>
@@ -74,7 +89,19 @@ export default {
 			type: Boolean,
 			default: false
 		},
-		mealOrderSpotlightTitle: {
+		mealOrderSpotlightDateText: {
+			type: String,
+			default: ''
+		},
+		mealOrderSpotlightWeekday: {
+			type: String,
+			default: ''
+		},
+		mealOrderSpotlightStatusText: {
+			type: String,
+			default: ''
+		},
+		mealOrderSpotlightStatusKind: {
 			type: String,
 			default: ''
 		},
@@ -106,7 +133,7 @@ export default {
 			return [
 				this.mealOrderSpotlightMotionDirection || 'idle',
 				this.mealOrderSpotlightMotionTick,
-				this.mealOrderSpotlightTitle,
+				this.mealOrderSpotlightDateText,
 				this.mealOrderSpotlightMetaText
 			].join(':')
 		}

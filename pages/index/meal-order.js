@@ -56,6 +56,19 @@ export function formatMealOrderDateText(value = '') {
 	return `${month}月${day}日 ${weekday}`
 }
 
+export function formatMealOrderDateParts(value = '') {
+	const date = parseISODate(value)
+	if (!date) return { dateText: '', weekday: '', isoDate: '' }
+	const month = padDateNumber(date.getMonth() + 1)
+	const day = padDateNumber(date.getDate())
+	const weekday = mealOrderWeekdays[date.getDay()] || ''
+	return {
+		dateText: `${month}月${day}日`,
+		weekday,
+		isoDate: toISODate(date)
+	}
+}
+
 export function formatMealOrderHeaderTitle(value = '') {
 	const date = parseISODate(value)
 	if (!date) return '这天的小菜单'

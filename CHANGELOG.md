@@ -1,5 +1,156 @@
 # Project Changelog
 
+## 2026-04-30 (美食库菜卡微调 + 空态主 / 次动作组件化 · Phase D)
+
+### Added
+
+- `pages/index/components/library-empty-state.vue` + `library-empty-state.scss`：美食库专属的空态组件，承载图标章 + 标题 + 描述 + 主 / 次动作四区结构。
+  - 主动作：`80rpx` 高、深棕渐变（`linear-gradient(180deg, --color-brand-brown 0%, #4a3a2c 100%)`）+ 内描边高光、`scale(0.96)` 按压反馈。
+  - 次动作：`56rpx` 高暖灰胶囊（`var(--color-surface-warm)` 背景 + `var(--color-border-soft)` 边框），按压 `translateY(1rpx)` 轻反馈。
+  - 仅依赖 token，不引入新色值。组件 `kind` 入参支持 `search-no-results` / `meal-empty` / `status-empty` 三类，分别决定图标与色调。
+- `pages/index/recipe-card.js` 新增 `RECIPE_LIST_SUMMARY_PLACEHOLDER` 常量与 `pickFirstParsedStep` / `pickFirstNonEmptySummary` 私有 helper：菜卡摘要按 `summary → ingredient → note → 解析步骤第一条` 优先级回退，全部为空时落到占位文本 `"还没有备注，点开补一笔～"`，并通过 `card.listSummaryIsPlaceholder` 标记是否为占位。
+
+### Changed
+
+- **修改时间**：2026-04-30 CST
+- **背景**：按 `docs/food-library-ui-redesign-plan-2026-04-30.md` v2 §4.5 / §4.6 落地阶段 D，把菜卡来源徽 / 状态 switch 触控扩面 / 摘要兜底三处微调，加上空态从"光秃图标 + 文字"升级到"主 / 次动作"组件化。
+- **核心改动**：
+  - `pages/index/index.vue` token 块新增 `--color-text-muted: #9f9387`，给摘要占位 / 空态描述提供弱文色源。
+  - `pages/index/components/recipe-card-item.scss`：
+    - `.recipe-card__source-badge` 背景 `rgba(39,31,25,0.52) → rgba(31,22,16,0.66)`，边框 `1px rgba(255,248,240,0.14) → 1rpx rgba(255,248,240,0.18)`，提升小红书 / B 站 / 链接来源徽在浅色封面上的对比度。
+    - 新增 `.recipe-switch-shell`：`padding: 6rpx; margin: -6rpx;`，把状态 switch 的可点区域从 `52rpx` 扩到 `64rpx`，同时通过负 margin 抵消让外观保持原位。
+    - `.recipe-switch` 高度 `52rpx → 56rpx`，`.recipe-switch__thumb` 尺寸 `46×46rpx → 50×50rpx`，对应 `--done` 态 `translateX(64rpx) → translateX(60rpx)` 与按压态 `translateX(64rpx) scale(0.95) → translateX(60rpx) scale(0.95)`，保证 thumb 在 done 槽位仍贴右内边距 4rpx。
+    - 新增 `.recipe-card__summary--placeholder`：`color: var(--color-text-muted); font-style: italic`，承接 `card.listSummaryIsPlaceholder` 时的弱提示视觉。
+  - `pages/index/components/recipe-card-item.vue`：
+    - 状态 switch 模板从单层 `.recipe-switch` 重构为 `.recipe-switch-shell > .recipe-switch`，`@tap.stop="$emit('toggle-status')"` 移到外层 shell。
+    - 摘要 `.recipe-card__summary` 增加 `:class="{ 'recipe-card__summary--placeholder': card.listSummaryIsPlaceholder }"`。
+  - `pages/index/recipe-card.js`：`buildRecipeListSummary` 改为四级回退；`buildRecipeCard` 新增 `listSummaryIsPlaceholder` 字段，避免上层重复跑 fallback 逻辑。
+  - `pages/index/index.vue`：
+    - 模板把原 `<view class="empty-state"><up-icon ...>{{ title }}{{ desc }}</view>` 替换为 `<library-empty-state :kind :title :description :primary-text :primary-icon :secondary-text @primary @secondary />`。
+    - 新增四个计算属性：`emptyStateKind`（推断 search / status / meal 三态）、`emptyStatePrimaryText`、`emptyStatePrimaryIcon`、`emptyStateSecondaryText`；`emptyStateDesc` 文案微调，把原来的"点中间的加号新增一道菜"改为"点下方按钮新增一道菜"，与组件主动作呼应。
+    - 新增两个方法：`handleEmptyStatePrimary` / `handleEmptyStateSecondary`：搜索无结果 → 主"添加这道菜"调 `openAddSheet()`，次"清除搜索"清空 `searchKeyword`；状态空 → 主"查看全部"切到 `all`，次"添加这道菜"调 `openAddSheet()`；餐别空 → 主"添加这道菜"调 `openAddSheet()`，无次动作。`presetTitle` 预填关键词作为 P1 跟进，本轮先调通。
+    - 删除原 `.empty-state` / `.empty-state__title` / `.empty-state__desc` SCSS 规则；同步删除 `.soft-empty` / `.soft-empty__text` / `.soft-empty--inline`（这三个在 `index.vue` 模板里没有使用点，是历史 dead code；其他用到 `.soft-empty` 的组件如 `kitchen-section.vue` / `meal-order-cart-sheet.vue` 都各自带 scoped 样式，不受影响）。
+- **影响范围**：
+  - `pages/index/components/library-empty-state.vue`、`library-empty-state.scss`（新建）。
+  - `pages/index/recipe-card.js`：摘要 fallback + 占位标记字段。
+  - `pages/index/components/recipe-card-item.vue`、`recipe-card-item.scss`：来源徽 / switch 触控 / switch 几何 / 摘要占位四处。
+  - `pages/index/index.vue`：token 增 `--color-text-muted`、import 新组件、模板替换、computed 增 4 / methods 增 2、SCSS 清理。
+  - 不修改 `recipe-store.js`、后端接口、邀请链路、点菜模式判断；点菜模式下 `<library-empty-state>` 仍只在 `filteredRecipes.length === 0` 时显示（与改前一致）。
+- **兼容性/风险**：
+  - `recipe-switch-shell` 通过负 margin 抵消 6rpx padding，外观保持原大小；如果未来把 `.recipe-card__top` 的 gap 调小，可能让 shell 与左侧标题区视觉贴边，目前 gap 12rpx 仍有富余。
+  - thumb `translateX(60rpx)` 是按"track 内宽 110rpx + thumb 50rpx + 左右 padding 4rpx" 反算的，未来若改 track 宽度需同步重算；已在注释代码处通过几何对齐保留。
+  - 摘要占位文本走 `font-style: italic`，鸿蒙部分系统对中文斜体回退到正体，是降级容忍可接受。
+  - 同步失败 / 离线状态的空态在本轮未单独建模（`recipe-store.js` 未暴露独立 `syncStatus` 信号），保留组件 `kind` 入参可扩展空间，将来补上 `sync-error` 仅需新增一支分支。
+- **验证情况**：
+  - `grep` 校验：① `pages/index/index.vue` 已无 `.empty-state` / `.empty-state__title` / `.empty-state__desc` / `.soft-empty*` 残留 SCSS；模板上 `library-empty-state` 与所有 prop / 事件名一一对应。② `recipe-card-item.vue` 的 `.recipe-switch-shell` 包了原 `.recipe-switch`，`@tap.stop` 移动到 shell 上，inner switch 不再绑事件。③ `recipe-card.js` 的 `buildRecipeCard` 输出 `listSummaryIsPlaceholder` 与模板上的 `:class` 名一致。④ `recipe-card-item.scss` 的 `.recipe-switch--done` thumb `translateX(60rpx)` 与按压态对齐。
+  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议下一轮真机走 §8：① 搜索 "番茄炒蛋" 等不存在关键词 → 显示"没有找到 xxx" + "添加这道菜" 主 + "清除搜索" 次；② 切到只有想吃但没有吃过的餐别 + 想吃 → 全部空（验证仅在某些数据状态下能复现，可手动改 status 触发）；③ 全空餐别 → 主"添加这道菜"，无次动作；④ 来源徽（B 站 / 小红书）在浅奶油封面上对比度更高；⑤ 状态 switch 触控边缘 6rpx 内点击仍能切换；⑥ 没有 summary / ingredient / note 也没有解析步骤的菜卡显示斜体占位"还没有备注，点开补一笔～"。
+- **后续动作**：
+  - Phase E（可选）：详情页返回入场动效、spotlight tap `scale(0.98) → 淡出` 反馈、固顶卡书签双色渐变。
+  - P1：`openAddSheet` 接受 `presetTitle` 入参，让"添加这道菜"在搜索无结果时把关键词预填到新增弹层。
+
+## 2026-04-30 (菜单 spotlight 升级为日历计划卡 · Phase C)
+
+### Changed
+
+- **修改时间**：2026-04-30 CST
+- **背景**：按 `docs/food-library-ui-redesign-plan-2026-04-30.md` v2 §4.2 / §5.5 落地阶段 C，把美食库顶部的 `meal-order-spotlight` 从单行卡改为参考原型 `PlanCard`（`我们的美食空间/src/components/PlanCard.tsx`）的"日历图标章 + 衬线日期 + 周几 + 状态 chip + 进度 chip + 箭头"四区结构。
+- **核心改动**：
+  - `pages/index/meal-order.js` 新增 `formatMealOrderDateParts(value)`，返回 `{ dateText, weekday, isoDate }`，让上游可以分别渲染日期主体与周几（原 `formatMealOrderDateText` 保留，老调用点未改）。
+  - `pages/index/index.vue` 引入新工具方法，把 `mealOrderSpotlightTitle` 拆为四个 computed：`mealOrderSpotlightDateText`（如 `04月18日`）、`mealOrderSpotlightWeekday`（如 `周六`）、`mealOrderSpotlightStatusText`（`已安排` / `草稿`）、`mealOrderSpotlightStatusKind`（`submitted` / `draft`）。`mealOrderSpotlightDesc` / `mealOrderSpotlightMetaText` 维持原契约。
+  - `<library-header-section>` 调用点同步换掉旧 `:meal-order-spotlight-title`，新增 4 个 prop 绑定。
+  - `pages/index/components/library-header-section.vue` 模板把 spotlight 拆为四块：
+    - `.meal-order-spotlight__icon-mark`：56rpx 方块、橙色描边 + 内填浅奶白渐变，承载 `up-icon name="calendar"`。
+    - `.meal-order-spotlight__main`：第一行 `.meal-order-spotlight__heading`（衬线日期 32rpx · 700 + 周几 22rpx · 600 + 状态 chip），第二行 `.meal-order-spotlight__desc`（前置 `·` 装饰，单行省略）。
+    - `.meal-order-spotlight__aside`：竖排，顶部 `.meal-order-spotlight__progress` 衬线进度 chip（`1/3` 样式，多记录时才显示），底部 arrow icon。
+    - 状态 chip 区分两种 kind：`submitted` 用陶土橙底 (`rgba(191, 113, 95, 0.10/0.18)`)、`draft` 用中性棕底 (`rgba(122, 102, 85, 0.10/0.18)`)。
+  - `pages/index/components/library-header-section.scss` `meal-order-spotlight` 重写：
+    - 容器圆角 `22rpx → 28rpx`、padding `18rpx 20rpx → 20rpx 22rpx`，背景从 `radial + rgba(255,250,244,0.94)` 改为 `radial + linear-gradient(145deg, #fffdf8 0%, #f4ecdf 100%)` 双层；边框换 `var(--color-border-soft)`；阴影沿用 clay-soft 深度。
+    - 删除旧 `.meal-order-spotlight__title`、`.meal-order-spotlight__meta-text`，新增 `.meal-order-spotlight__icon-mark` / `__heading` / `__date` / `__weekday` / `__chip(__-submitted/--draft)` / `__chip-text` / `__progress` / `__progress-text` 9 条规则。
+    - 衬线字体仅用于 `__date` 与 `__progress-text`：`font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif`，符合 v2 §3.3 关于"刊物感数字"的限定使用。
+    - `meal-order-spotlight-slide-next/previous` keyframe：`translateX 16rpx → 20rpx`，新增 `scale(0.98) → 1`，时长 `220ms → 240ms`，对应 v2 §5.5 的"翻书感"。
+    - `spotlightMotionKey` 改为引用 `mealOrderSpotlightDateText`（旧 key 用 title，title 已下线）。
+- **影响范围**：
+  - `pages/index/meal-order.js`：新增导出函数；不动旧导出。
+  - `pages/index/index.vue`：模板（spotlight prop 绑定）、computed（4 个新计算属性 + 删除 `mealOrderSpotlightTitle`）、import 新增 `formatMealOrderDateParts`。
+  - `pages/index/components/library-header-section.vue`：模板 + props（删除 `mealOrderSpotlightTitle`，新增 4 个）。
+  - `pages/index/components/library-header-section.scss`：spotlight 区块重写 + slide keyframe 调整。
+  - 不修改 `recipe-store.js`、`recipe-card-item.*`、`pages/index/index.vue` 的工具卡 / 状态 pill / 菜卡逻辑、后端接口、邀请链路、点菜模式判断。
+- **兼容性/风险**：
+  - `meal-order-spotlight` 仅在 `!isLibraryMealOrderMode && hasMealOrderSpotlightRecord` 时渲染，新 prop 在无 record 时全为空字符串，`v-if` 防止空文字渲染。
+  - 衬线字体（Songti SC / STKaiti）在部分鸿蒙设备 fallback 不一致，最终回落到 `serif`，仅日期数字 / 进度 chip 受影响，内容仍可读。
+  - 状态 chip 的 `已安排 / 草稿` 文案绑定 `record.type === 'submitted'`；草稿（`draft`）使用中性棕底以避免和 `submitted` 抢眼。
+  - `mealOrderSpotlightTitle` 仅在原 prop 链路使用，下线后无外部调用点（`grep` 已确认零残留）。
+- **验证情况**：
+  - `grep` 校验：① 三处文件均无 `mealOrderSpotlightTitle` / `meal-order-spotlight-title` / `meal-order-spotlight__title` / `meal-order-spotlight__meta-text` 残留；② 4 个新 prop 在 `index.vue` 模板 / `index.vue` computed / `library-header-section.vue` props / `library-header-section.vue` 模板四处一一对应。
+  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议下一轮真机走 §8：① 顶部 spotlight 显示日历图标章 + 衬线日期 + 周几 + 状态 chip + 进度 chip + 箭头六要素全齐；② 切换多记录时左右滑动有 `translateX(20rpx) + scale(0.98) → 1` 翻书感；③ 单条 record 时进度 chip 不渲染，arrow 仍贴右下；④ submitted / draft 两种 kind 状态 chip 颜色区分明显；⑤ 点菜模式下 spotlight 不渲染（与改前一致）。
+- **后续动作**：
+  - Phase D：菜卡来源徽对比度 / 触控扩面 / 摘要兜底 + 空态主 / 次动作组件化（`recipe-card-item.scss`、`recipe-card.js` 摘要兜底、新建 `library-empty-state.vue`）。
+
+## 2026-04-30 (美食库工具卡 / 状态 pill 视觉升级 · Phase B)
+
+### Changed
+
+- **修改时间**：2026-04-30 CST
+- **背景**：按 `docs/food-library-ui-redesign-plan-2026-04-30.md` v2 §4.3 / §5.3 / §5.4 落地阶段 B（工具卡 + 状态 pill 视觉升级），是 Phase A token 抽取后第一波带视觉变化的 PR。同期把 `--color-surface` / `--color-surface-warm` / `--shadow-clay-soft` / `--shadow-clay-strong` 四个 token 挂上 `page` 选择器，方便 Phase C / D 复用。
+- **核心改动**：
+  - `pages/index/index.vue` token 块扩展到 10 个变量：新增 `--color-surface: #fffdf8`、`--color-surface-warm: #f4ecdf`、`--shadow-clay-soft`、`--shadow-clay-strong`；其中 `--color-surface` 与 `--shadow-clay-strong` 立即被工具卡使用，是 Phase B 的视觉切换点。
+  - 工具卡 `.toolbar`：圆角 `22rpx → 32rpx`，padding `18rpx → 24rpx`，背景从 `rgba(255,255,255,0.86)` 换为 `var(--color-surface)`（`#fffdf8` 实色），边框从 `rgba(0,0,0,0.03)` 换为 `var(--color-border-soft)`，阴影从 `0 8rpx 20rpx rgba(56,44,30,0.04)` 换为 `var(--shadow-clay-strong)`，整体更"暖白立体"。`.page-content--meal-order .toolbar` override 保留（点菜模式仍是透明）。
+  - 工具卡新增 `.toolbar--bounce-left` / `.toolbar--bounce-right` keyframe（140ms ease-out、最大位移 8rpx），由餐别 tab 切换时通过新增方法 `triggerToolbarBounce` 触发，给"内容已切"做轻反馈。
+  - 搜索框 `.search-box`：高度 `68rpx → 76rpx`，圆角 `18rpx → 22rpx`，padding `0 18rpx → 0 18rpx 0 12rpx`，新增 `.search-box__icon-shell`（40rpx 圆形、内填 `rgba(91, 74, 59, 0.06)`），原裸 `up-icon` 套进图标章；输入区高度同步 `68rpx → 76rpx`。
+  - 状态 pill 行重构：`.status-track` 从"3 个独立 pill + 10rpx gap"改为"分段控件容器 + 单 thumb 平移"。
+    - `.status-track` 加 `padding: 4rpx`、`border-radius: 18rpx`、轻底色 `rgba(91, 74, 59, 0.04)` + token 边框；移除 gap。
+    - 新增 `.status-track__thumb`：绝对定位、`width: calc((100% - 8rpx) / 3)`、`height: calc(100% - 8rpx)`、`transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)`。
+    - 通过 `.status-track--all/--wishlist/--done .status-track__thumb` 切换 `transform: translateX(0/100%/200%)` 与背景渐变（沿用原"中性棕 / 想吃棕 / 鼠尾草绿"三色）。
+    - `.status-pill` 自身去掉非激活态背景 / 激活态背景与 box-shadow（统一交给 thumb），保留按状态轻染 icon-shell 与 text 颜色（让未激活态依然能看出 wishlist / done 区分）。
+    - 新增 `.status-pill__count` + `.status-pill__count-text`（18rpx · 600，未激活 `rgba(91, 74, 59, 0.06)` 浅底，激活态 `rgba(255, 255, 255, 0.18)` 浅白），数据由新增 `statusCount(status)` 方法计算（在当前 `activeMealType` 下分别统计 all / wishlist / done）。
+  - 模板侧：`.toolbar` 加 `:class="toolbarBounceClass"`；状态 track 加 `:class="status-track--${activeStatus}"` 和 `<view class="status-track__thumb"></view>`；每个 pill 内加 count chip。
+  - 数据 / 方法：`data()` 新增 `toolbarBounceClass: ''`、`toolbarBounceTimer: null`；`methods` 新增 `triggerToolbarBounce(direction)` 与 `statusCount(status)`；`handleMealTypeTabChange` 在切换前先按 tab 顺序判断方向并触发 bounce；`onUnload` 清理 `toolbarBounceTimer`。
+- **影响范围**：
+  - `pages/index/index.vue`：模板（搜索图标章、状态 thumb、count chip、toolbar bounce class）、`<style>` 块（toolbar / search-box / status-track / status-pill 重写）、`data()` / `methods` / `onUnload`。
+  - 不修改 `pages/index/components/library-header-section.*`、`pages/index/components/recipe-card-item.*`、`recipe-store.js`、后端接口、邀请链路、点菜模式判断。
+- **兼容性/风险**：
+  - 点菜模式下 `.page-content--meal-order .toolbar` 把背景 / 边框 / 阴影 / padding / 圆角全部重置为透明 / 0，所以工具卡视觉升级不影响点菜模式头部。
+  - `.status-track` 的 thumb 用 `transform: translateX(N * 100%)` 实现平移，依赖三个 pill 平均分宽（`flex: 1`）+ 容器固定 `padding: 4rpx`；不同设备宽度下不会错位。
+  - count chip 数据由 `recipes` 数组实时过滤计算；菜谱量大（>500）时再考虑做缓存优化。
+  - 餐别 tab 切换的 bounce 动画放在 `triggerToolbarBounce` 里，使用 `$nextTick` + `setTimeout(160)`，避免连点时 class 没卸下来再加回去；`onUnload` 已清理 timer。
+  - `statusCount('all')` 等于"当前餐别 + 任意状态"的总数，与 `mealTypeCount` 在同一上下文下保持一致。
+- **验证情况**：
+  - 改后 `grep` 校验：旧的 `.status-pill--{status}` bg gradient、`.status-pill--active { box-shadow }`、`.status-pill--{x}.status-pill--active { bg/border }` 已全部删除；模板上的 `:class="status-track--${activeStatus}"` 与 CSS 上的 `.status-track--all/--wishlist/--done` 名称一一对应；`@keyframes toolbar-bounce-left/right` 与 `.toolbar--bounce-left/right` 名称一一对应；`statusCount`、`triggerToolbarBounce`、`toolbarBounceClass` 在模板 / data / methods 三处可联通。
+  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议下一轮真机走 §8：① 切换早餐 / 正餐时工具卡轻位移并回弹；② 切换全部 / 想吃 / 吃过时 thumb 在三个槽位之间顺滑平移；③ 三个 pill 显示各自数量徽标，激活态徽标背景变浅白；④ 工具卡圆角 32rpx、阴影感明显比改前更立体；⑤ 搜索框图标章背景圆形可见；⑥ 点菜模式工具卡仍透明、不下沉。
+- **后续动作**：
+  - Phase C：菜单 spotlight 升级为日历计划卡（`library-header-section.vue` + `.scss`）。
+  - Phase D：菜卡来源徽对比度 / 触控扩面 / 摘要兜底 + 空态主 / 次动作组件化。
+
+## 2026-04-30 (美食库设计 token 抽取 · Phase A · 零视觉差异)
+
+### Changed
+
+- **修改时间**：2026-04-30 CST
+- **背景**：按 `docs/food-library-ui-redesign-plan-2026-04-30.md`（v2 视觉与动效改造方案）阶段 A 落地设计 token，为后续 Phase B（工具卡 / 状态 pill 视觉升级）、Phase C（spotlight → PlanCard）、Phase D（菜卡 + 空态重做）做共享色板基础。本阶段只做"重构 + 视觉零差异"的别名替换，不调整任何具体取值。
+- **核心改动**：
+  - `pages/index/index.vue` 顶部新增一段非 scoped `<style>` 块，于 `page` 选择器声明 6 个 token 变量：`--color-bg`、`--color-text-primary`、`--color-text-on-brand`、`--color-brand-brown`、`--color-border-soft`、`--color-border-active`。token 值取**当前实际色值**（`#f6f4f1` / `#2f2923` / `#fffaf3` / `#5b4a3b` / `rgba(91, 74, 59, 0.07)` / `rgba(91, 74, 59, 0.16)`），而非 v2 §3.1 文档列出的目标值（`#F6F2EA`、`#5C4033` 等），避免本阶段引入视觉漂移；目标值的切换归 Phase B+。
+  - 替换 `pages/index/index.vue` 内 13 处 hard-code 色值为 `var(--token)`：`.app-shell` 背景、`.search-box` 边框 / `--active` 边框 / 输入色、`.page-content--meal-order .search-box` 边框、`.status-pill--wishlist.status-pill--active` 渐变末端 + 边框、`.status-pill--active .status-pill__text`、`.empty-state__title` / `.meal-panel__title` / `.stat-box__value` / `.simple-panel__title` / `.simple-list__title` 标题色等。
+  - 替换 `pages/index/components/library-header-section.scss` 内 3 处：`.page-header__title`、`.meal-order-spotlight__title`、`.meal-order-mode-bar__chip` 边框。
+  - 替换 `pages/index/components/recipe-card-item.scss` 内 5 处：`.recipe-card--active` 边框、`.recipe-card__title`、`.recipe-switch` 边框、`.meal-order-add__text`、`.meal-order-add__text--active`。
+- **影响范围**：
+  - `pages/index/index.vue`（新增 token 块 + 风格层 token 引用）
+  - `pages/index/components/library-header-section.scss`
+  - `pages/index/components/recipe-card-item.scss`
+  - 不修改后端接口、`recipe-store.js` 数据归一化、邀请链路、点菜模式判断逻辑。
+  - CSS 变量挂在 `page` 选择器上，子组件 scoped 样式通过 CSS 自定义属性继承自动取值，无须额外 `@import`。
+- **兼容性/风险**：
+  - 微信小程序原生支持 CSS 变量，子组件可通过 `var(--token)` 跨 scoped 边界取值。
+  - 仅做完全相等的色值替换（`#2f2923` → `--color-text-primary` 等），渲染结果应与改前像素级一致；建议改后用微信开发者工具或真机首屏对比一次确认。
+  - 模板内 JS 表达式中的颜色字符串（如 `pages/index/index.vue:105` 的 `:color="..."`）保持原样，因为 CSS 变量不能在 JS 上下文求值；这部分留待后续如有需要再以计算属性承接。
+- **验证情况**：
+  - 替换全部使用 `Edit` 工具的精确字符串匹配完成；改后 `grep` 三个文件对应 hard-code pattern 已无残留（除 token 声明本身）。
+  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议下一轮真机走 §8 视觉清单（首屏一屏五要素是否齐、菜卡颜色是否未漂移）后再开 Phase B。
+- **后续动作**：
+  - Phase B（工具卡圆角 22→32rpx、阴影升级、状态 pill 数量徽 + thumb 平移、餐别 tab 切换轻位移）。
+  - Phase C（spotlight → PlanCard 化）。
+  - Phase D（菜卡微调 + 空态重做）。
+  - Phase E（可选 polish）。
+
 ## 2026-04-30 (饮食管家后端切换为单轮 user-only 上行)
 
 ### Changed

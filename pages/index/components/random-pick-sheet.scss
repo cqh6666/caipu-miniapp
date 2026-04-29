@@ -238,10 +238,12 @@
 .random-pick-sheet__title {
 	display: block;
 	margin-top: 10rpx;
-	font-size: 42rpx;
+	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
+	font-size: 48rpx;
 	font-weight: 700;
-	line-height: 1.18;
-	color: #2f2923;
+	line-height: 1.22;
+	letter-spacing: 0.6rpx;
+	color: var(--color-text-primary);
 }
 
 .random-pick-sheet__meta {

@@ -14,7 +14,10 @@
 					:library-header-title="libraryHeaderTitle"
 					:library-header-summary="libraryHeaderSummary"
 					:has-meal-order-spotlight-record="!!mealOrderSpotlightRecord"
-					:meal-order-spotlight-title="mealOrderSpotlightTitle"
+					:meal-order-spotlight-date-text="mealOrderSpotlightDateText"
+					:meal-order-spotlight-weekday="mealOrderSpotlightWeekday"
+					:meal-order-spotlight-status-text="mealOrderSpotlightStatusText"
+					:meal-order-spotlight-status-kind="mealOrderSpotlightStatusKind"
 					:meal-order-spotlight-desc="mealOrderSpotlightDesc"
 					:meal-order-spotlight-meta-text="mealOrderSpotlightMetaText"
 					:meal-order-spotlight-motion-direction="mealOrderSpotlightMotionDirection"
@@ -25,13 +28,15 @@
 					@spotlight-touchstart="handleMealOrderSpotlightTouchStart"
 					@spotlight-touchend="handleMealOrderSpotlightTouchEnd"
 				></library-header-section>
-				<view class="toolbar">
+				<view class="toolbar" :class="toolbarBounceClass">
 					<view class="toolbar__search-row">
 						<view
 							class="search-box"
 							:class="{ 'search-box--active': isSearchFocused || trimmedSearchKeyword }"
 						>
-							<up-icon name="search" size="15" color="#8f8377"></up-icon>
+							<view class="search-box__icon">
+								<up-icon name="search" size="14" color="#a08775"></up-icon>
+							</view>
 							<input
 								v-model="searchKeyword"
 								class="search-box__input"
@@ -43,7 +48,7 @@
 								@confirm="handleSearchConfirm"
 							/>
 							<view v-if="trimmedSearchKeyword" class="search-box__clear" @tap="clearSearchKeyword">
-								<up-icon name="close" size="14" color="#8f8377"></up-icon>
+								<up-icon name="close" size="14" color="#a08775"></up-icon>
 							</view>
 						</view>
 					</view>
@@ -72,13 +77,11 @@
 								@tap="handleMealTypeTabChange(tab.value)"
 							>
 								<view class="meal-tab__left">
-									<view class="meal-tab__icon-shell">
-										<up-icon
-											:name="tab.icon"
-											size="12"
-											:color="activeMealType === tab.value ? tab.activeColor : '#8e8479'"
-										></up-icon>
-									</view>
+									<up-icon
+										:name="tab.icon"
+										size="16"
+										:color="activeMealType === tab.value ? tab.activeColor : '#a08775'"
+									></up-icon>
 									<text class="meal-tab__text">{{ tab.label }}</text>
 								</view>
 								<view class="meal-tab__count">
@@ -97,15 +100,14 @@
 								:class="[`status-pill--${tab.value}`, { 'status-pill--active': activeStatus === tab.value }]"
 								@tap="handleStatusTabChange(tab.value)"
 							>
-								<view class="status-pill__inner">
-									<view class="status-pill__icon-shell">
-										<up-icon
-											:name="statusMap[tab.value].icon"
-											size="13"
-											:color="activeStatus === tab.value ? '#fffaf3' : tab.value === 'done' ? '#75866f' : '#8b6f5c'"
-										></up-icon>
-									</view>
-									<text class="status-pill__text">{{ tab.label }}</text>
+								<up-icon
+									:name="statusMap[tab.value].icon"
+									size="16"
+									:color="activeStatus === tab.value ? '#fffaf3' : tab.value === 'done' ? '#75866f' : '#a08775'"
+								></up-icon>
+								<text class="status-pill__text">{{ tab.label }}</text>
+								<view v-if="tab.value !== 'all'" class="status-pill__count">
+									<text class="status-pill__count-text">{{ statusCount(tab.value) }}</text>
 								</view>
 							</view>
 						</view>
@@ -152,11 +154,17 @@
 					></recipe-card-item>
 				</view>
 
-				<view v-else class="empty-state">
-					<up-icon name="empty-search" size="40" color="#c0b3a5"></up-icon>
-					<text class="empty-state__title">{{ emptyStateTitle }}</text>
-					<text class="empty-state__desc">{{ emptyStateDesc }}</text>
-				</view>
+				<library-empty-state
+					v-else
+					:kind="emptyStateKind"
+					:title="emptyStateTitle"
+					:description="emptyStateDesc"
+					:primary-text="emptyStatePrimaryText"
+					:primary-icon="emptyStatePrimaryIcon"
+					:secondary-text="emptyStateSecondaryText"
+					@primary="handleEmptyStatePrimary"
+					@secondary="handleEmptyStateSecondary"
+				></library-empty-state>
 			</template>
 
 			<template v-else>
@@ -460,6 +468,7 @@ import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFrom
 import InviteCodeSheet from './components/invite-code-sheet.vue'
 import InviteSheet from './components/invite-sheet.vue'
 import KitchenSection from './components/kitchen-section.vue'
+import LibraryEmptyState from './components/library-empty-state.vue'
 import LibraryHeaderSection from './components/library-header-section.vue'
 import MealOrderCartSheet from './components/meal-order-cart-sheet.vue'
 import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
@@ -474,6 +483,7 @@ import {
 	buildMealPlanPayload,
 	consumePendingMealOrderAction,
 	createEmptyMealOrderStore,
+	formatMealOrderDateParts,
 	formatMealOrderDateText,
 	formatMealOrderHeaderTitle,
 	nextWeekendISODate,
@@ -526,6 +536,7 @@ export default {
 		InviteCodeSheet,
 		InviteSheet,
 		KitchenSection,
+		LibraryEmptyState,
 		LibraryHeaderSection,
 		MealOrderCartSheet,
 		MealOrderCheckoutSheet,
@@ -541,6 +552,8 @@ export default {
 			activeSection: 'library',
 			activeMealType: 'main',
 			activeStatus: 'all',
+			toolbarBounceClass: '',
+			toolbarBounceTimer: null,
 			searchKeyword: '',
 			recentSearches: readRecentSearches(),
 			lastDraftLinkPrefill: readLastDraftLinkPrefill(),
@@ -668,6 +681,10 @@ export default {
 		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
+		if (this.toolbarBounceTimer) {
+			clearTimeout(this.toolbarBounceTimer)
+			this.toolbarBounceTimer = null
+		}
 		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
@@ -907,10 +924,25 @@ export default {
 		mealOrderSpotlightRecord() {
 			return this.mealOrderSpotlightRecords[this.mealOrderSpotlightRecordIndex] || null
 		},
-		mealOrderSpotlightTitle() {
+		mealOrderSpotlightDateText() {
 			const record = this.mealOrderSpotlightRecord
-			if (!record) return '还没有安排菜单'
-			return formatMealOrderDateText(record.planDate)
+			if (!record) return ''
+			return formatMealOrderDateParts(record.planDate).dateText
+		},
+		mealOrderSpotlightWeekday() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return ''
+			return formatMealOrderDateParts(record.planDate).weekday
+		},
+		mealOrderSpotlightStatusText() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return ''
+			return record.type === 'submitted' ? '已安排' : '草稿'
+		},
+		mealOrderSpotlightStatusKind() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return ''
+			return record.type === 'submitted' ? 'submitted' : 'draft'
 		},
 		mealOrderSpotlightDesc() {
 			const record = this.mealOrderSpotlightRecord
@@ -1039,6 +1071,11 @@ export default {
 		canResetLibraryFilters() {
 			return this.activeStatus !== 'all' || this.hasSearchKeyword
 		},
+		emptyStateKind() {
+			if (this.hasSearchKeyword) return 'search-no-results'
+			if (this.activeStatus !== 'all') return 'status-empty'
+			return 'meal-empty'
+		},
 		emptyStateTitle() {
 			if (this.hasSearchKeyword) {
 				return `没有找到“${this.trimmedSearchKeyword}”`
@@ -1053,12 +1090,27 @@ export default {
 				if (this.searchAssistKeywords.length) {
 					return `试试搜 ${this.searchAssistKeywords.join('、')}，或者换个关键词。`
 				}
-				return '试试换个关键词，或者点中间的加号新增一道菜。'
+				return '试试换个关键词，或者点下方按钮新增一道菜。'
 			}
 			if (this.activeStatus === 'all') {
-				return `试试切换到另一类餐别，或者点中间的加号新增一道${this.currentMealLabel}。`
+				return `试试切换到另一类餐别，或者点下方按钮新增一道${this.currentMealLabel}。`
 			}
-			return `可以先把${this.currentMealLabel}里的菜标记为${this.currentStatusLabel}，或者切换到全部看看。`
+			return `可以先把${this.currentMealLabel}里的菜标记为${this.currentStatusLabel}，或者点下方按钮回到全部。`
+		},
+		emptyStatePrimaryText() {
+			if (this.hasSearchKeyword) return '添加这道菜'
+			if (this.activeStatus !== 'all') return '查看全部'
+			return '添加这道菜'
+		},
+		emptyStatePrimaryIcon() {
+			if (this.hasSearchKeyword) return 'plus'
+			if (this.activeStatus !== 'all') return 'list-dot'
+			return 'plus'
+		},
+		emptyStateSecondaryText() {
+			if (this.hasSearchKeyword) return '清除搜索'
+			if (this.activeStatus !== 'all') return '添加这道菜'
+			return ''
 		},
 		inviteSheetSubtitle() {
 			if (!this.currentKitchenName) {
@@ -1320,6 +1372,9 @@ export default {
 		},
 		handleMealTypeTabChange(value) {
 			if (!this.mealTabs.some((tab) => tab.value === value) || this.activeMealType === value) return
+			const oldIdx = this.mealTabs.findIndex((tab) => tab.value === this.activeMealType)
+			const newIdx = this.mealTabs.findIndex((tab) => tab.value === value)
+			this.triggerToolbarBounce(newIdx > oldIdx ? 'right' : 'left')
 			this.activeMealType = value
 			this.bumpRecipeListMotion()
 		},
@@ -1327,6 +1382,41 @@ export default {
 			if (!this.statusTabs.some((tab) => tab.value === value) || this.activeStatus === value) return
 			this.activeStatus = value
 			this.bumpRecipeListMotion()
+		},
+		handleEmptyStatePrimary() {
+			if (this.hasSearchKeyword) {
+				this.openAddSheet()
+				return
+			}
+			if (this.activeStatus !== 'all') {
+				this.handleStatusTabChange('all')
+				return
+			}
+			this.openAddSheet()
+		},
+		handleEmptyStateSecondary() {
+			if (this.hasSearchKeyword) {
+				this.searchKeyword = ''
+				return
+			}
+			if (this.activeStatus !== 'all') {
+				this.openAddSheet()
+			}
+		},
+		triggerToolbarBounce(direction = 'right') {
+			const cls = `toolbar--bounce-${direction === 'left' ? 'left' : 'right'}`
+			this.toolbarBounceClass = ''
+			if (this.toolbarBounceTimer) {
+				clearTimeout(this.toolbarBounceTimer)
+				this.toolbarBounceTimer = null
+			}
+			this.$nextTick(() => {
+				this.toolbarBounceClass = cls
+				this.toolbarBounceTimer = setTimeout(() => {
+					this.toolbarBounceClass = ''
+					this.toolbarBounceTimer = null
+				}, 160)
+			})
 		},
 		bumpMealOrderSpotlightMotion(direction = 'next') {
 			this.mealOrderSpotlightMotionDirection = direction === 'previous' ? 'previous' : 'next'
@@ -2412,6 +2502,11 @@ export default {
 		mealTypeCount(type) {
 			return this.recipes.filter((recipe) => recipe.mealType === type).length
 		},
+		statusCount(status) {
+			const list = this.recipes.filter((recipe) => recipe.mealType === this.activeMealType)
+			if (status === 'all') return list.length
+			return list.filter((recipe) => recipe.status === status).length
+		},
 		resetLibraryFilters() {
 			this.activeStatus = 'all'
 			this.searchKeyword = ''
@@ -2799,10 +2894,35 @@ export default {
 }
 </script>
 
+<style lang="scss">
+	/* 美食库设计 token v1
+	 * Phase A（2026-04-30）：抽取常用色为 token 别名，零视觉差异。
+	 * Phase B（2026-04-30）：追加表面色 / 阴影 token，工具卡 / 状态 pill 起开始使用目标值，引入视觉升级。
+	 * Phase D（2026-04-30）：新增 --color-text-muted 用于摘要兜底占位与空态描述弱文。
+	 * 规范：docs/food-library-ui-redesign-plan-2026-04-30.md §3.1 / §3.2 */
+	page {
+		--color-bg: #f6f4f1;
+		--color-surface: #fffdf8;
+		--color-surface-warm: #f4ecdf;
+		--color-text-primary: #2f2923;
+		--color-text-on-brand: #fffaf3;
+		--color-text-muted: #9f9387;
+		--color-brand-brown: #5b4a3b;
+		--color-border-soft: rgba(91, 74, 59, 0.07);
+		--color-border-active: rgba(91, 74, 59, 0.16);
+		--shadow-clay-soft:
+			0 12rpx 24rpx rgba(70, 54, 40, 0.05),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
+		--shadow-clay-strong:
+			0 14rpx 32rpx rgba(56, 44, 30, 0.06),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.7);
+	}
+</style>
+
 <style lang="scss" scoped>
 	.app-shell {
 		min-height: 100vh;
-		background: #f6f4f1;
+		background: var(--color-bg);
 	}
 
 	.page-content {
@@ -2864,12 +2984,33 @@ export default {
 	}
 
 	.toolbar {
-		margin-top: 16rpx;
-		padding: 18rpx;
-		border-radius: 22rpx;
-		background: rgba(255, 255, 255, 0.86);
-		border: 1px solid rgba(0, 0, 0, 0.03);
-		box-shadow: 0 8rpx 20rpx rgba(56, 44, 30, 0.04);
+		margin-top: 20rpx;
+		padding: 22rpx;
+		border-radius: 32rpx;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border-soft);
+		box-shadow: var(--shadow-clay-strong);
+		transition: transform 0.18s ease;
+	}
+
+	.toolbar--bounce-left {
+		animation: toolbar-bounce-left 140ms ease-out;
+	}
+
+	.toolbar--bounce-right {
+		animation: toolbar-bounce-right 140ms ease-out;
+	}
+
+	@keyframes toolbar-bounce-left {
+		0% { transform: translateX(0); }
+		45% { transform: translateX(-8rpx); }
+		100% { transform: translateX(0); }
+	}
+
+	@keyframes toolbar-bounce-right {
+		0% { transform: translateX(0); }
+		45% { transform: translateX(8rpx); }
+		100% { transform: translateX(0); }
 	}
 
 	.page-content--meal-order .toolbar {
@@ -2888,42 +3029,38 @@ export default {
 	}
 
 	.filter-group {
-		margin-top: 16rpx;
+		margin-top: 14rpx;
 		display: flex;
 		flex-direction: column;
 		gap: 8rpx;
 	}
 
 	.filter-group--compact {
-		margin-top: 12rpx;
+		margin-top: 14rpx;
 	}
 
 	.meal-tabs {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 6rpx;
-		padding: 6rpx;
-		border-radius: 20rpx;
-		background: #f7f3ee;
-		border: 1px solid rgba(91, 74, 59, 0.04);
+		display: flex;
+		gap: 16rpx;
 	}
 
 	.meal-tab {
+		flex: 1;
+		min-width: 0;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		min-height: 84rpx;
-		padding: 0 18rpx;
+		padding: 28rpx 26rpx;
 		box-sizing: border-box;
-		border-radius: 16rpx;
-		background: rgba(255, 255, 255, 0.24);
-		border: 1px solid transparent;
+		border-radius: 36rpx;
+		background: rgba(249, 247, 242, 0.4);
+		border: 2rpx solid transparent;
+		transition: background 0.18s ease, border-color 0.18s ease;
 	}
 
 	.meal-tab--active {
-		background: #eadfd2;
-		border: 1px solid rgba(91, 74, 59, 0.12);
-		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.22);
+		background: var(--color-surface-warm);
+		border-color: rgba(91, 74, 59, 0.05);
 	}
 
 	.meal-tab__left {
@@ -2933,28 +3070,16 @@ export default {
 		min-width: 0;
 	}
 
-	.meal-tab__icon-shell {
-		width: 34rpx;
-		height: 34rpx;
-		border-radius: 999rpx;
-		background: rgba(91, 74, 59, 0.05);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
 	.meal-tab__text {
-		font-size: 25rpx;
+		font-size: 30rpx;
 		font-weight: 700;
-		color: #81756a;
+		color: rgba(92, 64, 51, 0.4);
 	}
 
 	.meal-tab__count {
-		min-height: 36rpx;
-		padding: 0 12rpx;
-		border-radius: 999rpx;
-		background: rgba(91, 74, 59, 0.04);
+		padding: 6rpx 14rpx;
+		border-radius: 10rpx;
+		background: rgba(255, 255, 255, 0.5);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -2962,40 +3087,40 @@ export default {
 	}
 
 	.meal-tab__count-text {
-		font-size: 18rpx;
-		font-weight: 600;
+		font-size: 24rpx;
+		font-weight: 700;
 		line-height: 1;
-		color: #998d82;
-	}
-
-	.meal-tab--active .meal-tab__icon-shell {
-		background: rgba(91, 74, 59, 0.12);
+		color: rgba(92, 64, 51, 0.6);
 	}
 
 	.meal-tab--active .meal-tab__text {
-		color: #3f342a;
-	}
-
-	.meal-tab--active .meal-tab__count {
-		background: rgba(91, 74, 59, 0.14);
+		color: var(--color-brand-brown);
 	}
 
 	.meal-tab--active .meal-tab__count-text {
-		color: #5f5144;
+		color: var(--color-brand-brown);
 	}
 
 	.search-box {
 		flex: 1;
 		min-width: 0;
-		height: 68rpx;
+		height: 76rpx;
 		display: flex;
 		align-items: center;
 		gap: 10rpx;
-		padding: 0 18rpx;
-		border-radius: 18rpx;
-		background: #fcfbf8;
-		border: 1px solid rgba(91, 74, 59, 0.07);
-		transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+		padding: 0 20rpx;
+		border-radius: 32rpx;
+		background: rgba(249, 247, 242, 0.5);
+		transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+	}
+
+	.search-box__icon {
+		width: 32rpx;
+		height: 32rpx;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
 	}
 
 	.search-box:active {
@@ -3003,20 +3128,19 @@ export default {
 	}
 
 	.search-box--active {
-		background: #ffffff;
-		border-color: rgba(91, 74, 59, 0.16);
-		box-shadow: 0 12rpx 20rpx rgba(56, 44, 30, 0.05);
+		background: rgba(249, 247, 242, 0.85);
+		box-shadow: 0 0 0 3rpx rgba(91, 74, 59, 0.12);
 	}
 
 	.search-box__input {
 		flex: 1;
-		height: 68rpx;
-		font-size: 25rpx;
-		color: #2f2923;
+		height: 76rpx;
+		font-size: 28rpx;
+		color: var(--color-text-primary);
 	}
 
 	.search-box__placeholder {
-		color: #b0a59a;
+		color: rgba(92, 64, 51, 0.32);
 	}
 
 	.search-box__clear {
@@ -3043,7 +3167,7 @@ export default {
 		background:
 			radial-gradient(circle at top left, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0) 44%),
 			rgba(255, 255, 255, 0.98);
-		border-color: rgba(91, 74, 59, 0.07);
+		border-color: var(--color-border-soft);
 		box-shadow: 0 14rpx 22rpx rgba(56, 44, 30, 0.045);
 	}
 
@@ -3106,110 +3230,77 @@ export default {
 
 	.status-track {
 		display: flex;
-		gap: 10rpx;
+		align-items: stretch;
+		gap: 14rpx;
 	}
 
 	.status-pill {
 		flex: 1;
 		min-width: 0;
-		min-height: 68rpx;
-		padding: 0 16rpx;
+		min-height: 72rpx;
+		padding: 0 22rpx;
 		box-sizing: border-box;
-		border-radius: 18rpx;
-		border: 1px solid rgba(91, 74, 59, 0.06);
-		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.54);
+		border-radius: 28rpx;
+		background: rgba(249, 247, 242, 0.5);
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
-	}
-
-	.status-pill--wishlist {
-		background: linear-gradient(180deg, rgba(250, 244, 238, 0.98) 0%, rgba(244, 237, 228, 0.98) 100%);
-	}
-
-	.status-pill--all {
-		background: linear-gradient(180deg, rgba(250, 248, 244, 0.98) 0%, rgba(244, 240, 234, 0.98) 100%);
-	}
-
-	.status-pill--done {
-		background: linear-gradient(180deg, rgba(247, 250, 247, 0.98) 0%, rgba(238, 243, 238, 0.98) 100%);
+		justify-content: center;
+		gap: 8rpx;
+		transition: background 0.16s ease, transform 0.16s ease;
 	}
 
 	.status-pill:active {
-		transform: scale(0.992);
+		transform: scale(0.98);
 	}
 
-	.status-pill--active {
-		box-shadow:
-			0 10rpx 20rpx rgba(56, 44, 30, 0.12),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.12);
-	}
-
-	.status-pill--wishlist.status-pill--active {
-		background: linear-gradient(180deg, #7a6151 0%, #5b4a3b 100%);
-		border-color: #5b4a3b;
-	}
-
-	.status-pill--all.status-pill--active {
-		background: linear-gradient(180deg, #7b7065 0%, #62584f 100%);
-		border-color: #62584f;
-	}
-
-	.status-pill--done.status-pill--active {
-		background: linear-gradient(180deg, #72876f 0%, #5f725d 100%);
-		border-color: #5f725d;
-	}
-
-	.status-pill__inner {
-		display: flex;
-		align-items: center;
+	.status-pill--all {
+		flex: 0 0 auto;
+		padding: 0 36rpx;
 		gap: 8rpx;
 	}
 
-	.status-pill__icon-shell {
-		width: 28rpx;
-		height: 28rpx;
-		border-radius: 999rpx;
-		background: rgba(91, 74, 59, 0.06);
+	.status-pill__text {
+		font-size: 30rpx;
+		font-weight: 700;
+		color: rgba(92, 64, 51, 0.4);
+		line-height: 1;
+	}
+
+	.status-pill__count {
+		padding: 6rpx 12rpx;
+		border-radius: 10rpx;
+		background: rgba(255, 255, 255, 0.5);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
 	}
 
-	.status-pill--done .status-pill__icon-shell {
-		background: rgba(95, 114, 93, 0.08);
-	}
-
-	.status-pill--all .status-pill__icon-shell {
-		background: rgba(109, 96, 83, 0.07);
-	}
-
-	.status-pill__text {
-		font-size: 23rpx;
+	.status-pill__count-text {
+		font-size: 24rpx;
 		font-weight: 700;
-		color: #6f655b;
+		line-height: 1;
+		color: rgba(92, 64, 51, 0.6);
 	}
 
-	.status-pill--done .status-pill__text {
-		color: #677965;
-	}
-
-	.status-pill--all .status-pill__text {
-		color: #75695f;
-	}
-
-	.status-pill--active .status-pill__icon-shell {
-		background: rgba(255, 255, 255, 0.14);
+	.status-pill--active {
+		background: var(--color-brand-brown);
 	}
 
 	.status-pill--active .status-pill__text {
-		color: #fffaf3;
+		color: var(--color-text-on-brand);
+	}
+
+	.status-pill--active .status-pill__count {
+		background: rgba(255, 255, 255, 0.18);
+	}
+
+	.status-pill--active .status-pill__count-text {
+		color: var(--color-text-on-brand);
 	}
 
 	.list-caption {
-		margin-top: 16rpx;
+		margin-top: 18rpx;
 		padding: 0 2rpx;
 	}
 
@@ -3308,39 +3399,6 @@ export default {
 		gap: 14rpx;
 	}
 
-	.empty-state,
-	.soft-empty {
-		margin-top: 20rpx;
-		padding: 56rpx 30rpx;
-		border-radius: 22rpx;
-		background: rgba(255, 255, 255, 0.84);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		text-align: center;
-		gap: 12rpx;
-	}
-
-	.empty-state__title {
-		font-size: 30rpx;
-		font-weight: 700;
-		color: #2f2923;
-	}
-
-	.empty-state__desc,
-	.soft-empty__text {
-		font-size: 24rpx;
-		line-height: 1.6;
-		color: #8d847a;
-	}
-
-	.soft-empty--inline {
-		margin-top: 0;
-		padding: 18rpx 16rpx;
-		align-items: flex-start;
-		text-align: left;
-	}
-
 	.stats-panel {
 		margin-top: 16rpx;
 		display: grid;
@@ -3373,7 +3431,7 @@ export default {
 	.meal-panel__title {
 		font-size: 28rpx;
 		font-weight: 700;
-		color: #2f2923;
+		color: var(--color-text-primary);
 	}
 
 	.meal-panel__meta {
@@ -3414,7 +3472,7 @@ export default {
 		display: block;
 		font-size: 36rpx;
 		font-weight: 700;
-		color: #2f2923;
+		color: var(--color-text-primary);
 	}
 
 	.stat-box__label {
@@ -3439,7 +3497,7 @@ export default {
 	.simple-panel__title {
 		font-size: 28rpx;
 		font-weight: 700;
-		color: #2f2923;
+		color: var(--color-text-primary);
 	}
 
 	.simple-panel__meta {
@@ -3471,7 +3529,7 @@ export default {
 		display: block;
 		font-size: 25rpx;
 		font-weight: 600;
-		color: #2f2923;
+		color: var(--color-text-primary);
 	}
 
 	.simple-list__meta {

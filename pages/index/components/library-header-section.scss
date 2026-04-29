@@ -80,10 +80,12 @@
 }
 
 .page-header__title {
+	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
 	font-size: 40rpx;
 	font-weight: 700;
 	line-height: 1.18;
-	color: #2f2923;
+	letter-spacing: 0.4rpx;
+	color: var(--color-text-primary);
 }
 
 .page-header__summary {
@@ -170,30 +172,48 @@
 }
 
 .meal-order-spotlight {
-	margin-top: 12rpx;
-	padding: 18rpx 20rpx;
-	border-radius: 22rpx;
+	margin-top: 20rpx;
+	padding: 20rpx 22rpx;
+	border-radius: 28rpx;
 	background:
-		radial-gradient(circle at top right, rgba(255, 233, 205, 0.5) 0%, rgba(255, 233, 205, 0) 34%),
-		rgba(255, 250, 244, 0.94);
-	border: 1px solid rgba(91, 74, 59, 0.08);
+		radial-gradient(circle at top right, rgba(255, 233, 205, 0.42) 0%, rgba(255, 233, 205, 0) 38%),
+		linear-gradient(145deg, #fffdf8 0%, #f4ecdf 100%);
+	border: 1px solid var(--color-border-soft);
 	box-shadow:
-		0 10rpx 22rpx rgba(56, 44, 30, 0.05),
-		inset 0 1rpx 0 rgba(255, 255, 255, 0.68);
+		0 12rpx 26rpx rgba(56, 44, 30, 0.05),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.65);
 	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 18rpx;
+	align-items: stretch;
+	gap: 16rpx;
 	animation: meal-order-spotlight-enter 240ms ease both;
 	transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .meal-order-spotlight--motion-next {
-	animation: meal-order-spotlight-slide-next 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	animation: meal-order-spotlight-slide-next 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .meal-order-spotlight--motion-previous {
-	animation: meal-order-spotlight-slide-previous 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	animation: meal-order-spotlight-slide-previous 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.meal-order-spotlight__icon-mark {
+	width: 56rpx;
+	height: 56rpx;
+	border-radius: 16rpx;
+	flex-shrink: 0;
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0) 46%),
+		linear-gradient(145deg, #fff5ea 0%, #f7e3d2 100%);
+	border: 1px solid rgba(191, 113, 95, 0.18);
+	box-shadow:
+		0 6rpx 12rpx rgba(97, 70, 47, 0.08),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	align-self: flex-start;
+	margin-top: 2rpx;
 }
 
 .meal-order-spotlight__main {
@@ -204,11 +224,56 @@
 	gap: 8rpx;
 }
 
-.meal-order-spotlight__title {
-	font-size: 28rpx;
+.meal-order-spotlight__heading {
+	display: flex;
+	align-items: center;
+	gap: 10rpx;
+	min-width: 0;
+	flex-wrap: wrap;
+}
+
+.meal-order-spotlight__date {
+	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
+	font-size: 32rpx;
 	font-weight: 700;
-	line-height: 1.28;
-	color: #2f2923;
+	letter-spacing: 0.4rpx;
+	line-height: 1.2;
+	color: var(--color-text-primary);
+}
+
+.meal-order-spotlight__weekday {
+	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
+	font-size: 32rpx;
+	font-weight: 700;
+	letter-spacing: 0.4rpx;
+	line-height: 1.2;
+	color: #7d6f63;
+}
+
+.meal-order-spotlight__chip {
+	padding: 4rpx 10rpx;
+	border-radius: 999rpx;
+	background: rgba(191, 113, 95, 0.1);
+	border: 1px solid rgba(191, 113, 95, 0.18);
+	display: inline-flex;
+	align-items: center;
+	line-height: 1;
+}
+
+.meal-order-spotlight__chip--draft {
+	background: rgba(122, 102, 85, 0.1);
+	border-color: rgba(122, 102, 85, 0.18);
+}
+
+.meal-order-spotlight__chip-text {
+	font-size: 18rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #b65f4d;
+}
+
+.meal-order-spotlight__chip--draft .meal-order-spotlight__chip-text {
+	color: #7a6655;
 }
 
 .meal-order-spotlight__desc {
@@ -221,17 +286,31 @@
 }
 
 .meal-order-spotlight__aside {
-	display: inline-flex;
-	align-items: center;
-	gap: 10rpx;
 	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 6rpx;
+	padding-top: 2rpx;
 }
 
-.meal-order-spotlight__meta-text {
-	font-size: 19rpx;
+.meal-order-spotlight__progress {
+	padding: 4rpx 10rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 255, 255, 0.78);
+	border: 1px solid var(--color-border-soft);
+	display: inline-flex;
+	align-items: center;
+	line-height: 1;
+}
+
+.meal-order-spotlight__progress-text {
+	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
+	font-size: 20rpx;
 	font-weight: 700;
 	line-height: 1;
-	color: #9a8b7c;
+	color: #6c5b4e;
 }
 
 @keyframes meal-order-spotlight-enter {
@@ -248,22 +327,22 @@
 @keyframes meal-order-spotlight-slide-next {
 	from {
 		opacity: 0;
-		transform: translateX(16rpx);
+		transform: translateX(20rpx) scale(0.98);
 	}
 	to {
 		opacity: 1;
-		transform: translateX(0);
+		transform: translateX(0) scale(1);
 	}
 }
 
 @keyframes meal-order-spotlight-slide-previous {
 	from {
 		opacity: 0;
-		transform: translateX(-16rpx);
+		transform: translateX(-20rpx) scale(0.98);
 	}
 	to {
 		opacity: 1;
-		transform: translateX(0);
+		transform: translateX(0) scale(1);
 	}
 }
 
@@ -279,7 +358,7 @@
 	padding: 0 14rpx;
 	border-radius: 999rpx;
 	background: rgba(255, 255, 255, 0.88);
-	border: 1px solid rgba(91, 74, 59, 0.07);
+	border: 1px solid var(--color-border-soft);
 	box-shadow:
 		0 6rpx 12rpx rgba(56, 44, 30, 0.03),
 		inset 0 1rpx 0 rgba(255, 255, 255, 0.82);

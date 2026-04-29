@@ -51,8 +51,40 @@ function truncateTextByRune(value = '', maxLength = 15) {
 	return items.slice(0, maxLength).join('')
 }
 
+export const RECIPE_LIST_SUMMARY_PLACEHOLDER = '还没有备注，点开补一笔～'
+
+function pickFirstParsedStep(parsedContent) {
+	const steps = Array.isArray(parsedContent?.steps) ? parsedContent.steps : []
+	for (const step of steps) {
+		if (typeof step === 'string') {
+			const value = step.trim()
+			if (value) return value
+		} else if (step && typeof step === 'object') {
+			const value = String(step.title || step.detail || step.text || '').trim()
+			if (value) return value
+		}
+	}
+	return ''
+}
+
+function pickFirstNonEmptySummary(recipe = {}) {
+	const candidates = [
+		recipe.summary,
+		recipe.ingredient,
+		recipe.note,
+		pickFirstParsedStep(recipe.parsedContent)
+	]
+	for (const candidate of candidates) {
+		const value = String(candidate || '').trim()
+		if (value) return value
+	}
+	return ''
+}
+
 export function buildRecipeListSummary(recipe = {}) {
-	return truncateTextByRune(String(recipe.summary || '').trim(), 24)
+	const value = pickFirstNonEmptySummary(recipe)
+	if (!value) return RECIPE_LIST_SUMMARY_PLACEHOLDER
+	return truncateTextByRune(value, 24)
 }
 
 export function buildRecipeCoverVersion(recipe = {}) {
@@ -92,6 +124,7 @@ export function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	const images = extractRecipeImages(recipe)
 	const remoteCover = images[0] || ''
 	const cachedCover = cachedCoverMap[recipe.id] || ''
+	const realSummary = pickFirstNonEmptySummary(recipe)
 	return {
 		...recipe,
 		cover: cachedCover || remoteCover,
@@ -104,6 +137,7 @@ export function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 		placeholderIcon: pickRecipePlaceholderIcon(recipe),
 		mealTypeLabel: mealTypeLabelMap[recipe.mealType] || '正餐',
 		infoLine: buildRecipeInfoLine(recipe),
-		listSummary: buildRecipeListSummary(recipe)
+		listSummary: realSummary ? truncateTextByRune(realSummary, 24) : RECIPE_LIST_SUMMARY_PLACEHOLDER,
+		listSummaryIsPlaceholder: !realSummary
 	}
 }

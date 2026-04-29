@@ -7,14 +7,14 @@
 						<view class="meal-plan-chip" :class="record.type === 'draft' ? 'meal-plan-chip--draft' : 'meal-plan-chip--submitted'">
 							<text class="meal-plan-chip__text">{{ statusLabel }}</text>
 						</view>
-						<view class="meal-plan-chip meal-plan-chip--soft">
-							<text class="meal-plan-chip__text">{{ dateText }}</text>
-						</view>
 						<view v-if="hasSiblingDraft" class="meal-plan-chip meal-plan-chip--editing">
 							<text class="meal-plan-chip__text">待修改草稿</text>
 						</view>
 					</view>
-					<text class="meal-plan-hero__title">{{ pageTitle }}</text>
+					<view class="meal-plan-hero__title">
+						<text class="meal-plan-hero__date">{{ heroDateText }}</text>
+						<text v-if="heroWeekday" class="meal-plan-hero__weekday">{{ heroWeekday }}</text>
+					</view>
 					<text class="meal-plan-hero__summary">{{ dishSummary }}</text>
 					<text v-if="timeMetaText" class="meal-plan-hero__meta">{{ timeMetaText }}</text>
 				</view>
@@ -136,6 +136,7 @@ import {
 import { mealTypeLabelMap } from '../../utils/recipe-store'
 import {
 	buildMealOrderDishSummary,
+	formatMealOrderDateParts,
 	formatMealOrderDateText,
 	normalizeMealOrderDate,
 	normalizeMealOrderDraft,
@@ -177,11 +178,16 @@ export default {
 		dateText() {
 			return formatMealOrderDateText(this.planDate)
 		},
+		heroDateText() {
+			if (!this.planDate) return ''
+			return formatMealOrderDateParts(this.planDate).dateText
+		},
+		heroWeekday() {
+			if (!this.planDate) return ''
+			return formatMealOrderDateParts(this.planDate).weekday
+		},
 		statusLabel() {
 			return this.record?.type === 'draft' ? '草稿中' : '已安排'
-		},
-		pageTitle() {
-			return this.record?.type === 'draft' ? '这天的小菜单草稿' : '这天的菜单安排'
 		},
 		dishSummary() {
 			return buildMealOrderDishSummary(this.record?.items || [])
@@ -495,10 +501,6 @@ export default {
 	background: rgba(255, 236, 227, 0.92);
 }
 
-.meal-plan-chip--soft {
-	background: rgba(255, 255, 255, 0.58);
-}
-
 .meal-plan-chip__text {
 	font-size: 21rpx;
 	font-weight: 700;
@@ -507,12 +509,29 @@ export default {
 }
 
 .meal-plan-hero__title {
-	display: block;
-	margin-top: 18rpx;
-	font-size: 42rpx;
+	margin-top: 22rpx;
+	display: flex;
+	align-items: baseline;
+	gap: 14rpx;
+	flex-wrap: wrap;
+}
+
+.meal-plan-hero__date {
+	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
+	font-size: 52rpx;
 	font-weight: 700;
+	letter-spacing: 0.6rpx;
 	line-height: 1.18;
 	color: #2f2923;
+}
+
+.meal-plan-hero__weekday {
+	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
+	font-size: 52rpx;
+	font-weight: 700;
+	letter-spacing: 0.6rpx;
+	line-height: 1.18;
+	color: #7a604d;
 }
 
 .meal-plan-hero__summary {
