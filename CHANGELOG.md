@@ -21,6 +21,88 @@
   - `RUN_GIT_PULL=0 bash scripts/deploy-backend-on-server.sh` 已完成后端发布；`caipu-backend` 于 `2026-04-29 16:16:33 CST` 重启为 `MainPID=203232`。
   - `curl -fsS http://127.0.0.1:8080/healthz` 返回 `code=0`，最近发布后日志未见新的 `POST /api/kitchens/{kitchenID}/recipes` 500。
 
+## 2026-04-29 (空间模块 UI 整体改造)
+
+### Changed
+
+- **修改时间**：2026-04-29 CST
+- **背景**：用户确认底部 bar 调整可用后，希望继续参考 `我们的美食空间/src/components/SpaceView.tsx` 原型，改造小程序 `空间` 模块整体 UI，并允许结合 `ui-ux-pro-max` 的移动端卡片与触控建议。
+- **核心改动**：
+  - `pages/index/components/kitchen-section.vue` 为空间页增加 `kitchen-section` 根布局、空间大卡装饰光晕、统计卡 tone class，以及当前用户头像徽标结构。
+  - `pages/index/components/kitchen-section.scss` 将空间页从偏设置列表的白卡布局，改为“当前空间仪表盘”视觉：大卡承载当前空间、半透明统计格、深色邀请成员主按钮、成员卡片化列表和更轻的加入邀请码入口。
+  - 邀请成员主按钮复现原型动效：增加小程序 `hover-class` 按压态、按钮轻压缩放、图标轻缩，以及从左到右的柔光 sweep 动画，替代原型 Web 端的 `whileHover / whileTap`。
+  - 邀请成员主按钮图标从 uview `share` 改为本地 `lucide Share` 等价 SVG，统一为空间模块的线性图标语言。
+  - 空间名标题尝试系统中文衬线字体栈 `"Songti SC", "STSong", "SimSun", "Noto Serif SC", serif`，不引入远程字体，优先在 iOS 真机上接近原型截图的宋体标题气质。
+  - 空间统计数字单独增加系统衬线数字字体栈 `"Didot", "Baskerville", "Georgia", "Times New Roman", serif`，仅作用于成员数与空间数，不影响“创建者”等中文身份文本。
+  - 保留所有现有事件与数据契约：空间切换、编辑空间名、邀请成员、查看全部成员、当前用户资料编辑、邀请码加入等行为不变。
+  - 设计上沿用当前暖白、品牌棕、鼠尾草绿和陶土橙 token，不照搬原型的 React/Tailwind/Lucide 依赖；`ui-ux-pro-max` 的触控建议用于保证主要点击区不低于移动端可用尺寸。
+- **影响范围**：
+  - `pages/index/components/kitchen-section.vue`
+  - `pages/index/components/kitchen-section.scss`
+  - `static/icons/invite-share.svg`
+  - 仅影响小程序首页 `空间` tab 的视觉层级和触控反馈，不涉及后端接口、空间数据结构、邀请链路、成员列表字段或底部导航行为。
+- **兼容性/风险**：
+  - 本次增加 `backdrop-filter` 和 `filter: blur` 作为视觉增强；低版本微信环境若弱化这些效果，卡片仍保留普通渐变、边框和阴影兜底。
+  - 空间名标题的系统衬线字体在 Android 真机上不保证命中；未命中时会自然回退到系统默认字体，不影响功能和可读性。
+  - 成员卡头像新增徽标仅在 `member.isCurrentUser` 时展示，不改变成员点击逻辑。
+- **验证情况**：
+  - 已对照 `我们的美食空间/src/components/SpaceView.tsx`、`pages/index/components/kitchen-section.vue` 和 `kitchen-section.scss` 完成实现。
+  - 已执行 `git diff --check`，基础 diff 检查通过。
+  - 已执行 `node --check` 校验 `pages/index/components/kitchen-section.vue` 与 `pages/index/index.vue` 抽取脚本片段，语法通过。
+  - 本次未运行微信开发者工具或真机预览，建议补测空间切换、邀请弹层、当前用户资料编辑、成员为空/加载中状态和底部导航遮挡情况。
+
+## 2026-04-29 (底部 Bar UI 优化落地与评估文档)
+
+### Changed
+
+- **修改时间**：2026-04-29 CST
+- **背景**：用户希望基于 `我们的美食空间/` 新设计原型，对比当前小程序页面代码，优化小程序首页底部 bar UI，并输出一份变动评估文档。
+- **核心改动**：
+  - `pages/index/index.vue` 将首页底部导航从全宽贴底栏优化为左右内收的浮动胶囊形态，加入半透明暖白背景、毛玻璃、高光边框和更轻量的 tab 图标壳。
+  - 根据预览截图二次收敛左右 tab：可见图标底壳改为透明触控容器，图标尺寸统一放大，inactive 颜色调浅，激活态改为只依赖图标与文字颜色，整体更接近原型中的轻量裸图标导航。
+  - `空间` 入口从 uview `grid` 图标改为本地 `lucide Grid` 等价 SVG，修正旧图标视觉偏四格的问题，并保持 active / inactive 状态色一致。
+  - 底部胶囊背景进一步收窄并降低白底不透明度，阴影改为更轻的玻璃浮层效果，让菜品列表能在底部 bar 后方隐约透出。
+  - 左右 tab 从底部对齐改为胶囊内垂直居中，并降低 tab 内容最小高度，减少导航内部顶部空白。
+  - 中间 FAB 增加小程序原生 `hover-class="nav-fab--pressed"` 与短暂 `hover-stay-time`，修复从空间切回美食库后立即点击添加菜品时，CSS `:active` 按压动效可能被弹层渲染打断的问题。
+  - 中间 `添加` FAB 继续触发现有 `openAddSheet`，仅增强凸出层级、尺寸和阴影，不跟随原型改成 AI 助手入口，避免改变当前添加菜谱工作流。
+  - 同步上移点菜模式 `meal-order-floating` 结算条，并增加普通/点菜模式页面底部留白，避免新底部 bar 与列表尾部或结算浮层互相遮挡。
+  - 更新 `docs/bottom-nav-ui-upgrade.md`，沉淀原型对比、已落地变动、影响范围、兼容性风险和建议补测清单。
+- **影响范围**：
+  - `pages/index/index.vue`
+  - `static/icons/space-grid.svg`
+  - `static/icons/space-grid-active.svg`
+  - `docs/bottom-nav-ui-upgrade.md`
+  - 仅影响小程序首页底部 bar 与点菜模式底部浮层的视觉位置，不涉及后端接口、路由配置、添加菜谱弹层契约、空间切换逻辑或邀请链路。
+- **兼容性/风险**：
+  - 新增 `backdrop-filter` 作为毛玻璃增强；低版本微信环境若不支持，会自然降级为半透明暖白底。
+  - 本轮未改变 FAB 功能语义；后续若要切换为 AI 助手入口，需要先补齐 AI sheet 与添加菜谱入口的共存策略。
+- **验证情况**：
+  - 已对照 `我们的美食空间/src/components/BottomNav.tsx`、`pages/index/index.vue` 底部导航与点菜模式浮动条完成代码评估。
+  - 已执行 `node --check` 校验从 `pages/index/index.vue` 抽取的脚本片段，语法通过。
+  - 已执行 `git diff --check`，基础 diff 检查通过。
+  - 本次未运行微信开发者工具或真机预览，建议补测安全区、低端安卓毛玻璃降级和点菜模式底部浮层间距。
+
+## 2026-04-29 (美食库与空间 UI 重构方案文档)
+
+### Added
+
+- **修改时间**：2026-04-29 CST
+- **背景**：用户希望基于 `我们的美食空间/` 设计原型，评估当前小程序 `美食库` 与 `空间` 两个核心界面的可优化点，并输出一份后续可直接拆任务实施的 UI 界面重构文档。
+- **核心改动**：
+  - 新增 `docs/food-library-space-ui-refactor-plan-2026-04-29.md`，梳理原型目录中的美食库、空间页、底部导航和 AI 辅助入口设计意图，并对照当前 `pages/index/index.vue`、`library-header-section`、`recipe-card-item`、`kitchen-section` 等实现给出落地建议。
+  - 文档明确重构策略为“保留现有业务链路，重整视觉层级和组件边界”，不建议直接照搬 React Web 原型依赖。
+  - 文档按 `P0 / P1 / P2` 拆分美食库搜索筛选、空态动作、菜卡状态切换、底部导航、空间概览、邀请入口、成员卡和后续 AI/协作增强等改造项。
+  - 文档补充设计 token、组件拆分建议、分阶段实施计划、验收清单与风险处理，方便后续按批次进入编码。
+- **影响范围**：
+  - `docs/food-library-space-ui-refactor-plan-2026-04-29.md`
+  - 当前仅新增 UI 重构方案文档，不修改小程序运行时代码、后端接口、点菜模式、邀请链路或构建配置。
+- **兼容性/风险**：
+  - 本次为文档沉淀，无运行时兼容风险。
+  - 后续若按文档进入实现，需要重点保护 `isLibraryMealOrderMode` 分支、空间切换/邀请事件、菜谱状态切换和搜索筛选既有行为。
+- **验证情况**：
+  - 已读取并对照 `我们的美食空间/` 原型源码、`README.md`、`docs/meal-order-mode-prototype-v1.md`、`pages/index/index.vue` 与相关组件实现。
+  - 本次未运行小程序构建或微信开发者工具预览，因为未修改运行时代码。
+
 ## 2026-04-25 (首页菜单详情卡片无记录时直接隐藏)
 
 ### Changed

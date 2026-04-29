@@ -233,18 +233,29 @@
 				<view class="nav-item__icon-shell">
 					<up-icon
 						:name="activeSection === 'library' ? 'home-fill' : 'home'"
-						size="22"
-						:color="activeSection === 'library' ? '#5b4a3b' : '#9a8d80'"
+						size="24"
+						:color="activeSection === 'library' ? '#6b4d3d' : '#b9aea8'"
 					></up-icon>
 				</view>
 				<text class="nav-item__label">美食库</text>
 			</view>
 
 			<view class="nav-center">
-				<view class="nav-fab" @tap="openAddSheet">
-					<up-icon name="plus" size="26" color="#ffffff"></up-icon>
+				<view
+					class="nav-fab"
+					hover-class="nav-fab--pressed"
+					hover-start-time="0"
+					hover-stay-time="140"
+					hover-stop-propagation
+					@tap="openAddSheet"
+				>
+					<!-- 星闪 + 小角标图标 -->
+					<image
+						class="nav-fab__icon"
+						src="/static/icons/sparkle-plus.svg"
+						mode="aspectFit"
+					/>
 				</view>
-				<text class="nav-center__label">添加</text>
 			</view>
 
 			<view
@@ -253,11 +264,11 @@
 				@tap="switchSection('kitchen')"
 			>
 				<view class="nav-item__icon-shell">
-					<up-icon
-						name="grid"
-						size="20"
-						:color="activeSection === 'kitchen' ? '#5b4a3b' : '#9a8d80'"
-					></up-icon>
+					<image
+						class="nav-space-icon"
+						:src="activeSection === 'kitchen' ? '/static/icons/space-grid-active.svg' : '/static/icons/space-grid.svg'"
+						mode="aspectFit"
+					/>
 				</view>
 				<text class="nav-item__label">空间</text>
 			</view>
@@ -2776,7 +2787,7 @@ export default {
 	}
 
 	.page-content {
-		padding: 24rpx 24rpx 176rpx;
+		padding: 24rpx 24rpx 214rpx;
 	}
 
 	.page-content--meal-order-entering {
@@ -2788,7 +2799,7 @@ export default {
 	}
 
 	.page-content--meal-order {
-		padding-bottom: 294rpx;
+		padding-bottom: 342rpx;
 	}
 
 	@keyframes page-content-meal-order-enter {
@@ -3455,7 +3466,7 @@ export default {
 		position: fixed;
 		left: 24rpx;
 		right: 24rpx;
-		bottom: calc(env(safe-area-inset-bottom) + 128rpx);
+		bottom: calc(env(safe-area-inset-bottom) + 168rpx);
 		z-index: 11;
 		padding: 8rpx;
 		border-radius: 30rpx;
@@ -3606,18 +3617,25 @@ export default {
 
 	.bottom-nav {
 		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
+		left: 46rpx;
+		right: 46rpx;
+		bottom: calc(env(safe-area-inset-bottom) + 20rpx);
 		z-index: 9;
-		padding: 14rpx 24rpx calc(env(safe-area-inset-bottom) + 14rpx);
+		min-height: 92rpx;
+		padding: 8rpx 42rpx 10rpx;
+		border-radius: 46rpx;
 		background:
-			linear-gradient(180deg, rgba(246, 244, 241, 0) 0%, rgba(246, 244, 241, 0.82) 18%, rgba(255, 255, 255, 0.98) 34%),
-			rgba(255, 255, 255, 0.92);
-		border-top: 1px solid rgba(91, 74, 59, 0.04);
-		box-shadow: 0 -8rpx 24rpx rgba(56, 44, 30, 0.03);
+			radial-gradient(circle at 50% -46%, rgba(255, 250, 242, 0.52) 0%, rgba(255, 250, 242, 0) 48%),
+			linear-gradient(180deg, rgba(255, 255, 255, 0.52) 0%, rgba(255, 253, 249, 0.62) 100%);
+		border: 1px solid rgba(255, 255, 255, 0.56);
+		box-shadow:
+			0 18rpx 44rpx rgba(56, 44, 30, 0.1),
+			0 2rpx 10rpx rgba(56, 44, 30, 0.04),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.74);
+		backdrop-filter: blur(18rpx);
+		-webkit-backdrop-filter: blur(18rpx);
 		display: flex;
-		align-items: flex-end;
+		align-items: center;
 		justify-content: space-between;
 	}
 
@@ -3652,12 +3670,12 @@ export default {
 	}
 
 	.bottom-nav--meal-order .nav-center {
-		transform: translateY(-8rpx);
+		transform: translateY(-44rpx);
 	}
 
 	.bottom-nav--meal-order .nav-fab {
-		width: 98rpx;
-		height: 98rpx;
+		width: 96rpx;
+		height: 96rpx;
 		background:
 			radial-gradient(circle at top left, rgba(255, 248, 237, 0.2) 0%, rgba(255, 248, 237, 0) 34%),
 			linear-gradient(180deg, #6b594b 0%, #5a4739 100%);
@@ -3667,29 +3685,28 @@ export default {
 	}
 
 	.bottom-nav--meal-order .nav-item__icon-shell {
-		box-shadow: 0 8rpx 16rpx rgba(56, 44, 30, 0.04);
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.nav-item,
 	.nav-center {
 		width: 30%;
+		min-height: 76rpx;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 8rpx;
+		justify-content: center;
+		gap: 6rpx;
 	}
 
 	.nav-item__icon-shell {
-		width: 82rpx;
-		height: 82rpx;
-		border-radius: 26rpx;
-		background:
-			radial-gradient(circle at top left, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0) 46%),
-			linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 240, 234, 0.96) 100%);
-		border: 1px solid rgba(91, 74, 59, 0.06);
-		box-shadow:
-			0 10rpx 18rpx rgba(56, 44, 30, 0.045),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.86);
+		width: 68rpx;
+		height: 46rpx;
+		border-radius: 999rpx;
+		background: transparent;
+		border: 0;
+		box-shadow: none;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -3698,50 +3715,56 @@ export default {
 
 	.nav-item:active .nav-item__icon-shell {
 		transform: translateY(1rpx);
-		box-shadow:
-			0 6rpx 12rpx rgba(56, 44, 30, 0.035),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.84);
+		box-shadow: none;
 	}
 
 	.nav-item__label,
 	.nav-center__label {
-		font-size: 22rpx;
+		font-size: 24rpx;
 		line-height: 1;
-		color: #978b80;
-		font-weight: 600;
+		color: #b9aea8;
+		font-weight: 700;
 		transition: color 0.18s ease;
 	}
 
 	.nav-item--active .nav-item__icon-shell {
-		transform: translateY(-2rpx);
-		background:
-			radial-gradient(circle at top left, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 44%),
-			linear-gradient(145deg, #f3ece3 0%, #e8dbc9 100%);
-		border-color: rgba(122, 103, 85, 0.12);
-		box-shadow:
-			0 14rpx 22rpx rgba(56, 44, 30, 0.08),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.84);
+		transform: none;
+		background: transparent;
+		border-color: transparent;
+		box-shadow: none;
 	}
 
 	.nav-item--active .nav-item__label {
-		color: #5b4a3b;
+		color: #6b4d3d;
 		font-weight: 700;
 	}
 
+	.nav-space-icon {
+		width: 50rpx;
+		height: 50rpx;
+		transition: transform 0.18s ease;
+	}
+
+	.nav-item:active .nav-space-icon {
+		transform: translateY(1rpx);
+	}
+
 	.nav-center {
-		transform: translateY(-16rpx);
+		position: relative;
+		transform: translateY(-56rpx);
 	}
 
 	.nav-fab {
-		width: 108rpx;
-		height: 108rpx;
+		width: 112rpx;
+		height: 112rpx;
 		border-radius: 999rpx;
-		border: 10rpx solid rgba(255, 255, 255, 0.98);
+		border: 8rpx solid rgba(255, 252, 247, 0.98);
 		background:
 			radial-gradient(circle at top left, rgba(255, 248, 237, 0.22) 0%, rgba(255, 248, 237, 0) 34%),
 			linear-gradient(180deg, #6a5849 0%, #534133 100%);
 		box-shadow:
-			0 18rpx 28rpx rgba(91, 74, 59, 0.16),
+			0 20rpx 32rpx rgba(91, 74, 59, 0.18),
+			0 6rpx 12rpx rgba(91, 74, 59, 0.1),
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.14);
 		display: flex;
 		align-items: center;
@@ -3749,7 +3772,13 @@ export default {
 		transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 	}
 
-	.nav-center:active .nav-fab {
+	.nav-fab__icon {
+		width: 52rpx;
+		height: 52rpx;
+	}
+
+	.nav-center:active .nav-fab,
+	.nav-fab--pressed {
 		transform: translateY(2rpx) scale(0.972);
 		box-shadow:
 			0 10rpx 18rpx rgba(91, 74, 59, 0.12),

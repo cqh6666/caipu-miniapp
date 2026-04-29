@@ -1,7 +1,9 @@
 <template>
-	<view>
+	<view class="kitchen-section">
 		<view class="kitchen-hero">
 			<view class="kitchen-card" :class="{ 'kitchen-card--disabled': !currentKitchenName }" @tap="$emit('open-kitchen-selector')">
+				<view class="kitchen-card__glow kitchen-card__glow--main"></view>
+				<view class="kitchen-card__glow kitchen-card__glow--sage"></view>
 				<view class="kitchen-card__header">
 					<view class="kitchen-card__badge">
 						<up-icon name="grid-fill" size="12" color="#5b4a3b"></up-icon>
@@ -25,25 +27,37 @@
 				</view>
 				<text class="kitchen-card__meta">{{ currentKitchenMetaText }}</text>
 				<view v-if="currentKitchenName" class="kitchen-card__tags">
-					<view class="kitchen-card__tag">
-						<text class="kitchen-card__tag-value">{{ kitchenMembersCount }}</text>
+					<view class="kitchen-card__tag kitchen-card__tag--members">
+						<text class="kitchen-card__tag-value kitchen-card__tag-value--number">{{ kitchenMembersCount }}</text>
 						<text class="kitchen-card__tag-label">成员</text>
 					</view>
-					<view v-if="currentKitchenRoleLabel" class="kitchen-card__tag">
+					<view v-if="currentKitchenRoleLabel" class="kitchen-card__tag kitchen-card__tag--role">
 						<text class="kitchen-card__tag-value">{{ currentKitchenRoleLabel }}</text>
 						<text class="kitchen-card__tag-label">身份</text>
 					</view>
-					<view v-if="canSwitchKitchen" class="kitchen-card__tag">
-						<text class="kitchen-card__tag-value">{{ kitchenOptionsCount }}</text>
+					<view v-if="canSwitchKitchen" class="kitchen-card__tag kitchen-card__tag--spaces">
+						<text class="kitchen-card__tag-value kitchen-card__tag-value--number">{{ kitchenOptionsCount }}</text>
 						<text class="kitchen-card__tag-label">空间</text>
 					</view>
 				</view>
 			</view>
 
 			<view class="kitchen-actions">
-				<view class="kitchen-actions__primary" @tap="$emit('open-invite-sheet')">
+				<view
+					class="kitchen-actions__primary"
+					hover-class="kitchen-actions__primary--pressed"
+					hover-start-time="0"
+					hover-stay-time="180"
+					hover-stop-propagation
+					@tap="$emit('open-invite-sheet')"
+				>
+					<view class="kitchen-actions__primary-sweep"></view>
 					<view class="kitchen-actions__primary-icon">
-						<up-icon name="share" size="16" color="#ffffff"></up-icon>
+						<image
+							class="kitchen-actions__primary-icon-image"
+							src="/static/icons/invite-share.svg"
+							mode="aspectFit"
+						/>
 					</view>
 					<view class="kitchen-actions__primary-body">
 						<text class="kitchen-actions__primary-title">邀请成员</text>
@@ -76,9 +90,14 @@
 					:hover-class="member.isCurrentUser ? 'member-card--hover' : ''"
 					@tap="$emit('member-tap', member)"
 				>
-					<view class="member-card__avatar">
-						<image v-if="member.avatarUrl" class="member-card__avatar-image" :src="member.avatarUrl" mode="aspectFill"></image>
-						<text v-else>{{ memberInitial(member) }}</text>
+					<view class="member-card__avatar-wrap">
+						<view class="member-card__avatar">
+							<image v-if="member.avatarUrl" class="member-card__avatar-image" :src="member.avatarUrl" mode="aspectFill"></image>
+							<text v-else>{{ memberInitial(member) }}</text>
+						</view>
+						<view v-if="member.isCurrentUser" class="member-card__avatar-badge">
+							<up-icon name="checkmark-circle-fill" size="12" color="#ffffff"></up-icon>
+						</view>
 					</view>
 					<view class="member-card__body">
 						<view class="member-card__top">
