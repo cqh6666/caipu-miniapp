@@ -445,6 +445,29 @@
 	color: rgba(95, 76, 61, 0.42);
 }
 
+.composer-clear {
+	width: 184rpx;
+	min-height: 44rpx;
+	margin: 12rpx auto 0;
+	padding: 0 14rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.composer-clear--hover {
+	opacity: 0.72;
+	transform: translateY(1rpx);
+}
+
+.composer-clear__text {
+	font-size: 22rpx;
+	line-height: 1;
+	font-weight: 600;
+	color: rgba(95, 76, 61, 0.42);
+}
+
 .composer-send {
 	width: 74rpx;
 	height: 74rpx;

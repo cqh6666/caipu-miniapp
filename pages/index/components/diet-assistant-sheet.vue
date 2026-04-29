@@ -161,6 +161,15 @@
 						<image class="composer-send__icon" src="/static/icons/chat-send.svg" mode="aspectFit" />
 					</view>
 				</view>
+
+				<view
+					v-if="hasConversationStarted"
+					class="composer-clear"
+					hover-class="composer-clear--hover"
+					@tap="clearConversationMessages"
+				>
+					<text class="composer-clear__text">清空会话记录</text>
+				</view>
 			</view>
 		</view>
 	</up-popup>
@@ -293,21 +302,22 @@ export default {
 			})
 			this.activeStream = stream
 			this.activeAssistantMessageID = assistantID
+			const resetStreamState = () => {
+				if (this.activeStream === stream) {
+					this.activeStream = null
+					this.activeAssistantMessageID = ''
+					this.isStreaming = false
+					this.streamAbortExpected = false
+				}
+			}
 			stream.finished
 				.then(() => {
 					this.finishAssistantMessage(assistantID)
-				})
-				.catch((error) => {
+					resetStreamState()
+				}, (error) => {
 					if (this.streamAbortExpected) return
 					this.failAssistantMessage(assistantID, error?.message || '饮食管家暂时不可用，请稍后再试。')
-				})
-				.finally(() => {
-					if (this.activeStream === stream) {
-						this.activeStream = null
-						this.activeAssistantMessageID = ''
-						this.isStreaming = false
-						this.streamAbortExpected = false
-					}
+					resetStreamState()
 				})
 		},
 		findMessage(id = '') {
@@ -370,6 +380,15 @@ export default {
 			this.activeStream = null
 			this.activeAssistantMessageID = ''
 			this.isStreaming = false
+		},
+		clearConversationMessages() {
+			this.abortActiveStream()
+			this.localMessages = []
+			this.activeStream = null
+			this.activeAssistantMessageID = ''
+			this.streamAbortExpected = false
+			this.isStreaming = false
+			this.bumpScrollAnchor()
 		},
 		bumpScrollAnchor() {
 			this.$nextTick(() => {

@@ -1,5 +1,73 @@
 # Project Changelog
 
+## 2026-04-29 (验证 dots-ai Chat Completions 消息角色行为)
+
+### Changed
+
+- **修改时间**：2026-04-29 23:43 CST
+- **背景**：用户要求确认 `https://www.gxm1227.top/dots2api/v1/chat/completions` 的 `messages` 是否实际支持 `system` 角色，还是只能使用 `user`。
+- **核心结论**：
+  - `system + user` 报文会被上游接受并返回 `200 OK`，说明接口层不是简单禁止 `system` 角色。
+  - `system` 单独作为唯一消息时返回 `401 unauthorized`，该上游至少不适合作为无 `user` 消息的标准 Chat Completions 入口使用。
+  - 使用强约束标记测试时，`system` 提示没有被稳定遵守；后续串行 `user` 强约束与普通问题也出现返回上一轮 `USER_OK` 内容的现象，说明当前 `dots-ai` 上游对 `messages` 内容存在明显不可靠或串上下文风险。
+  - 补测多轮上下文时，显式携带 `user -> assistant -> user` 历史的非流式请求超时；同类流式请求返回 `401 unauthorized`，后续单轮流式请求也出现 `200 OK` 后无正文直到超时。
+  - 为排除并发调用干扰，已单独重试一次显式上下文请求；上游返回 `200 OK`，但内容为旧测试相关的 `pong / USER_OK`，未回答当前请求中要求记住的“山竹”。
+  - 单独发送 `user: 小红书 美食` 时，上游返回 `200 OK` 并生成“小红书美食风向标”类内容及多张图片代理链接，但正文开头仍带旧测试残留的 `USER_OK`。
+  - 当前不能把该上游视为严格遵循 OpenAI Chat Completions 多角色语义的模型；饮食管家若继续使用该 Provider，应降低对 `system` 的依赖，并优先排查上游是否存在状态复用、缓存或代理转发实现问题。
+- **影响范围**：
+  - 饮食管家上游 AI 联调口径。
+  - 不修改小程序前端、后端代码、配置文件、数据库或部署脚本。
+- **兼容性/风险**：
+  - 本次未记录真实 API Key；验证请求消耗少量上游调用额度。
+  - 上游行为可能随 Provider 实现调整而变化，后续切换模型或代理后需重新验证。
+- **验证情况**：
+  - 已用脱敏 API Key 对 `dots-ai` 执行非流式 `system + user`、仅 `user`、仅 `system`、`developer + user` 和普通数学问题请求。
+  - 已用真实项目上游形态执行 `stream: true` 请求，确认 `system + user` 可返回 SSE，但回复内容未稳定遵守饮食管家系统提示。
+  - 已补测显式多轮上下文与单轮流式请求，未能得到可用、稳定的上下文响应。
+  - 已按用户要求避免并发，只保留单次上下文请求重试；结果仍未能证明上游支持稳定上下文。
+  - 已单独测试 `小红书 美食` 查询，确认该上游可生成图文类回答，但仍存在旧上下文残留。
+
+## 2026-04-29 (修复饮食管家第二条消息无法发送)
+
+### Fixed
+
+- **修改时间**：2026-04-29 23:35 CST
+- **背景**：用户反馈饮食管家首条消息发送后，第二条消息发不出去；从代码看，发送入口会在 `isStreaming=true` 时直接返回，而流式状态释放依赖 `Promise.prototype.finally()`，在部分微信小程序运行时可能不稳定。
+- **核心改动**：
+  - `pages/index/components/diet-assistant-sheet.vue` 将流式请求完成后的状态清理由 `.finally()` 改为 `then(success, failure)` 内显式调用，避免运行时缺少 `Promise.finally` 时 `isStreaming` 无法复位。
+  - 保持原有成功完成、失败提示、手动中止和清空会话逻辑不变。
+- **影响范围**：
+  - `pages/index/components/diet-assistant-sheet.vue`
+  - 仅影响饮食管家聊天输入框的流式状态释放；不改变后端接口、请求体、会话上下文或 UI 视觉结构。
+- **兼容性/风险**：
+  - 低。改动移除对较新 Promise API 的依赖，使用更基础的 Promise `then` 形式，兼容性更稳。
+- **验证情况**：
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析并编译 `pages/index/components/diet-assistant-sheet.vue`，检查通过。
+  - 已执行 `git diff --check`，基础 diff 检查通过。
+  - 本次未运行微信开发者工具或真机预览；建议补测连续发送两条消息、第一条失败后再发第二条、流式中清空会话。
+
+## 2026-04-29 (饮食管家新增清空会话入口)
+
+### Added
+
+- **修改时间**：2026-04-29 23:29 CST
+- **背景**：用户希望在饮食管家对话框下方增加灰色文字入口，点击后可以清空当前会话记录。
+- **核心改动**：
+  - `pages/index/components/diet-assistant-sheet.vue` 在输入框下方新增“清空会话记录”文字入口，仅当当前已有真实对话消息时显示。
+  - 点击清空时会先中止正在进行的流式回复，再清空 `localMessages`、重置流式状态，并让聊天窗恢复初始示例态。
+  - `pages/index/components/diet-assistant-sheet.scss` 为清空入口增加灰色低优先级样式和轻微按压反馈。
+- **影响范围**：
+  - `pages/index/components/diet-assistant-sheet.vue`
+  - `pages/index/components/diet-assistant-sheet.scss`
+  - 仅影响饮食管家聊天抽屉的本地会话展示与前端内存上下文，不涉及后端接口、数据库、登录态或菜谱保存链路。
+- **兼容性/风险**：
+  - 当前会话记录本来只存在页面内存中，清空不会删除任何服务端数据。
+  - 清空入口不做二次确认，存在误触后当前页面内对话无法恢复的低风险。
+- **验证情况**：
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，SFC 结构检查通过。
+  - 已执行 `git diff --check`，基础 diff 检查通过。
+  - 本次未运行微信开发者工具或真机预览；建议补测有会话时入口显示、点击后恢复初始示例态、流式中点击可中止并清空。
+
 ## 2026-04-29 (修正饮食管家流式前端状态与异常上下文)
 
 ### Fixed
