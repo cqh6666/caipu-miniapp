@@ -1,5 +1,26 @@
 # Project Changelog
 
+## 2026-04-29 (修复保存菜谱 500：`recipes` INSERT 占位符缺失)
+
+### Fixed
+
+- **修改时间**：2026-04-29 CST
+- **背景**：线上小程序点击“保存菜品”时，后端 `POST /api/kitchens/{kitchenID}/recipes` 在 `2026-04-29 09:04:11`、`09:04:13`、`09:04:16` 连续返回 `500`。排查发现问题不在登录、预览或前端提交，而是 `backend/internal/recipe/repository.go` 的 `insertRecipe` 中 `recipes` 表 `INSERT` 已扩展到 `34` 列，但 `VALUES` 仍只有 `32` 个 `?` 占位符，SQLite 执行 SQL 时直接失败。
+- **核心改动**：
+  - 修正 `backend/internal/recipe/repository.go` 中 `insertRecipe` 的 `VALUES` 占位符数量，使其与当前列数保持一致。
+  - 新增 `backend/internal/recipe/create_test.go` 回归测试，直接覆盖 `Repository.Create` 落库路径，并断言菜谱记录可写入、厨房 `updated_at` 会同步推进。
+- **影响范围**：
+  - 小程序首页新增菜谱保存链路。
+  - 所有走 `POST /api/kitchens/{kitchenID}/recipes` 的创建入口。
+- **兼容性/风险**：
+  - 低。仅修正后端 SQL 模板并补充测试，不改变接口字段、前端提交口径或数据库结构。
+  - 线上需要重新发布 `caipu-backend` 后修复才会生效。
+- **验证情况**：
+  - `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache GOCACHE=/tmp/caipu-go-build-cache go test ./internal/recipe -run 'TestRepository(CreatePersistsRecipeAndBumpsKitchenUpdatedAt|UpdateStatusDoesNotTouchRecipeUpdatedAt)$' -count=1` 通过。
+  - `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache GOCACHE=/tmp/caipu-go-build-cache go test ./internal/recipe -count=1` 通过。
+  - `RUN_GIT_PULL=0 bash scripts/deploy-backend-on-server.sh` 已完成后端发布；`caipu-backend` 于 `2026-04-29 16:16:33 CST` 重启为 `MainPID=203232`。
+  - `curl -fsS http://127.0.0.1:8080/healthz` 返回 `code=0`，最近发布后日志未见新的 `POST /api/kitchens/{kitchenID}/recipes` 500。
+
 ## 2026-04-25 (首页菜单详情卡片无记录时直接隐藏)
 
 ### Changed
