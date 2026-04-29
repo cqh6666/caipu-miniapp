@@ -1,5 +1,29 @@
 # Project Changelog
 
+## 2026-04-29 (修正饮食管家流式前端状态与异常上下文)
+
+### Fixed
+
+- **修改时间**：2026-04-29 23:16 CST
+- **背景**：饮食管家流式接口已连通后，截图中仍出现旧 `请求失败(500)` 气泡、重试后回复带有“反代测试成功 / 服务正常 / 业务验证”等联调话术，且输入框可能在已显示回复后仍停留在“饮食管家正在回复...”状态。
+- **核心改动**：
+  - `utils/diet-assistant-api.js` 在解析到 SSE `done` 事件时立即 resolve 流式请求，不再只等待 `uni.request success`，降低真机上回复已完成但 UI 仍处于流式中的概率。
+  - `pages/index/components/diet-assistant-sheet.vue` 为同一次用户消息与助手占位增加 `requestID`，接口失败或用户中止时将该轮请求排除出后续模型上下文，避免重试时把失败前的用户输入重复发送给后端。
+  - 饮食管家后端系统提示补充约束，禁止在用户回复中提到反代、代理、接口、测试成功、服务正常、业务验证、模型提供商或部署状态。
+- **影响范围**：
+  - `utils/diet-assistant-api.js`
+  - `pages/index/components/diet-assistant-sheet.vue`
+  - `backend/internal/dietassistant/service.go`
+  - 仅影响饮食管家聊天流式状态收口、失败重试上下文和模型输出口径；不改变接口路径、鉴权、请求体结构、数据库或其他业务链路。
+- **兼容性/风险**：
+  - 低。前端失败气泡仍保留在当前界面用于反馈用户，但不再作为有效助手上下文继续传给模型。
+  - 上游模型仍可能偶发不遵守提示词，本次通过系统提示降低联调话术进入产品回复的概率。
+- **验证情况**：
+  - `node --check utils/diet-assistant-api.js` 通过。
+  - 使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue` 通过。
+  - `cd backend && GOMODCACHE=/tmp/caipu-go-mod-cache GOCACHE=/tmp/caipu-go-build-cache go test ./...` 通过。
+  - 本次未运行微信开发者工具或真机预览；建议上线/预览后重点复测失败后重试、正常流式完成后输入框状态恢复，以及简单问候不再输出联调话术。
+
 ## 2026-04-29 (修复饮食管家流式接口 500)
 
 ### Fixed

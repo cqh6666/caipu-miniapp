@@ -243,20 +243,25 @@ export default {
 			const text = String(this.draftMessage || '').trim()
 			if (!text || this.isStreaming) return
 
+			const requestID = `diet-assistant-request-${Date.now()}-${this.messageSerial++}`
 			const userID = `local-user-${Date.now()}-${this.messageSerial++}`
 			const assistantID = `local-assistant-${Date.now()}-${this.messageSerial++}`
 			const nextMessages = this.buildConversationMessages(text)
 
 			this.localMessages.push({
 				id: userID,
+				requestID,
 				role: 'user',
-				text
+				text,
+				contextExcluded: false
 			})
 			this.localMessages.push({
 				id: assistantID,
+				requestID,
 				role: 'assistant',
 				text: '',
-				pending: true
+				pending: true,
+				contextExcluded: false
 			})
 			this.draftMessage = ''
 			this.bumpScrollAnchor()
@@ -264,7 +269,7 @@ export default {
 		},
 		buildConversationMessages(nextUserText = '') {
 			const messages = this.localMessages
-				.filter((message) => !message.pending && !message.transient && message.text)
+				.filter((message) => !message.pending && !message.transient && !message.contextExcluded && message.text)
 				.map((message) => ({
 					role: message.role,
 					content: message.text
@@ -283,7 +288,7 @@ export default {
 					this.appendAssistantDelta(assistantID, delta)
 				},
 				onError: (error) => {
-					this.setAssistantMessage(assistantID, error?.message || '饮食管家暂时不可用，请稍后再试。', false, true)
+					this.failAssistantMessage(assistantID, error?.message || '饮食管家暂时不可用，请稍后再试。')
 				}
 			})
 			this.activeStream = stream
@@ -294,7 +299,7 @@ export default {
 				})
 				.catch((error) => {
 					if (this.streamAbortExpected) return
-					this.setAssistantMessage(assistantID, error?.message || '饮食管家暂时不可用，请稍后再试。', false, true)
+					this.failAssistantMessage(assistantID, error?.message || '饮食管家暂时不可用，请稍后再试。')
 				})
 				.finally(() => {
 					if (this.activeStream === stream) {
@@ -323,6 +328,19 @@ export default {
 			message.transient = transient
 			this.bumpScrollAnchor()
 		},
+		failAssistantMessage(id = '', text = '') {
+			this.excludeMessageRequestFromContext(id)
+			this.setAssistantMessage(id, text, false, true)
+		},
+		excludeMessageRequestFromContext(id = '') {
+			const message = this.findMessage(id)
+			if (!message?.requestID) return
+			this.localMessages.forEach((item) => {
+				if (item.requestID === message.requestID) {
+					item.contextExcluded = true
+				}
+			})
+		},
 		finishAssistantMessage(id = '') {
 			const message = this.findMessage(id)
 			if (!message) return
@@ -338,6 +356,7 @@ export default {
 			this.streamAbortExpected = true
 			this.activeStream.abort?.()
 			if (this.activeAssistantMessageID) {
+				this.excludeMessageRequestFromContext(this.activeAssistantMessageID)
 				const message = this.findMessage(this.activeAssistantMessageID)
 				if (message?.pending && !String(message.text || '').trim()) {
 					message.text = '已停止回复。'

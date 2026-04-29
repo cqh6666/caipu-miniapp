@@ -200,15 +200,42 @@ export function streamDietAssistantChat(messages = [], callbacks = {}) {
 	let receivedChunk = false
 	let requestTask = null
 	let streamError = null
+	let settled = false
+	let resolveFinished
+	let rejectFinished
+
+	function settle(handler, value) {
+		if (settled) return
+		settled = true
+		if (typeof handler === 'function') {
+			handler(value)
+		}
+	}
+
+	function resolveOnce() {
+		settle(resolveFinished, undefined)
+	}
+
+	function rejectOnce(error) {
+		settle(rejectFinished, error)
+	}
+
 	const parser = createStreamParser({
 		...callbacks,
 		onError: (error) => {
 			streamError = error
 			callbacks.onError?.(error)
+			rejectOnce(error)
+		},
+		onDone: () => {
+			callbacks.onDone?.()
+			resolveOnce()
 		}
 	})
 
 	const finished = new Promise((resolve, reject) => {
+		resolveFinished = resolve
+		rejectFinished = reject
 		requestTask = uni.request({
 			url: resolveAPIURL('/caipu-api/diet-assistant/chat/stream'),
 			method: 'POST',
@@ -226,7 +253,7 @@ export function streamDietAssistantChat(messages = [], callbacks = {}) {
 			success: (response) => {
 				const statusCode = Number(response?.statusCode) || 0
 				if (statusCode < 200 || statusCode >= 300) {
-					reject(new Error(`饮食管家请求失败 (${statusCode || 'unknown'})`))
+					rejectOnce(new Error(`饮食管家请求失败 (${statusCode || 'unknown'})`))
 					return
 				}
 
@@ -236,13 +263,14 @@ export function streamDietAssistantChat(messages = [], callbacks = {}) {
 				parser.push(decoder.flush())
 				parser.flush()
 				if (streamError) {
-					reject(streamError)
+					rejectOnce(streamError)
 					return
 				}
-				resolve()
+				resolveOnce()
 			},
 			fail: (error) => {
-				reject(new Error(error?.errMsg || '饮食管家网络请求失败'))
+				if (settled) return
+				rejectOnce(new Error(error?.errMsg || '饮食管家网络请求失败'))
 			}
 		})
 
