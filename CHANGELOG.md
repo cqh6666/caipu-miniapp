@@ -1,5 +1,34 @@
 # Project Changelog
 
+## 2026-04-30 (饮食管家 LongCat Tools Agent 接入)
+
+### Changed
+
+- **修改时间**：2026-04-30 23:39:09 +0800 CST
+- **变更背景**：饮食管家需要从单纯 AI 聊天升级为可调用系统能力的 Agent；本轮明确不再使用 `dots2api` 作为默认饮食管家上游，改为 LongCat OpenAI-compatible 接口，并先接入两个最小工具闭环。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 将原直接流式转发改为两段式 Agent loop：第一段非流式 `tools/tool_calls` 决策，执行工具后第二段再请求模型并通过 SSE 流式输出最终回复。
+  - 新增工具 `get_recipe_count`：按当前登录用户与当前空间统计菜谱数量，支持餐别 `breakfast/main/all` 与状态 `wishlist/done/all` 过滤。
+  - 新增工具 `add_recipe_mock`：模拟添加菜谱，只返回将要保存的菜名、餐别、状态、食材、摘要和备注，不真正调用创建菜谱接口、不写数据库。
+  - `utils/diet-assistant-api.js` 在饮食管家流式请求体中带上当前 `kitchenId`，后端用它做当前空间工具上下文，并继续保持小程序端 `enableChunked` SSE 解析方式。
+  - `backend/internal/config/config.go` 与 `backend/configs/example.env` 将饮食管家默认上游改为 `https://api.longcat.chat/openai/v1`，默认模型改为 `LongCat-2.0-Preview`。
+  - `README.md` 与 `backend/README.md` 补充饮食管家 LongCat tools、模拟添加和菜谱数量统计口径。
+- **影响范围**：
+  - 影响 `POST /api/diet-assistant/chat/stream` 的上游请求模式和请求体契约；前端仍消费原有 `delta/error/done` SSE 事件。
+  - 菜谱数量工具会读取当前空间菜谱列表；模拟添加工具不会修改菜谱、菜单或数据库。
+  - 饮食管家默认配置不再指向 `dots2api`；如果部署环境变量仍显式设置旧地址，则仍以环境变量为准。
+- **兼容性/风险**：
+  - 每轮对话现在最多产生两次上游调用：一次工具决策、一次最终流式回复；相比原直接流式转发会增加一次延迟和 token 成本。
+  - 依赖上游模型支持 OpenAI-compatible `tools/tool_calls`；已用 LongCat 手工探针验证 `LongCat-2.0-Preview` 与 `LongCat-Flash-Thinking-2601` 支持。
+  - 当前只做一轮工具调用，不支持工具结果后继续递归调用更多工具；适合本轮最小闭环。
+  - 正式保存菜谱尚未接入，`add_recipe_mock` 会在回复中明确“模拟添加，未真正保存”。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
 ## 2026-04-30 (帮我选结果卡长图叠字优化)
 
 ### Changed

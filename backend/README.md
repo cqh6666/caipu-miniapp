@@ -84,6 +84,18 @@ go run ./cmd/server
 - `INVITE_SHARE_FONT_PATH`
 - `INVITE_SHARE_FONT_BOLD_PATH`
 
+饮食管家 AI 配置默认使用 LongCat OpenAI-compatible 接口：
+
+- `DIET_ASSISTANT_AI_BASE_URL=https://api.longcat.chat/openai/v1`
+- `DIET_ASSISTANT_AI_MODEL=LongCat-2.0-Preview`
+- `DIET_ASSISTANT_AI_API_KEY` 填 LongCat API Key
+
+当前 `POST /api/diet-assistant/chat/stream` 会先用非流式 tools 请求判断是否需要
+调用工具，再把工具结果交给模型并以 SSE 流式返回最终回复。已支持的工具：
+
+- `get_recipe_count`：按当前空间统计菜谱数量，支持餐别和状态过滤
+- `add_recipe_mock`：模拟添加菜谱，只返回将要保存的字段，不真正写库
+
 应用级 B 站配置页访问控制：
 
 - `APP_SETTINGS_ACCESS_MODE=all`：所有登录用户都能进入隐藏设置页

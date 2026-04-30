@@ -152,13 +152,6 @@ func New(cfg config.Config) (*App, error) {
 	})
 	linkParseHandler := linkparse.NewHandler(linkParseService)
 	runtimeProvider.SetBilibiliVerifier(linkParseService.VerifyBilibiliSessdata)
-	dietAssistantService := dietassistant.NewService(dietassistant.Options{
-		BaseURL: cfg.DietAssistantAIBaseURL,
-		APIKey:  cfg.DietAssistantAIAPIKey,
-		Model:   cfg.DietAssistantAIModel,
-		Timeout: time.Duration(cfg.DietAssistantAITimeoutSec) * time.Second,
-	})
-	dietAssistantHandler := dietassistant.NewHandler(dietAssistantService)
 	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
 	uploadHandler := upload.NewHandler(uploadService)
 	recipeFlowchart := recipe.NewFlowchartGenerator(recipe.FlowchartOptions{
@@ -195,6 +188,23 @@ func New(cfg config.Config) (*App, error) {
 		FlowchartBatchSize: cfg.RecipeFlowchartBatchSize,
 	})
 	recipeHandler := recipe.NewHandler(recipeService)
+	dietAssistantService := dietassistant.NewService(dietassistant.Options{
+		BaseURL: cfg.DietAssistantAIBaseURL,
+		APIKey:  cfg.DietAssistantAIAPIKey,
+		Model:   cfg.DietAssistantAIModel,
+		Timeout: time.Duration(cfg.DietAssistantAITimeoutSec) * time.Second,
+		CountRecipes: func(ctx context.Context, input dietassistant.RecipeCountInput) (int, error) {
+			items, err := recipeService.ListByKitchenID(ctx, input.UserID, input.KitchenID, recipe.ListFilter{
+				MealType: input.MealType,
+				Status:   input.Status,
+			})
+			if err != nil {
+				return 0, err
+			}
+			return len(items), nil
+		},
+	})
+	dietAssistantHandler := dietassistant.NewHandler(dietAssistantService)
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTExpireHours)
 	authRepo := auth.NewRepository(dbConn)

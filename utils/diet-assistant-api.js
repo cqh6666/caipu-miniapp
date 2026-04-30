@@ -1,5 +1,5 @@
 import { resolveAPIURL } from './app-config'
-import { getAccessToken } from './session-storage'
+import { getAccessToken, getSessionState } from './session-storage'
 
 function normalizeMessages(messages = []) {
 	return (Array.isArray(messages) ? messages : [])
@@ -196,6 +196,7 @@ function createStreamParser(callbacks = {}) {
 
 export function streamDietAssistantChat(messages = [], callbacks = {}) {
 	const token = getAccessToken()
+	const kitchenId = Number(getSessionState()?.currentKitchenId) || 0
 	const decoder = createChunkDecoder()
 	let receivedChunk = false
 	let requestTask = null
@@ -240,7 +241,8 @@ export function streamDietAssistantChat(messages = [], callbacks = {}) {
 			url: resolveAPIURL('/caipu-api/diet-assistant/chat/stream'),
 			method: 'POST',
 			data: {
-				messages: normalizeMessages(messages)
+				messages: normalizeMessages(messages),
+				kitchenId
 			},
 			header: {
 				Authorization: token ? `Bearer ${token}` : '',

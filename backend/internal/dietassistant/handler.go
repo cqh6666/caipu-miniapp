@@ -17,7 +17,8 @@ func NewHandler(service *Service) *Handler {
 }
 
 func (h *Handler) StreamChat(w http.ResponseWriter, r *http.Request) {
-	if _, ok := common.CurrentUserID(r.Context()); !ok {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
 		common.WriteError(w, common.ErrUnauthorized)
 		return
 	}
@@ -64,7 +65,10 @@ func (h *Handler) StreamChat(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
-	if err := h.service.StreamChat(r.Context(), messages, emit); err != nil {
+	if err := h.service.StreamChat(r.Context(), ChatContext{
+		UserID:    userID,
+		KitchenID: req.KitchenID,
+	}, messages, emit); err != nil {
 		_ = emit(StreamEvent{
 			Type:    "error",
 			Message: streamErrorMessage(err),

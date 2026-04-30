@@ -187,6 +187,9 @@
 - AI 多 Provider 配置与轮询 / 降级设计见 `docs/ai-multi-provider-routing-design.md`
 - 后台 `配置中心 -> AI Provider 告警` 支持对多 Provider 路由配置连续异常邮件告警，
   默认阈值为 `3` 次，支持 QQ 邮箱 SMTP、授权码和收件邮箱
+- 饮食管家默认直连 LongCat OpenAI-compatible `/chat/completions`，已接入
+  function calling：当前支持查看当前空间菜谱数量，以及模拟添加菜谱（不写库），
+  最终回复继续通过 SSE 流式返回小程序
 - 当前线上云服务器的实际服务、端口、路径路由和发布口径见 `docs/cloud-server-config-overview.md`
 
 ## 交互说明
