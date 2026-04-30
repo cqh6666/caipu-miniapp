@@ -11,7 +11,10 @@
 			<view
 				v-if="activeSection === 'library'"
 				class="library-shell"
-				:class="{ 'library-shell--entering': libraryEnterMotionActive }"
+				:class="{
+					'library-shell--return-ready': libraryReturnMotionReady,
+					'library-shell--entering': libraryEnterMotionActive
+				}"
 			>
 				<library-header-section
 					:is-library-meal-order-mode="isLibraryMealOrderMode"
@@ -561,6 +564,7 @@ export default {
 			libraryEnterMotionActive: false,
 			libraryEnterMotionTimer: null,
 			libraryReturnMotionPending: false,
+			libraryReturnMotionReady: false,
 			searchKeyword: '',
 			recentSearches: readRecentSearches(),
 			lastDraftLinkPrefill: readLastDraftLinkPrefill(),
@@ -668,7 +672,7 @@ export default {
 		const shouldPlayReturnMotion = this.libraryReturnMotionPending
 		this.libraryReturnMotionPending = false
 		if (shouldPlayReturnMotion) {
-			this.triggerLibraryEnterMotion({ delay: 96 })
+			this.triggerLibraryEnterMotion({ delay: 120, preposition: false })
 		}
 	},
 	onHide() {
@@ -681,6 +685,10 @@ export default {
 		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
+		if (this.libraryReturnMotionPending && this.activeSection === 'library') {
+			this.libraryEnterMotionActive = false
+			this.libraryReturnMotionReady = true
+		}
 		this.recipeCoverCacheRequestID += 1
 	},
 	onUnload() {
@@ -702,6 +710,7 @@ export default {
 			this.libraryEnterMotionTimer = null
 		}
 		this.libraryReturnMotionPending = false
+		this.libraryReturnMotionReady = false
 		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
@@ -1440,22 +1449,28 @@ export default {
 		triggerLibraryEnterMotion(options = {}) {
 			if (this.activeSection !== 'library') return
 			const delay = Math.max(0, Number(options?.delay) || 0)
+			const shouldPreposition = options?.preposition !== false
 			if (this.libraryEnterMotionTimer) {
 				clearTimeout(this.libraryEnterMotionTimer)
 				this.libraryEnterMotionTimer = null
 			}
 			this.libraryEnterMotionActive = false
+			if (shouldPreposition) {
+				this.libraryReturnMotionReady = true
+			}
 			this.$nextTick(() => {
 				const play = () => {
 					if (this.activeSection !== 'library') {
 						this.libraryEnterMotionTimer = null
+						this.libraryReturnMotionReady = false
 						return
 					}
 					this.libraryEnterMotionActive = true
+					this.libraryReturnMotionReady = false
 					this.libraryEnterMotionTimer = setTimeout(() => {
 						this.libraryEnterMotionActive = false
 						this.libraryEnterMotionTimer = null
-					}, 340)
+					}, 620)
 				}
 				if (delay > 0) {
 					this.libraryEnterMotionTimer = setTimeout(() => {
@@ -2569,6 +2584,7 @@ export default {
 				url: `/pages/recipe-detail/index?id=${recipeId}`,
 				fail: () => {
 					this.libraryReturnMotionPending = false
+					this.libraryReturnMotionReady = false
 				}
 			})
 		},
@@ -2987,27 +3003,23 @@ export default {
 	.library-shell {
 		display: block;
 		will-change: transform;
+		transform: translateY(0);
+	}
+
+	.library-shell--return-ready {
+		transform: translateY(22rpx);
 	}
 
 	.library-shell--entering {
-		animation: library-shell-return-settle 320ms cubic-bezier(0.18, 0.82, 0.18, 1) both;
-	}
-
-	@keyframes library-shell-return-settle {
-		from {
-			transform: translateY(16rpx);
-		}
-		62% {
-			transform: translateY(-2rpx);
-		}
-		to {
-			transform: translateY(0);
-		}
+		transform: translateY(0);
+		transition: transform 560ms cubic-bezier(0.16, 0.84, 0.24, 1);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
+		.library-shell--return-ready,
 		.library-shell--entering {
-			animation: none;
+			transform: translateY(0);
+			transition: none;
 		}
 	}
 
