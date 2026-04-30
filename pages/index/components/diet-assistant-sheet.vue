@@ -166,7 +166,7 @@ export default {
 			default: ''
 		}
 	},
-	emits: ['close', 'open-add-recipe'],
+	emits: ['close', 'open-add-recipe', 'recipes-mutated'],
 	data() {
 		return {
 			draftMessage: '',
@@ -334,12 +334,22 @@ export default {
 		startStreamResponse(assistantID, messages) {
 			this.isStreaming = true
 			this.streamAbortExpected = false
-			const stream = streamDietAssistantChat(messages, {
+			let stream = null
+			const resetStreamState = () => {
+				if (this.activeStream === stream) {
+					this.activeStream = null
+					this.activeAssistantMessageID = ''
+					this.isStreaming = false
+					this.streamAbortExpected = false
+				}
+			}
+			stream = streamDietAssistantChat(messages, {
 				onDelta: (delta) => {
 					this.appendAssistantDelta(assistantID, delta)
 				},
 				onStatus: (event) => {
 					this.updateAssistantStatus(assistantID, event?.message || '')
+					this.handleStreamMutation(event?.mutation)
 				},
 				onDone: () => {
 					this.finishAssistantMessage(assistantID)
@@ -351,14 +361,6 @@ export default {
 			})
 			this.activeStream = stream
 			this.activeAssistantMessageID = assistantID
-			const resetStreamState = () => {
-				if (this.activeStream === stream) {
-					this.activeStream = null
-					this.activeAssistantMessageID = ''
-					this.isStreaming = false
-					this.streamAbortExpected = false
-				}
-			}
 			stream.finished
 				.then(() => {
 					this.finishAssistantMessage(assistantID)
@@ -387,6 +389,10 @@ export default {
 			message.statusText = statusText
 			message.pending = true
 			this.bumpScrollAnchor()
+		},
+		handleStreamMutation(mutation = null) {
+			if (!mutation?.type) return
+			this.$emit('recipes-mutated', mutation)
 		},
 		setAssistantMessage(id = '', text = '', pending = false, transient = false) {
 			const message = this.findMessage(id)

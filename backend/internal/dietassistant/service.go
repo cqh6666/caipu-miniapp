@@ -170,11 +170,14 @@ func (s *Service) appendToolResults(ctx context.Context, chatCtx ChatContext, me
 		if emit != nil {
 			eventType := "tool_done"
 			message := toolStatusMessage(toolName, "done")
+			var mutation *StreamMutation
 			if toolResultFailed(result) {
 				eventType = "tool_error"
 				message = toolStatusMessage(toolName, "error")
+			} else {
+				mutation = buildToolMutation(toolName, result)
 			}
-			if err := emit(StreamEvent{Type: eventType, ToolName: toolName, Message: message}); err != nil {
+			if err := emit(StreamEvent{Type: eventType, ToolName: toolName, Message: message, Mutation: mutation}); err != nil {
 				return nil, err
 			}
 		}
@@ -605,6 +608,25 @@ func (s *Service) executeTool(ctx context.Context, chatCtx ChatContext, call ope
 			"ok":    false,
 			"error": "unknown tool: " + name,
 		}
+	}
+}
+
+func buildToolMutation(name string, result map[string]any) *StreamMutation {
+	switch name {
+	case "parse_and_add_recipe_from_url":
+		recipe, ok := result["recipe"].(RecipeToolItem)
+		if !ok || strings.TrimSpace(recipe.ID) == "" {
+			return nil
+		}
+		return &StreamMutation{
+			Type:        "recipe_created",
+			RecipeID:    strings.TrimSpace(recipe.ID),
+			RecipeTitle: strings.TrimSpace(recipe.Title),
+			MealType:    strings.TrimSpace(recipe.MealType),
+			Status:      strings.TrimSpace(recipe.Status),
+		}
+	default:
+		return nil
 	}
 }
 

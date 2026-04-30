@@ -18,10 +18,19 @@ type ChatStreamRequest struct {
 }
 
 type StreamEvent struct {
-	Type     string `json:"type"`
-	Delta    string `json:"delta,omitempty"`
-	Message  string `json:"message,omitempty"`
-	ToolName string `json:"toolName,omitempty"`
+	Type     string          `json:"type"`
+	Delta    string          `json:"delta,omitempty"`
+	Message  string          `json:"message,omitempty"`
+	ToolName string          `json:"toolName,omitempty"`
+	Mutation *StreamMutation `json:"mutation,omitempty"`
+}
+
+type StreamMutation struct {
+	Type        string `json:"type"`
+	RecipeID    string `json:"recipeId,omitempty"`
+	RecipeTitle string `json:"recipeTitle,omitempty"`
+	MealType    string `json:"mealType,omitempty"`
+	Status      string `json:"status,omitempty"`
 }
 
 type ChatContext struct {

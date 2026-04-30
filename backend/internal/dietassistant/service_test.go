@@ -269,6 +269,13 @@ func TestServiceStreamChatParsesURLOnlyMessageWithoutPlanningRequest(t *testing.
 	if !hasStreamEvent(events, "tool_done", "parse_and_add_recipe_from_url", "已解析并保存食材") {
 		t.Fatalf("events missing url tool_done: %#v", events)
 	}
+	mutation := findStreamMutation(events, "recipe_created")
+	if mutation == nil {
+		t.Fatalf("events missing recipe_created mutation: %#v", events)
+	}
+	if mutation.RecipeID != "rec_url" || mutation.RecipeTitle != "番茄炒蛋" {
+		t.Fatalf("unexpected mutation: %#v", mutation)
+	}
 }
 
 func TestExecuteParseAndAddRecipeFromURL(t *testing.T) {
@@ -408,4 +415,13 @@ func hasStreamEvent(events []StreamEvent, eventType, toolName, message string) b
 		return true
 	}
 	return false
+}
+
+func findStreamMutation(events []StreamEvent, mutationType string) *StreamMutation {
+	for _, event := range events {
+		if event.Mutation != nil && event.Mutation.Type == mutationType {
+			return event.Mutation
+		}
+	}
+	return nil
 }

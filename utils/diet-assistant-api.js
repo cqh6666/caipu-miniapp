@@ -171,6 +171,15 @@ function createChunkDecoder() {
 	return createManualUTF8Decoder()
 }
 
+function callStreamCallback(callback, ...args) {
+	if (typeof callback !== 'function') return
+	try {
+		callback(...args)
+	} catch (error) {
+		console.warn?.('diet assistant stream callback failed', error)
+	}
+}
+
 function createStreamParser(callbacks = {}) {
 	let buffer = ''
 
@@ -184,7 +193,7 @@ function createStreamParser(callbacks = {}) {
 
 		dataLines.forEach((line) => {
 			if (line === '[DONE]') {
-				callbacks.onDone?.()
+				callStreamCallback(callbacks.onDone)
 				return
 			}
 
@@ -196,23 +205,24 @@ function createStreamParser(callbacks = {}) {
 			}
 
 			if (event?.type === 'delta') {
-				callbacks.onDelta?.(String(event.delta || ''))
+				callStreamCallback(callbacks.onDelta, String(event.delta || ''))
 				return
 			}
 			if (['status', 'tool_start', 'tool_done', 'tool_error'].includes(event?.type)) {
-				callbacks.onStatus?.({
+				callStreamCallback(callbacks.onStatus, {
 					type: String(event.type || ''),
 					message: String(event.message || ''),
-					toolName: String(event.toolName || '')
+					toolName: String(event.toolName || ''),
+					mutation: normalizeStreamMutation(event.mutation)
 				})
 				return
 			}
 			if (event?.type === 'error') {
-				callbacks.onError?.(new Error(event.message || '饮食管家暂时不可用'))
+				callStreamCallback(callbacks.onError, new Error(event.message || '饮食管家暂时不可用'))
 				return
 			}
 			if (event?.type === 'done') {
-				callbacks.onDone?.()
+				callStreamCallback(callbacks.onDone)
 			}
 		})
 	}
@@ -235,6 +245,19 @@ function createStreamParser(callbacks = {}) {
 				handleFrame(remaining)
 			}
 		}
+	}
+}
+
+function normalizeStreamMutation(mutation = null) {
+	if (!mutation || typeof mutation !== 'object') return null
+	const type = String(mutation.type || '').trim()
+	if (!type) return null
+	return {
+		type,
+		recipeId: String(mutation.recipeId || '').trim(),
+		recipeTitle: String(mutation.recipeTitle || '').trim(),
+		mealType: String(mutation.mealType || '').trim(),
+		status: String(mutation.status || '').trim()
 	}
 }
 
@@ -269,12 +292,18 @@ export function streamDietAssistantChat(messages = [], callbacks = {}) {
 		...callbacks,
 		onError: (error) => {
 			streamError = error
-			callbacks.onError?.(error)
-			rejectOnce(error)
+			try {
+				callStreamCallback(callbacks.onError, error)
+			} finally {
+				rejectOnce(error)
+			}
 		},
 		onDone: () => {
-			callbacks.onDone?.()
-			resolveOnce()
+			try {
+				callStreamCallback(callbacks.onDone)
+			} finally {
+				resolveOnce()
+			}
 		}
 	})
 

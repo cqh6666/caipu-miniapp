@@ -411,6 +411,7 @@
 			:initial-prompt="dietAssistantInitialPrompt"
 			@close="closeDietAssistantSheet"
 			@open-add-recipe="openAddSheetFromAssistant"
+			@recipes-mutated="handleDietAssistantRecipesMutated"
 		></diet-assistant-sheet>
 
 		<action-feedback
@@ -2731,6 +2732,10 @@ export default {
 		openAddSheetFromAssistant() {
 			this.closeDietAssistantSheet()
 			this.openAddSheet()
+		},
+		handleDietAssistantRecipesMutated(mutation = {}) {
+			if (mutation?.type !== 'recipe_created') return
+			this.refreshRecipes({ silent: true })
 		},
 		closeAddSheet() {
 			if (this.isSubmittingDraft) return

@@ -1,5 +1,51 @@
 # Project Changelog
 
+## 2026-05-01 (修复饮食管家单轮后发送状态卡住)
+
+### Fixed
+
+- **修改时间**：2026-05-01 02:09:58 +0800 CST
+- **变更背景**：用户反馈在饮食管家当前窗口中问完一个问题后，发送按钮持续置灰，只能退出并重新进入 AI 窗口后才能继续提问。
+- **核心改动**：
+  - `pages/index/components/diet-assistant-sheet.vue` 将 `resetStreamState()` 的定义提前到发起流式请求之前，避免 SSE `done` 或 promise 回调在极端时序下访问尚未初始化的复位函数，导致 `isStreaming` 无法释放。
+  - `utils/diet-assistant-api.js` 新增流式回调安全调用封装，确保 `onDelta`、`onStatus`、`onError`、`onDone` 等 UI 回调即使抛错，也不会阻断内部 `finished` promise 的 resolve / reject。
+- **影响范围**：
+  - 影响饮食管家流式回复完成后的输入框和发送按钮状态释放。
+  - 不修改后端聊天接口、聊天记录落库、工具调用结果或最终 AI 回复内容。
+- **兼容性/风险**：
+  - 回调异常现在会被吞掉并写入控制台 warning，优先保证聊天流状态可以收口；后续如需排查 UI 回调错误，可结合开发者工具 console 查看。
+- **验证情况**：
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue` 与 `pages/index/index.vue`，通过。
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `git diff --check`，通过。
+
+## 2026-05-01 (饮食管家写库后列表自动刷新)
+
+### Added
+
+- **修改时间**：2026-05-01 02:06:15 +0800 CST
+- **变更背景**：用户在饮食管家聊天窗口通过链接解析保存菜谱后，后端已写库，但首页美食库列表仍停留在旧前端状态，需在工具确认写入后自动刷新。
+- **核心改动**：
+  - `backend/internal/dietassistant/model.go` 为 SSE `StreamEvent` 新增 `mutation` 字段，当前支持 `recipe_created`，包含 `recipeId`、`recipeTitle`、`mealType` 和 `status`。
+  - `backend/internal/dietassistant/service.go` 在 `parse_and_add_recipe_from_url` 工具成功后，于 `tool_done` 事件附带 `mutation.type=recipe_created`，失败时不发送 mutation。
+  - `utils/diet-assistant-api.js` 解析 SSE 状态事件中的 `mutation`，并传给饮食管家弹层。
+  - `pages/index/components/diet-assistant-sheet.vue` 收到 mutation 后向父页面派发 `recipes-mutated` 事件。
+  - `pages/index/index.vue` 收到 `recipe_created` 后静默调用 `refreshRecipes({ silent: true })`，让首页列表、数量和缓存同步更新。
+- **影响范围**：
+  - 影响饮食管家链接解析保存菜谱后的前端同步体验。
+  - 不改变菜谱写库逻辑、聊天记录存储内容或最终 AI 回复文本。
+- **兼容性/风险**：
+  - 旧客户端会忽略 `mutation` 字段，仍能正常消费原有 SSE 状态和回复。
+  - 当前只对 `parse_and_add_recipe_from_url` 成功写入菜谱发送 `recipe_created`；后续新增删除 / 更新工具时可复用该 mutation 协议。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue` 与 `pages/index/index.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
 ## 2026-05-01 (饮食管家工具调用实时状态)
 
 ### Added
