@@ -22,11 +22,14 @@ type Options struct {
 	Timeout        time.Duration
 	HTTPClient     *http.Client
 	CountRecipes   CountRecipesFunc
+	Repo           *Repository
+	EnsureMember   EnsureMemberFunc
 	NowForTest     func() time.Time
 	DisableTimeout bool
 }
 
 type CountRecipesFunc func(context.Context, RecipeCountInput) (int, error)
+type EnsureMemberFunc func(context.Context, int64, int64) error
 
 type Service struct {
 	baseURL      string
@@ -35,6 +38,9 @@ type Service struct {
 	timeout      time.Duration
 	httpClient   *http.Client
 	countRecipes CountRecipesFunc
+	repo         *Repository
+	ensureMember EnsureMemberFunc
+	now          func() time.Time
 }
 
 func NewService(options Options) *Service {
@@ -46,6 +52,10 @@ func NewService(options Options) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: timeout}
 	}
+	now := options.NowForTest
+	if now == nil {
+		now = time.Now
+	}
 	return &Service{
 		baseURL:      strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
 		apiKey:       strings.TrimSpace(options.APIKey),
@@ -53,6 +63,9 @@ func NewService(options Options) *Service {
 		timeout:      timeout,
 		httpClient:   client,
 		countRecipes: options.CountRecipes,
+		repo:         options.Repo,
+		ensureMember: options.EnsureMember,
+		now:          now,
 	}
 }
 
@@ -66,11 +79,15 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 	if emit == nil {
 		return common.ErrInternal
 	}
+	if err := s.ensureStorageContext(ctx, chatCtx); err != nil {
+		return err
+	}
 
 	upstreamMessages, err := buildAgentUpstreamMessages(messages)
 	if err != nil {
 		return err
 	}
+	lastUserContent := lastUserMessageContent(messages)
 
 	toolResponse, err := s.createChatCompletion(ctx, openAIChatRequest{
 		Model:       s.model,
@@ -92,30 +109,36 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 
 	assistantMessage := toolResponse.Choices[0].Message
 	toolCalls := normalizeToolCallIDs(assistantMessage.ToolCalls)
+	finalMessages := upstreamMessages
 	if len(toolCalls) == 0 {
-		return s.streamFinalChat(ctx, chatCtx, upstreamMessages, emit)
-	}
-
-	finalMessages := append([]openAIChatMessage{}, upstreamMessages...)
-	finalMessages = append(finalMessages, openAIChatMessage{
-		Role:      valueOrDefault(assistantMessage.Role, "assistant"),
-		Content:   assistantMessage.Content,
-		ToolCalls: toolCalls,
-	})
-	for _, call := range toolCalls {
-		result := s.executeTool(ctx, chatCtx, call)
+		finalMessages = upstreamMessages
+	} else {
+		finalMessages = append([]openAIChatMessage{}, upstreamMessages...)
 		finalMessages = append(finalMessages, openAIChatMessage{
-			Role:       "tool",
-			Content:    mustJSON(result),
-			ToolCallID: call.ID,
-			Name:       call.Function.Name,
+			Role:      valueOrDefault(assistantMessage.Role, "assistant"),
+			Content:   assistantMessage.Content,
+			ToolCalls: toolCalls,
 		})
+		for _, call := range toolCalls {
+			result := s.executeTool(ctx, chatCtx, call)
+			finalMessages = append(finalMessages, openAIChatMessage{
+				Role:       "tool",
+				Content:    mustJSON(result),
+				ToolCallID: call.ID,
+				Name:       call.Function.Name,
+			})
+		}
 	}
 
-	return s.streamFinalChat(ctx, chatCtx, finalMessages, emit)
+	assistantContent, err := s.streamFinalChat(ctx, chatCtx, finalMessages, emit)
+	if err != nil {
+		return err
+	}
+	_ = s.storeCompletedTurn(ctx, chatCtx, lastUserContent, assistantContent)
+	return emit(StreamEvent{Type: "done"})
 }
 
-func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, emit func(StreamEvent) error) error {
+func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, emit func(StreamEvent) error) (string, error) {
 	payload := openAIChatRequest{
 		Model:       s.model,
 		User:        buildUpstreamUser(chatCtx),
@@ -126,12 +149,12 @@ func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, mess
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return common.ErrInternal.WithErr(err)
+		return "", common.ErrInternal.WithErr(err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return common.ErrInternal.WithErr(err)
+		return "", common.ErrInternal.WithErr(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -143,7 +166,7 @@ func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, mess
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return common.NewAppError(common.CodeInternalServer, "diet assistant upstream request failed", http.StatusBadGateway).WithErr(err)
+		return "", common.NewAppError(common.CodeInternalServer, "diet assistant upstream request failed", http.StatusBadGateway).WithErr(err)
 	}
 	defer resp.Body.Close()
 
@@ -153,10 +176,73 @@ func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, mess
 		if message == "" {
 			message = fmt.Sprintf("diet assistant upstream returned status %d", resp.StatusCode)
 		}
-		return common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
+		return "", common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
 	}
 
-	return consumeOpenAIStream(resp.Body, emit)
+	var content strings.Builder
+	err = consumeOpenAIStream(resp.Body, func(event StreamEvent) error {
+		if event.Type == "delta" {
+			content.WriteString(event.Delta)
+			return emit(event)
+		}
+		if event.Type == "done" {
+			return nil
+		}
+		return emit(event)
+	})
+	if err != nil {
+		return "", err
+	}
+	return content.String(), nil
+}
+
+func (s *Service) ListStoredMessages(ctx context.Context, chatCtx ChatContext, limit int) ([]StoredMessage, error) {
+	if err := s.ensureStorageContext(ctx, chatCtx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.repo == nil {
+		return nil, nil
+	}
+	return s.repo.ListMessages(ctx, chatCtx.UserID, chatCtx.KitchenID, normalizeMessageLimit(limit))
+}
+
+func (s *Service) ClearStoredMessages(ctx context.Context, chatCtx ChatContext) error {
+	if err := s.ensureStorageContext(ctx, chatCtx); err != nil {
+		return err
+	}
+	if s == nil || s.repo == nil {
+		return nil
+	}
+	return s.repo.ClearMessages(ctx, chatCtx.UserID, chatCtx.KitchenID)
+}
+
+func (s *Service) storeCompletedTurn(ctx context.Context, chatCtx ChatContext, userContent, assistantContent string) error {
+	if s == nil || s.repo == nil {
+		return nil
+	}
+	if err := s.ensureStorageContext(ctx, chatCtx); err != nil {
+		return err
+	}
+	userContent = strings.TrimSpace(userContent)
+	assistantContent = strings.TrimSpace(assistantContent)
+	if userContent == "" || assistantContent == "" {
+		return nil
+	}
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
+	return s.repo.AddTurn(ctx, chatCtx.UserID, chatCtx.KitchenID, userContent, assistantContent, now().UTC().Format(time.RFC3339))
+}
+
+func (s *Service) ensureStorageContext(ctx context.Context, chatCtx ChatContext) error {
+	if err := validateStorageContext(chatCtx); err != nil {
+		return err
+	}
+	if s != nil && s.ensureMember != nil {
+		return s.ensureMember(ctx, chatCtx.UserID, chatCtx.KitchenID)
+	}
+	return nil
 }
 
 func buildAgentUpstreamMessages(messages []ChatMessage) ([]openAIChatMessage, error) {
@@ -187,6 +273,36 @@ func buildAgentUpstreamMessages(messages []ChatMessage) ([]openAIChatMessage, er
 	}
 
 	return nil, common.NewAppError(common.CodeBadRequest, "user message is required", http.StatusBadRequest)
+}
+
+func lastUserMessageContent(messages []ChatMessage) string {
+	for index := len(messages) - 1; index >= 0; index -= 1 {
+		message := messages[index]
+		if strings.EqualFold(strings.TrimSpace(message.Role), "user") {
+			return strings.TrimSpace(message.Content)
+		}
+	}
+	return ""
+}
+
+func validateStorageContext(chatCtx ChatContext) error {
+	if chatCtx.UserID <= 0 {
+		return common.ErrUnauthorized
+	}
+	if chatCtx.KitchenID <= 0 {
+		return common.NewAppError(common.CodeBadRequest, "kitchenId is required", http.StatusBadRequest)
+	}
+	return nil
+}
+
+func normalizeMessageLimit(limit int) int {
+	if limit <= 0 {
+		return 50
+	}
+	if limit > 100 {
+		return 100
+	}
+	return limit
 }
 
 type openAIChatRequest struct {

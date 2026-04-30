@@ -5,6 +5,13 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
+type StoredMessage struct {
+	ID        int64  `json:"id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"createdAt"`
+}
+
 type ChatStreamRequest struct {
 	Messages  []ChatMessage `json:"messages"`
 	KitchenID int64         `json:"kitchenId,omitempty"`

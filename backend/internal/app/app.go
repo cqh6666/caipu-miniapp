@@ -188,11 +188,14 @@ func New(cfg config.Config) (*App, error) {
 		FlowchartBatchSize: cfg.RecipeFlowchartBatchSize,
 	})
 	recipeHandler := recipe.NewHandler(recipeService)
+	dietAssistantRepo := dietassistant.NewRepository(dbConn)
 	dietAssistantService := dietassistant.NewService(dietassistant.Options{
-		BaseURL: cfg.DietAssistantAIBaseURL,
-		APIKey:  cfg.DietAssistantAIAPIKey,
-		Model:   cfg.DietAssistantAIModel,
-		Timeout: time.Duration(cfg.DietAssistantAITimeoutSec) * time.Second,
+		BaseURL:      cfg.DietAssistantAIBaseURL,
+		APIKey:       cfg.DietAssistantAIAPIKey,
+		Model:        cfg.DietAssistantAIModel,
+		Timeout:      time.Duration(cfg.DietAssistantAITimeoutSec) * time.Second,
+		Repo:         dietAssistantRepo,
+		EnsureMember: kitchenService.EnsureMember,
 		CountRecipes: func(ctx context.Context, input dietassistant.RecipeCountInput) (int, error) {
 			items, err := recipeService.ListByKitchenID(ctx, input.UserID, input.KitchenID, recipe.ListFilter{
 				MealType: input.MealType,

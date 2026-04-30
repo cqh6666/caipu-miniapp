@@ -3,6 +3,7 @@ package dietassistant
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
@@ -14,6 +15,59 @@ type Handler struct {
 
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
+}
+
+func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	kitchenID, err := parseKitchenIDQuery(r)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	items, err := h.service.ListStoredMessages(r.Context(), ChatContext{
+		UserID:    userID,
+		KitchenID: kitchenID,
+	}, parseMessageLimitQuery(r))
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"items": items,
+	})
+}
+
+func (h *Handler) ClearMessages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	kitchenID, err := parseKitchenIDQuery(r)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	if err := h.service.ClearStoredMessages(r.Context(), ChatContext{
+		UserID:    userID,
+		KitchenID: kitchenID,
+	}); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"deleted": true,
+	})
 }
 
 func (h *Handler) StreamChat(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +128,30 @@ func (h *Handler) StreamChat(w http.ResponseWriter, r *http.Request) {
 			Message: streamErrorMessage(err),
 		})
 	}
+}
+
+func parseKitchenIDQuery(r *http.Request) (int64, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("kitchenId"))
+	if raw == "" {
+		return 0, common.NewAppError(common.CodeBadRequest, "kitchenId is required", http.StatusBadRequest)
+	}
+	kitchenID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || kitchenID <= 0 {
+		return 0, common.NewAppError(common.CodeBadRequest, "invalid kitchenId", http.StatusBadRequest)
+	}
+	return kitchenID, nil
+}
+
+func parseMessageLimitQuery(r *http.Request) int {
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw == "" {
+		return 50
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil {
+		return 50
+	}
+	return limit
 }
 
 func normalizeRequestMessages(messages []ChatMessage) ([]ChatMessage, error) {

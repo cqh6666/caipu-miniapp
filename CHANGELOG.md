@@ -1,5 +1,34 @@
 # Project Changelog
 
+## 2026-05-01 (饮食管家聊天记忆后端存储)
+
+### Added
+
+- **修改时间**：2026-05-01 00:46:25 +0800 CST
+- **变更背景**：饮食管家已有前端内存多轮上下文，但关闭 / 重新打开后不会从后端恢复；本轮补齐后端聊天记忆存储能力，并让清空会话同步清理后端记录。
+- **核心改动**：
+  - 新增迁移 `backend/migrations/019_add_diet_assistant_messages.sql`，创建 `diet_assistant_messages` 表，按 `user_id + kitchen_id` 存储饮食管家消息，并为用户空间查询和创建时间建立索引。
+  - 新增 `backend/internal/dietassistant/repository.go`，支持追加单条消息、事务式保存完整一轮 `user + assistant`、按最近条数读取历史、清空当前用户当前空间历史。
+  - `backend/internal/dietassistant/service.go` 在流式最终回复成功完成后保存本轮问答；上游失败、用户中断或助手空回复不保存半截记录；保存失败不阻断已经返回给用户的 AI 回复。
+  - 新增受登录态保护的 `GET /api/diet-assistant/messages?kitchenId=...&limit=...` 与 `DELETE /api/diet-assistant/messages?kitchenId=...`，读取 / 清空前都会校验当前用户仍属于目标空间。
+  - `utils/diet-assistant-api.js` 增加历史读取和清空 API；`pages/index/components/diet-assistant-sheet.vue` 打开弹层时同步后端历史，发送时继续携带历史上下文，点击“清空会话记录”会同步清空后端。
+  - `pages/index/components/diet-assistant-sheet.vue` 移除空会话时的固定示例问答和示例菜谱卡，仅保留欢迎引导与快捷建议，避免与后端真实历史混淆。
+  - `README.md` 与 `backend/README.md` 补充饮食管家聊天记忆存储、接口和清空口径。
+- **影响范围**：
+  - 影响饮食管家聊天流式接口的成功收口逻辑，以及饮食管家弹层打开 / 清空时的前后端交互。
+  - 空历史用户打开饮食管家时不再看到模拟用户提问和模拟助手回复。
+  - 新增数据库表和迁移；不修改菜谱正式创建接口，也不改变 `add_recipe_mock` 仍为模拟添加的策略。
+- **兼容性/风险**：
+  - 历史记录按当前登录用户隔离，同一空间内不同成员不会互相看到聊天记录；切换空间后读取对应空间的个人历史。
+  - 每次成功回复会额外写入两条消息；默认读取最近 50 条，后端最多允许 100 条。
+  - 如果保存聊天记录失败，用户仍能看到本次流式回复，但下次打开可能缺少该轮历史。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
 ## 2026-04-30 (生产饮食管家 LongCat 配置与后端重部署)
 
 ### Changed

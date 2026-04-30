@@ -50,11 +50,14 @@ func TestServiceStreamChatConsumesOpenAICompatibleSSE(t *testing.T) {
 	}))
 	defer server.Close()
 
+	db := openDietAssistantTestDB(t)
+	defer db.Close()
 	service := NewService(Options{
 		BaseURL: server.URL,
 		APIKey:  "test-key",
 		Model:   "dots-ai",
 		Timeout: 3 * time.Second,
+		Repo:    NewRepository(db),
 	})
 
 	var events []StreamEvent
@@ -82,6 +85,19 @@ func TestServiceStreamChatConsumesOpenAICompatibleSSE(t *testing.T) {
 	}
 	if requestCount != 2 {
 		t.Fatalf("requestCount = %d, want 2", requestCount)
+	}
+	stored, err := service.ListStoredMessages(context.Background(), ChatContext{UserID: 1, KitchenID: 2}, 50)
+	if err != nil {
+		t.Fatalf("ListStoredMessages error = %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("len(stored) = %d, want 2", len(stored))
+	}
+	if stored[0].Role != "user" || stored[0].Content != "你好" {
+		t.Fatalf("stored user = %#v", stored[0])
+	}
+	if stored[1].Role != "assistant" || stored[1].Content != "你好，想吃什么？" {
+		t.Fatalf("stored assistant = %#v", stored[1])
 	}
 }
 

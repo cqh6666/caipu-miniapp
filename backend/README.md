@@ -96,6 +96,10 @@ go run ./cmd/server
 - `get_recipe_count`：按当前空间统计菜谱数量，支持餐别和状态过滤
 - `add_recipe_mock`：模拟添加菜谱，只返回将要保存的字段，不真正写库
 
+聊天记录会在一次用户消息和助手回复都成功完成后，以事务保存到
+`diet_assistant_messages`，存储维度为 `user_id + kitchen_id`。历史读取和清空接口
+都会校验当前用户仍是该空间成员。
+
 应用级 B 站配置页访问控制：
 
 - `APP_SETTINGS_ACCESS_MODE=all`：所有登录用户都能进入隐藏设置页
@@ -183,6 +187,8 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/link-parsers/preview`
 - `POST /api/link-parsers/bilibili`
 - `POST /api/link-parsers/xiaohongshu`
+- `GET /api/diet-assistant/messages`
+- `DELETE /api/diet-assistant/messages`
 - `POST /api/diet-assistant/chat/stream`
 - `GET /api/kitchens/{kitchenID}/meal-plans`
 - `PUT /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft`

@@ -150,6 +150,8 @@ func NewRouter(
 			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)
 			protected.Post("/link-parsers/bilibili", linkParseHandler.ParseBilibili)
 			protected.Post("/link-parsers/xiaohongshu", linkParseHandler.ParseXiaohongshu)
+			protected.Get("/diet-assistant/messages", dietAssistantHandler.ListMessages)
+			protected.Delete("/diet-assistant/messages", dietAssistantHandler.ClearMessages)
 			protected.Post("/diet-assistant/chat/stream", dietAssistantHandler.StreamChat)
 			protected.Get("/kitchens/{kitchenID}/meal-plans", mealPlanHandler.List)
 			protected.Put("/kitchens/{kitchenID}/meal-plans/{planDate}/draft", mealPlanHandler.SaveDraft)

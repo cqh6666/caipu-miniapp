@@ -38,6 +38,10 @@
 					<text class="assistant-date-pill__text">今天的灵感台</text>
 				</view>
 
+				<view v-if="isLoadingHistory" class="assistant-history-status">
+					<text class="assistant-history-status__text">正在同步历史...</text>
+				</view>
+
 				<view class="chat-row chat-row--assistant">
 					<view class="chat-avatar chat-avatar--assistant">
 						<image class="chat-avatar__image" src="/static/icons/diet-assistant-logo.svg" mode="aspectFit" />
@@ -58,44 +62,6 @@
 						</view>
 					</view>
 				</view>
-
-				<template v-if="!hasConversationStarted">
-					<view class="chat-row chat-row--user">
-						<view class="chat-bubble chat-bubble--user">
-							<text class="chat-bubble__text chat-bubble__text--user">有几块鸡胸肉和黄瓜，可以怎么做既好吃又低脂？</text>
-						</view>
-					</view>
-
-					<view class="chat-row chat-row--assistant">
-						<view class="chat-avatar chat-avatar--assistant">
-							<image class="chat-avatar__image" src="/static/icons/diet-assistant-logo.svg" mode="aspectFit" />
-						</view>
-						<view class="chat-bubble chat-bubble--assistant chat-bubble--wide">
-							<text class="chat-bubble__text">
-								可以先做一个清爽方向的菜谱卡片，比如酸辣凉拌鸡丝黄瓜。你也可以直接输入问题，我会继续按上下文聊下去。
-							</text>
-
-							<view class="assistant-recipe-card">
-								<view class="assistant-recipe-card__media">
-									<view class="assistant-recipe-card__plate"></view>
-								</view>
-								<view class="assistant-recipe-card__main">
-									<text class="assistant-recipe-card__eyebrow">减脂餐灵感</text>
-									<text class="assistant-recipe-card__title">酸辣凉拌鸡丝黄瓜</text>
-									<text class="assistant-recipe-card__desc">鸡胸肉撕丝，黄瓜切条，搭配生抽、香醋、蒜末和少量辣椒油。</text>
-								</view>
-							</view>
-
-							<view class="assistant-inline-action" hover-class="assistant-inline-action--hover" @tap="$emit('open-add-recipe')">
-								<view class="assistant-inline-action__icon">
-									<up-icon name="plus" size="14" color="#6b4d3d"></up-icon>
-								</view>
-								<text class="assistant-inline-action__text">先用现有表单加入美食库</text>
-								<up-icon name="arrow-right" size="14" color="#8a7563"></up-icon>
-							</view>
-						</view>
-					</view>
-				</template>
 
 				<view
 					v-for="message in localMessages"
@@ -142,7 +108,7 @@
 					<input
 						:value="draftMessage"
 						class="composer-box__input"
-						:placeholder="isStreaming ? '饮食管家正在回复...' : '贴链接，或先写下想吃什么...'"
+						:placeholder="composerPlaceholder"
 						placeholder-class="composer-box__placeholder"
 						confirm-type="send"
 						cursor-spacing="18"
@@ -176,7 +142,11 @@
 </template>
 
 <script>
-import { streamDietAssistantChat } from '../../../utils/diet-assistant-api'
+import {
+	clearDietAssistantMessages,
+	listDietAssistantMessages,
+	streamDietAssistantChat
+} from '../../../utils/diet-assistant-api'
 
 export default {
 	name: 'DietAssistantSheet',
@@ -199,6 +169,8 @@ export default {
 			activeStream: null,
 			activeAssistantMessageID: '',
 			streamAbortExpected: false,
+			isLoadingHistory: false,
+			historyLoadSerial: 0,
 			localMessages: [],
 			messageSerial: 0,
 			scrollAnchor: '',
@@ -231,13 +203,19 @@ export default {
 			return this.localMessages.length > 0
 		},
 		isSendDisabled() {
-			return this.isStreaming || !String(this.draftMessage || '').trim()
+			return this.isStreaming || this.isLoadingHistory || !String(this.draftMessage || '').trim()
+		},
+		composerPlaceholder() {
+			if (this.isLoadingHistory) return '正在同步历史...'
+			if (this.isStreaming) return '饮食管家正在回复...'
+			return '贴链接，或先写下想吃什么...'
 		}
 	},
 	watch: {
 		show(value) {
 			if (value) {
 				this.applyInitialPrompt()
+				this.loadStoredMessages()
 				this.bumpScrollAnchor()
 			}
 		},
@@ -257,6 +235,45 @@ export default {
 		},
 		applySuggestion(text = '') {
 			this.draftMessage = String(text || '')
+		},
+		async loadStoredMessages() {
+			if (this.isStreaming) return
+			const serial = this.historyLoadSerial + 1
+			this.historyLoadSerial = serial
+			this.isLoadingHistory = true
+			try {
+				const items = await listDietAssistantMessages()
+				if (serial !== this.historyLoadSerial || !this.show || this.isStreaming) return
+				this.localMessages = this.mapStoredMessages(items)
+				this.bumpScrollAnchor()
+			} catch (error) {
+				if (serial === this.historyLoadSerial && this.show) {
+					uni.showToast({
+						title: error?.message || '会话记录同步失败',
+						icon: 'none'
+					})
+				}
+			} finally {
+				if (serial === this.historyLoadSerial) {
+					this.isLoadingHistory = false
+				}
+			}
+		},
+		mapStoredMessages(items = []) {
+			return (Array.isArray(items) ? items : [])
+				.map((item, index) => {
+					const role = String(item?.role || '').trim().toLowerCase()
+					const text = String(item?.content || '').trim()
+					if ((role !== 'user' && role !== 'assistant') || !text) return null
+					return {
+						id: `remote-${item?.id || `${item?.createdAt || 'message'}-${index}`}`,
+						role,
+						text,
+						pending: false,
+						contextExcluded: false
+					}
+				})
+				.filter(Boolean)
 		},
 		applyInitialPrompt() {
 			const text = String(this.initialPrompt || '').trim()
@@ -397,13 +414,21 @@ export default {
 			this.isStreaming = false
 		},
 		clearConversationMessages() {
+			this.historyLoadSerial += 1
 			this.abortActiveStream()
 			this.localMessages = []
 			this.activeStream = null
 			this.activeAssistantMessageID = ''
 			this.streamAbortExpected = false
 			this.isStreaming = false
+			this.isLoadingHistory = false
 			this.bumpScrollAnchor()
+			clearDietAssistantMessages().catch((error) => {
+				uni.showToast({
+					title: error?.message || '后端会话清空失败',
+					icon: 'none'
+				})
+			})
 		},
 		bumpScrollAnchor() {
 			this.$nextTick(() => {

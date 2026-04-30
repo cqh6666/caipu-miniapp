@@ -1,4 +1,5 @@
 import { resolveAPIURL } from './app-config'
+import { request } from './http'
 import { getAccessToken, getSessionState } from './session-storage'
 
 function normalizeMessages(messages = []) {
@@ -8,6 +9,41 @@ function normalizeMessages(messages = []) {
 			content: String(message?.content || '').trim()
 		}))
 		.filter((message) => message.role && message.content)
+}
+
+function getCurrentKitchenId() {
+	return Number(getSessionState()?.currentKitchenId) || 0
+}
+
+function buildMessagesURL(kitchenId = 0, limit = 0) {
+	const params = [`kitchenId=${encodeURIComponent(String(kitchenId))}`]
+	if (limit > 0) {
+		params.push(`limit=${encodeURIComponent(String(limit))}`)
+	}
+	return `/caipu-api/diet-assistant/messages?${params.join('&')}`
+}
+
+export function listDietAssistantMessages(options = {}) {
+	const kitchenId = Number(options?.kitchenId) || getCurrentKitchenId()
+	const limit = Number(options?.limit) || 50
+	if (!kitchenId) {
+		return Promise.resolve([])
+	}
+	return request({
+		url: buildMessagesURL(kitchenId, limit),
+		method: 'GET'
+	}).then((data) => (Array.isArray(data?.items) ? data.items : []))
+}
+
+export function clearDietAssistantMessages(options = {}) {
+	const kitchenId = Number(options?.kitchenId) || getCurrentKitchenId()
+	if (!kitchenId) {
+		return Promise.resolve({ deleted: false })
+	}
+	return request({
+		url: buildMessagesURL(kitchenId),
+		method: 'DELETE'
+	})
 }
 
 function toUint8Array(buffer) {
@@ -196,7 +232,7 @@ function createStreamParser(callbacks = {}) {
 
 export function streamDietAssistantChat(messages = [], callbacks = {}) {
 	const token = getAccessToken()
-	const kitchenId = Number(getSessionState()?.currentKitchenId) || 0
+	const kitchenId = getCurrentKitchenId()
 	const decoder = createChunkDecoder()
 	let receivedChunk = false
 	let requestTask = null

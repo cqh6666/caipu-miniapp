@@ -190,6 +190,8 @@
 - 饮食管家默认直连 LongCat OpenAI-compatible `/chat/completions`，已接入
   function calling：当前支持查看当前空间菜谱数量，以及模拟添加菜谱（不写库），
   最终回复继续通过 SSE 流式返回小程序
+- 饮食管家聊天记录已按“当前用户 + 当前空间”保存到后端，重新打开弹层会同步最近历史，
+  “清空会话记录”会同时清空当前空间下该用户的后端聊天记录
 - 当前线上云服务器的实际服务、端口、路径路由和发布口径见 `docs/cloud-server-config-overview.md`
 
 ## 交互说明
