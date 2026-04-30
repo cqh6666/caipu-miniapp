@@ -1,5 +1,15 @@
 <template>
 	<view class="about-page">
+		<view
+			class="about-back"
+			:style="aboutBackStyle"
+			hover-class="about-back--hover"
+			hover-stay-time="80"
+			@tap="goBack"
+		>
+			<up-icon name="arrow-left" size="18" color="#6f6257"></up-icon>
+		</view>
+
 		<view class="about-shell" :style="aboutShellStyle">
 			<view class="about-hero">
 				<view class="about-hero__mark">
@@ -91,7 +101,8 @@ export default {
 	data() {
 		return {
 			currentUser: null,
-			pageTopInset: 0
+			pageTopInset: 0,
+			backButtonTop: 0
 		}
 	},
 	onLoad() {
@@ -103,6 +114,10 @@ export default {
 		this.syncSession()
 	},
 	computed: {
+		aboutBackStyle() {
+			if (!this.backButtonTop) return ''
+			return `top: ${this.backButtonTop}px;`
+		},
 		aboutShellStyle() {
 			if (!this.pageTopInset) return ''
 			return `padding-top: ${this.pageTopInset}px;`
@@ -138,21 +153,49 @@ export default {
 		syncNavigationMetrics() {
 			if (typeof wx === 'undefined' || typeof wx.getMenuButtonBoundingClientRect !== 'function') {
 				this.pageTopInset = 0
+				this.backButtonTop = 0
 				return
 			}
 
 			try {
+				const systemInfo = uni.getSystemInfoSync()
 				const menuButton = wx.getMenuButtonBoundingClientRect()
 				const menuBottom = Number(menuButton?.bottom) || 0
+				const menuTop = Number(menuButton?.top) || 0
+				const menuHeight = Number(menuButton?.height) || 0
 				if (!menuBottom) {
 					this.pageTopInset = 0
+					this.backButtonTop = 0
 					return
 				}
 
+				const windowWidth = Number(systemInfo?.windowWidth) || 0
+				const backButtonSize = windowWidth ? (windowWidth / 750) * 88 : 44
 				this.pageTopInset = Math.ceil(menuBottom + 4)
+				this.backButtonTop = Math.max(0, Math.round(menuTop + menuHeight / 2 - backButtonSize / 2))
 			} catch (error) {
 				this.pageTopInset = 0
+				this.backButtonTop = 0
 			}
+		},
+		goBack() {
+			const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+			if (pages.length > 1) {
+				uni.navigateBack({
+					delta: 1,
+					fail: () => {
+						this.reLaunchHome()
+					}
+				})
+				return
+			}
+
+			this.reLaunchHome()
+		},
+		reLaunchHome() {
+			uni.reLaunch({
+				url: '/pages/index/index'
+			})
 		},
 		openFeatureGuide() {
 			uni.showModal({
@@ -282,6 +325,24 @@ export default {
 		display: flex;
 		flex-direction: column;
 		gap: 24rpx;
+	}
+
+	.about-back {
+		position: fixed;
+		top: calc(env(safe-area-inset-top) + 8rpx);
+		left: 18rpx;
+		z-index: 20;
+		width: 88rpx;
+		height: 88rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: transform 0.16s ease, opacity 0.16s ease;
+	}
+
+	.about-back--hover {
+		transform: scale(0.94);
+		opacity: 0.72;
 	}
 
 	.about-hero {
