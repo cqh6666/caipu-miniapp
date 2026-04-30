@@ -294,12 +294,14 @@ context return focus：详情页返回后延迟约 120ms，高亮刚才打开的
 
 ### 5.6 微交互
 
+菜卡打开详情属于 launch feedback：`touchstart` 先给整卡轻压缩，确认 `tap` 后播放陶土暖光扫过与浅 halo，约 `156ms` 后进入详情。反馈只作用于当前菜卡，状态 switch / 加入菜单按钮继续阻止冒泡，避免误触详情。
+
 | 控件 | 反馈 |
 | --- | --- |
 | 主按钮（添加这道菜、安排菜单、提交菜单） | `:active { transform: scale(0.96); }` |
 | 次按钮（清除搜索、清除筛选） | `:active { transform: translateY(1rpx); }` |
 | 状态 pill | thumb 滑动 + active 时整 pill `scale(0.992)` |
-| 菜卡点击 | 整卡 `scale(0.992)`（已有，保持） |
+| 菜卡点击 | `touchstart` 整卡轻压缩 + `tap` 后暖光扫过 / halo，`prefers-reduced-motion` 下禁用扫光动画 |
 | 状态 switch | thumb 平移（已有，保持） |
 | 菜谱卡片插入 / 删除 | 新增 `recipe-card-leave` 反向动画（180ms 不阻塞列表） |
 
@@ -406,7 +408,8 @@ context return focus：详情页返回后延迟约 120ms，高亮刚才打开的
 - [x] **E1** 详情页返回时美食库走 §5.1 菜卡上下文聚焦（不再动整页）
 - [x] **E2** spotlight tap 时先 `scale(0.98)` 一拍再淡出再跳转
 - [x] **E3** 菜卡 `recipe-card::before` 固顶书签：金棕 → `--color-accent-terracotta` 双色渐变
-- [x] **E4** 视觉走查 + 是否回写 `CHANGELOG.md` 由产品决定
+- [x] **E4** 菜卡点击详情前走 `touchstart` 轻压 + 暖光扫过，约 `156ms` 后进入详情
+- [x] **E5** 视觉走查 + 是否回写 `CHANGELOG.md` 由产品决定
 
 #### 共用约束（每阶段都要遵守）
 
@@ -432,7 +435,7 @@ context return focus：详情页返回后延迟约 120ms，高亮刚才打开的
 - [ ] 切换 全部 / 想吃 / 吃过：thumb 在三个槽位之间平移，颜色顺滑过渡。
 - [ ] 输入搜索词：搜索框聚焦态加深；清除按钮按压有反馈。
 - [ ] 多菜单 spotlight 左右滑动：方向感清楚，无闪烁。
-- [ ] 菜卡点击 → 进入详情；状态 switch / 加入菜单按钮不触发详情。
+- [ ] 菜卡点击 → 有轻压缩 + 暖光扫过反馈后进入详情；状态 switch / 加入菜单按钮不触发详情。
 - [ ] 空态主动作（清除 / 添加这道菜 / 重试）能正常触发对应处理函数。
 
 ### 性能与稳定性

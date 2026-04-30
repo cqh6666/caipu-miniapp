@@ -9,7 +9,7 @@
 ### Changed
 
 - **修改时间**：2026-04-30 CST
-- **背景**：按 `docs/food-library-ui-redesign-plan-2026-04-30.md` v2 §5.1 / §5.2 / §6 阶段 E（P2 可选）补三件跨模块 polish：从详情页返回美食库的上下文聚焦、菜单 spotlight 点击反馈、菜卡固顶书签色调统一到陶土橙。
+- **背景**：按 `docs/food-library-ui-redesign-plan-2026-04-30.md` v2 §5.1 / §5.5 / §5.6 / §6 阶段 E（P2 可选）补四件跨模块 polish：从详情页返回美食库的上下文聚焦、菜单 spotlight 点击反馈、菜卡固顶书签色调统一到陶土橙、菜卡点击详情前的动态反馈。
 - **核心改动**：
   - **E1 详情页返回上下文聚焦**（`pages/index/index.vue` + `recipe-card-item.*`）：
     - 按 `$ui-ux-pro-max` 的移动端微交互建议，把原整页 `library-shell` 返回动效降级为“只反馈刚才打开的菜卡”，避免整页位移或透明度变化被感知成闪屏。
@@ -25,23 +25,28 @@
     - `.recipe-card::before`（书签条）背景从原本金棕单色三段渐变改为陶土橙双色：`linear-gradient(180deg, #d68a76 0%, var(--color-accent-terracotta, #bf715f) 50%, #a55a4a 100%)`。
     - 阴影 `rgba(133, 99, 54, 0.08) → rgba(133, 65, 54, 0.12)`、内部高光 `rgba(255, 247, 232, 0.42) → rgba(255, 232, 222, 0.46)`，整体偏向"想吃"陶土系。
     - `.recipe-card--pinned` 边框 / 阴影也同步调到陶土系（`rgba(186, 145, 81, 0.12) → rgba(191, 113, 95, 0.18)`、`rgba(98, 74, 44, 0.06) → rgba(133, 65, 54, 0.06)`），让固顶卡片整体色调与书签呼应。
+  - **E4 菜卡 tap launch 反馈**（`pages/index/components/recipe-card-item.vue` + `.scss`）：
+    - 根节点新增 `touchstart` / `touchmove` / `touchend` / `touchcancel` 处理，触摸开始立即给当前菜卡 `recipe-card--tap-press` 轻压缩，滑动列表时马上取消按压态；状态 switch 与点菜模式"加入菜单"区域阻止触摸冒泡，避免触发整卡打开反馈。
+    - `handleCardTap()` 改为先播放 `recipe-card--tap-pulse`，`156ms` 后 emit `open` 进入详情；`360ms` 后清理暖光态，防止快速连点重复跳转。
+    - SCSS 新增整卡 `::after` 陶土暖光扫过、浅 halo、边框 / 阴影强化；`prefers-reduced-motion` 下禁用扫光动画，只保留低强度静态反馈。
 - **影响范围**：
   - `pages/index/index.vue`：token 增 `--color-accent-terracotta`、保留静态 `.library-shell` wrapper、data + method + onShow / onUnload 钩、`openRecipeDetail` pending 标记。
-  - `pages/index/components/recipe-card-item.vue` / `.scss`：新增返回聚焦 prop 与 `recipe-card--return-focus` 视觉态。
+  - `pages/index/components/recipe-card-item.vue` / `.scss`：新增返回聚焦 prop 与 `recipe-card--return-focus` 视觉态；新增 `tapPressActive` / `tapPulseActive` 状态、触摸事件处理与 `recipe-card--tap-press` / `recipe-card--tap-pulse` 点击反馈。
   - `pages/index/components/library-header-section.vue`：data + method + beforeUnmount；模板 tap 处理由 emit 改为本地。
   - `pages/index/components/library-header-section.scss`：新增 tap-pulse class + keyframe + reduced-motion。
-  - `pages/index/components/recipe-card-item.scss`：`.recipe-card::before` 渐变改色、阴影 / 高光微调，`.recipe-card--pinned` 边框 / 阴影同步陶土系。
+  - `pages/index/components/recipe-card-item.scss`：`.recipe-card::before` 渐变改色、阴影 / 高光微调，`.recipe-card--pinned` 边框 / 阴影同步陶土系；`.recipe-card::after` 用于 tap 暖光扫过，不参与布局。
   - 不修改 `recipe-store.js` 数据归一化、后端接口、邀请 / 上传链路、点菜模式判断。
 - **兼容性/风险**：
   - 入场动画 wrapper 从 `<template>` 升级为 `<view>` 引入一层 DOM 节点。`.page-content` 仅用 padding，子级 SCSS 没有依赖直系子元素选择器（都是 descendant），`.page-content--meal-order .toolbar` 等仍能正常匹配，无视觉副作用。
   - 详情页返回不再做整页动效；局部菜卡高亮更克制，但仍能提示“回到刚才打开的菜”。
   - spotlight tap 加了 `160ms` 延迟再跳转。`tapPulseActive` 锁防止用户连点导致多次跳转；超时 `220ms` 内组件被 `v-if` 销毁时 `beforeUnmount` 会清 timer，无内存泄漏。
+  - 菜卡点击新增 `156ms` 跳转延迟，用来让 `touchstart` 压感和暖光反馈可见；延迟低于常见可感知卡顿阈值，且 `tapPulseActive` 锁防止快速连点重复进入详情。
   - 陶土双色渐变只是局部视觉换色，无逻辑影响；`var(--color-accent-terracotta, #bf715f)` 带 fallback 值，即便未来 token 块被误删也不会破图。
 - **验证情况**：
   - 已执行 `git diff --check`，通过。
-  - 已用 `node --check --input-type=module` 解析改动相关 `.vue` 文件的 `<script>` 块（`pages/index/index.vue`、`library-header-section.vue`、`recipe-card-item.vue`、`library-empty-state.vue`），通过。
+  - 已用 `node --check --input-type=module` 解析改动相关 `.vue` 文件的 `<script>` 块（`pages/index/index.vue`、`library-header-section.vue`、`recipe-card-item.vue`、`library-empty-state.vue`），通过；本轮新增 tap 逻辑后已重新解析 `recipe-card-item.vue`。
   - 已确认 `pages/index/components/library-header-section.vue` 使用 Vue 3 `beforeUnmount` 清理 tap timer，未残留旧版销毁钩子。
-  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议后续真机补测：① 详情页返回首页时整页稳定，刚才打开的菜卡出现暖色聚焦并自然退场；② 点击 spotlight 先收缩淡出再进入菜单详情；③ 左右滑 spotlight 后不会误触进入详情；④ 固顶菜卡书签色调与陶土橙一致。
+  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议后续真机补测：① 详情页返回首页时整页稳定，刚才打开的菜卡出现暖色聚焦并自然退场；② 点击菜卡先轻压缩 + 暖光扫过再进入详情；③ 点击 spotlight 先收缩淡出再进入菜单详情；④ 左右滑 spotlight 后不会误触进入详情；⑤ 固顶菜卡书签色调与陶土橙一致。
 - **后续待办（P2 / P3）**：
   - 列表 stagger（§5.2）首屏 6 张菜卡延迟从 `Math.min(index, 4) * 36ms` 改为 `Math.min(index, 6) * 32ms` —— 文档 §5.2 仍标 P1，可与首页性能 polish 一起做。
   - 状态 pill thumb 滑动（§5.3）—— 已经在 Phase B 第二轮 prototype rebuild 时去掉容器 + thumb 设计，文档 §5.3 不再适用，待文档下次维护时同步更新。

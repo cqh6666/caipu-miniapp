@@ -10,11 +10,17 @@
 				'recipe-card--status-done': card.status === 'done',
 				'recipe-card--meal-order-selected': isMealOrderSelected,
 				'recipe-card--meal-order-mode': isLibraryMealOrderMode,
-				'recipe-card--return-focus': isReturnFocus
+				'recipe-card--return-focus': isReturnFocus,
+				'recipe-card--tap-press': tapPressActive,
+				'recipe-card--tap-pulse': tapPulseActive
 			}
 		]"
 		:style="motionStyle"
-		@tap="$emit('open', card.id)"
+		@touchstart="handleCardTouchStart"
+		@touchmove="handleCardTouchCancel"
+		@touchend="handleCardTouchEnd"
+		@touchcancel="handleCardTouchCancel"
+		@tap="handleCardTap"
 	>
 		<view class="recipe-card__media" :class="{ 'recipe-card__media--empty': !coverSrc }">
 			<image v-if="coverSrc" class="recipe-card__image" :src="coverSrc" mode="aspectFill" @error="$emit('image-error', card)"></image>
@@ -46,6 +52,7 @@
 				<view
 					v-if="!isLibraryMealOrderMode"
 					class="recipe-switch-shell"
+					@touchstart.stop
 					@tap.stop="$emit('toggle-status', card.id)"
 				>
 					<view class="recipe-switch" :class="'recipe-switch--' + card.status">
@@ -62,7 +69,7 @@
 						</view>
 					</view>
 				</view>
-				<view v-else class="meal-order-control" @tap.stop>
+				<view v-else class="meal-order-control" @touchstart.stop @tap.stop>
 					<view
 						class="meal-order-add"
 						:class="{ 'meal-order-add--active': isMealOrderSelected }"
@@ -132,6 +139,18 @@ export default {
 		}
 	},
 	emits: ['image-error', 'open', 'toggle-meal-order', 'toggle-status'],
+	data() {
+		return {
+			tapPressActive: false,
+			tapPulseActive: false,
+			tapPressTimer: null,
+			tapPulseTimer: null,
+			tapOpenTimer: null
+		}
+	},
+	beforeUnmount() {
+		this.clearTapMotionTimers()
+	},
 	computed: {
 		motionClass() {
 			return Number(this.motionPhase || 0) % 2 === 0 ? 'recipe-card--motion-even' : 'recipe-card--motion-odd'
@@ -143,6 +162,74 @@ export default {
 		},
 		statusIconColor() {
 			return this.card?.status === 'done' ? '#617a60' : '#9a7b65'
+		}
+	},
+	methods: {
+		resolveRecipeId() {
+			const recipeId = this.card?.id
+			return String(recipeId || '').trim() ? recipeId : ''
+		},
+		clearTapMotionTimers() {
+			if (this.tapPressTimer) {
+				clearTimeout(this.tapPressTimer)
+				this.tapPressTimer = null
+			}
+			if (this.tapPulseTimer) {
+				clearTimeout(this.tapPulseTimer)
+				this.tapPulseTimer = null
+			}
+			if (this.tapOpenTimer) {
+				clearTimeout(this.tapOpenTimer)
+				this.tapOpenTimer = null
+			}
+		},
+		releaseTapPress(delay = 72) {
+			if (this.tapPressTimer) {
+				clearTimeout(this.tapPressTimer)
+				this.tapPressTimer = null
+			}
+			if (!this.tapPressActive) return
+			this.tapPressTimer = setTimeout(() => {
+				this.tapPressActive = false
+				this.tapPressTimer = null
+			}, delay)
+		},
+		handleCardTouchStart() {
+			if (!this.resolveRecipeId() || this.tapPulseActive) return
+			if (this.tapPressTimer) {
+				clearTimeout(this.tapPressTimer)
+				this.tapPressTimer = null
+			}
+			this.tapPressActive = true
+		},
+		handleCardTouchEnd() {
+			this.releaseTapPress()
+		},
+		handleCardTouchCancel() {
+			if (this.tapPressTimer) {
+				clearTimeout(this.tapPressTimer)
+				this.tapPressTimer = null
+			}
+			this.tapPressActive = false
+		},
+		handleCardTap() {
+			const targetRecipeId = this.resolveRecipeId()
+			if (!targetRecipeId || this.tapPulseActive) return
+			this.clearTapMotionTimers()
+			this.tapPressActive = true
+			this.tapPulseActive = true
+			this.tapPressTimer = setTimeout(() => {
+				this.tapPressActive = false
+				this.tapPressTimer = null
+			}, 104)
+			this.tapOpenTimer = setTimeout(() => {
+				this.$emit('open', targetRecipeId)
+				this.tapOpenTimer = null
+			}, 156)
+			this.tapPulseTimer = setTimeout(() => {
+				this.tapPulseActive = false
+				this.tapPulseTimer = null
+			}, 360)
 		}
 	}
 }
