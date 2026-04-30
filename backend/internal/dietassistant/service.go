@@ -201,7 +201,48 @@ func (s *Service) appendToolResults(ctx context.Context, chatCtx ChatContext, me
 	return messages, nil
 }
 
+const maxFinalToolRounds = 3
+
+type finalStreamResult struct {
+	VisibleContent string
+	ToolCalls      []openAIToolCall
+	MarkupFound    bool
+}
+
 func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, emit func(StreamEvent) error) (string, error) {
+	finalMessages := append([]openAIChatMessage{}, messages...)
+	var assistantContent strings.Builder
+	for round := 0; round <= maxFinalToolRounds; round += 1 {
+		result, err := s.streamFinalChatOnce(ctx, chatCtx, finalMessages, emit)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(result.VisibleContent) != "" {
+			assistantContent.WriteString(result.VisibleContent)
+		}
+		if len(result.ToolCalls) == 0 {
+			if result.MarkupFound {
+				return "", common.NewAppError(common.CodeInternalServer, "diet assistant upstream returned invalid tool call markup", http.StatusBadGateway)
+			}
+			return assistantContent.String(), nil
+		}
+		if round >= maxFinalToolRounds {
+			return "", common.NewAppError(common.CodeInternalServer, "diet assistant upstream returned too many nested tool calls", http.StatusBadGateway)
+		}
+		toolCalls := renameToolCallIDs(result.ToolCalls, fmt.Sprintf("call_diet_assistant_longcat_stream_%d", round+1))
+		finalMessages, err = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
+			Role:      "assistant",
+			Content:   sanitizeAssistantVisibleContent(result.VisibleContent),
+			ToolCalls: toolCalls,
+		}, toolCalls, emit)
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", common.NewAppError(common.CodeInternalServer, "diet assistant upstream returned too many nested tool calls", http.StatusBadGateway)
+}
+
+func (s *Service) streamFinalChatOnce(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, emit func(StreamEvent) error) (finalStreamResult, error) {
 	payload := openAIChatRequest{
 		Model:       s.model,
 		User:        buildUpstreamUser(chatCtx),
@@ -212,12 +253,12 @@ func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, mess
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", common.ErrInternal.WithErr(err)
+		return finalStreamResult{}, common.ErrInternal.WithErr(err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", common.ErrInternal.WithErr(err)
+		return finalStreamResult{}, common.ErrInternal.WithErr(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -229,7 +270,7 @@ func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, mess
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", common.NewAppError(common.CodeInternalServer, "diet assistant upstream request failed", http.StatusBadGateway).WithErr(err)
+		return finalStreamResult{}, common.NewAppError(common.CodeInternalServer, "diet assistant upstream request failed", http.StatusBadGateway).WithErr(err)
 	}
 	defer resp.Body.Close()
 
@@ -239,24 +280,32 @@ func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, mess
 		if message == "" {
 			message = fmt.Sprintf("diet assistant upstream returned status %d", resp.StatusCode)
 		}
-		return "", common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
+		return finalStreamResult{}, common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
 	}
 
-	var content strings.Builder
+	filter := newLongCatStreamFilter(func(delta string) error {
+		return emit(StreamEvent{Type: "delta", Delta: delta})
+	})
 	err = consumeOpenAIStream(resp.Body, func(event StreamEvent) error {
 		if event.Type == "delta" {
-			content.WriteString(event.Delta)
-			return emit(event)
+			return filter.Push(event.Delta)
 		}
 		if event.Type == "done" {
-			return nil
+			return filter.Flush()
 		}
 		return emit(event)
 	})
 	if err != nil {
-		return "", err
+		return finalStreamResult{}, err
 	}
-	return content.String(), nil
+	if err := filter.Flush(); err != nil {
+		return finalStreamResult{}, err
+	}
+	return finalStreamResult{
+		VisibleContent: filter.VisibleContent(),
+		ToolCalls:      filter.ToolCalls(),
+		MarkupFound:    filter.MarkupFound(),
+	}, nil
 }
 
 func (s *Service) ListStoredMessages(ctx context.Context, chatCtx ChatContext, limit int) ([]StoredMessage, error) {
@@ -473,6 +522,148 @@ func parseLongCatToolCalls(content string) ([]openAIToolCall, bool) {
 		}
 	}
 	return normalizeToolCallIDs(calls), true
+}
+
+type longCatStreamFilter struct {
+	pending     string
+	block       strings.Builder
+	inToolBlock bool
+	markupFound bool
+	visible     strings.Builder
+	toolCalls   []openAIToolCall
+	emitVisible func(string) error
+}
+
+func newLongCatStreamFilter(emitVisible func(string) error) *longCatStreamFilter {
+	return &longCatStreamFilter{
+		toolCalls:   make([]openAIToolCall, 0, 1),
+		emitVisible: emitVisible,
+	}
+}
+
+func (f *longCatStreamFilter) Push(delta string) error {
+	if delta == "" {
+		return nil
+	}
+	f.pending += delta
+	for {
+		if f.inToolBlock {
+			end := strings.Index(f.pending, longCatToolCloseTag)
+			if end < 0 {
+				keep := tagPartialSuffixLen(f.pending, longCatToolCloseTag)
+				if keep >= len(f.pending) {
+					return nil
+				}
+				f.block.WriteString(f.pending[:len(f.pending)-keep])
+				f.pending = f.pending[len(f.pending)-keep:]
+				return nil
+			}
+
+			f.block.WriteString(f.pending[:end])
+			call, ok := parseLongCatToolCallBlock(f.block.String(), len(f.toolCalls))
+			if ok {
+				f.toolCalls = append(f.toolCalls, call)
+			}
+			f.pending = f.pending[end+len(longCatToolCloseTag):]
+			f.block.Reset()
+			f.inToolBlock = false
+			continue
+		}
+
+		start := strings.Index(f.pending, longCatToolOpenTag)
+		if start >= 0 {
+			if err := f.writeVisible(f.pending[:start]); err != nil {
+				return err
+			}
+			f.markupFound = true
+			f.pending = f.pending[start+len(longCatToolOpenTag):]
+			f.inToolBlock = true
+			f.block.Reset()
+			continue
+		}
+
+		keep := tagPartialSuffixLen(f.pending, longCatToolOpenTag)
+		if keep >= len(f.pending) {
+			return nil
+		}
+		visible := f.pending[:len(f.pending)-keep]
+		f.pending = f.pending[len(f.pending)-keep:]
+		return f.writeVisible(visible)
+	}
+}
+
+func (f *longCatStreamFilter) Flush() error {
+	if f.inToolBlock {
+		f.pending = ""
+		f.block.Reset()
+		f.inToolBlock = false
+		return nil
+	}
+	if f.pending == "" {
+		return nil
+	}
+	visible := f.pending
+	f.pending = ""
+	return f.writeVisible(visible)
+}
+
+func (f *longCatStreamFilter) writeVisible(delta string) error {
+	if delta == "" {
+		return nil
+	}
+	f.visible.WriteString(delta)
+	if f.emitVisible == nil {
+		return nil
+	}
+	return f.emitVisible(delta)
+}
+
+func (f *longCatStreamFilter) VisibleContent() string {
+	if f == nil {
+		return ""
+	}
+	return f.visible.String()
+}
+
+func (f *longCatStreamFilter) ToolCalls() []openAIToolCall {
+	if f == nil || len(f.toolCalls) == 0 {
+		return nil
+	}
+	return normalizeToolCallIDs(f.toolCalls)
+}
+
+func (f *longCatStreamFilter) MarkupFound() bool {
+	return f != nil && f.markupFound
+}
+
+func tagPartialSuffixLen(value, tag string) int {
+	if tag == "" {
+		return 0
+	}
+	maxLen := len(tag) - 1
+	if len(value) < maxLen {
+		maxLen = len(value)
+	}
+	for length := maxLen; length > 0; length -= 1 {
+		if strings.HasSuffix(value, tag[:length]) {
+			return length
+		}
+	}
+	return 0
+}
+
+func renameToolCallIDs(calls []openAIToolCall, prefix string) []openAIToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	result := append([]openAIToolCall{}, calls...)
+	for index := range result {
+		result[index].ID = fmt.Sprintf("%s_%d", prefix, index+1)
+		if strings.TrimSpace(result[index].Type) == "" {
+			result[index].Type = "function"
+		}
+	}
+	return result
 }
 
 func parseLongCatToolCallBlock(block string, index int) (openAIToolCall, bool) {

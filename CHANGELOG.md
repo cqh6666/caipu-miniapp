@@ -1,5 +1,34 @@
 # Project Changelog
 
+## 2026-05-01 (修复饮食管家流式阶段 LongCat 工具标记泄漏)
+
+### Fixed
+
+- **修改时间**：2026-05-01 03:16:46 +0800 CST
+- **变更背景**：用户截图反馈饮食管家最终回复中仍直接展示
+  `<longcat_tool_call>get_recipe_by_id...</longcat_tool_call>`，说明此前只覆盖
+  非流式工具规划阶段的兜底解析，未覆盖最终流式回复阶段继续吐出 LongCat
+  内嵌工具标记的场景。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 为最终流式回复新增
+    LongCat 工具标记流式拦截器，可处理 `<longcat_tool_call>` 被 delta 分片
+    拆开的情况，避免内部标记继续转发给小程序前端。
+  - 当最终流式回复中解析到 `get_recipe_by_id` 等工具标记时，后端会将其转换为
+    真实工具调用，执行后把工具结果追加回上下文，并继续请求模型生成最终自然语言回复。
+  - 为嵌套工具调用增加最多 3 轮保护，避免上游模型反复输出工具标记导致无限循环。
+  - `backend/internal/dietassistant/service_test.go` 补充截图同类回归用例，覆盖
+    流式 delta 分片、详情工具执行、继续生成回复以及不透传原始 LongCat 标记。
+- **影响范围**：
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 的最终流式回复消费逻辑。
+  - 不修改前端渲染协议、SSE 事件结构、菜谱详情工具契约或聊天记录表结构。
+- **兼容性/风险**：
+  - 若 LongCat 在最终回复阶段连续多轮要求工具调用，最多执行 3 轮；超过后返回上游异常，避免请求长时间挂起。
+  - 已经被模型输出在工具标记之前的自然语言前缀仍会按流式体验展示；内部工具标记本身不会展示。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `git diff --check -- backend/internal/dietassistant/service.go backend/internal/dietassistant/service_test.go`，通过。
+
 ## 2026-05-01 (优化饮食管家弹层打开流畅度)
 
 ### Changed

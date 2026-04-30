@@ -264,6 +264,130 @@ func TestServiceStreamChatParsesLongCatTaggedToolMarkup(t *testing.T) {
 	}
 }
 
+func TestServiceStreamChatExecutesLongCatToolMarkupFromFinalStream(t *testing.T) {
+	var requestCount int
+	var sawRecipeOneToolResult bool
+	var sawRecipeTwoToolResult bool
+	var sawLongCatMarkupInContinueRequest bool
+	var gotRecipeIDs []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount += 1
+		var req openAIChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		switch requestCount {
+		case 1:
+			if req.Stream {
+				t.Fatal("first request should be non-streaming")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call_count","type":"function","function":{"name":"get_recipe_count","arguments":"{\"mealType\":\"all\",\"status\":\"all\"}"}}]},"finish_reason":"tool_calls"}]}`))
+		case 2:
+			if !req.Stream {
+				t.Fatal("second request should be streaming")
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			writeStreamDelta(t, w, "美食库里目前有 43 道正餐和 1 道早餐。让我为您推荐几道：\n")
+			writeStreamDelta(t, w, "<longcat_tool")
+			writeStreamDelta(t, w, "_call>get_recipe_by_id\n<longcat_arg_key>id</longcat_arg_key>\n<longcat_arg_value>1</longcat_arg_value>\n</longcat_tool")
+			writeStreamDelta(t, w, "_call>")
+			writeStreamDelta(t, w, "<longcat_tool_call>get_recipe_by_id\n<longcat_arg_key>id</longcat_arg_key>\n<longcat_arg_value>2</longcat_arg_value>\n</longcat_tool_call>")
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		case 3:
+			if !req.Stream {
+				t.Fatal("third request should be streaming")
+			}
+			for _, message := range req.Messages {
+				if strings.Contains(openAIContentText(message.Content), "<longcat_tool_call>") {
+					sawLongCatMarkupInContinueRequest = true
+				}
+				if message.Role != "tool" {
+					continue
+				}
+				content := openAIContentText(message.Content)
+				if strings.Contains(content, `"recipeId":"1"`) && strings.Contains(content, "清蒸鲈鱼") {
+					sawRecipeOneToolResult = true
+				}
+				if strings.Contains(content, `"recipeId":"2"`) && strings.Contains(content, "番茄炒蛋") {
+					sawRecipeTwoToolResult = true
+				}
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			writeStreamDelta(t, w, "推荐清蒸鲈鱼和番茄炒蛋，清爽又稳妥。")
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+		}
+	}))
+	defer server.Close()
+
+	service := NewService(Options{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Model:   "LongCat-2.0-Preview",
+		Timeout: 3 * time.Second,
+		CountRecipes: func(ctx context.Context, input RecipeCountInput) (int, error) {
+			return 44, nil
+		},
+		GetRecipeByID: func(ctx context.Context, input RecipeGetInput) (RecipeDetailToolItem, error) {
+			gotRecipeIDs = append(gotRecipeIDs, input.RecipeID)
+			title := "清蒸鲈鱼"
+			if input.RecipeID == "2" {
+				title = "番茄炒蛋"
+			}
+			return RecipeDetailToolItem{
+				RecipeToolItem: RecipeToolItem{
+					ID:       input.RecipeID,
+					Title:    title,
+					MealType: "main",
+					Status:   "wishlist",
+				},
+			}, nil
+		},
+	})
+
+	var content strings.Builder
+	var events []StreamEvent
+	err := service.StreamChat(context.Background(), ChatContext{UserID: 5, KitchenID: 6}, []ChatMessage{
+		{Role: "user", Content: "今晚吃什么"},
+	}, func(event StreamEvent) error {
+		events = append(events, event)
+		if event.Type == "delta" {
+			content.WriteString(event.Delta)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat returned error: %v", err)
+	}
+	if requestCount != 3 {
+		t.Fatalf("requestCount = %d, want 3", requestCount)
+	}
+	if got, want := strings.Join(gotRecipeIDs, ","), "1,2"; got != want {
+		t.Fatalf("gotRecipeIDs = %q, want %q", got, want)
+	}
+	if strings.Contains(content.String(), "<longcat_tool_call>") {
+		t.Fatalf("content leaked longcat markup: %q", content.String())
+	}
+	if !strings.Contains(content.String(), "推荐清蒸鲈鱼和番茄炒蛋") {
+		t.Fatalf("content missing continued answer: %q", content.String())
+	}
+	if !sawRecipeOneToolResult || !sawRecipeTwoToolResult {
+		t.Fatal("continue request did not include parsed recipe detail tool results")
+	}
+	if sawLongCatMarkupInContinueRequest {
+		t.Fatal("continue request should not carry raw longcat tool markup")
+	}
+	if !hasStreamEvent(events, "tool_start", "get_recipe_by_id", "正在读取菜谱详情") {
+		t.Fatalf("events missing get_recipe_by_id tool_start: %#v", events)
+	}
+	if !hasStreamEvent(events, "tool_done", "get_recipe_by_id", "已读取菜谱详情") {
+		t.Fatalf("events missing get_recipe_by_id tool_done: %#v", events)
+	}
+}
+
 func TestServiceStreamChatParsesURLOnlyMessageWithoutPlanningRequest(t *testing.T) {
 	var requestCount int
 	var sawToolResult bool
@@ -627,4 +751,19 @@ func findStreamMutation(events []StreamEvent, mutationType string) *StreamMutati
 		}
 	}
 	return nil
+}
+
+func writeStreamDelta(t *testing.T, w http.ResponseWriter, text string) {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{
+		"choices": []map[string]any{{
+			"delta": map[string]any{
+				"content": text,
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal stream delta: %v", err)
+	}
+	_, _ = w.Write([]byte("data: " + string(data) + "\n\n"))
 }
