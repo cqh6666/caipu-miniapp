@@ -11,10 +11,6 @@
 			<view
 				v-if="activeSection === 'library'"
 				class="library-shell"
-				:class="{
-					'library-shell--return-ready': libraryReturnMotionReady,
-					'library-shell--entering': libraryEnterMotionActive
-				}"
 			>
 				<library-header-section
 					:is-library-meal-order-mode="isLibraryMealOrderMode"
@@ -151,6 +147,7 @@
 						:is-active="selectedRecipeId === card.id"
 						:is-library-meal-order-mode="isLibraryMealOrderMode"
 						:is-meal-order-selected="mealOrderHasRecipe(card.id)"
+						:is-return-focus="returnFocusRecipeId === card.id"
 						:motion-index="index"
 						:motion-phase="recipeListMotionTick"
 						:status-icon="statusMap[card.status].icon"
@@ -561,10 +558,9 @@ export default {
 			activeStatus: 'all',
 			toolbarBounceClass: '',
 			toolbarBounceTimer: null,
-			libraryEnterMotionActive: false,
-			libraryEnterMotionTimer: null,
-			libraryReturnMotionPending: false,
-			libraryReturnMotionReady: false,
+			returnFocusRecipeId: '',
+			returnFocusPendingRecipeId: '',
+			returnFocusTimer: null,
 			searchKeyword: '',
 			recentSearches: readRecentSearches(),
 			lastDraftLinkPrefill: readLastDraftLinkPrefill(),
@@ -669,11 +665,7 @@ export default {
 	},
 	onShow() {
 		this.refreshRecipes()
-		const shouldPlayReturnMotion = this.libraryReturnMotionPending
-		this.libraryReturnMotionPending = false
-		if (shouldPlayReturnMotion) {
-			this.triggerLibraryEnterMotion({ delay: 120, preposition: false })
-		}
+		this.playPendingRecipeReturnFocus()
 	},
 	onHide() {
 		if (!this.isSubmittingMealOrder) {
@@ -685,10 +677,6 @@ export default {
 		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
-		if (this.libraryReturnMotionPending && this.activeSection === 'library') {
-			this.libraryEnterMotionActive = false
-			this.libraryReturnMotionReady = true
-		}
 		this.recipeCoverCacheRequestID += 1
 	},
 	onUnload() {
@@ -705,12 +693,7 @@ export default {
 			clearTimeout(this.toolbarBounceTimer)
 			this.toolbarBounceTimer = null
 		}
-		if (this.libraryEnterMotionTimer) {
-			clearTimeout(this.libraryEnterMotionTimer)
-			this.libraryEnterMotionTimer = null
-		}
-		this.libraryReturnMotionPending = false
-		this.libraryReturnMotionReady = false
+		this.clearRecipeReturnFocus()
 		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
@@ -1243,9 +1226,8 @@ export default {
 			if (next === prev) return
 			if (next !== 'library') {
 				this.clearRecipeStatusFeedback()
+				this.clearRecipeReturnFocus()
 				this.closeRandomPickSheet()
-			} else {
-				this.triggerLibraryEnterMotion()
 			}
 		},
 		isLibraryMealOrderMode(next, prev) {
@@ -1446,41 +1428,38 @@ export default {
 				}, 160)
 			})
 		},
-		triggerLibraryEnterMotion(options = {}) {
-			if (this.activeSection !== 'library') return
-			const delay = Math.max(0, Number(options?.delay) || 0)
-			const shouldPreposition = options?.preposition !== false
-			if (this.libraryEnterMotionTimer) {
-				clearTimeout(this.libraryEnterMotionTimer)
-				this.libraryEnterMotionTimer = null
-			}
-			this.libraryEnterMotionActive = false
-			if (shouldPreposition) {
-				this.libraryReturnMotionReady = true
-			}
+		clearRecipeReturnFocusTimer() {
+			if (!this.returnFocusTimer) return
+			clearTimeout(this.returnFocusTimer)
+			this.returnFocusTimer = null
+		},
+		clearRecipeReturnFocus() {
+			this.clearRecipeReturnFocusTimer()
+			this.returnFocusRecipeId = ''
+			this.returnFocusPendingRecipeId = ''
+		},
+		showRecipeReturnFocus(recipeId = '') {
+			const targetRecipeId = String(recipeId || '').trim()
+			if (!targetRecipeId || this.activeSection !== 'library') return
+			this.clearRecipeReturnFocusTimer()
+			this.returnFocusRecipeId = ''
 			this.$nextTick(() => {
-				const play = () => {
-					if (this.activeSection !== 'library') {
-						this.libraryEnterMotionTimer = null
-						this.libraryReturnMotionReady = false
-						return
-					}
-					this.libraryEnterMotionActive = true
-					this.libraryReturnMotionReady = false
-					this.libraryEnterMotionTimer = setTimeout(() => {
-						this.libraryEnterMotionActive = false
-						this.libraryEnterMotionTimer = null
-					}, 620)
-				}
-				if (delay > 0) {
-					this.libraryEnterMotionTimer = setTimeout(() => {
-						this.libraryEnterMotionTimer = null
-						play()
-					}, delay)
-					return
-				}
-				play()
+				this.returnFocusRecipeId = targetRecipeId
+				this.returnFocusTimer = setTimeout(() => {
+					this.returnFocusRecipeId = ''
+					this.returnFocusTimer = null
+				}, 1160)
 			})
+		},
+		playPendingRecipeReturnFocus() {
+			const targetRecipeId = String(this.returnFocusPendingRecipeId || '').trim()
+			this.returnFocusPendingRecipeId = ''
+			if (!targetRecipeId || this.activeSection !== 'library') return
+			this.clearRecipeReturnFocusTimer()
+			this.returnFocusTimer = setTimeout(() => {
+				this.returnFocusTimer = null
+				this.showRecipeReturnFocus(targetRecipeId)
+			}, 120)
 		},
 		bumpMealOrderSpotlightMotion(direction = 'next') {
 			this.mealOrderSpotlightMotionDirection = direction === 'previous' ? 'previous' : 'next'
@@ -2579,12 +2558,12 @@ export default {
 			this.bumpRecipeListMotion()
 		},
 		openRecipeDetail(recipeId) {
-			this.libraryReturnMotionPending = this.activeSection === 'library'
+			const targetRecipeId = String(recipeId || '').trim()
+			this.returnFocusPendingRecipeId = this.activeSection === 'library' ? targetRecipeId : ''
 			uni.navigateTo({
-				url: `/pages/recipe-detail/index?id=${recipeId}`,
+				url: `/pages/recipe-detail/index?id=${targetRecipeId}`,
 				fail: () => {
-					this.libraryReturnMotionPending = false
-					this.libraryReturnMotionReady = false
+					this.returnFocusPendingRecipeId = ''
 				}
 			})
 		},
@@ -3002,25 +2981,6 @@ export default {
 
 	.library-shell {
 		display: block;
-		will-change: transform;
-		transform: translateY(0);
-	}
-
-	.library-shell--return-ready {
-		transform: translateY(22rpx);
-	}
-
-	.library-shell--entering {
-		transform: translateY(0);
-		transition: transform 560ms cubic-bezier(0.16, 0.84, 0.24, 1);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.library-shell--return-ready,
-		.library-shell--entering {
-			transform: translateY(0);
-			transition: none;
-		}
 	}
 
 	.page-content--meal-order-entering {

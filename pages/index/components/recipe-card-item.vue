@@ -9,7 +9,8 @@
 				'recipe-card--status-wishlist': card.status === 'wishlist',
 				'recipe-card--status-done': card.status === 'done',
 				'recipe-card--meal-order-selected': isMealOrderSelected,
-				'recipe-card--meal-order-mode': isLibraryMealOrderMode
+				'recipe-card--meal-order-mode': isLibraryMealOrderMode,
+				'recipe-card--return-focus': isReturnFocus
 			}
 		]"
 		:style="motionStyle"
@@ -110,6 +111,10 @@ export default {
 			default: false
 		},
 		isMealOrderSelected: {
+			type: Boolean,
+			default: false
+		},
+		isReturnFocus: {
 			type: Boolean,
 			default: false
 		},

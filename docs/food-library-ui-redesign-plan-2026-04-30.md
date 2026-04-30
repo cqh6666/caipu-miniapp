@@ -250,13 +250,13 @@ statusCounts(activeMealType) {
 
 ## 5. 动效规范
 
-### 5.1 入场（进入美食库 / 切回美食库）
+### 5.1 返回上下文反馈（详情页 → 美食库）
 
 ```
-two-phase return settle：离开美食库时预置 translateY(22rpx)，详情页返回后延迟约 120ms，再 transition 到 0（560ms ease-out）
+context return focus：详情页返回后延迟约 120ms，高亮刚才打开的菜卡约 1160ms，再自然退场
 ```
 
-落地点：`pages/index/index.vue` 的 `template v-if="activeSection === 'library'"` 外层包一层 `<view class="library-shell" :class="enterMotionClass">`；详情页返回由 `openRecipeDetail` 标记 pending、`onHide` 预置 `.library-shell--return-ready`，`onShow` 延迟切到 `.library-shell--entering`，避免返回可见后才突然套起始位移导致“一闪而过”。普通 `activeSection` 切回美食库仍可用同一套预置-归位逻辑。
+落地点：`pages/index/index.vue` 的 `openRecipeDetail` 记录 `returnFocusPendingRecipeId`，`onShow` 延迟触发 `returnFocusRecipeId`；`recipe-card-item.vue` 接收 `isReturnFocus`，在 `recipe-card-item.scss` 中只做边框、暖色背景与阴影反馈，不移动整页、不改 opacity。这样符合 `$ui-ux-pro-max` 对移动端微交互的建议：只反馈关键元素，避免整页动效造成闪屏感。
 
 ### 5.2 列表 stagger
 
@@ -315,7 +315,7 @@ two-phase return settle：离开美食库时预置 translateY(22rpx)，详情页
 | --- | --- |
 | `kitchen-section`（空间页） | 大卡圆角同为 32rpx，使用同一 `clay-shadow-strong`；统计格的"白底圆角分格 + 衬线数字"思路被美食库 spotlight 借走。 |
 | 底部浮动导航 | 仍保持毛玻璃胶囊，不改；FAB 沿用现有星闪图标。 |
-| 菜谱详情页（`pages/recipe-detail`） | 进入时的过渡保留现有 transition，但"返回美食库"时走 §5.1 transform-only 归位动效，避免缓存页面透明闪屏。 |
+| 菜谱详情页（`pages/recipe-detail`） | 进入时的过渡保留现有 transition，但"返回美食库"时走 §5.1 菜卡上下文聚焦，避免整页动效造成闪屏感。 |
 | 菜单详情页（`pages/meal-plan-detail`） | spotlight tap 跳转时，spotlight 卡先 `scale(0.98)` 一拍再淡出，强化"被点中"反馈。 |
 
 设计 token（§3）建议沉淀到 `pages/index/index.vue` 的 `<style>` 顶部，或新建 `styles/tokens.scss` 在 `index.vue` 与 `library-header-section.scss`、`recipe-card-item.scss`、`kitchen-section.scss` 中共享，避免色值漂移。
@@ -350,7 +350,7 @@ two-phase return settle：离开美食库时预置 translateY(22rpx)，详情页
 
 ### 阶段 E（P2，可选）：跨模块 polish
 
-- 详情页返回入场动效。
+- 详情页返回上下文聚焦。
 - spotlight tap 反馈。
 - 菜卡固顶徽改双色渐变。
 
@@ -403,7 +403,7 @@ two-phase return settle：离开美食库时预置 translateY(22rpx)，详情页
 
 #### 阶段 E · 跨模块 polish（可选）
 
-- [x] **E1** 详情页返回时美食库走 §5.1 two-phase 归位动效（隐藏期预置起点，避免闪屏）
+- [x] **E1** 详情页返回时美食库走 §5.1 菜卡上下文聚焦（不再动整页）
 - [x] **E2** spotlight tap 时先 `scale(0.98)` 一拍再淡出再跳转
 - [x] **E3** 菜卡 `recipe-card::before` 固顶书签：金棕 → `--color-accent-terracotta` 双色渐变
 - [x] **E4** 视觉走查 + 是否回写 `CHANGELOG.md` 由产品决定
@@ -455,7 +455,7 @@ two-phase return settle：离开美食库时预置 translateY(22rpx)，详情页
 | token 引入导致色值漂移 | 替换过程中容易把 `rgba(91,74,59,0.07)` 改成同名变量但少了透明度 | 阶段 A 单独提一次"零视觉变化"PR；改完用真机比对，再开始阶段 B |
 | status thumb 在不同设备宽度下定位错位 | 三等分用 `calc()` 容易因父级 padding 变化偏移 | thumb 使用 `transform: translateX(N * 100%)`，配合 grid `repeat(3, 1fr)` + 容器固定 padding |
 | spotlight 衬线字体在部分设备 fallback 不一致 | iOS 用 Songti、Android 用 STKaiti，部分鸿蒙缺失 | 仅用于日期数字，最终 fallback 到 `serif`，可读性即可，不追求像素级一致 |
-| 入场动效过强引起晕动症 | translateY 与 stagger 叠加可能让低端机出现整页颤动 | 详情页返回只做 transform，不改 opacity；位移在隐藏期预置，返回后慢速归位，避免可见态突跳 |
+| 入场动效过强引起晕动症 | 整页 translateY 与列表 stagger 叠加容易被感知为闪屏 | 详情页返回不再动整页，只高亮刚才打开的菜卡；减少运动范围，保留上下文感 |
 | 空态主 / 次动作和现有数据流不衔接 | "添加这道菜"想预填关键词需要扩展 `openAddSheet` | 第一版只打开新增弹层；预填作为 v1 P1 跟进 |
 | 视觉升级后 v1 旧文档过时 | 工具卡圆角、阴影等数值与 v1 §4.2 不一致 | 阶段 A 落地后，在 v1 文档头部加一行"细节请参考 v2"指引；不删除 v1 |
 
