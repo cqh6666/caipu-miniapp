@@ -1,5 +1,31 @@
 # Project Changelog
 
+## 2026-04-30 (生产饮食管家 LongCat 配置与后端重部署)
+
+### Changed
+
+- **修改时间**：2026-04-30 23:53:05 +0800 CST
+- **变更背景**：生产饮食管家需要切换到 LongCat OpenAI-compatible 上游，并按用户要求拉取最新代码后通过后端专用脚本重新发布。
+- **核心改动**：
+  - 已在未纳入 Git 的 `backend/configs/prod.env` 中更新 `DIET_ASSISTANT_AI_BASE_URL=https://api.longcat.chat/openai/v1`、`DIET_ASSISTANT_AI_MODEL=LongCat-2.0-Preview`、`DIET_ASSISTANT_AI_TIMEOUT_SECONDS=90`。
+  - 已同步更新 `DIET_ASSISTANT_AI_API_KEY` 到用户提供的新密钥；变更记录不记录真实 API Key。
+  - 首次按纯配置发布执行 `RUN_GIT_PULL=0 bash scripts/deploy-backend-on-server.sh`，随后按用户补充要求执行 `bash scripts/deploy-backend-on-server.sh` 拉取远端最新代码并重新构建、重启后端。
+  - 代码从 `8ae91618342f9437d350a7929a884575e41a5d78` 快进到 `50f36f722eeed6d4a06bfead0f42f799067aafc0`。
+- **影响范围**：
+  - 生产后端运行配置：`backend/configs/prod.env`。
+  - 生产后端二进制：`backend/bin/server`。
+  - systemd 服务：`caipu-backend`。
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 的上游 AI Provider；不修改数据库结构或小程序端已发布包。
+- **兼容性/风险**：
+  - `DIET_ASSISTANT_AI_API_KEY` 仅保存在生产配置文件中，`backend/configs/prod.env` 已被 `.gitignore` 忽略。
+  - 最新代码包含饮食管家 LongCat tools agent 逻辑；生产环境变量已显式指向 LongCat，避免继续使用旧 `dots2api` 上游。
+  - 本次未使用真实用户 token 发送饮食管家对话，避免产生真实上游 token 消耗。
+- **验证情况**：
+  - `bash scripts/deploy-backend-on-server.sh` 完成，脚本摘要显示 `build backend: yes`、`build admin-web: no`、`restart backend: yes`。
+  - `caipu-backend` 于 `2026-04-30 23:52:49 CST` 重启，`MainPID=426053`，`SubState=running`。
+  - `curl -fsS http://127.0.0.1:8080/healthz` 与 `curl -fsS http://127.0.0.1:8080/api/healthz` 均返回 `code=0`。
+  - 本机无 token 探测 `POST /api/diet-assistant/chat/stream` 返回 `401 Unauthorized`，确认接口已注册且仍受登录态保护。
+
 ## 2026-04-30 (饮食管家 LongCat Tools Agent 接入)
 
 ### Changed
