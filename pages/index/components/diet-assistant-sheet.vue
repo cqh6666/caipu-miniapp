@@ -184,6 +184,10 @@ export default {
 		show: {
 			type: Boolean,
 			default: false
+		},
+		initialPrompt: {
+			type: String,
+			default: ''
 		}
 	},
 	emits: ['close', 'open-add-recipe'],
@@ -233,7 +237,13 @@ export default {
 	watch: {
 		show(value) {
 			if (value) {
+				this.applyInitialPrompt()
 				this.bumpScrollAnchor()
+			}
+		},
+		initialPrompt() {
+			if (this.show) {
+				this.applyInitialPrompt()
 			}
 		}
 	},
@@ -247,6 +257,11 @@ export default {
 		},
 		applySuggestion(text = '') {
 			this.draftMessage = String(text || '')
+		},
+		applyInitialPrompt() {
+			const text = String(this.initialPrompt || '').trim()
+			if (!text || this.isStreaming) return
+			this.draftMessage = text
 		},
 		handleSend() {
 			const text = String(this.draftMessage || '').trim()

@@ -2,7 +2,9 @@
 	<up-popup
 		:show="show"
 		mode="center"
-		overlayOpacity="0.16"
+		bgColor="transparent"
+		overlayOpacity="1"
+		:overlayStyle="randomPickOverlayStyle"
 		:closeOnClickOverlay="true"
 		:safeAreaInsetBottom="false"
 		@close="$emit('close')"
@@ -31,48 +33,47 @@
 								</view>
 								<text class="random-pick-sheet__placeholder-text">先看看这道</text>
 							</view>
-						</view>
 
-						<view class="random-pick-sheet__body">
-							<text v-if="contextText" class="random-pick-sheet__context">{{ contextText }}</text>
-							<text class="random-pick-sheet__title">{{ card?.title || '今天吃什么好' }}</text>
+							<view class="random-pick-sheet__body">
+								<view class="random-pick-sheet__meta">
+									<view v-if="mealLabel" class="random-pick-chip">
+										<text class="random-pick-chip__text">{{ mealLabel }}</text>
+									</view>
+									<view
+										v-if="statusLabel"
+										class="random-pick-chip"
+										:class="statusToneClass"
+									>
+										<text class="random-pick-chip__text">{{ statusLabel }}</text>
+									</view>
+									<view v-if="card?.sourceBadge" class="random-pick-chip random-pick-chip--source">
+										<text class="random-pick-chip__text">{{ card.sourceBadge }}</text>
+									</view>
+								</view>
 
-							<view class="random-pick-sheet__meta">
-								<view v-if="mealLabel" class="random-pick-chip">
-									<text class="random-pick-chip__text">{{ mealLabel }}</text>
-								</view>
-								<view
-									v-if="statusLabel"
-									class="random-pick-chip"
-									:class="statusToneClass"
-								>
-									<text class="random-pick-chip__text">{{ statusLabel }}</text>
-								</view>
-								<view v-if="card?.sourceBadge" class="random-pick-chip random-pick-chip--source">
-									<text class="random-pick-chip__text">{{ card.sourceBadge }}</text>
-								</view>
+								<text class="random-pick-sheet__title">{{ card?.title || '今天吃什么好' }}</text>
+
+								<text class="random-pick-sheet__summary" :class="{ 'random-pick-sheet__summary--muted': !summaryText }">
+									{{ summaryText || '先看看食材和做法，说不定就是今天这口。' }}
+								</text>
 							</view>
-
-							<text class="random-pick-sheet__summary" :class="{ 'random-pick-sheet__summary--muted': !summaryText }">
-								{{ summaryText || '先看看食材和做法，说不定就是今天这口。' }}
-							</text>
 						</view>
 
 						<view class="random-pick-sheet__actions">
 							<view
-								class="random-pick-action random-pick-action--ghost"
+								class="random-pick-action random-pick-action--primary"
 								@tap="$emit('open-detail', card?.id)"
 							>
-								<text class="random-pick-action__text">了解一下</text>
-								<up-icon name="arrow-right" size="14" color="#715845"></up-icon>
+								<text class="random-pick-action__text random-pick-action__text--primary">了解做法</text>
+								<up-icon name="arrow-right" size="14" color="#fffaf4"></up-icon>
 							</view>
 							<view
-								class="random-pick-action random-pick-action--primary"
+								class="random-pick-action random-pick-action--ghost"
 								:class="{ 'random-pick-action--disabled': !canReroll }"
 								@tap="canReroll && $emit('reroll')"
 							>
-								<text class="random-pick-action__text random-pick-action__text--primary">换一个</text>
-								<up-icon name="reload" size="13" color="#fffaf4"></up-icon>
+								<up-icon name="reload" size="13" color="#715845"></up-icon>
+								<text class="random-pick-action__text">换一个</text>
 							</view>
 						</view>
 					</view>
@@ -118,6 +119,15 @@ export default {
 		}
 	},
 	emits: ['close', 'reroll', 'open-detail'],
+	data() {
+		return {
+			randomPickOverlayStyle: {
+				'background-color': 'rgba(255, 250, 244, 0.04)',
+				'backdrop-filter': 'blur(22rpx) saturate(1.08)',
+				'-webkit-backdrop-filter': 'blur(22rpx) saturate(1.08)'
+			}
+		}
+	},
 	computed: {
 		normalizedMotionMode() {
 			return this.motionMode === 'swap' ? 'swap' : 'enter'

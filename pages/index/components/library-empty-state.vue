@@ -12,12 +12,18 @@
 				@tap="$emit('primary')"
 			>
 				<up-icon
-					v-if="primaryIcon"
+					v-if="primaryIcon && !primaryIconSrc"
 					class="empty-state-card__primary-icon"
 					:name="primaryIcon"
 					size="14"
 					color="#fffaf3"
 				></up-icon>
+				<image
+					v-if="primaryIconSrc"
+					class="empty-state-card__primary-image"
+					:src="primaryIconSrc"
+					mode="aspectFit"
+				/>
 				<text class="empty-state-card__primary-text">{{ primaryText }}</text>
 			</view>
 			<view
@@ -64,6 +70,10 @@ export default {
 			default: ''
 		},
 		primaryIcon: {
+			type: String,
+			default: ''
+		},
+		primaryIconSrc: {
 			type: String,
 			default: ''
 		},

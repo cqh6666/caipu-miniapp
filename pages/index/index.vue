@@ -130,7 +130,7 @@
 							</view>
 							<view class="list-caption__pick" @tap="drawTonight">
 								<view class="list-caption__pick-icon-shell">
-									<up-icon name="reload" size="12" color="#6f5b4a"></up-icon>
+									<up-icon name="reload" size="14" color="#6f5b4a"></up-icon>
 								</view>
 								<text class="list-caption__pick-text">帮我选</text>
 							</view>
@@ -165,6 +165,7 @@
 					:description="emptyStateDesc"
 					:primary-text="emptyStatePrimaryText"
 					:primary-icon="emptyStatePrimaryIcon"
+					:primary-icon-src="emptyStatePrimaryIconSrc"
 					:secondary-text="emptyStateSecondaryText"
 					@primary="handleEmptyStatePrimary"
 					@secondary="handleEmptyStateSecondary"
@@ -407,6 +408,7 @@
 
 		<diet-assistant-sheet
 			:show="showDietAssistantSheet"
+			:initial-prompt="dietAssistantInitialPrompt"
 			@close="closeDietAssistantSheet"
 			@open-add-recipe="openAddSheetFromAssistant"
 		></diet-assistant-sheet>
@@ -572,6 +574,7 @@ export default {
 			selectedRecipeId: '',
 			showAddSheet: false,
 			showDietAssistantSheet: false,
+			dietAssistantInitialPrompt: '',
 			draftLinkPrefillSource: '',
 			draftClipboardPrefillRequestID: 0,
 			showInviteSheet: false,
@@ -1094,7 +1097,7 @@ export default {
 		},
 		emptyStateTitle() {
 			if (this.hasSearchKeyword) {
-				return `没有找到“${this.trimmedSearchKeyword}”`
+				return `库里没找到“${this.trimmedSearchKeyword}”相关的菜谱`
 			}
 			if (this.activeStatus === 'all') {
 				return `还没有${this.currentMealLabel}记录`
@@ -1103,10 +1106,7 @@ export default {
 		},
 		emptyStateDesc() {
 			if (this.hasSearchKeyword) {
-				if (this.searchAssistKeywords.length) {
-					return `试试搜 ${this.searchAssistKeywords.join('、')}，或者换个关键词。`
-				}
-				return '试试换个关键词，或者点下方按钮新增一道菜。'
+				return ''
 			}
 			if (this.activeStatus === 'all') {
 				return `试试切换到另一类餐别，或者点下方按钮新增一道${this.currentMealLabel}。`
@@ -1114,17 +1114,21 @@ export default {
 			return `可以先把${this.currentMealLabel}里的菜标记为${this.currentStatusLabel}，或者点下方按钮回到全部。`
 		},
 		emptyStatePrimaryText() {
-			if (this.hasSearchKeyword) return '添加这道菜'
+			if (this.hasSearchKeyword) return '问问 AI 怎么做'
 			if (this.activeStatus !== 'all') return '查看全部'
 			return '添加这道菜'
 		},
 		emptyStatePrimaryIcon() {
-			if (this.hasSearchKeyword) return 'plus'
+			if (this.hasSearchKeyword) return ''
 			if (this.activeStatus !== 'all') return 'list-dot'
 			return 'plus'
 		},
+		emptyStatePrimaryIconSrc() {
+			if (this.hasSearchKeyword) return '/static/icons/sparkle-plus-warm.svg'
+			return ''
+		},
 		emptyStateSecondaryText() {
-			if (this.hasSearchKeyword) return '清除搜索'
+			if (this.hasSearchKeyword) return ''
 			if (this.activeStatus !== 'all') return '添加这道菜'
 			return ''
 		},
@@ -1402,7 +1406,7 @@ export default {
 		},
 		handleEmptyStatePrimary() {
 			if (this.hasSearchKeyword) {
-				this.openAddSheet()
+				this.openDietAssistantSheet(this.buildSearchNoResultPrompt())
 				return
 			}
 			if (this.activeStatus !== 'all') {
@@ -1419,6 +1423,13 @@ export default {
 			if (this.activeStatus !== 'all') {
 				this.openAddSheet()
 			}
+		},
+		buildSearchNoResultPrompt() {
+			const keyword = this.trimmedSearchKeyword
+			if (!keyword) {
+				return '我想找一道菜的简单做法，可以给我一个适合家常复刻的版本吗？'
+			}
+			return `我在美食库搜不到「${keyword}」，想做这道菜，可以给我一个简单做法吗？`
 		},
 		triggerToolbarBounce(direction = 'right') {
 			const cls = `toolbar--bounce-${direction === 'left' ? 'left' : 'right'}`
@@ -2710,7 +2721,8 @@ export default {
 			this.draftClipboardPrefillRequestID += 1
 			this.tryAutoPrefillDraftLinkFromClipboard(this.draftClipboardPrefillRequestID)
 		},
-		openDietAssistantSheet() {
+		openDietAssistantSheet(initialPrompt = '') {
+			this.dietAssistantInitialPrompt = typeof initialPrompt === 'string' ? initialPrompt : ''
 			this.showDietAssistantSheet = true
 		},
 		closeDietAssistantSheet() {
@@ -3419,8 +3431,8 @@ export default {
 	}
 
 	.list-caption {
-		margin-top: 18rpx;
-		padding: 0 2rpx;
+		margin-top: 30rpx;
+		padding: 0 4rpx;
 	}
 
 	.list-caption__top {
@@ -3433,10 +3445,10 @@ export default {
 	.list-caption__title {
 		flex: 1;
 		min-width: 0;
-		font-size: 23rpx;
-		font-weight: 600;
-		line-height: 1.35;
-		color: #695d51;
+		font-size: 28rpx;
+		font-weight: 700;
+		line-height: 1.32;
+		color: #5f5247;
 		word-break: break-all;
 	}
 
@@ -3448,8 +3460,8 @@ export default {
 	}
 
 	.list-caption__clear {
-		min-height: 48rpx;
-		padding: 0 16rpx;
+		min-height: 52rpx;
+		padding: 0 18rpx;
 		border-radius: 999rpx;
 		background: rgba(255, 255, 255, 0.88);
 		border: 1px solid rgba(91, 74, 59, 0.06);
@@ -3464,15 +3476,15 @@ export default {
 	}
 
 	.list-caption__clear-text {
-		font-size: 21rpx;
+		font-size: 23rpx;
 		font-weight: 600;
 		line-height: 1;
 		color: #8a7b6e;
 	}
 
 	.list-caption__pick {
-		min-height: 52rpx;
-		padding: 0 18rpx 0 12rpx;
+		min-height: 58rpx;
+		padding: 0 20rpx 0 14rpx;
 		border-radius: 999rpx;
 		background:
 			radial-gradient(circle at top left, rgba(255, 255, 255, 0.76) 0%, rgba(255, 255, 255, 0) 44%),
@@ -3493,11 +3505,11 @@ export default {
 	}
 
 	.list-caption__pick-icon-shell {
-		width: 28rpx;
-		height: 28rpx;
+		width: 32rpx;
+		height: 32rpx;
 		border-radius: 999rpx;
-		background: rgba(255, 255, 255, 0.58);
-		border: 1px solid rgba(111, 97, 84, 0.08);
+		background: transparent;
+		border: 0;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -3505,14 +3517,14 @@ export default {
 	}
 
 	.list-caption__pick-text {
-		font-size: 21rpx;
+		font-size: 24rpx;
 		font-weight: 700;
 		line-height: 1;
 		color: #6a5848;
 	}
 
 	.recipe-list {
-		margin-top: 14rpx;
+		margin-top: 24rpx;
 		display: flex;
 		flex-direction: column;
 		gap: 14rpx;

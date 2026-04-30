@@ -10,7 +10,7 @@
 						>
 							<up-icon
 								:name="isLibraryMealOrderMode ? 'heart-fill' : 'grid-fill'"
-								size="14"
+								:size="isLibraryMealOrderMode ? 14 : 15"
 								:color="isLibraryMealOrderMode ? '#bf715f' : '#7a6755'"
 							></up-icon>
 						</view>
@@ -27,7 +27,7 @@
 					</view>
 				</view>
 				<view v-else class="page-header__action" @tap="$emit('open-meal-order-date-sheet')">
-					<up-icon name="calendar" size="15" color="#745742"></up-icon>
+					<up-icon name="calendar" size="16" color="#745742"></up-icon>
 					<text class="page-header__action-text">安排菜单</text>
 				</view>
 			</view>

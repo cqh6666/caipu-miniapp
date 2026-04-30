@@ -28,15 +28,15 @@
 .page-header__title-row {
 	display: flex;
 	align-items: center;
-	gap: 10rpx;
+	gap: 12rpx;
 	min-width: 0;
 }
 
 .page-header__title-mark {
 	position: relative;
-	width: 44rpx;
-	height: 44rpx;
-	border-radius: 14rpx;
+	width: 48rpx;
+	height: 48rpx;
+	border-radius: 15rpx;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -81,7 +81,7 @@
 
 .page-header__title {
 	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
-	font-size: 40rpx;
+	font-size: 44rpx;
 	font-weight: 700;
 	line-height: 1.18;
 	letter-spacing: 0.4rpx;
@@ -138,8 +138,8 @@
 }
 
 .page-header__action {
-	min-height: 56rpx;
-	padding: 0 18rpx;
+	min-height: 60rpx;
+	padding: 0 20rpx;
 	box-sizing: border-box;
 	border-radius: 999rpx;
 	background:
@@ -152,7 +152,7 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 8rpx;
+	gap: 10rpx;
 	flex-shrink: 0;
 	transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
@@ -165,7 +165,7 @@
 }
 
 .page-header__action-text {
-	font-size: 23rpx;
+	font-size: 25rpx;
 	font-weight: 700;
 	line-height: 1;
 	color: #5f4736;

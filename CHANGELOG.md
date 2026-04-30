@@ -1,5 +1,60 @@
 # Project Changelog
 
+## 2026-04-30 (帮我选结果卡长图叠字优化)
+
+### Changed
+
+- **修改时间**：2026-04-30 15:36:53 +0800 CST
+- **变更背景**：`帮我选` 弹出的菜品结果卡需要参考用户截图优化成更强图片感的移动端卡片：图片更长，标签、菜名、摘要叠在图片上，底部只保留操作按钮。
+- **核心改动**：
+  - `pages/index/components/random-pick-sheet.vue` 将菜品标签、菜名和摘要从独立正文区移动到封面图底部叠层。
+  - `pages/index/components/random-pick-sheet.scss` 将封面高度从原 `290rpx` 调整为 `700rpx`，卡片背景收敛为暖白底，底部操作区独立成浅色按钮栏。
+  - 为封面图新增上下方向深色渐变遮罩和文字阴影，保证复杂食物图片上仍能读取标签、标题和摘要。
+  - 底部按钮按用户确认调整为左侧主按钮 `了解做法`、右侧次按钮 `换一个`。
+- **追加调整**：
+  - **修改时间**：2026-04-30 15:41:49 +0800 CST
+  - `pages/index/components/random-pick-sheet.vue` 将 `up-popup` 内容层显式设为 `bgColor="transparent"`，并用 `overlayOpacity="1"` 承载 `overlayStyle` 的浅暖色半透明玻璃背景；`overlayStyle` 启用 `backdrop-filter: blur(30rpx) saturate(1.12)`，背景色降为 `rgba(255, 250, 244, 0.08)`。
+  - `pages/index/components/random-pick-sheet.scss` 弱化全屏环境光层，去掉明显彩色遮罩，改成更轻的暖白玻璃层；卡片外发光同步降透明度，减少打开弹层后背景被“盖住”的感觉。
+  - **修改时间**：2026-04-30 15:51:12 +0800 CST
+  - 为提高弹层后方页面可见性，`randomPickOverlayStyle` 背景色从 `rgba(255, 250, 244, 0.08)` 降为 `rgba(255, 250, 244, 0.04)`，背景模糊从 `30rpx` 降为 `22rpx`；`.random-pick-stage__ambient` 移除二次 `backdrop-filter`，仅保留极轻暖白渐变。
+- **影响范围**：
+  - 仅影响首页点击 `帮我选` 后的随机菜品弹层展示与按钮排布。
+  - 不修改随机抽取逻辑、菜品详情跳转逻辑、菜谱数据结构或图片缓存逻辑。
+- **兼容性/风险**：
+  - 结果卡高度增加，仍保留弹层固定宽度和底部按钮区；建议在小屏真机确认垂直居中与底部按钮可见性。
+  - 图片文字叠层依赖深色渐变遮罩；极暗封面图上仍可能显得偏重，但文字可读性优先。
+  - 背景玻璃模糊依赖小程序宿主对 `backdrop-filter` / `-webkit-backdrop-filter` 的支持；不支持时会降级为极浅暖色半透明遮罩。
+- **验证情况**：
+  - 已用 `node --check --input-type=module` 解析 `pages/index/components/random-pick-sheet.vue` 的 `<script>` 块，通过。
+  - 已执行 `git diff --check -- pages/index/components/random-pick-sheet.vue pages/index/components/random-pick-sheet.scss`，通过。
+  - 未运行 HBuilderX 或微信开发者工具真机预览；建议真机确认：① 点击 `帮我选` 后图片为长图；② 标签、菜名、摘要位于图片底部且可读；③ 左侧 `了解做法` 跳详情、右侧 `换一个` 重新抽取；④ 弹层后方页面信息可隐约看到但被明显模糊。
+
+## 2026-04-30 (美食库搜索空态与列表标题微调)
+
+### Changed
+
+- **修改时间**：2026-04-30 15:27:26 +0800 CST
+- **变更背景**：搜索无结果态需要按截图方向简化，减少说明文字和次动作；列表标题区的“正餐 · xx 道 · 帮我选”字号偏小，且与条件卡片 / 菜品列表之间留白不足。
+- **核心改动**：
+  - `pages/index/components/library-empty-state.vue` 支持 `primaryIconSrc`，搜索无结果 CTA 可使用项目内 SVG 图标而非 `up-icon`。
+  - `pages/index/components/library-empty-state.scss` 为 `search-no-results` 单独收敛空态视觉：隐藏描述文案、缩小主按钮高度、降低标题权重，保持暖白卡片但更接近轻量搜索结果页。
+  - `pages/index/index.vue` 搜索无结果文案改为 `库里没找到“xxx”相关的菜谱`，主动作改为 `问问 AI 怎么做`，取消“清除搜索”次动作；点击后打开饮食管家，并把搜索词预填成“想做这道菜”的提问。
+  - 新增 `static/icons/sparkle-plus-warm.svg`，用于空态按钮的暖金色星闪图标；底部中间 AI 入口继续使用原白色 `sparkle-plus.svg`。
+  - `pages/index/components/library-header-section.vue` / `.scss` 调大首页顶部标题区：`美食库` 标题 `40rpx → 44rpx`、图标章 `44rpx → 48rpx`、图标 `14 → 15`；右侧 `安排菜单` 按钮文字 `23rpx → 25rpx`，按钮高度、内边距和日历图标同步增大。
+  - `pages/index/index.vue` 列表 caption 区字号上调：标题 `23rpx → 28rpx`、`帮我选` `21rpx → 24rpx`、图标 `12 → 14`；caption 顶部留白 `18rpx → 30rpx`、菜品列表顶部留白 `14rpx → 24rpx`，并移除 `帮我选` 图标外层白色底和边框。
+  - `pages/index/components/diet-assistant-sheet.vue` 新增 `initialPrompt` 入参，弹层打开或入参变化时可预填输入框。
+- **影响范围**：
+  - 仅影响首页美食库搜索无结果态、饮食管家打开时的输入框预填、顶部标题区与列表标题区样式。
+  - 不修改搜索过滤逻辑、菜品数据结构、后端接口、饮食管家流式接口或底部 AI 入口视觉。
+- **兼容性/风险**：
+  - 搜索无结果不再直接提供“添加这道菜 / 清除搜索”按钮；清除仍可通过搜索框右侧关闭按钮完成，新增菜仍可通过底部入口或饮食管家内记录入口完成。
+  - `primaryIconSrc` 为可选入参，既有空态仍走原 `up-icon`，不影响其它空态类型。
+  - `initialPrompt` 只在非流式回复中预填输入框；正在回复时不会覆盖用户当前会话。
+- **验证情况**：
+  - 已用 `node --check --input-type=module` 解析 `pages/index/index.vue`、`pages/index/components/library-empty-state.vue`、`pages/index/components/diet-assistant-sheet.vue` 的 `<script>` 块，通过。
+  - 已执行 `git diff --check -- pages/index/index.vue pages/index/components/library-empty-state.vue pages/index/components/library-empty-state.scss pages/index/components/diet-assistant-sheet.vue static/icons/sparkle-plus-warm.svg`，通过。
+  - 未运行 HBuilderX 或微信开发者工具真机预览；建议真机确认：① 搜索不存在关键词时空态为单按钮轻量样式；② 点击 `问问 AI 怎么做` 打开饮食管家且输入框预填关键词问题；③ `帮我选` 图标无白底、标题区字号与留白符合预期。
+
 ## 2026-04-30 (关于我们页面原型化重构)
 
 ### Changed

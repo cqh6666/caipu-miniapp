@@ -13,12 +13,9 @@
 	position: absolute;
 	inset: 0;
 	background:
-		radial-gradient(circle at 24% 22%, rgba(247, 221, 190, 0.62) 0%, rgba(247, 221, 190, 0.18) 18%, rgba(247, 221, 190, 0) 38%),
-		radial-gradient(circle at 76% 26%, rgba(255, 246, 234, 0.56) 0%, rgba(255, 246, 234, 0.14) 16%, rgba(255, 246, 234, 0) 40%),
-		radial-gradient(circle at 74% 74%, rgba(214, 226, 214, 0.54) 0%, rgba(214, 226, 214, 0.12) 16%, rgba(214, 226, 214, 0) 42%),
-		linear-gradient(180deg, rgba(252, 247, 241, 0.5) 0%, rgba(246, 239, 232, 0.28) 52%, rgba(243, 242, 238, 0.16) 100%);
-	filter: saturate(1.04);
-	opacity: 0.74;
+		radial-gradient(circle at 24% 18%, rgba(255, 250, 244, 0.08) 0%, rgba(255, 250, 244, 0.025) 26%, rgba(255, 250, 244, 0) 52%),
+		linear-gradient(180deg, rgba(255, 250, 244, 0.035) 0%, rgba(246, 239, 232, 0.02) 100%);
+	opacity: 1;
 	pointer-events: none;
 }
 
@@ -35,11 +32,11 @@
 	inset: 18rpx 22rpx;
 	border-radius: 40rpx;
 	background:
-		radial-gradient(circle at 22% 24%, rgba(244, 208, 166, 0.48) 0%, rgba(244, 208, 166, 0.14) 24%, rgba(244, 208, 166, 0) 52%),
-		radial-gradient(circle at 74% 78%, rgba(204, 220, 204, 0.42) 0%, rgba(204, 220, 204, 0.12) 22%, rgba(204, 220, 204, 0) 54%);
+		radial-gradient(circle at 22% 24%, rgba(244, 208, 166, 0.28) 0%, rgba(244, 208, 166, 0.08) 24%, rgba(244, 208, 166, 0) 52%),
+		radial-gradient(circle at 74% 78%, rgba(204, 220, 204, 0.22) 0%, rgba(204, 220, 204, 0.06) 22%, rgba(204, 220, 204, 0) 54%);
 	filter: blur(14rpx) saturate(1.04);
 	transform: rotate(-2deg) scale(0.985);
-	opacity: 0.72;
+	opacity: 0.48;
 	pointer-events: none;
 }
 
@@ -86,12 +83,8 @@
 	position: relative;
 	z-index: 1;
 	overflow: hidden;
-	padding: 22rpx;
 	border-radius: 34rpx;
-	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(249, 243, 236, 0.16) 100%),
-		radial-gradient(circle at top right, rgba(247, 231, 212, 0.22) 0%, rgba(247, 231, 212, 0) 40%),
-		radial-gradient(circle at bottom left, rgba(235, 241, 232, 0.16) 0%, rgba(235, 241, 232, 0) 42%);
+	background: #fffaf4;
 	border: 1px solid rgba(255, 255, 255, 0.56);
 	box-shadow:
 		0 28rpx 46rpx rgba(66, 50, 38, 0.12),
@@ -160,16 +153,14 @@
 .random-pick-sheet__hero {
 	position: relative;
 	margin-top: 0;
-	height: 290rpx;
-	border-radius: 26rpx;
+	height: 700rpx;
+	border-radius: 34rpx 34rpx 0 0;
 	overflow: hidden;
-	border: 1px solid rgba(255, 255, 255, 0.16);
+	border: 0;
 	background:
 		radial-gradient(circle at top left, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0) 42%),
 		linear-gradient(135deg, #f0e3d6 0%, #deccb9 100%);
-	box-shadow:
-		0 16rpx 26rpx rgba(67, 52, 39, 0.08),
-		inset 0 1rpx 0 rgba(255, 255, 255, 0.34);
+	box-shadow: none;
 }
 
 .random-pick-sheet__hero::after {
@@ -177,9 +168,10 @@
 	position: absolute;
 	inset: 0;
 	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 28%),
-		linear-gradient(180deg, rgba(40, 31, 23, 0) 46%, rgba(40, 31, 23, 0.18) 100%);
+		linear-gradient(180deg, rgba(31, 23, 17, 0.16) 0%, rgba(31, 23, 17, 0) 30%),
+		linear-gradient(180deg, rgba(31, 23, 17, 0) 34%, rgba(31, 23, 17, 0.44) 68%, rgba(31, 23, 17, 0.82) 100%);
 	pointer-events: none;
+	z-index: 1;
 }
 
 .random-pick-sheet__hero--empty {
@@ -222,8 +214,12 @@
 }
 
 .random-pick-sheet__body {
-	margin-top: 22rpx;
-	padding: 2rpx 8rpx 0;
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 2;
+	padding: 0 34rpx 34rpx;
 }
 
 .random-pick-sheet__context {
@@ -237,87 +233,87 @@
 
 .random-pick-sheet__title {
 	display: block;
-	margin-top: 10rpx;
+	margin-top: 18rpx;
 	font-family: "Songti SC", "STKaiti", "DejaVu Serif", serif;
-	font-size: 48rpx;
+	font-size: 46rpx;
 	font-weight: 700;
 	line-height: 1.22;
 	letter-spacing: 0.6rpx;
-	color: var(--color-text-primary);
+	color: #fffaf4;
+	text-shadow: 0 3rpx 12rpx rgba(24, 18, 13, 0.38);
 }
 
 .random-pick-sheet__meta {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 10rpx;
-	margin-top: 18rpx;
+	gap: 12rpx;
+	margin-top: 0;
 }
 
 .random-pick-chip {
-	min-height: 44rpx;
-	padding: 0 16rpx;
+	min-height: 42rpx;
+	padding: 0 18rpx;
 	border-radius: 999rpx;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(248, 242, 235, 0.12));
-	border: 1px solid rgba(255, 255, 255, 0.28);
+	background: rgba(191, 113, 95, 0.92);
+	border: 1px solid rgba(255, 244, 235, 0.26);
 	box-shadow:
-		inset 0 1rpx 0 rgba(255, 255, 255, 0.46),
-		0 6rpx 12rpx rgba(76, 60, 45, 0.03);
-	backdrop-filter: blur(12rpx);
-	-webkit-backdrop-filter: blur(12rpx);
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.24),
+		0 8rpx 14rpx rgba(31, 23, 17, 0.12);
+	backdrop-filter: blur(16rpx);
+	-webkit-backdrop-filter: blur(16rpx);
 }
 
 .random-pick-chip--wishlist {
-	background:
-		linear-gradient(180deg, rgba(255, 246, 239, 0.34), rgba(248, 235, 224, 0.14));
-	border-color: rgba(208, 159, 122, 0.22);
+	background: rgba(255, 250, 244, 0.26);
+	border-color: rgba(255, 250, 244, 0.28);
 }
 
 .random-pick-chip--done {
-	background:
-		linear-gradient(180deg, rgba(243, 250, 242, 0.32), rgba(232, 241, 231, 0.14));
-	border-color: rgba(133, 159, 133, 0.2);
+	background: rgba(232, 241, 231, 0.26);
+	border-color: rgba(243, 250, 242, 0.28);
 }
 
 .random-pick-chip--source {
-	background:
-		linear-gradient(180deg, rgba(246, 241, 235, 0.24), rgba(237, 229, 220, 0.12));
+	background: rgba(255, 250, 244, 0.22);
 }
 
 .random-pick-chip__text {
-	font-size: 20rpx;
+	font-size: 21rpx;
 	font-weight: 700;
 	line-height: 1;
-	color: #76695d;
+	color: #fffaf4;
+	text-shadow: 0 2rpx 8rpx rgba(31, 23, 17, 0.24);
 }
 
 .random-pick-sheet__summary {
 	display: -webkit-box;
-	margin-top: 18rpx;
+	margin-top: 10rpx;
 	font-size: 24rpx;
-	line-height: 1.7;
-	color: #5f554c;
+	line-height: 1.56;
+	color: rgba(255, 250, 244, 0.92);
 	overflow: hidden;
 	-webkit-box-orient: vertical;
 	-webkit-line-clamp: 2;
+	text-shadow: 0 2rpx 10rpx rgba(24, 18, 13, 0.42);
 }
 
 .random-pick-sheet__summary--muted {
-	color: #958879;
+	color: rgba(255, 250, 244, 0.76);
 }
 
 .random-pick-sheet__actions {
 	display: flex;
 	align-items: center;
 	gap: 14rpx;
-	margin-top: 28rpx;
+	padding: 24rpx;
+	background: #fffaf4;
 }
 
 .random-pick-action {
-	height: 88rpx;
+	height: 78rpx;
 	border-radius: 24rpx;
 	display: inline-flex;
 	align-items: center;
