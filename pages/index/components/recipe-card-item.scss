@@ -25,14 +25,14 @@
 	border-radius: 0 0 8rpx 8rpx;
 	background: linear-gradient(
 		180deg,
-		rgba(221, 191, 142, 0.92) 0%,
-		rgba(202, 160, 98, 0.92) 46%,
-		rgba(176, 131, 76, 0.94) 100%
+		#d68a76 0%,
+		var(--color-accent-terracotta, #bf715f) 50%,
+		#a55a4a 100%
 	);
 	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
 	box-shadow:
-		0 5rpx 8rpx rgba(133, 99, 54, 0.08),
-		inset 0 1rpx 0 rgba(255, 247, 232, 0.42);
+		0 5rpx 8rpx rgba(133, 65, 54, 0.12),
+		inset 0 1rpx 0 rgba(255, 232, 222, 0.46);
 	opacity: 0;
 	transform: translateY(-4rpx) scaleY(0.86);
 	transform-origin: top;
@@ -89,8 +89,8 @@
 }
 
 .recipe-card--pinned {
-	border-color: rgba(186, 145, 81, 0.12);
-	box-shadow: 0 12rpx 24rpx rgba(98, 74, 44, 0.06);
+	border-color: rgba(191, 113, 95, 0.18);
+	box-shadow: 0 12rpx 24rpx rgba(133, 65, 54, 0.06);
 }
 
 .recipe-card--pinned::before {

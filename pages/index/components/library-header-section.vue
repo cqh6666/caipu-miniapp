@@ -37,8 +37,8 @@
 			v-if="!isLibraryMealOrderMode && hasMealOrderSpotlightRecord"
 			class="meal-order-spotlight"
 			:key="spotlightMotionKey"
-			:class="spotlightMotionClass"
-			@tap="$emit('spotlight-tap')"
+			:class="[spotlightMotionClass, { 'meal-order-spotlight--tap-pulse': tapPulseActive }]"
+			@tap="handleSpotlightTap"
 			@touchstart="$emit('spotlight-touchstart', $event)"
 			@touchend="$emit('spotlight-touchend', $event)"
 		>
@@ -136,6 +136,32 @@ export default {
 				this.mealOrderSpotlightDateText,
 				this.mealOrderSpotlightMetaText
 			].join(':')
+		}
+	},
+	data() {
+		return {
+			tapPulseActive: false,
+			tapPulseTimer: null
+		}
+	},
+	beforeUnmount() {
+		if (this.tapPulseTimer) {
+			clearTimeout(this.tapPulseTimer)
+			this.tapPulseTimer = null
+		}
+	},
+	methods: {
+		handleSpotlightTap() {
+			if (this.tapPulseActive) return
+			this.tapPulseActive = true
+			if (this.tapPulseTimer) clearTimeout(this.tapPulseTimer)
+			this.tapPulseTimer = setTimeout(() => {
+				this.$emit('spotlight-tap')
+				this.tapPulseTimer = setTimeout(() => {
+					this.tapPulseActive = false
+					this.tapPulseTimer = null
+				}, 60)
+			}, 160)
 		}
 	},
 	emits: [

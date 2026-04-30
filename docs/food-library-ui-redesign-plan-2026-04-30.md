@@ -403,10 +403,10 @@ fade-in (180ms) + translateY(8rpx → 0) (220ms ease-out)
 
 #### 阶段 E · 跨模块 polish（可选）
 
-- [ ] **E1** 详情页返回时美食库走 §5.1 入场动效（180ms 淡入 + 8rpx 上移）
-- [ ] **E2** spotlight tap 时先 `scale(0.98)` 一拍再淡出再跳转
-- [ ] **E3** 菜卡 `recipe-card::before` 固顶书签：金棕 → `--color-accent-terracotta` 双色渐变
-- [ ] **E4** 视觉走查 + 是否回写 `CHANGELOG.md` 由产品决定
+- [x] **E1** 详情页返回时美食库走 §5.1 入场动效（180ms 淡入 + 8rpx 上移）
+- [x] **E2** spotlight tap 时先 `scale(0.98)` 一拍再淡出再跳转
+- [x] **E3** 菜卡 `recipe-card::before` 固顶书签：金棕 → `--color-accent-terracotta` 双色渐变
+- [x] **E4** 视觉走查 + 是否回写 `CHANGELOG.md` 由产品决定
 
 #### 共用约束（每阶段都要遵守）
 

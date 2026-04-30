@@ -8,7 +8,11 @@
 				'page-content--meal-order-leaving': mealOrderModeMotionState === 'leaving'
 			}"
 		>
-			<template v-if="activeSection === 'library'">
+			<view
+				v-if="activeSection === 'library'"
+				class="library-shell"
+				:class="{ 'library-shell--entering': libraryEnterMotionActive }"
+			>
 				<library-header-section
 					:is-library-meal-order-mode="isLibraryMealOrderMode"
 					:library-header-title="libraryHeaderTitle"
@@ -165,7 +169,7 @@
 					@primary="handleEmptyStatePrimary"
 					@secondary="handleEmptyStateSecondary"
 				></library-empty-state>
-			</template>
+			</view>
 
 			<template v-else>
 				<kitchen-section
@@ -554,6 +558,8 @@ export default {
 			activeStatus: 'all',
 			toolbarBounceClass: '',
 			toolbarBounceTimer: null,
+			libraryEnterMotionActive: false,
+			libraryEnterMotionTimer: null,
 			searchKeyword: '',
 			recentSearches: readRecentSearches(),
 			lastDraftLinkPrefill: readLastDraftLinkPrefill(),
@@ -658,6 +664,7 @@ export default {
 	},
 	onShow() {
 		this.refreshRecipes()
+		this.triggerLibraryEnterMotion()
 	},
 	onHide() {
 		if (!this.isSubmittingMealOrder) {
@@ -684,6 +691,10 @@ export default {
 		if (this.toolbarBounceTimer) {
 			clearTimeout(this.toolbarBounceTimer)
 			this.toolbarBounceTimer = null
+		}
+		if (this.libraryEnterMotionTimer) {
+			clearTimeout(this.libraryEnterMotionTimer)
+			this.libraryEnterMotionTimer = null
 		}
 		this.recipeCoverCacheRequestID += 1
 	},
@@ -1218,6 +1229,8 @@ export default {
 			if (next !== 'library') {
 				this.clearRecipeStatusFeedback()
 				this.closeRandomPickSheet()
+			} else {
+				this.triggerLibraryEnterMotion()
 			}
 		},
 		isLibraryMealOrderMode(next, prev) {
@@ -1416,6 +1429,21 @@ export default {
 					this.toolbarBounceClass = ''
 					this.toolbarBounceTimer = null
 				}, 160)
+			})
+		},
+		triggerLibraryEnterMotion() {
+			if (this.activeSection !== 'library') return
+			if (this.libraryEnterMotionTimer) {
+				clearTimeout(this.libraryEnterMotionTimer)
+				this.libraryEnterMotionTimer = null
+			}
+			this.libraryEnterMotionActive = false
+			this.$nextTick(() => {
+				this.libraryEnterMotionActive = true
+				this.libraryEnterMotionTimer = setTimeout(() => {
+					this.libraryEnterMotionActive = false
+					this.libraryEnterMotionTimer = null
+				}, 240)
 			})
 		},
 		bumpMealOrderSpotlightMotion(direction = 'next') {
@@ -2899,6 +2927,7 @@ export default {
 	 * Phase A（2026-04-30）：抽取常用色为 token 别名，零视觉差异。
 	 * Phase B（2026-04-30）：追加表面色 / 阴影 token，工具卡 / 状态 pill 起开始使用目标值，引入视觉升级。
 	 * Phase D（2026-04-30）：新增 --color-text-muted 用于摘要兜底占位与空态描述弱文。
+	 * Phase E（2026-04-30）：新增 --color-accent-terracotta（陶土橙）用于"想吃 / 固顶徽"双色渐变。
 	 * 规范：docs/food-library-ui-redesign-plan-2026-04-30.md §3.1 / §3.2 */
 	page {
 		--color-bg: #f6f4f1;
@@ -2908,6 +2937,7 @@ export default {
 		--color-text-on-brand: #fffaf3;
 		--color-text-muted: #9f9387;
 		--color-brand-brown: #5b4a3b;
+		--color-accent-terracotta: #bf715f;
 		--color-border-soft: rgba(91, 74, 59, 0.07);
 		--color-border-active: rgba(91, 74, 59, 0.16);
 		--shadow-clay-soft:
@@ -2927,6 +2957,32 @@ export default {
 
 	.page-content {
 		padding: 24rpx 24rpx 214rpx;
+	}
+
+	.library-shell {
+		display: block;
+		will-change: transform, opacity;
+	}
+
+	.library-shell--entering {
+		animation: library-shell-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+
+	@keyframes library-shell-enter {
+		from {
+			opacity: 0;
+			transform: translateY(8rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.library-shell--entering {
+			animation: none;
+		}
 	}
 
 	.page-content--meal-order-entering {
