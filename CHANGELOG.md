@@ -22,6 +22,34 @@
   - 已执行 `node --check utils/diet-assistant-api.js`，通过。
   - 已执行 `git diff --check`，通过。
 
+## 2026-05-01 (修复饮食管家 LongCat 工具标记泄漏)
+
+### Fixed
+
+- **修改时间**：2026-05-01 03:02:59 +0800 CST
+- **变更背景**：用户在饮食管家里咨询“清淡点的”之类问题时，偶发收到
+  LongCat 内部 `<longcat_tool_call>...</longcat_tool_call>` 标记；本地
+  `diet_assistant_messages` 也已查到真实脏数据，说明上游工具规划结果被当成正文透传并落库。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 为 tools 规划阶段新增
+    LongCat 内嵌工具标记 fallback 解析：当上游未返回标准 `tool_calls`
+    但正文里带有 `<longcat_tool_call>` 时，后端会解析成真实 tool call，
+    补齐 `search_recipes_by_name` 等工具的默认参数后继续执行。
+  - 同文件新增助手消息清洗逻辑：进入模型上下文、返回历史消息以及写库前，
+    都会移除 LongCat 内部工具标记，避免脏回复污染后续多轮对话。
+  - `backend/internal/dietassistant/service_test.go` 补充
+    LongCat 标记 fallback 解析与历史消息清洗的回归用例。
+- **影响范围**：
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 的上游工具规划兼容逻辑。
+  - 影响 `GET /api/diet-assistant/messages` 返回的历史消息清洗结果；历史里的异常工具标记会被过滤，不再继续展示或带入上下文。
+- **兼容性/风险**：
+  - 当前 fallback 仅针对 LongCat 这类 XML 风格工具标记；若未来上游再出现新的非标准格式，仍需按样本继续补兼容。
+  - 被完整识别为内部工具标记的历史助手消息会在读取时被过滤，极少数异常轮次可能只保留用户那一侧消息。
+- **验证情况**：
+  - 已执行 `gofmt -w backend/internal/dietassistant/service.go backend/internal/dietassistant/service_test.go`，通过。
+  - 已执行 `git diff --check -- backend/internal/dietassistant/service.go backend/internal/dietassistant/service_test.go`，通过。
+  - 未运行 `go test`；本轮按用户要求直接提交。
+
 ## 2026-05-01 (饮食管家菜谱详情与食材搜索 tools)
 
 ### Changed

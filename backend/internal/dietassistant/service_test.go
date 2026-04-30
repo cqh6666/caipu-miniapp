@@ -181,6 +181,89 @@ func TestServiceStreamChatExecutesRecipeCountTool(t *testing.T) {
 	}
 }
 
+func TestServiceStreamChatParsesLongCatTaggedToolMarkup(t *testing.T) {
+	var requestCount int
+	var sawToolResult bool
+	var sawLongCatMarkupInFinalRequest bool
+	var gotSearchInput RecipeSearchInput
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount += 1
+		var req openAIChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		if requestCount == 1 {
+			if req.Stream {
+				t.Fatal("first request should be non-streaming")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"<longcat_tool_call>search_recipes_by_name\n<longcat_arg_key>query</longcat_arg_key>\n<longcat_arg_value>清淡</longcat_arg_value>\n<longcat_arg_key>limit</longcat_arg_key>\n<longcat_arg_value>5</longcat_arg_value>\n</longcat_tool_call>"},"finish_reason":"stop"}]}`))
+			return
+		}
+
+		for _, message := range req.Messages {
+			if strings.Contains(openAIContentText(message.Content), "<longcat_tool_call>") {
+				sawLongCatMarkupInFinalRequest = true
+			}
+			if message.Role != "tool" {
+				continue
+			}
+			if strings.Contains(message.Content.(string), `"keyword":"清淡"`) && strings.Contains(message.Content.(string), `"searchScope":"title_or_ingredient"`) {
+				sawToolResult = true
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"给你找了几道清淡口味的菜。\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	service := NewService(Options{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Model:   "LongCat-2.0-Preview",
+		Timeout: 3 * time.Second,
+		SearchRecipes: func(ctx context.Context, input RecipeSearchInput) ([]RecipeToolItem, error) {
+			gotSearchInput = input
+			return []RecipeToolItem{{
+				ID:       "rec_1",
+				Title:    "清蒸鲈鱼",
+				MealType: "main",
+				Status:   "wishlist",
+			}}, nil
+		},
+	})
+
+	var content strings.Builder
+	err := service.StreamChat(context.Background(), ChatContext{UserID: 5, KitchenID: 6}, []ChatMessage{
+		{Role: "user", Content: "来点清淡点的"},
+	}, func(event StreamEvent) error {
+		if event.Type == "delta" {
+			content.WriteString(event.Delta)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat returned error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("requestCount = %d, want 2", requestCount)
+	}
+	if !sawToolResult {
+		t.Fatal("final request did not include parsed longcat tool result")
+	}
+	if sawLongCatMarkupInFinalRequest {
+		t.Fatal("final request should not carry raw longcat tool markup")
+	}
+	if gotSearchInput.Keyword != "清淡" || gotSearchInput.SearchScope != "title_or_ingredient" || gotSearchInput.Limit != 5 {
+		t.Fatalf("unexpected search input: %#v", gotSearchInput)
+	}
+	if got, want := content.String(), "给你找了几道清淡口味的菜。"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+}
+
 func TestServiceStreamChatParsesURLOnlyMessageWithoutPlanningRequest(t *testing.T) {
 	var requestCount int
 	var sawToolResult bool
@@ -493,6 +576,31 @@ func TestServiceStreamChatRequiresConfig(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServiceListStoredMessagesSkipsLongCatToolMarkup(t *testing.T) {
+	db := openDietAssistantTestDB(t)
+	defer db.Close()
+
+	repo := NewRepository(db)
+	if err := repo.AddTurn(context.Background(), 1, 2, "今晚吃啥", "<longcat_tool_call>search_recipes_by_name\n<longcat_arg_key>query</longcat_arg_key>\n<longcat_arg_value>家常</longcat_arg_value>\n</longcat_tool_call>", "2026-05-01T00:00:00Z"); err != nil {
+		t.Fatalf("AddTurn error = %v", err)
+	}
+
+	service := NewService(Options{
+		Repo: repo,
+	})
+
+	items, err := service.ListStoredMessages(context.Background(), ChatContext{UserID: 1, KitchenID: 2}, 50)
+	if err != nil {
+		t.Fatalf("ListStoredMessages error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].Role != "user" || items[0].Content != "今晚吃啥" {
+		t.Fatalf("unexpected item = %#v", items[0])
 	}
 }
 

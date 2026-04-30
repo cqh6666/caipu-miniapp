@@ -137,16 +137,22 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 
 		assistantMessage := toolResponse.Choices[0].Message
 		toolCalls := normalizeToolCallIDs(assistantMessage.ToolCalls)
+		longcatMarkupFound := false
+		if len(toolCalls) == 0 {
+			toolCalls, longcatMarkupFound = parseLongCatToolCalls(openAIContentText(assistantMessage.Content))
+		}
 		if len(toolCalls) > 0 {
 			finalMessages = append([]openAIChatMessage{}, upstreamMessages...)
 			finalMessages, err = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
 				Role:      valueOrDefault(assistantMessage.Role, "assistant"),
-				Content:   assistantMessage.Content,
+				Content:   sanitizeAssistantVisibleContent(openAIContentText(assistantMessage.Content)),
 				ToolCalls: toolCalls,
 			}, toolCalls, emit)
 			if err != nil {
 				return err
 			}
+		} else if longcatMarkupFound {
+			return common.NewAppError(common.CodeInternalServer, "diet assistant upstream returned invalid tool call markup", http.StatusBadGateway)
 		}
 	}
 
@@ -260,7 +266,11 @@ func (s *Service) ListStoredMessages(ctx context.Context, chatCtx ChatContext, l
 	if s == nil || s.repo == nil {
 		return nil, nil
 	}
-	return s.repo.ListMessages(ctx, chatCtx.UserID, chatCtx.KitchenID, normalizeMessageLimit(limit))
+	items, err := s.repo.ListMessages(ctx, chatCtx.UserID, chatCtx.KitchenID, normalizeMessageLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	return sanitizeStoredMessages(items), nil
 }
 
 func (s *Service) ClearStoredMessages(ctx context.Context, chatCtx ChatContext) error {
@@ -281,7 +291,7 @@ func (s *Service) storeCompletedTurn(ctx context.Context, chatCtx ChatContext, u
 		return err
 	}
 	userContent = strings.TrimSpace(userContent)
-	assistantContent = strings.TrimSpace(assistantContent)
+	assistantContent = sanitizeAssistantVisibleContent(assistantContent)
 	if userContent == "" || assistantContent == "" {
 		return nil
 	}
@@ -311,6 +321,9 @@ func buildAgentUpstreamMessages(messages []ChatMessage) ([]openAIChatMessage, er
 	for _, message := range messages {
 		role := strings.TrimSpace(strings.ToLower(message.Role))
 		content := strings.TrimSpace(message.Content)
+		if role == "assistant" {
+			content = sanitizeAssistantVisibleContent(content)
+		}
 		if content == "" {
 			continue
 		}
@@ -330,6 +343,256 @@ func buildAgentUpstreamMessages(messages []ChatMessage) ([]openAIChatMessage, er
 	}
 
 	return nil, common.NewAppError(common.CodeBadRequest, "user message is required", http.StatusBadRequest)
+}
+
+func openAIContentText(content any) string {
+	switch value := content.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(value)
+	case []any:
+		values := make([]string, 0, len(value))
+		for _, item := range value {
+			text := openAIContentText(item)
+			if text != "" {
+				values = append(values, text)
+			}
+		}
+		return strings.TrimSpace(strings.Join(values, ""))
+	case map[string]any:
+		text := strings.TrimSpace(fmt.Sprint(value["text"]))
+		if text != "" && text != "<nil>" {
+			return text
+		}
+	}
+
+	data, err := json.Marshal(content)
+	if err != nil {
+		return strings.TrimSpace(fmt.Sprint(content))
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(data, &parts); err == nil {
+		values := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if strings.TrimSpace(part.Text) != "" {
+				values = append(values, part.Text)
+			}
+		}
+		return strings.TrimSpace(strings.Join(values, ""))
+	}
+	return strings.TrimSpace(fmt.Sprint(content))
+}
+
+const (
+	longCatToolOpenTag  = "<longcat_tool_call>"
+	longCatToolCloseTag = "</longcat_tool_call>"
+	longCatArgKeyOpen   = "<longcat_arg_key>"
+	longCatArgKeyClose  = "</longcat_arg_key>"
+	longCatArgValOpen   = "<longcat_arg_value>"
+	longCatArgValClose  = "</longcat_arg_value>"
+)
+
+func sanitizeStoredMessages(items []StoredMessage) []StoredMessage {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]StoredMessage, 0, len(items))
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item.Role), "assistant") {
+			item.Content = sanitizeAssistantVisibleContent(item.Content)
+			if item.Content == "" {
+				continue
+			}
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func sanitizeAssistantVisibleContent(content string) string {
+	return strings.TrimSpace(stripLongCatToolCallBlocks(content))
+}
+
+func stripLongCatToolCallBlocks(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" || !strings.Contains(content, longCatToolOpenTag) {
+		return content
+	}
+
+	var builder strings.Builder
+	remaining := content
+	for {
+		start := strings.Index(remaining, longCatToolOpenTag)
+		if start < 0 {
+			builder.WriteString(remaining)
+			break
+		}
+		builder.WriteString(remaining[:start])
+		remaining = remaining[start+len(longCatToolOpenTag):]
+		end := strings.Index(remaining, longCatToolCloseTag)
+		if end < 0 {
+			break
+		}
+		remaining = remaining[end+len(longCatToolCloseTag):]
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func parseLongCatToolCalls(content string) ([]openAIToolCall, bool) {
+	content = strings.TrimSpace(content)
+	if content == "" || !strings.Contains(content, longCatToolOpenTag) {
+		return nil, false
+	}
+
+	remaining := content
+	calls := make([]openAIToolCall, 0, 1)
+	for index := 0; ; index += 1 {
+		start := strings.Index(remaining, longCatToolOpenTag)
+		if start < 0 {
+			break
+		}
+		remaining = remaining[start+len(longCatToolOpenTag):]
+		end := strings.Index(remaining, longCatToolCloseTag)
+		if end < 0 {
+			break
+		}
+		block := strings.TrimSpace(remaining[:end])
+		remaining = remaining[end+len(longCatToolCloseTag):]
+
+		call, ok := parseLongCatToolCallBlock(block, index)
+		if ok {
+			calls = append(calls, call)
+		}
+	}
+	return normalizeToolCallIDs(calls), true
+}
+
+func parseLongCatToolCallBlock(block string, index int) (openAIToolCall, bool) {
+	block = strings.TrimSpace(block)
+	if block == "" {
+		return openAIToolCall{}, false
+	}
+
+	toolName := block
+	argsBody := ""
+	if argIndex := strings.Index(block, longCatArgKeyOpen); argIndex >= 0 {
+		toolName = strings.TrimSpace(block[:argIndex])
+		argsBody = block[argIndex:]
+	}
+	if toolName == "" {
+		return openAIToolCall{}, false
+	}
+
+	args := make(map[string]any)
+	for {
+		keyStart := strings.Index(argsBody, longCatArgKeyOpen)
+		if keyStart < 0 {
+			break
+		}
+		keyBody := argsBody[keyStart+len(longCatArgKeyOpen):]
+		keyEnd := strings.Index(keyBody, longCatArgKeyClose)
+		if keyEnd < 0 {
+			break
+		}
+		key := strings.TrimSpace(keyBody[:keyEnd])
+		valueBody := keyBody[keyEnd+len(longCatArgKeyClose):]
+		valStart := strings.Index(valueBody, longCatArgValOpen)
+		if valStart < 0 {
+			break
+		}
+		valueBody = valueBody[valStart+len(longCatArgValOpen):]
+		valEnd := strings.Index(valueBody, longCatArgValClose)
+		if valEnd < 0 {
+			break
+		}
+		value := strings.TrimSpace(valueBody[:valEnd])
+		argsBody = valueBody[valEnd+len(longCatArgValClose):]
+		if key != "" {
+			args[key] = value
+		}
+	}
+
+	return openAIToolCall{
+		ID:   fmt.Sprintf("call_diet_assistant_longcat_%d", index+1),
+		Type: "function",
+		Function: openAIToolCallFunction{
+			Name:      toolName,
+			Arguments: normalizeLongCatToolArguments(toolName, args),
+		},
+	}, true
+}
+
+func normalizeLongCatToolArguments(toolName string, args map[string]any) map[string]any {
+	normalized := make(map[string]any, len(args)+4)
+	for key, value := range args {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		normalized[trimmed] = value
+	}
+
+	switch strings.TrimSpace(toolName) {
+	case "get_recipe_count":
+		ensureToolArg(normalized, "mealType", "all")
+		ensureToolArg(normalized, "status", "all")
+	case "search_recipes_by_name":
+		if !hasNonEmptyToolArg(normalized, "keyword") {
+			if value, ok := normalized["query"]; ok {
+				normalized["keyword"] = value
+			}
+		}
+		if !hasNonEmptyToolArg(normalized, "searchScope") {
+			switch {
+			case hasNonEmptyToolArg(normalized, "ingredientKeyword") && !hasNonEmptyToolArg(normalized, "titleKeyword") && !hasNonEmptyToolArg(normalized, "keyword"):
+				normalized["searchScope"] = "ingredient"
+			case hasNonEmptyToolArg(normalized, "titleKeyword") && !hasNonEmptyToolArg(normalized, "ingredientKeyword") && !hasNonEmptyToolArg(normalized, "keyword"):
+				normalized["searchScope"] = "title"
+			default:
+				normalized["searchScope"] = "title_or_ingredient"
+			}
+		}
+		ensureToolArg(normalized, "mealType", "all")
+		ensureToolArg(normalized, "status", "all")
+	case "get_recipe_by_id":
+		if !hasNonEmptyToolArg(normalized, "recipeId") {
+			if value, ok := normalized["id"]; ok {
+				normalized["recipeId"] = value
+			}
+		}
+	case "parse_and_add_recipe_from_url":
+		if !hasNonEmptyToolArg(normalized, "url") {
+			if value, ok := normalized["link"]; ok {
+				normalized["url"] = value
+			}
+		}
+		ensureToolArg(normalized, "mealType", "main")
+		ensureToolArg(normalized, "status", "wishlist")
+	}
+	return normalized
+}
+
+func ensureToolArg(args map[string]any, key, fallback string) {
+	if hasNonEmptyToolArg(args, key) {
+		return
+	}
+	args[key] = fallback
+}
+
+func hasNonEmptyToolArg(args map[string]any, key string) bool {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return false
+	}
+	return strings.TrimSpace(fmt.Sprint(value)) != ""
 }
 
 func lastUserMessageContent(messages []ChatMessage) string {
