@@ -50,6 +50,13 @@ export function updateKitchen(kitchenId, payload = {}) {
 	}).then((data) => data?.kitchen || null)
 }
 
+export function leaveKitchen(kitchenId) {
+	return request({
+		url: `/caipu-api/kitchens/${kitchenId}/members/me`,
+		method: 'DELETE'
+	})
+}
+
 export function previewInvite(token) {
 	return request({
 		url: `/caipu-api/invites/${token}`,

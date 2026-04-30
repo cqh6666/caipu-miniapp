@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 type Repository struct {
@@ -174,6 +177,82 @@ func (r *Repository) UpdateName(ctx context.Context, kitchenID int64, name strin
 		kitchenID,
 	); err != nil {
 		return fmt.Errorf("update kitchen name: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Repository) Leave(ctx context.Context, userID, kitchenID int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin leave kitchen tx: %w", err)
+	}
+
+	var role string
+	err = tx.QueryRowContext(
+		ctx,
+		`SELECT role FROM kitchen_members WHERE user_id = ? AND kitchen_id = ? LIMIT 1`,
+		userID,
+		kitchenID,
+	).Scan(&role)
+	if errors.Is(err, sql.ErrNoRows) {
+		_ = tx.Rollback()
+		return common.ErrForbidden
+	}
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("read kitchen member role: %w", err)
+	}
+	if role == "owner" {
+		_ = tx.Rollback()
+		return common.NewAppError(common.CodeConflict, "owner cannot leave current kitchen", http.StatusConflict)
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		`DELETE FROM kitchen_members WHERE user_id = ? AND kitchen_id = ?`,
+		userID,
+		kitchenID,
+	)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete kitchen member: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("read deleted kitchen member count: %w", err)
+	}
+	if affected == 0 {
+		_ = tx.Rollback()
+		return common.ErrForbidden
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE kitchen_invites SET status = ? WHERE kitchen_id = ? AND inviter_user_id = ? AND status = ?`,
+		"revoked",
+		kitchenID,
+		userID,
+		"active",
+	); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("revoke member kitchen invites: %w", err)
+	}
+
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE kitchens SET updated_at = ? WHERE id = ?`,
+		now,
+		kitchenID,
+	); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("touch kitchen updated_at: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit leave kitchen tx: %w", err)
 	}
 
 	return nil

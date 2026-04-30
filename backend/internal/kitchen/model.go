@@ -15,6 +15,11 @@ type Member struct {
 	IsCurrentUser bool   `json:"isCurrentUser"`
 }
 
+type LeaveResult struct {
+	Kitchens         []Summary `json:"kitchens"`
+	CurrentKitchenID int64     `json:"currentKitchenId"`
+}
+
 type createKitchenRequest struct {
 	Name string `json:"name"`
 }

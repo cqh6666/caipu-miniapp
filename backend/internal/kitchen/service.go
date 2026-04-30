@@ -97,6 +97,27 @@ func (s *Service) UpdateKitchen(ctx context.Context, userID, kitchenID int64, na
 	return Summary{}, common.ErrInternal.WithErr(fmt.Errorf("updated kitchen %d not found in user list", kitchenID))
 }
 
+func (s *Service) LeaveCurrentMember(ctx context.Context, userID, kitchenID int64) (LeaveResult, error) {
+	if err := s.repo.Leave(ctx, userID, kitchenID); err != nil {
+		return LeaveResult{}, err
+	}
+
+	items, err := s.repo.ListByUserID(ctx, userID)
+	if err != nil {
+		return LeaveResult{}, fmt.Errorf("list kitchens after leave: %w", err)
+	}
+
+	var currentKitchenID int64
+	if len(items) > 0 {
+		currentKitchenID = items[0].ID
+	}
+
+	return LeaveResult{
+		Kitchens:         items,
+		CurrentKitchenID: currentKitchenID,
+	}, nil
+}
+
 func (s *Service) EnsureMember(ctx context.Context, userID, kitchenID int64) error {
 	ok, err := s.repo.HasMembership(ctx, userID, kitchenID)
 	if err != nil {

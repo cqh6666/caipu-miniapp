@@ -162,6 +162,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/kitchens`
 - `PATCH /api/kitchens/{kitchenID}`
 - `GET /api/kitchens/{kitchenID}/members`
+- `DELETE /api/kitchens/{kitchenID}/members/me`
 - `GET /api/invites/{token}`
 - `GET /api/invites/{token}/share-image`
 - `POST /api/kitchens/{kitchenID}/invites`
@@ -292,7 +293,7 @@ go run ./cmd/server -migrate-only
 
 后续第一批建议实现顺序：
 
-1. 增加成员移除和角色调整
+1. 增加管理员移除成员和角色调整
 2. 增加编辑记录和冲突提示
 3. 增加邀请撤销和邀请列表
 4. 增加操作日志和基础测试

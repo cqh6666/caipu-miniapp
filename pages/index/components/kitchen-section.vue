@@ -131,6 +131,20 @@
 				</view>
 			</view>
 		</view>
+
+		<view v-if="showLeaveAction" class="kitchen-danger-zone">
+			<view
+				class="kitchen-danger-zone__action"
+				:class="{ 'kitchen-danger-zone__action--loading': isLeavingKitchen }"
+				hover-class="kitchen-danger-zone__action--pressed"
+				hover-start-time="0"
+				hover-stay-time="160"
+				@tap="!isLeavingKitchen && $emit('leave-kitchen')"
+			>
+				<up-icon name="arrow-left" size="12" color="#d13d45"></up-icon>
+				<text class="kitchen-danger-zone__action-text">{{ isLeavingKitchen ? '退出中...' : '退出当前空间' }}</text>
+			</view>
+		</view>
 	</view>
 </template>
 
@@ -196,6 +210,14 @@ export default {
 			type: Boolean,
 			default: false
 		},
+		showLeaveAction: {
+			type: Boolean,
+			default: false
+		},
+		isLeavingKitchen: {
+			type: Boolean,
+			default: false
+		},
 		memberInitial: {
 			type: Function,
 			default: identity
@@ -219,6 +241,7 @@ export default {
 		'open-invite-sheet',
 		'open-kitchen-name-sheet',
 		'open-kitchen-selector',
+		'leave-kitchen',
 		'show-all-members'
 	]
 }

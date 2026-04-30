@@ -144,6 +144,7 @@ func NewRouter(
 			protected.Post("/kitchens", kitchenHandler.Create)
 			protected.Patch("/kitchens/{kitchenID}", kitchenHandler.Update)
 			protected.Get("/kitchens/{kitchenID}/members", kitchenHandler.ListMembers)
+			protected.Delete("/kitchens/{kitchenID}/members/me", kitchenHandler.LeaveCurrentMember)
 			protected.Post("/kitchens/{kitchenID}/invites", inviteHandler.Create)
 			protected.Post("/invites/{token}/accept", inviteHandler.Accept)
 			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)

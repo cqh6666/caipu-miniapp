@@ -113,6 +113,28 @@ func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) LeaveCurrentMember(w http.ResponseWriter, r *http.Request) {
+	userID, ok := common.CurrentUserID(r.Context())
+	if !ok {
+		common.WriteError(w, common.ErrUnauthorized)
+		return
+	}
+
+	kitchenID, err := parseKitchenID(r)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	result, err := h.service.LeaveCurrentMember(r.Context(), userID, kitchenID)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+
+	common.WriteData(w, http.StatusOK, result)
+}
+
 func parseKitchenID(r *http.Request) (int64, error) {
 	kitchenID := strings.TrimSpace(chi.URLParam(r, "kitchenID"))
 	if kitchenID == "" {

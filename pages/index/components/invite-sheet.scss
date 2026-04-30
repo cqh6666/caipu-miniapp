@@ -1,3 +1,9 @@
+%invite-code-font {
+	font-family: "DIN Alternate", "Avenir Next", "Helvetica Neue", "PingFang SC", sans-serif;
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum";
+}
+
 .invite-sheet {
 	padding: 26rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
 	background: #f8f4ee;
@@ -109,13 +115,14 @@
 }
 
 .invite-sheet__code {
+	@extend %invite-code-font;
 	display: block;
 	margin-top: 8rpx;
-	font-size: 34rpx;
-	font-weight: 700;
-	letter-spacing: 3rpx;
+	font-size: 36rpx;
+	font-weight: 800;
+	letter-spacing: 2.5rpx;
+	line-height: 1.12;
 	color: #2f2923;
-	font-family: 'SF Mono', 'Menlo', monospace;
 }
 
 .invite-sheet__footer {
@@ -260,15 +267,15 @@
 }
 
 .invite-code-sheet__input {
+	@extend %invite-code-font;
 	height: 96rpx;
 	padding: 0 24rpx;
 	border-radius: 20rpx;
 	background: #f8f3ec;
 	font-size: 32rpx;
-	font-weight: 700;
-	letter-spacing: 3rpx;
+	font-weight: 800;
+	letter-spacing: 2.5rpx;
 	color: #2f2923;
-	font-family: 'SF Mono', 'Menlo', monospace;
 }
 
 .invite-code-sheet__placeholder {

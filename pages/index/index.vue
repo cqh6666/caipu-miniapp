@@ -187,6 +187,8 @@
 					:has-more-kitchen-members="hasMoreKitchenMembers"
 					:visible-kitchen-members="visibleKitchenMembers"
 					:is-loading-kitchen-members="isLoadingKitchenMembers"
+					:show-leave-action="canLeaveCurrentKitchen"
+					:is-leaving-kitchen="isLeavingKitchen"
 					:member-initial="memberInitial"
 					:member-display-name="memberDisplayName"
 					:member-role-label="memberRoleLabel"
@@ -197,11 +199,12 @@
 					@show-all-members="showAllMembers"
 					@member-tap="handleMemberCardTap"
 					@open-invite-code-sheet="openInviteCodeSheet"
+					@leave-kitchen="confirmLeaveCurrentKitchen"
 				></kitchen-section>
 
 			</template>
 
-			<view v-if="!isLibraryMealOrderMode" class="app-footer-links">
+			<view v-if="!isLibraryMealOrderMode && activeSection !== 'kitchen'" class="app-footer-links">
 				<view class="app-footer-link" @tap="openAboutPage">
 					<text class="app-footer-link__label">关于我们</text>
 				</view>
@@ -453,7 +456,7 @@ import {
 	statusOptions,
 	toggleRecipeStatusById
 } from '../../utils/recipe-store'
-import { createKitchenInvite, formatInviteCode, listKitchenMembers, normalizeInviteCode, updateKitchen } from '../../utils/kitchen-api'
+import { createKitchenInvite, formatInviteCode, leaveKitchen, listKitchenMembers, normalizeInviteCode, updateKitchen } from '../../utils/kitchen-api'
 import {
 	ensureSession,
 	getCurrentKitchenId,
@@ -613,6 +616,7 @@ export default {
 			currentKitchenRole: '',
 			kitchenMembers: [],
 			kitchenMembersKitchenId: 0,
+			isLeavingKitchen: false,
 			activeInvite: null,
 			inviteCodeCopied: false,
 			inviteCodeInput: '',
@@ -749,6 +753,9 @@ export default {
 			if (this.currentKitchenRole === 'admin') return '管理员'
 			if (this.currentKitchenRole === 'member') return '成员'
 			return ''
+		},
+		canLeaveCurrentKitchen() {
+			return !!this.currentKitchenName && ['admin', 'member'].includes(this.currentKitchenRole)
 		},
 		currentKitchenMetaText() {
 			if (!this.currentKitchenName) {
@@ -2252,6 +2259,64 @@ export default {
 		handleMemberCardTap(member = {}) {
 			if (!member.isCurrentUser || !this.currentUser?.id) return
 			this.openProfileSheetWithMode('edit')
+		},
+		confirmLeaveCurrentKitchen() {
+			if (!this.canLeaveCurrentKitchen || this.isLeavingKitchen) return
+
+			const kitchenName = replaceKitchenLabel(this.currentKitchenName || '当前空间')
+			uni.showModal({
+				title: '退出当前空间',
+				content: `退出后你将无法查看「${kitchenName}」里的菜谱和菜单，重新加入需要成员邀请。空间数据不会被删除。`,
+				cancelText: '再想想',
+				confirmText: '退出空间',
+				confirmColor: '#a95549',
+				success: async ({ confirm }) => {
+					if (!confirm) return
+					await this.leaveCurrentKitchen()
+				}
+			})
+		},
+		async leaveCurrentKitchen() {
+			if (this.isLeavingKitchen) return
+
+			const kitchenId = Number(getCurrentKitchenId()) || 0
+			if (!kitchenId) {
+				uni.showToast({
+					title: '暂时没有可退出的空间',
+					icon: 'none'
+				})
+				return
+			}
+
+			this.isLeavingKitchen = true
+			try {
+				if (typeof uni.vibrateShort === 'function') {
+					uni.vibrateShort({ type: 'light' })
+				}
+			} catch (error) {
+				// 轻触感是增强反馈，不影响退出流程。
+			}
+
+			try {
+				await leaveKitchen(kitchenId)
+				const session = await ensureSession()
+				this.applySession(session)
+				this.selectedRecipeId = ''
+				this.searchKeyword = ''
+				await this.refreshRecipes({ silent: false })
+				uni.showToast({
+					title: '已退出空间',
+					icon: 'none'
+				})
+			} catch (error) {
+				const message = String(error?.message || '')
+				uni.showToast({
+					title: message.includes('owner') ? '创建者暂不能退出空间' : getFriendlySessionErrorMessage(error) || '退出失败',
+					icon: 'none'
+				})
+			} finally {
+				this.isLeavingKitchen = false
+			}
 		},
 		openAboutPage() {
 			uni.navigateTo({

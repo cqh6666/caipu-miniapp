@@ -52,6 +52,7 @@
 		{
 			"path": "pages/about/index",
 			"style": {
+				"navigationStyle": "custom",
 				"navigationBarTitleText": "关于我们"
 			}
 		}

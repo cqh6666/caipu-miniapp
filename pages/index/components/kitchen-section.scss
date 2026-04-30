@@ -587,3 +587,38 @@
 	font-weight: 700;
 	color: #7a6b5c;
 }
+
+.kitchen-danger-zone {
+	margin: 28rpx 0 0;
+	display: flex;
+	justify-content: center;
+}
+
+.kitchen-danger-zone__action {
+	min-height: 64rpx;
+	padding: 0 26rpx;
+	border-radius: 999rpx;
+	background: linear-gradient(180deg, rgba(255, 244, 244, 0.96) 0%, rgba(255, 235, 236, 0.88) 100%);
+	border: 1rpx solid rgba(209, 61, 69, 0.12);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8rpx;
+	transition: transform 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.kitchen-danger-zone__action--pressed {
+	transform: translateY(2rpx);
+	background: rgba(255, 232, 234, 0.96);
+	border-color: rgba(209, 61, 69, 0.2);
+}
+
+.kitchen-danger-zone__action--loading {
+	opacity: 0.68;
+}
+
+.kitchen-danger-zone__action-text {
+	font-size: 23rpx;
+	font-weight: 800;
+	color: #d13d45;
+}

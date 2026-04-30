@@ -374,7 +374,10 @@ export default {
 	}
 
 	.invite-summary__value--code {
-		font-family: 'SF Mono', 'Menlo', monospace;
+		font-family: "DIN Alternate", "Avenir Next", "Helvetica Neue", "PingFang SC", sans-serif;
+		font-weight: 800;
+		font-variant-numeric: tabular-nums;
+		font-feature-settings: "tnum";
 		letter-spacing: 2rpx;
 	}
 

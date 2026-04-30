@@ -1,5 +1,95 @@
 # Project Changelog
 
+## 2026-04-30 (关于我们页面原型化重构)
+
+### Changed
+
+- **修改时间**：2026-04-30 14:50:47 +0800 CST
+- **变更背景**：关于我们页需要参考原型图重构 UI，从旧的备案/设置信息卡改为更接近小程序移动端的品牌介绍页。
+- **核心改动**：
+  - `pages/about/index.vue` 重构为自定义顶部栏、居中品牌图标章、版本号、`产品的初心` 内容卡、功能列表和底部 `MADE WITH LOVE`。
+  - 功能列表新增 `功能介绍与使用指南`、`反馈与吐槽`、`备案信息` 三个入口；管理员仍可看到 `应用设置` 入口。
+  - 备案信息改为列表项触发 `uni.showActionSheet`，支持复制备案编号或备案查询网址。
+  - 保留顶部标题长按触发的隐藏调试能力：清空首页图片缓存。
+  - `pages.json` 将 `pages/about/index` 调整为 `navigationStyle: custom`，避免系统导航栏与页面内原型顶部栏重复。
+- **追加调整**：
+  - **修改时间**：2026-04-30 14:52:15 +0800 CST
+  - `pages/about/index.vue` 的品牌标题与 `产品的初心` 卡片标题切换为宋体/衬线 fallback 字体栈，增强标题层级；导航标题与列表标题继续使用系统无衬线，保证移动端可读性。
+  - **修改时间**：2026-04-30 14:57:03 +0800 CST
+  - `pages/about/index.vue` 读取微信小程序右上角胶囊位置，动态调整自定义导航顶部高度与右侧安全间距，避免关闭按钮被系统胶囊遮挡；顶部 `关于我们` 标题同步切换为宋体/衬线 fallback 字体栈。
+  - `产品的初心` 文案替换为“共享厨房”方向的新表述；功能列表收敛为单行标题样式，去掉每项下方说明，保持截图里的轻量列表观感。
+  - **修改时间**：2026-04-30 15:00:11 +0800 CST
+  - 移除页面内左上 `关于我们` 和右上自定义关闭按钮，保留系统胶囊下方安全留白；品牌爱心图标从双层阴影图标章简化为单层浅陶土色圆角底。
+  - **修改时间**：2026-04-30 15:02:23 +0800 CST
+  - `产品的初心` 正文中 `共享厨房`、`今天吃什么，要买什么菜` 两个关键词改为局部加粗和深色强调，保持正文行高不变。
+  - **修改时间**：2026-04-30 15:04:07 +0800 CST
+  - 上述两个正文强调词颜色从深棕调整为深陶土棕 `#8f4f42`，和页面爱心/陶土色体系保持一致。
+- **影响范围**：
+  - 仅影响 `pages/about/index.vue` 的页面结构、样式与轻交互，以及该页面的导航栏渲染方式。
+  - 不修改备案配置字段、应用设置接口、首页关于我们入口路由、后端接口。
+- **兼容性/风险**：
+  - 页面内自定义关闭按钮已移除，返回能力交给微信小程序系统导航；页面仍保留系统胶囊下方安全留白。
+  - 页面使用 `var(--status-bar-height, 0px)` 和 `env(safe-area-inset-bottom)` 适配自定义导航与底部安全区；仍建议微信开发者工具和真机确认不同设备顶部留白。
+  - `Version 1.0.0` 目前与 `package.json` 版本保持一致，未引入运行时读取 `package.json`，避免小程序构建兼容风险。
+- **验证情况**：
+  - 已用 `node --check --input-type=module` 解析 `pages/about/index.vue` 的 `<script>` 块，通过。
+  - 已执行 `git diff --check -- CHANGELOG.md pages/about/index.vue pages.json`，通过。
+  - 未运行 HBuilderX 或微信开发者工具真机预览；建议真机确认：① 页面顶部自定义标题和关闭按钮位置正确；② 品牌区、初心卡、功能列表贴近原型；③ 备案信息复制动作可用；④ 管理员账号仍显示应用设置入口；⑤ 长按标题仍能打开清空图片缓存动作。
+
+## 2026-04-30 (空间页退出当前空间 · V1)
+
+### Added
+
+- **修改时间**：2026-04-30 14:35:04 +0800 CST
+- **变更背景**：空间页缺少成员自行退出空间能力；本轮按“页脚底部轻量红色胶囊按钮 + 二次确认”的简版方案落地，优先满足非创建者退出当前空间的 V1 闭环。
+- **核心改动**：
+  - 后端新增 `DELETE /api/kitchens/{kitchenID}/members/me`：当前登录用户退出指定空间。
+  - `backend/internal/kitchen/repository.go` 新增 `Leave()` 事务：读取成员角色、拒绝 `owner` 退出、删除当前用户成员关系、将该用户在该空间创建的 `active` 邀请置为 `revoked`、更新空间 `updated_at`。
+  - `backend/internal/kitchen/service.go` / `handler.go` / `model.go` 串接 `LeaveCurrentMember`，返回用户退出后的空间列表与下一当前空间 ID。
+  - `utils/kitchen-api.js` 新增 `leaveKitchen(kitchenId)`。
+  - `pages/index/components/kitchen-section.vue` / `.scss` 新增页脚轻量红色胶囊按钮：左侧退出箭头图标、浅红微渐变背景、`退出当前空间` 文案、`退出中...` loading 态与按压反馈。
+  - `pages/index/index.vue` 新增 `canLeaveCurrentKitchen`、`isLeavingKitchen`、`confirmLeaveCurrentKitchen()`、`leaveCurrentKitchen()`；仅 `member/admin` 展示退出入口，点击后 `uni.showModal` 二次确认，确认时轻触感反馈，成功后刷新 session / 菜谱 / 成员列表。
+  - `README.md` 与 `backend/README.md` 同步新增自退出接口口径，并将后续待办收敛为“管理员移除成员 / 角色调整”。
+- **追加调整**：
+  - **修改时间**：2026-04-30 14:38:41 +0800 CST
+  - `pages/index/index.vue` 空间页不再渲染底部 `关于我们` 入口；`pages/about/index.vue` 路由和美食库页底部入口保留。
+- **影响范围**：
+  - 前端空间页底部、空间成员状态刷新、当前空间切换后的菜谱刷新。
+  - 后端空间成员关系与邀请状态；退出用户在该空间创建的仍有效邀请码会被撤销。
+  - 不修改管理员移除成员、角色转让、空间删除、邀请列表 UI。
+- **兼容性/风险**：
+  - 创建者暂不允许退出，避免 `kitchens.owner_user_id` 指向非成员导致数据不一致；前端默认隐藏创建者退出入口，后端仍以 `409` 兜底。
+  - 非创建者退出后如没有其他空间，后续 `/api/auth/me` 会按现有登录会话逻辑补默认空间；前端会刷新 session 并切到可用空间。
+  - 退出入口使用浅红胶囊按钮和二次确认，不作为主按钮展示，降低误触概率。
+- **验证情况**：
+  - 已执行 `go test ./internal/kitchen`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `git diff --check`，通过。
+  - 已用 `node --check --input-type=module` 解析 `pages/index/index.vue`、`pages/index/components/kitchen-section.vue` 的 `<script>` 块，通过。
+  - 未运行 HBuilderX 或微信开发者工具真机预览；建议真机确认：① member/admin 空间页底部展示轻量红色胶囊按钮；② owner 不展示退出入口；③ 点击后弹窗二次确认；④ 确认后退出并切到其他空间或默认空间；⑤ 退出者之前发出的邀请码失效。
+
+## 2026-04-30 (邀请成员邀请码字体微调)
+
+### Changed
+
+- **修改时间**：2026-04-30 14:04:07 +0800 CST
+- **变更背景**：邀请成员弹层的邀请码字符原使用 `SF Mono / Menlo / monospace`，观感偏代码片段；本轮按“邀请码/票据编号”方向微调字体，使分享给成员时更贴合当前暖白空间 UI。
+- **核心改动**：
+  - `pages/index/components/invite-sheet.scss` 新增 `%invite-code-font` 字体占位，统一邀请码展示与输入框：`DIN Alternate`、`Avenir Next`、`Helvetica Neue`、`PingFang SC`、`sans-serif`。
+  - `.invite-sheet__code` 字号 `34rpx → 36rpx`、字重 `700 → 800`、字距 `3rpx → 2.5rpx`，并补 `line-height: 1.12`，让字符更稳、更像编号。
+  - `.invite-code-sheet__input` 同步换字体栈与字重 / 字距，保持用户输入和展示样式一致。
+  - `pages/invite/index.vue` 的邀请预览页摘要邀请码同步换为同一字体栈，并保留 `tabular-nums` 数字对齐策略。
+- **影响范围**：
+  - 邀请成员弹层的邀请码展示卡、输入邀请码弹层输入框、邀请预览页摘要中的邀请码样式。
+  - 不修改 `formatInviteCode()` 分组规则、邀请接口、分享路径、分享封面、复制/重新生成/加入逻辑。
+- **兼容性/风险**：
+  - `DIN Alternate`、`Avenir Next` 在部分设备可能不可用，会回退到 `Helvetica Neue` / `PingFang SC` / `sans-serif`；内容仍可读。
+  - `font-variant-numeric` / `font-feature-settings` 在小程序宿主不支持时会被忽略，不影响主样式。
+- **验证情况**：
+  - 已执行 `git diff --check`，通过。
+  - 已用 `rg` 确认邀请码相关样式中不再残留 `SF Mono` / `Menlo` / `monospace`。
+  - 未运行 HBuilderX 或微信开发者工具真机预览；建议后续打开“空间 → 邀请成员”和“已有邀请码？去加入”确认 iOS / Android 字体 fallback 观感。
+
 ## 2026-04-30 (美食库跨模块 polish · Phase E)
 
 ### Added
