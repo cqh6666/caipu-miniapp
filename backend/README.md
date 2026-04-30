@@ -94,7 +94,10 @@ go run ./cmd/server
 调用工具，再把工具结果交给模型并以 SSE 流式返回最终回复。已支持的工具：
 
 - `get_recipe_count`：按当前空间统计菜谱数量，支持餐别和状态过滤
-- `add_recipe_mock`：模拟添加菜谱，只返回将要保存的字段，不真正写库
+- `search_recipes_by_name`：按菜谱名模糊查询当前空间菜谱，支持餐别和状态过滤
+- `parse_and_add_recipe_from_url`：根据 B 站 / 小红书链接解析菜谱内容，提取食材和步骤，并保存到当前空间美食库
+
+当前版本不暴露单独添加食材的饮食管家 tool；食材会随链接解析出的菜谱一起保存。
 
 聊天记录会在一次用户消息和助手回复都成功完成后，以事务保存到
 `diet_assistant_messages`，存储维度为 `user_id + kitchen_id`。历史读取和清空接口

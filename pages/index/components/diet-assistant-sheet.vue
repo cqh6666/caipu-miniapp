@@ -46,18 +46,24 @@
 					<view class="chat-avatar chat-avatar--assistant">
 						<image class="chat-avatar__image" src="/static/icons/diet-assistant-logo.svg" mode="aspectFit" />
 					</view>
-					<view class="chat-bubble chat-bubble--assistant">
-						<text class="chat-bubble__text">晚上想吃什么、家里剩什么食材、或者想把链接先记下来，都可以从这里开始。</text>
+					<view class="chat-bubble chat-bubble--assistant chat-bubble--welcome">
+						<text class="chat-bubble__text chat-bubble__text--welcome">我是饮食管家，帮你想菜、记菜谱。</text>
 						<view class="suggestion-grid">
 							<view
 								v-for="item in quickSuggestions"
 								:key="item.title"
 								class="suggestion-card"
+								:class="'suggestion-card--' + item.tone"
 								hover-class="suggestion-card--hover"
 								@tap="applySuggestion(item.text)"
 							>
-								<text class="suggestion-card__title">{{ item.title }}</text>
-								<text class="suggestion-card__desc">{{ item.desc }}</text>
+								<view class="suggestion-card__icon">
+									<up-icon :name="item.icon" size="15" color="#8f5c49"></up-icon>
+								</view>
+								<view class="suggestion-card__copy">
+									<text class="suggestion-card__title">{{ item.title }}</text>
+								</view>
+								<up-icon name="arrow-right" size="13" color="#a68a73"></up-icon>
 							</view>
 						</view>
 					</view>
@@ -182,17 +188,20 @@ export default {
 			quickSuggestions: [
 				{
 					title: '用剩菜找灵感',
-					desc: '输入食材，先占位展示',
+					icon: 'search',
+					tone: 'fresh',
 					text: '我家里有鸡蛋、番茄和一点青菜，可以做什么？'
 				},
 				{
 					title: '安排一顿菜单',
-					desc: '从美食库挑方向',
+					icon: 'calendar',
+					tone: 'meal',
 					text: '今晚想吃清爽一点，帮我整理一个菜单方向'
 				},
 				{
 					title: '记录外部链接',
-					desc: '后续可接链接解析',
+					icon: 'plus',
+					tone: 'link',
 					text: '我想把一个小红书/B站菜谱链接先记下来'
 				}
 			]
@@ -327,6 +336,10 @@ export default {
 			const stream = streamDietAssistantChat(messages, {
 				onDelta: (delta) => {
 					this.appendAssistantDelta(assistantID, delta)
+				},
+				onDone: () => {
+					this.finishAssistantMessage(assistantID)
+					resetStreamState()
 				},
 				onError: (error) => {
 					this.failAssistantMessage(assistantID, error?.message || '饮食管家暂时不可用，请稍后再试。')

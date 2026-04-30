@@ -86,6 +86,7 @@ func (s *Service) ListByKitchenID(ctx context.Context, userID, kitchenID int64, 
 	filter.MealType = strings.TrimSpace(filter.MealType)
 	filter.Status = strings.TrimSpace(filter.Status)
 	filter.Keyword = strings.TrimSpace(filter.Keyword)
+	filter.TitleKeyword = strings.TrimSpace(filter.TitleKeyword)
 
 	if filter.MealType != "" && !isAllowedMealType(filter.MealType) {
 		return nil, common.NewAppError(common.CodeBadRequest, "invalid mealType", http.StatusBadRequest)
@@ -96,6 +97,22 @@ func (s *Service) ListByKitchenID(ctx context.Context, userID, kitchenID int64, 
 	}
 
 	return s.repo.ListByKitchenID(ctx, kitchenID, filter)
+}
+
+func (s *Service) CreateFromInput(ctx context.Context, userID, kitchenID int64, input CreateInput) (Recipe, error) {
+	return s.Create(ctx, userID, kitchenID, createRecipeRequest{
+		Title:               input.Title,
+		Ingredient:          input.Ingredient,
+		Summary:             input.Summary,
+		Link:                input.Link,
+		ImageURL:            input.ImageURL,
+		ImageURLs:           input.ImageURLs,
+		MealType:            input.MealType,
+		Status:              input.Status,
+		Note:                input.Note,
+		ParsedContent:       input.ParsedContent,
+		ParsedContentEdited: input.ParsedContentEdited,
+	})
 }
 
 func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req createRecipeRequest) (Recipe, error) {

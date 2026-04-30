@@ -1,5 +1,99 @@
 # Project Changelog
 
+## 2026-05-01 (饮食管家 URL 解析保存 tool)
+
+### Changed
+
+- **修改时间**：2026-05-01 01:34:59 +0800 CST
+- **变更背景**：饮食管家当前暴露的直接添加菜谱 tool 入参较多，一版不需要单独添加食材 / 手填完整菜谱信息；更适合先支持用户只输入 B 站或小红书 URL，由系统解析内容并保存菜谱食材。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 从 tools 列表中移除 `add_recipe`，新增 `parse_and_add_recipe_from_url`，入参收敛为 `url`、`mealType`、`status`。
+  - 饮食管家系统提示明确当前不提供单独添加食材工具；用户只输入 URL 时会直接走 URL 解析保存链路，无需等待模型自行判断是否调用工具。
+  - `backend/internal/app/app.go` 将新 tool 串接到现有 `linkparse.Service.ParseRecipeLink()` 和 `recipeService.CreateFromInput()`：解析 B 站 / 小红书链接后写入菜谱标题、食材摘要、封面图、结构化主料 / 辅料 / 步骤和来源链接。
+  - tool 返回中包含已保存菜谱、解析来源、主料 / 辅料摘要、步骤数量和解析警告，供模型生成最终流式回复。
+  - `README.md` 与 `backend/README.md` 更新饮食管家 tools 口径，去除直接添加菜谱 / 单独添加食材的当前能力描述。
+- **影响范围**：
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 的 function calling 工具集合和纯 URL 输入的处理路径。
+  - 不修改正式菜谱创建接口 `POST /api/kitchens/{kitchenID}/recipes`，也不新增数据库表。
+- **兼容性/风险**：
+  - 只有 B 站 / 小红书等现有 `linkparse` 支持的平台链接可被自动解析保存；不支持的平台会通过工具错误交给模型解释。
+  - 用户如果只想咨询某个链接但不想保存，纯 URL 输入会默认保存为想吃正餐；后续可通过更明确的话术或前端二次确认优化。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./internal/app ./internal/recipe ./internal/linkparse`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
+## 2026-05-01 (饮食管家真实添加与菜名搜索 tools)
+
+### Changed
+
+- **修改时间**：2026-05-01 01:13:59 +0800 CST
+- **变更背景**：饮食管家需要从模拟添加升级为可真正调用系统菜谱能力的 Agent，并支持用户按菜名模糊查询美食库中已有菜谱。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 将 function calling 工具从 `add_recipe_mock` 升级为真实写库的 `add_recipe`，并新增 `search_recipes_by_name`。
+  - `add_recipe` 会按当前登录用户与当前空间写入菜谱，支持菜名、餐别、状态、食材、摘要、备注和来源链接；工具入参会做基础枚举归一与长度裁剪后复用菜谱创建链路。
+  - `search_recipes_by_name` 只按菜谱名模糊查询，支持餐别和状态过滤，最多返回 10 条精简菜谱结果，避免误把食材、备注或链接命中当成菜名命中。
+  - `backend/internal/recipe/model.go` / `service.go` 新增导出的 `CreateInput` 和 `CreateFromInput()`，供饮食管家在不绕过菜谱 service 校验的前提下创建菜谱；`ListFilter` 新增 `TitleKeyword`。
+  - `backend/internal/app/app.go` 串接饮食管家工具回调到现有 `recipeService`，并把菜谱实体映射为工具返回的精简字段。
+  - `README.md` 与 `backend/README.md` 更新饮食管家 tools 说明，去除“模拟添加不写库”的当前口径。
+- **影响范围**：
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 的工具能力和模型系统提示。
+  - 影响菜谱列表 repository 的可选过滤字段，但既有 `keyword` 查询和前端菜谱列表接口保持兼容。
+- **兼容性/风险**：
+  - 用户明确要求“添加 / 记录 / 保存”时，AI 现在会真正创建菜谱；误识别用户意图时可能产生真实数据，需要后续真机重点观察模型触发工具的边界。
+  - 搜索工具按标题模糊查询，不会返回只在食材、备注或链接中命中的菜谱。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant ./internal/recipe`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
+## 2026-05-01 (修复饮食管家回复完成后发送按钮未释放)
+
+### Fixed
+
+- **修改时间**：2026-05-01 01:01:03 +0800 CST
+- **变更背景**：用户反馈 AI 回复内容已经显示完成，但第二次提问时发送按钮仍置灰，无法继续发送。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 调整流式收口顺序：模型流结束后先向前端发送 SSE `done`，再执行聊天记录落库，避免存储步骤延迟导致前端 `isStreaming` 长时间不释放。
+  - `pages/index/components/diet-assistant-sheet.vue` 增加 `onDone` 回调处理，收到 SSE `done` 时立即完成助手消息并重置流式状态，不再只依赖 `stream.finished.then()` 的异步收口。
+- **影响范围**：
+  - 影响饮食管家流式回复完成后的输入框和发送按钮状态释放。
+  - 不修改上游 AI 请求、工具调用、聊天历史请求体或后端存储表结构。
+- **兼容性/风险**：
+  - 聊天记录仍在同一请求内保存；如果保存失败，本轮回复已经释放给前端，后续历史可能缺少该轮记录，和既有“保存失败不阻断回复”策略一致。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
+## 2026-05-01 (饮食管家欢迎区 UI 优化)
+
+### Changed
+
+- **修改时间**：2026-05-01 00:57:07 +0800 CST
+- **变更背景**：后端聊天记忆接入后，空历史欢迎区需要更轻量，同时保留一句必要的身份说明；截图中快捷建议卡片集中在气泡左半边，右侧留白过大，视觉重心不稳。
+- **核心改动**：
+  - `pages/index/components/diet-assistant-sheet.vue` 将欢迎气泡标记为 `chat-bubble--welcome`，并把三条快捷建议改为带图标、文案和右箭头的完整宽度操作行。
+  - 欢迎区保留一句简短自我介绍“我是饮食管家，帮你想菜、记菜谱。”，移除多余说明文字和快捷建议副说明。
+  - `pages/index/components/diet-assistant-sheet.scss` 重做欢迎气泡和建议项样式：气泡宽度适配头像后的剩余空间，建议项改为单列操作入口、固定触控高度、图标章、轻阴影和分层暖色背景。
+- **影响范围**：
+  - 仅影响饮食管家弹层空历史欢迎区与快捷建议卡片视觉。
+  - 不修改后端存储、流式对话、工具调用或历史读取 / 清空接口。
+- **兼容性/风险**：
+  - 使用现有 `uview-plus` `up-icon` 图标能力，不新增静态资源。
+  - 欢迎气泡更宽，需在微信开发者工具或真机确认极窄屏下文本换行和操作行右箭头不拥挤。
+- **验证情况**：
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+  - 未运行 HBuilderX 或微信开发者工具真机预览；建议真机确认空历史首屏、历史消息存在时欢迎区与真实消息的间距。
+
 ## 2026-05-01 (饮食管家聊天记忆后端存储)
 
 ### Added

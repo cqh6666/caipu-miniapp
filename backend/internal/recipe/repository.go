@@ -48,6 +48,11 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 		args = append(args, keyword, keyword, keyword, keyword)
 	}
 
+	if filter.TitleKeyword != "" {
+		query += " AND title LIKE ?"
+		args = append(args, "%"+filter.TitleKeyword+"%")
+	}
+
 	query += " ORDER BY CASE WHEN COALESCE(pinned_at, '') = '' THEN 1 ELSE 0 END ASC, pinned_at DESC, updated_at DESC, id DESC"
 
 	rows, err := r.db.QueryContext(ctx, query, args...)

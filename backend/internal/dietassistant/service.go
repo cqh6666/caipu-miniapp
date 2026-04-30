@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,6 +23,8 @@ type Options struct {
 	Timeout        time.Duration
 	HTTPClient     *http.Client
 	CountRecipes   CountRecipesFunc
+	SearchRecipes  SearchRecipesFunc
+	CreateFromURL  CreateFromURLFunc
 	Repo           *Repository
 	EnsureMember   EnsureMemberFunc
 	NowForTest     func() time.Time
@@ -29,18 +32,22 @@ type Options struct {
 }
 
 type CountRecipesFunc func(context.Context, RecipeCountInput) (int, error)
+type SearchRecipesFunc func(context.Context, RecipeSearchInput) ([]RecipeToolItem, error)
+type CreateFromURLFunc func(context.Context, RecipeFromURLInput) (RecipeFromURLResult, error)
 type EnsureMemberFunc func(context.Context, int64, int64) error
 
 type Service struct {
-	baseURL      string
-	apiKey       string
-	model        string
-	timeout      time.Duration
-	httpClient   *http.Client
-	countRecipes CountRecipesFunc
-	repo         *Repository
-	ensureMember EnsureMemberFunc
-	now          func() time.Time
+	baseURL       string
+	apiKey        string
+	model         string
+	timeout       time.Duration
+	httpClient    *http.Client
+	countRecipes  CountRecipesFunc
+	searchRecipes SearchRecipesFunc
+	createFromURL CreateFromURLFunc
+	repo          *Repository
+	ensureMember  EnsureMemberFunc
+	now           func() time.Time
 }
 
 func NewService(options Options) *Service {
@@ -57,15 +64,17 @@ func NewService(options Options) *Service {
 		now = time.Now
 	}
 	return &Service{
-		baseURL:      strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
-		apiKey:       strings.TrimSpace(options.APIKey),
-		model:        strings.TrimSpace(options.Model),
-		timeout:      timeout,
-		httpClient:   client,
-		countRecipes: options.CountRecipes,
-		repo:         options.Repo,
-		ensureMember: options.EnsureMember,
-		now:          now,
+		baseURL:       strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
+		apiKey:        strings.TrimSpace(options.APIKey),
+		model:         strings.TrimSpace(options.Model),
+		timeout:       timeout,
+		httpClient:    client,
+		countRecipes:  options.CountRecipes,
+		searchRecipes: options.SearchRecipes,
+		createFromURL: options.CreateFromURL,
+		repo:          options.Repo,
+		ensureMember:  options.EnsureMember,
+		now:           now,
 	}
 }
 
@@ -89,44 +98,42 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 	}
 	lastUserContent := lastUserMessageContent(messages)
 
-	toolResponse, err := s.createChatCompletion(ctx, openAIChatRequest{
-		Model:       s.model,
-		User:        buildUpstreamUser(chatCtx),
-		Messages:    upstreamMessages,
-		Tools:       dietAssistantTools(),
-		ToolChoice:  "auto",
-		Stream:      false,
-		MaxTokens:   900,
-		Temperature: floatPtr(0.2),
-	})
-	if err != nil {
-		return err
-	}
-
-	if len(toolResponse.Choices) == 0 {
-		return common.NewAppError(common.CodeInternalServer, "diet assistant upstream returned no choices", http.StatusBadGateway)
-	}
-
-	assistantMessage := toolResponse.Choices[0].Message
-	toolCalls := normalizeToolCallIDs(assistantMessage.ToolCalls)
 	finalMessages := upstreamMessages
-	if len(toolCalls) == 0 {
-		finalMessages = upstreamMessages
-	} else {
+	if forcedCall, ok := buildURLOnlyParseToolCall(lastUserContent); ok {
 		finalMessages = append([]openAIChatMessage{}, upstreamMessages...)
-		finalMessages = append(finalMessages, openAIChatMessage{
-			Role:      valueOrDefault(assistantMessage.Role, "assistant"),
-			Content:   assistantMessage.Content,
-			ToolCalls: toolCalls,
+		finalMessages = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
+			Role:      "assistant",
+			Content:   "",
+			ToolCalls: []openAIToolCall{forcedCall},
+		}, []openAIToolCall{forcedCall})
+	} else {
+		toolResponse, err := s.createChatCompletion(ctx, openAIChatRequest{
+			Model:       s.model,
+			User:        buildUpstreamUser(chatCtx),
+			Messages:    upstreamMessages,
+			Tools:       dietAssistantTools(),
+			ToolChoice:  "auto",
+			Stream:      false,
+			MaxTokens:   900,
+			Temperature: floatPtr(0.2),
 		})
-		for _, call := range toolCalls {
-			result := s.executeTool(ctx, chatCtx, call)
-			finalMessages = append(finalMessages, openAIChatMessage{
-				Role:       "tool",
-				Content:    mustJSON(result),
-				ToolCallID: call.ID,
-				Name:       call.Function.Name,
-			})
+		if err != nil {
+			return err
+		}
+
+		if len(toolResponse.Choices) == 0 {
+			return common.NewAppError(common.CodeInternalServer, "diet assistant upstream returned no choices", http.StatusBadGateway)
+		}
+
+		assistantMessage := toolResponse.Choices[0].Message
+		toolCalls := normalizeToolCallIDs(assistantMessage.ToolCalls)
+		if len(toolCalls) > 0 {
+			finalMessages = append([]openAIChatMessage{}, upstreamMessages...)
+			finalMessages = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
+				Role:      valueOrDefault(assistantMessage.Role, "assistant"),
+				Content:   assistantMessage.Content,
+				ToolCalls: toolCalls,
+			}, toolCalls)
 		}
 	}
 
@@ -134,8 +141,25 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 	if err != nil {
 		return err
 	}
+	if err := emit(StreamEvent{Type: "done"}); err != nil {
+		return err
+	}
 	_ = s.storeCompletedTurn(ctx, chatCtx, lastUserContent, assistantContent)
-	return emit(StreamEvent{Type: "done"})
+	return nil
+}
+
+func (s *Service) appendToolResults(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, assistantMessage openAIChatMessage, toolCalls []openAIToolCall) []openAIChatMessage {
+	messages = append(messages, assistantMessage)
+	for _, call := range toolCalls {
+		result := s.executeTool(ctx, chatCtx, call)
+		messages = append(messages, openAIChatMessage{
+			Role:       "tool",
+			Content:    mustJSON(result),
+			ToolCallID: call.ID,
+			Name:       call.Function.Name,
+		})
+	}
+	return messages
 }
 
 func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, emit func(StreamEvent) error) (string, error) {
@@ -285,6 +309,46 @@ func lastUserMessageContent(messages []ChatMessage) string {
 	return ""
 }
 
+func buildURLOnlyParseToolCall(content string) (openAIToolCall, bool) {
+	rawURL, ok := singleURLOnly(content)
+	if !ok {
+		return openAIToolCall{}, false
+	}
+	return openAIToolCall{
+		ID:   "call_diet_assistant_url_parse",
+		Type: "function",
+		Function: openAIToolCallFunction{
+			Name: "parse_and_add_recipe_from_url",
+			Arguments: map[string]any{
+				"url":      rawURL,
+				"mealType": "main",
+				"status":   "wishlist",
+			},
+		},
+	}, true
+}
+
+func singleURLOnly(content string) (string, bool) {
+	fields := strings.Fields(strings.TrimSpace(content))
+	if len(fields) != 1 {
+		return "", false
+	}
+	rawURL := strings.Trim(fields[0], "<>")
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", false
+	}
+	if parsed.Host == "" {
+		return "", false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return rawURL, true
+	default:
+		return "", false
+	}
+}
+
 func validateStorageContext(chatCtx ChatContext) error {
 	if chatCtx.UserID <= 0 {
 		return common.ErrUnauthorized
@@ -360,9 +424,10 @@ const dietAssistantSystemPrompt = `你是“饮食管家”，服务于一个家
 
 能力边界：
 - 用户问美食库里有多少菜、早餐/正餐数量、想吃/吃过数量时，调用 get_recipe_count。
-- 用户要求添加、记录、保存一道菜时，调用 add_recipe_mock。这个工具只模拟添加，不会真正写入数据库。
-- 如果 add_recipe_mock 返回成功，最终回复必须明确说明“本次只是模拟添加，还没有真正保存到美食库”。
-- 不要编造菜谱数量；涉及数量必须基于工具结果。
+- 用户要求查找、搜索、确认是否已有某道菜时，调用 search_recipes_by_name；只按菜谱名模糊查询。
+- 用户只发送或要求保存 B 站 / 小红书菜谱链接时，调用 parse_and_add_recipe_from_url。该工具会解析链接内容，提取食材和步骤，并真正写入当前空间的美食库。
+- 当前不提供单独添加食材工具；如果用户只说添加食材但没有菜谱链接或菜名，先追问需要记录哪道菜或让用户提供链接。
+- 不要编造菜谱数量、搜索结果或保存状态；涉及数量、查询和保存必须基于工具结果。
 - 最终回复使用中文，简洁、自然、可执行。`
 
 func (s *Service) createChatCompletion(ctx context.Context, payload openAIChatRequest) (openAIChatResponse, error) {
@@ -440,40 +505,60 @@ func dietAssistantTools() []openAITool {
 		{
 			Type: "function",
 			Function: openAIToolFunction{
-				Name:        "add_recipe_mock",
-				Description: "模拟添加一道菜谱。仅返回将要保存的字段，不真正写入美食库。",
+				Name:        "parse_and_add_recipe_from_url",
+				Description: "根据 B 站或小红书菜谱链接解析内容，提取食材和步骤，并保存为当前空间的一道菜谱。用户只发送链接或明确要求保存链接菜谱时调用。",
 				Parameters: map[string]any{
 					"type":                 "object",
 					"additionalProperties": false,
 					"properties": map[string]any{
-						"title": map[string]any{
+						"url": map[string]any{
 							"type":        "string",
-							"description": "菜名，必须尽量简短。",
+							"description": "B 站或小红书菜谱链接，必须是用户提供的原始 URL。",
 						},
 						"mealType": map[string]any{
 							"type":        "string",
-							"description": "餐别：breakfast=早餐，main=正餐。",
+							"description": "餐别：breakfast=早餐，main=正餐。无法判断时用 main。",
 							"enum":        []string{"breakfast", "main"},
 						},
 						"status": map[string]any{
 							"type":        "string",
-							"description": "状态：wishlist=想吃，done=吃过。",
+							"description": "状态：wishlist=想吃，done=吃过。无法判断时用 wishlist。",
 							"enum":        []string{"wishlist", "done"},
 						},
-						"ingredient": map[string]any{
+					},
+					"required": []string{"url", "mealType", "status"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: openAIToolFunction{
+				Name:        "search_recipes_by_name",
+				Description: "按菜谱名模糊查询当前空间的菜谱。用户询问是否已有某道菜、查找菜谱、按名称搜索时调用。",
+				Parameters: map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties": map[string]any{
+						"titleKeyword": map[string]any{
 							"type":        "string",
-							"description": "主要食材，未知时可为空字符串。",
+							"description": "菜名关键词，例如“番茄”“鸡胸肉沙拉”。",
 						},
-						"summary": map[string]any{
+						"mealType": map[string]any{
 							"type":        "string",
-							"description": "一句话摘要，未知时可为空字符串。",
+							"description": "餐别过滤：breakfast=早餐，main=正餐，all=全部。",
+							"enum":        []string{"breakfast", "main", "all"},
 						},
-						"note": map[string]any{
+						"status": map[string]any{
 							"type":        "string",
-							"description": "用户备注或做法草稿，未知时可为空字符串。",
+							"description": "状态过滤：wishlist=想吃，done=吃过，all=全部。",
+							"enum":        []string{"wishlist", "done", "all"},
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "最多返回数量，建议 5，最大 10。",
 						},
 					},
-					"required": []string{"title", "mealType", "status", "ingredient", "summary", "note"},
+					"required": []string{"titleKeyword", "mealType", "status", "limit"},
 				},
 			},
 		},
@@ -485,8 +570,10 @@ func (s *Service) executeTool(ctx context.Context, chatCtx ChatContext, call ope
 	switch name {
 	case "get_recipe_count":
 		return s.executeGetRecipeCount(ctx, chatCtx, call)
-	case "add_recipe_mock":
-		return executeAddRecipeMock(call)
+	case "search_recipes_by_name":
+		return s.executeSearchRecipesByName(ctx, chatCtx, call)
+	case "parse_and_add_recipe_from_url":
+		return s.executeParseAndAddRecipeFromURL(ctx, chatCtx, call)
 	default:
 		return map[string]any{
 			"ok":    false,
@@ -538,15 +625,25 @@ func (s *Service) executeGetRecipeCount(ctx context.Context, chatCtx ChatContext
 	}
 }
 
-func executeAddRecipeMock(call openAIToolCall) map[string]any {
+func (s *Service) executeParseAndAddRecipeFromURL(ctx context.Context, chatCtx ChatContext, call openAIToolCall) map[string]any {
+	if s.createFromURL == nil {
+		return map[string]any{"ok": false, "error": "recipe url create tool is not configured"}
+	}
+	if chatCtx.UserID <= 0 {
+		return map[string]any{"ok": false, "error": "user is required"}
+	}
+	if chatCtx.KitchenID <= 0 {
+		return map[string]any{"ok": false, "error": "current kitchen is required"}
+	}
+
 	args, err := parseToolArguments(call.Function.Arguments)
 	if err != nil {
 		return map[string]any{"ok": false, "error": err.Error()}
 	}
 
-	title := toolStringArg(args, "title")
-	if title == "" {
-		return map[string]any{"ok": false, "error": "title is required"}
+	rawURL := truncateRunes(toolStringArg(args, "url"), 500)
+	if rawURL == "" {
+		return map[string]any{"ok": false, "error": "url is required"}
 	}
 	mealType := normalizeToolEnum(fmt.Sprint(args["mealType"]), "main")
 	status := normalizeToolEnum(fmt.Sprint(args["status"]), "wishlist")
@@ -557,18 +654,81 @@ func executeAddRecipeMock(call openAIToolCall) map[string]any {
 		status = "wishlist"
 	}
 
+	result, err := s.createFromURL(ctx, RecipeFromURLInput{
+		UserID:    chatCtx.UserID,
+		KitchenID: chatCtx.KitchenID,
+		URL:       rawURL,
+		MealType:  mealType,
+		Status:    status,
+	})
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+
 	return map[string]any{
-		"ok":        true,
-		"simulated": true,
-		"message":   "模拟添加成功，未真正写入数据库。",
-		"recipe": map[string]any{
-			"title":      title,
-			"mealType":   mealType,
-			"status":     status,
-			"ingredient": toolStringArg(args, "ingredient"),
-			"summary":    toolStringArg(args, "summary"),
-			"note":       toolStringArg(args, "note"),
-		},
+		"ok":                   true,
+		"message":              "链接已解析，菜谱和食材已保存到美食库。",
+		"kitchenId":            chatCtx.KitchenID,
+		"recipe":               result.Recipe,
+		"source":               result.Source,
+		"sourceDetail":         result.SourceDetail,
+		"summaryMode":          result.SummaryMode,
+		"mainIngredients":      result.MainIngredients,
+		"secondaryIngredients": result.SecondaryIngredients,
+		"stepsCount":           result.StepsCount,
+		"warnings":             result.Warnings,
+	}
+}
+
+func (s *Service) executeSearchRecipesByName(ctx context.Context, chatCtx ChatContext, call openAIToolCall) map[string]any {
+	if s.searchRecipes == nil {
+		return map[string]any{"ok": false, "error": "recipe search tool is not configured"}
+	}
+	if chatCtx.UserID <= 0 {
+		return map[string]any{"ok": false, "error": "user is required"}
+	}
+	if chatCtx.KitchenID <= 0 {
+		return map[string]any{"ok": false, "error": "current kitchen is required"}
+	}
+
+	args, err := parseToolArguments(call.Function.Arguments)
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+
+	titleKeyword := toolStringArg(args, "titleKeyword")
+	if titleKeyword == "" {
+		return map[string]any{"ok": false, "error": "titleKeyword is required"}
+	}
+	mealType := normalizeToolEnum(fmt.Sprint(args["mealType"]), "all")
+	status := normalizeToolEnum(fmt.Sprint(args["status"]), "all")
+	if !isAllowedRecipeCountMealType(mealType) {
+		return map[string]any{"ok": false, "error": "invalid mealType: " + mealType}
+	}
+	if !isAllowedRecipeCountStatus(status) {
+		return map[string]any{"ok": false, "error": "invalid status: " + status}
+	}
+
+	limit := normalizeToolLimit(args["limit"], 5, 10)
+	items, err := s.searchRecipes(ctx, RecipeSearchInput{
+		UserID:       chatCtx.UserID,
+		KitchenID:    chatCtx.KitchenID,
+		TitleKeyword: titleKeyword,
+		MealType:     emptyIfAll(mealType),
+		Status:       emptyIfAll(status),
+		Limit:        limit,
+	})
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+
+	return map[string]any{
+		"ok":           true,
+		"titleKeyword": titleKeyword,
+		"mealType":     mealType,
+		"status":       status,
+		"count":        len(items),
+		"items":        items,
 	}
 }
 
@@ -616,6 +776,35 @@ func normalizeToolEnum(value, fallback string) string {
 	return value
 }
 
+func normalizeToolLimit(value any, fallback, max int) int {
+	limit := 0
+	switch v := value.(type) {
+	case float64:
+		limit = int(v)
+	case int:
+		limit = v
+	case int64:
+		limit = int(v)
+	case json.Number:
+		parsed, err := v.Int64()
+		if err == nil {
+			limit = int(parsed)
+		}
+	default:
+		text := strings.TrimSpace(fmt.Sprint(v))
+		if text != "" && text != "<nil>" {
+			_, _ = fmt.Sscanf(text, "%d", &limit)
+		}
+	}
+	if limit <= 0 {
+		limit = fallback
+	}
+	if max > 0 && limit > max {
+		limit = max
+	}
+	return limit
+}
+
 func isAllowedRecipeCountMealType(value string) bool {
 	switch value {
 	case "all", "breakfast", "main":
@@ -651,6 +840,18 @@ func toolStringArg(args map[string]any, key string) string {
 		return ""
 	}
 	return text
+}
+
+func truncateRunes(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if max <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max])
 }
 
 func buildUpstreamUser(chatCtx ChatContext) string {

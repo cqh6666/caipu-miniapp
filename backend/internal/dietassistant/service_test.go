@@ -170,34 +170,188 @@ func TestServiceStreamChatExecutesRecipeCountTool(t *testing.T) {
 	}
 }
 
-func TestExecuteAddRecipeMockRejectsMissingTitleAndAvoidsNilText(t *testing.T) {
-	missingTitle := executeAddRecipeMock(openAIToolCall{
+func TestServiceStreamChatParsesURLOnlyMessageWithoutPlanningRequest(t *testing.T) {
+	var requestCount int
+	var sawToolResult bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount += 1
+		var req openAIChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if !req.Stream {
+			t.Fatal("url-only message should skip non-streaming planning request")
+		}
+		if len(req.Tools) != 0 {
+			t.Fatal("final request should not include tools")
+		}
+		for _, message := range req.Messages {
+			if message.Role != "tool" {
+				continue
+			}
+			if strings.Contains(message.Content.(string), `"recipe"`) && strings.Contains(message.Content.(string), "番茄炒蛋") {
+				sawToolResult = true
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"已保存番茄炒蛋。\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	var gotInput RecipeFromURLInput
+	service := NewService(Options{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Model:   "LongCat-2.0-Preview",
+		Timeout: 3 * time.Second,
+		CreateFromURL: func(ctx context.Context, input RecipeFromURLInput) (RecipeFromURLResult, error) {
+			gotInput = input
+			return RecipeFromURLResult{
+				Recipe: RecipeToolItem{
+					ID:       "rec_url",
+					Title:    "番茄炒蛋",
+					MealType: input.MealType,
+					Status:   input.Status,
+				},
+				MainIngredients: []string{"番茄 2 个", "鸡蛋 3 个"},
+				StepsCount:      3,
+			}, nil
+		},
+	})
+
+	var content strings.Builder
+	err := service.StreamChat(context.Background(), ChatContext{UserID: 3, KitchenID: 4}, []ChatMessage{
+		{Role: "user", Content: "https://www.bilibili.com/video/BV1xx411c7mD"},
+	}, func(event StreamEvent) error {
+		if event.Type == "delta" {
+			content.WriteString(event.Delta)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat returned error: %v", err)
+	}
+	if requestCount != 1 {
+		t.Fatalf("requestCount = %d, want 1", requestCount)
+	}
+	if !sawToolResult {
+		t.Fatal("final request did not include url parse tool result")
+	}
+	if gotInput.UserID != 3 || gotInput.KitchenID != 4 || gotInput.URL != "https://www.bilibili.com/video/BV1xx411c7mD" {
+		t.Fatalf("unexpected tool input: %#v", gotInput)
+	}
+	if gotInput.MealType != "main" || gotInput.Status != "wishlist" {
+		t.Fatalf("unexpected default filters: %#v", gotInput)
+	}
+	if got, want := content.String(), "已保存番茄炒蛋。"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+}
+
+func TestExecuteParseAndAddRecipeFromURL(t *testing.T) {
+	var gotInput RecipeFromURLInput
+	service := NewService(Options{
+		CreateFromURL: func(ctx context.Context, input RecipeFromURLInput) (RecipeFromURLResult, error) {
+			gotInput = input
+			return RecipeFromURLResult{
+				Recipe: RecipeToolItem{
+					ID:         "rec_test",
+					Title:      "番茄炒蛋",
+					MealType:   input.MealType,
+					Status:     input.Status,
+					Ingredient: "番茄、鸡蛋",
+					Summary:    "家常快手菜",
+				},
+				Source:          "bilibili",
+				SummaryMode:     "ai",
+				MainIngredients: []string{"番茄 2 个", "鸡蛋 3 个"},
+				StepsCount:      4,
+			}, nil
+		},
+	})
+
+	missingURL := service.executeParseAndAddRecipeFromURL(context.Background(), ChatContext{UserID: 1, KitchenID: 2}, openAIToolCall{
 		Function: openAIToolCallFunction{
-			Name:      "add_recipe_mock",
+			Name:      "parse_and_add_recipe_from_url",
 			Arguments: `{"mealType":"main","status":"wishlist"}`,
 		},
 	})
-	if missingTitle["ok"] != false {
-		t.Fatalf("missingTitle ok = %#v, want false", missingTitle["ok"])
+	if missingURL["ok"] != false {
+		t.Fatalf("missingURL ok = %#v, want false", missingURL["ok"])
 	}
 
-	result := executeAddRecipeMock(openAIToolCall{
+	result := service.executeParseAndAddRecipeFromURL(context.Background(), ChatContext{UserID: 1, KitchenID: 2}, openAIToolCall{
 		Function: openAIToolCallFunction{
-			Name:      "add_recipe_mock",
-			Arguments: `{"title":"番茄炒蛋","mealType":"main","status":"wishlist"}`,
+			Name:      "parse_and_add_recipe_from_url",
+			Arguments: `{"url":"https://www.bilibili.com/video/BV1xx411c7mD","mealType":"main","status":"wishlist"}`,
 		},
 	})
 	if result["ok"] != true {
 		t.Fatalf("result ok = %#v, want true", result["ok"])
 	}
-	recipe, ok := result["recipe"].(map[string]any)
+	recipe, ok := result["recipe"].(RecipeToolItem)
 	if !ok {
-		t.Fatalf("recipe = %#v, want map", result["recipe"])
+		t.Fatalf("recipe = %#v, want RecipeToolItem", result["recipe"])
 	}
-	for _, key := range []string{"ingredient", "summary", "note"} {
-		if recipe[key] != "" {
-			t.Fatalf("recipe[%s] = %#v, want empty string", key, recipe[key])
-		}
+	if recipe.ID != "rec_test" || recipe.Title != "番茄炒蛋" {
+		t.Fatalf("recipe = %#v", recipe)
+	}
+	if gotInput.UserID != 1 || gotInput.KitchenID != 2 {
+		t.Fatalf("input context = %#v", gotInput)
+	}
+	if gotInput.URL != "https://www.bilibili.com/video/BV1xx411c7mD" || gotInput.MealType != "main" || gotInput.Status != "wishlist" {
+		t.Fatalf("input fields = %#v", gotInput)
+	}
+	if result["stepsCount"] != 4 {
+		t.Fatalf("stepsCount = %#v, want 4", result["stepsCount"])
+	}
+}
+
+func TestDietAssistantToolsExposeURLParserWithoutDirectAddRecipe(t *testing.T) {
+	names := make(map[string]bool)
+	for _, tool := range dietAssistantTools() {
+		names[tool.Function.Name] = true
+	}
+	if names["add_recipe"] {
+		t.Fatal("add_recipe should not be exposed as a diet assistant tool")
+	}
+	if !names["parse_and_add_recipe_from_url"] {
+		t.Fatal("parse_and_add_recipe_from_url should be exposed as a diet assistant tool")
+	}
+}
+
+func TestExecuteSearchRecipesByName(t *testing.T) {
+	var gotInput RecipeSearchInput
+	service := NewService(Options{
+		SearchRecipes: func(ctx context.Context, input RecipeSearchInput) ([]RecipeToolItem, error) {
+			gotInput = input
+			return []RecipeToolItem{{
+				ID:       "rec_1",
+				Title:    "番茄炒蛋",
+				MealType: "main",
+				Status:   "wishlist",
+			}}, nil
+		},
+	})
+
+	result := service.executeSearchRecipesByName(context.Background(), ChatContext{UserID: 7, KitchenID: 8}, openAIToolCall{
+		Function: openAIToolCallFunction{
+			Name:      "search_recipes_by_name",
+			Arguments: `{"titleKeyword":"番茄","mealType":"all","status":"wishlist","limit":30}`,
+		},
+	})
+	if result["ok"] != true {
+		t.Fatalf("result ok = %#v, want true", result["ok"])
+	}
+	if gotInput.UserID != 7 || gotInput.KitchenID != 8 {
+		t.Fatalf("input context = %#v", gotInput)
+	}
+	if gotInput.TitleKeyword != "番茄" || gotInput.MealType != "" || gotInput.Status != "wishlist" || gotInput.Limit != 10 {
+		t.Fatalf("input filters = %#v", gotInput)
+	}
+	if result["count"] != 1 {
+		t.Fatalf("result count = %#v, want 1", result["count"])
 	}
 }
 

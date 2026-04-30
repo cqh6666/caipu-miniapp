@@ -216,11 +216,31 @@
 	max-width: 84%;
 }
 
+.chat-bubble--welcome {
+	width: calc(100% - 68rpx);
+	max-width: none;
+	padding: 18rpx;
+	border-color: rgba(255, 255, 255, 0.84);
+	background:
+		radial-gradient(circle at 12% 0%, rgba(255, 246, 236, 0.9) 0%, rgba(255, 246, 236, 0) 42%),
+		linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 252, 247, 0.9) 100%);
+	box-shadow:
+		0 18rpx 34rpx rgba(84, 65, 48, 0.08),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.94);
+}
+
 .chat-bubble__text {
 	display: block;
 	font-size: 27rpx;
 	line-height: 1.62;
 	color: #5b4738;
+}
+
+.chat-bubble__text--welcome {
+	font-size: 26rpx;
+	line-height: 1.42;
+	font-weight: 800;
+	color: #5a4638;
 }
 
 .chat-bubble__text--user {
@@ -233,43 +253,84 @@
 
 .suggestion-grid {
 	display: flex;
-	flex-wrap: wrap;
+	flex-direction: column;
 	gap: 14rpx;
-	margin-top: 20rpx;
+	margin-top: 16rpx;
 }
 
 .suggestion-card {
-	width: calc(50% - 7rpx);
-	min-height: 112rpx;
+	width: 100%;
+	min-height: 82rpx;
 	box-sizing: border-box;
-	padding: 18rpx;
+	padding: 14rpx 16rpx 14rpx 14rpx;
 	border-radius: 22rpx;
-	background: #fbf2e8;
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.66) 0%, rgba(255, 250, 244, 0.34) 100%),
+		#fbf2e8;
 	border: 1px solid rgba(117, 88, 64, 0.08);
 	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	gap: 8rpx;
-	transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+	align-items: center;
+	gap: 16rpx;
+	box-shadow:
+		0 10rpx 18rpx rgba(86, 67, 49, 0.04),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
+	transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.suggestion-card--fresh {
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(248, 252, 242, 0.44) 100%),
+		#f8f1e8;
+}
+
+.suggestion-card--meal {
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.68) 0%, rgba(255, 244, 232, 0.5) 100%),
+		#fbf1e6;
+}
+
+.suggestion-card--link {
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(244, 238, 230, 0.42) 100%),
+		#f8efe7;
 }
 
 .suggestion-card--hover {
 	transform: translateY(1rpx);
 	background: #f6eadb;
 	border-color: rgba(117, 88, 64, 0.14);
+	box-shadow:
+		0 8rpx 14rpx rgba(86, 67, 49, 0.035),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.76);
+}
+
+.suggestion-card__icon {
+	width: 48rpx;
+	height: 48rpx;
+	border-radius: 16rpx;
+	background:
+		radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0) 44%),
+		linear-gradient(180deg, #fff6ef 0%, #f3ddd3 100%);
+	border: 1px solid rgba(191, 113, 95, 0.14);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.suggestion-card__copy {
+	min-width: 0;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
 }
 
 .suggestion-card__title {
-	font-size: 24rpx;
-	line-height: 1.2;
+	display: block;
+	font-size: 25rpx;
+	line-height: 1.22;
 	font-weight: 800;
 	color: #5f4637;
-}
-
-.suggestion-card__desc {
-	font-size: 21rpx;
-	line-height: 1.25;
-	color: rgba(95, 70, 55, 0.56);
 }
 
 .diet-assistant-chat__bottom {
