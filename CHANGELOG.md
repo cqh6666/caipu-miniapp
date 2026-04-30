@@ -13,9 +13,9 @@
 - **核心改动**：
   - **E1 详情页返回入场动效**（`pages/index/index.vue`）：
     - 把原 `<template v-if="activeSection === 'library'">` 替换为 `<view v-if="activeSection === 'library'" class="library-shell" :class="{ 'library-shell--entering': libraryEnterMotionActive }">`，给整个美食库包一层入场动画壳。
-    - 新增 data `libraryEnterMotionActive` / `libraryEnterMotionTimer`、method `triggerLibraryEnterMotion()`：`$nextTick` 后置入 class，`240ms` 后自动清。
-    - `onShow()` 新增调用 `triggerLibraryEnterMotion()` —— 详情页 `navigateBack` 触发；`watch.activeSection` 切回 `library` 时也触发，覆盖"切到厨房 → 切回美食库"路径；`onUnload` 清 timer。
-    - SCSS 新增 `.library-shell--entering` + `@keyframes library-shell-enter`：`opacity: 0 → 1` + `translateY(8rpx → 0)` · `220ms cubic-bezier(0.2, 0.8, 0.2, 1)`，与现有 `recipe-card-enter`（卡片自带 stagger）天然错峰。同步加 `@media (prefers-reduced-motion: reduce)` 兜底。
+    - 新增 data `libraryEnterMotionActive` / `libraryEnterMotionTimer` / `libraryReturnMotionPending`、method `triggerLibraryEnterMotion(options)`：支持详情页返回后延迟触发，动画结束后自动清 class。
+    - `openRecipeDetail()` 标记 `libraryReturnMotionPending`，`onShow()` 仅在该标记存在时延迟 `96ms` 触发；`watch.activeSection` 切回 `library` 时仍即时触发，覆盖"切到厨房 → 切回美食库"路径；`onUnload` 清 timer 与 pending。
+    - SCSS 新增 `.library-shell--entering` + `@keyframes library-shell-return-settle`：移除 `opacity` 动画，改为 transform-only 的 `translateY(16rpx → -2rpx → 0)` · `320ms cubic-bezier(0.18, 0.82, 0.18, 1)`，避免微信 `navigateBack` 缓存页被瞬间压透明后闪一下。同步加 `@media (prefers-reduced-motion: reduce)` 兜底。
   - **E2 spotlight tap 反馈**（`pages/index/components/library-header-section.vue` + `library-header-section.scss`）：
     - 把模板的 `@tap="$emit('spotlight-tap')"` 改成 `@tap="handleSpotlightTap"`，本地先播一段 `220ms` 反馈再 emit 跳转。
     - 新增 data `tapPulseActive` / `tapPulseTimer`、method `handleSpotlightTap()`：节流式锁防重复点击；`160ms` 后 emit `spotlight-tap`，再 `60ms` 解锁。`beforeUnmount` 清 timer。
@@ -26,20 +26,21 @@
     - 阴影 `rgba(133, 99, 54, 0.08) → rgba(133, 65, 54, 0.12)`、内部高光 `rgba(255, 247, 232, 0.42) → rgba(255, 232, 222, 0.46)`，整体偏向"想吃"陶土系。
     - `.recipe-card--pinned` 边框 / 阴影也同步调到陶土系（`rgba(186, 145, 81, 0.12) → rgba(191, 113, 95, 0.18)`、`rgba(98, 74, 44, 0.06) → rgba(133, 65, 54, 0.06)`），让固顶卡片整体色调与书签呼应。
 - **影响范围**：
-  - `pages/index/index.vue`：token 增 `--color-accent-terracotta`、template `<template v-if>` 改 `<view v-if>` wrapper、data + method + onShow / onUnload 钩、SCSS 加 `.library-shell` + `.library-shell--entering` + keyframe + reduced-motion。
+  - `pages/index/index.vue`：token 增 `--color-accent-terracotta`、template `<template v-if>` 改 `<view v-if>` wrapper、data + method + onShow / onUnload 钩、`openRecipeDetail` pending 标记、SCSS 加 `.library-shell` + `.library-shell--entering` + keyframe + reduced-motion。
   - `pages/index/components/library-header-section.vue`：data + method + beforeUnmount；模板 tap 处理由 emit 改为本地。
   - `pages/index/components/library-header-section.scss`：新增 tap-pulse class + keyframe + reduced-motion。
   - `pages/index/components/recipe-card-item.scss`：`.recipe-card::before` 渐变改色、阴影 / 高光微调，`.recipe-card--pinned` 边框 / 阴影同步陶土系。
   - 不修改 `recipe-store.js` 数据归一化、后端接口、邀请 / 上传链路、点菜模式判断。
 - **兼容性/风险**：
   - 入场动画 wrapper 从 `<template>` 升级为 `<view>` 引入一层 DOM 节点。`.page-content` 仅用 padding，子级 SCSS 没有依赖直系子元素选择器（都是 descendant），`.page-content--meal-order .toolbar` 等仍能正常匹配，无视觉副作用。
+  - 详情页返回动效不再改 `opacity`，只做位移归位；这样会比淡入更克制，但能避免返回时整页“一闪而过”。
   - spotlight tap 加了 `160ms` 延迟再跳转。`tapPulseActive` 锁防止用户连点导致多次跳转；超时 `220ms` 内组件被 `v-if` 销毁时 `beforeUnmount` 会清 timer，无内存泄漏。
   - 陶土双色渐变只是局部视觉换色，无逻辑影响；`var(--color-accent-terracotta, #bf715f)` 带 fallback 值，即便未来 token 块被误删也不会破图。
 - **验证情况**：
   - 已执行 `git diff --check`，通过。
   - 已用 `node --check --input-type=module` 解析改动相关 `.vue` 文件的 `<script>` 块（`pages/index/index.vue`、`library-header-section.vue`、`recipe-card-item.vue`、`library-empty-state.vue`），通过。
   - 已确认 `pages/index/components/library-header-section.vue` 使用 Vue 3 `beforeUnmount` 清理 tap timer，未残留旧版销毁钩子。
-  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议后续真机补测：① 详情页返回首页时美食库轻入场；② 点击 spotlight 先收缩淡出再进入菜单详情；③ 左右滑 spotlight 后不会误触进入详情；④ 固顶菜卡书签色调与陶土橙一致。
+  - 未运行 HBuilderX 真机预览或微信开发者工具构建；建议后续真机补测：① 详情页返回首页时美食库不闪屏、只做轻位移归位；② 点击 spotlight 先收缩淡出再进入菜单详情；③ 左右滑 spotlight 后不会误触进入详情；④ 固顶菜卡书签色调与陶土橙一致。
 - **后续待办（P2 / P3）**：
   - 列表 stagger（§5.2）首屏 6 张菜卡延迟从 `Math.min(index, 4) * 36ms` 改为 `Math.min(index, 6) * 32ms` —— 文档 §5.2 仍标 P1，可与首页性能 polish 一起做。
   - 状态 pill thumb 滑动（§5.3）—— 已经在 Phase B 第二轮 prototype rebuild 时去掉容器 + thumb 设计，文档 §5.3 不再适用，待文档下次维护时同步更新。

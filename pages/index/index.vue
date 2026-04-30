@@ -560,6 +560,7 @@ export default {
 			toolbarBounceTimer: null,
 			libraryEnterMotionActive: false,
 			libraryEnterMotionTimer: null,
+			libraryReturnMotionPending: false,
 			searchKeyword: '',
 			recentSearches: readRecentSearches(),
 			lastDraftLinkPrefill: readLastDraftLinkPrefill(),
@@ -664,7 +665,11 @@ export default {
 	},
 	onShow() {
 		this.refreshRecipes()
-		this.triggerLibraryEnterMotion()
+		const shouldPlayReturnMotion = this.libraryReturnMotionPending
+		this.libraryReturnMotionPending = false
+		if (shouldPlayReturnMotion) {
+			this.triggerLibraryEnterMotion({ delay: 96 })
+		}
 	},
 	onHide() {
 		if (!this.isSubmittingMealOrder) {
@@ -696,6 +701,7 @@ export default {
 			clearTimeout(this.libraryEnterMotionTimer)
 			this.libraryEnterMotionTimer = null
 		}
+		this.libraryReturnMotionPending = false
 		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
@@ -1431,19 +1437,34 @@ export default {
 				}, 160)
 			})
 		},
-		triggerLibraryEnterMotion() {
+		triggerLibraryEnterMotion(options = {}) {
 			if (this.activeSection !== 'library') return
+			const delay = Math.max(0, Number(options?.delay) || 0)
 			if (this.libraryEnterMotionTimer) {
 				clearTimeout(this.libraryEnterMotionTimer)
 				this.libraryEnterMotionTimer = null
 			}
 			this.libraryEnterMotionActive = false
 			this.$nextTick(() => {
-				this.libraryEnterMotionActive = true
-				this.libraryEnterMotionTimer = setTimeout(() => {
-					this.libraryEnterMotionActive = false
-					this.libraryEnterMotionTimer = null
-				}, 240)
+				const play = () => {
+					if (this.activeSection !== 'library') {
+						this.libraryEnterMotionTimer = null
+						return
+					}
+					this.libraryEnterMotionActive = true
+					this.libraryEnterMotionTimer = setTimeout(() => {
+						this.libraryEnterMotionActive = false
+						this.libraryEnterMotionTimer = null
+					}, 340)
+				}
+				if (delay > 0) {
+					this.libraryEnterMotionTimer = setTimeout(() => {
+						this.libraryEnterMotionTimer = null
+						play()
+					}, delay)
+					return
+				}
+				play()
 			})
 		},
 		bumpMealOrderSpotlightMotion(direction = 'next') {
@@ -2543,8 +2564,12 @@ export default {
 			this.bumpRecipeListMotion()
 		},
 		openRecipeDetail(recipeId) {
+			this.libraryReturnMotionPending = this.activeSection === 'library'
 			uni.navigateTo({
-				url: `/pages/recipe-detail/index?id=${recipeId}`
+				url: `/pages/recipe-detail/index?id=${recipeId}`,
+				fail: () => {
+					this.libraryReturnMotionPending = false
+				}
 			})
 		},
 		openMealOrderDetail(record = {}) {
@@ -2961,20 +2986,21 @@ export default {
 
 	.library-shell {
 		display: block;
-		will-change: transform, opacity;
+		will-change: transform;
 	}
 
 	.library-shell--entering {
-		animation: library-shell-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: library-shell-return-settle 320ms cubic-bezier(0.18, 0.82, 0.18, 1) both;
 	}
 
-	@keyframes library-shell-enter {
+	@keyframes library-shell-return-settle {
 		from {
-			opacity: 0;
-			transform: translateY(8rpx);
+			transform: translateY(16rpx);
+		}
+		62% {
+			transform: translateY(-2rpx);
 		}
 		to {
-			opacity: 1;
 			transform: translateY(0);
 		}
 	}
