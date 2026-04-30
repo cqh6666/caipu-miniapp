@@ -1,5 +1,48 @@
 # Project Changelog
 
+## 2026-05-01 (饮食管家菜谱详情与食材搜索 tools)
+
+### Changed
+
+- **修改时间**：2026-05-01 02:40:37 +0800 CST
+- **变更背景**：饮食管家需要支持用户基于菜谱 ID 获取详情，同时现有按菜名搜索 tool 需要扩展到食材模糊查询，并限制默认返回数量避免性能风险。
+- **核心改动**：
+  - `backend/internal/dietassistant/service.go` 新增 `get_recipe_by_id` tool，支持根据菜谱 ID 获取当前空间菜谱详情，并在 SSE 工具执行阶段展示“正在读取菜谱详情”等实时状态。
+  - `search_recipes_by_name` tool 扩展为按菜名或食材搜索，新增 `keyword`、`searchScope` 和 `ingredientKeyword` 入参口径，默认返回 5 条、最多 10 条。
+  - `backend/internal/recipe/repository.go` 新增菜名 / 食材专用过滤条件，食材搜索同时匹配 `ingredient` 摘要字段和结构化 `ingredients_json`，避免命中备注或链接。
+  - `backend/internal/app/app.go` 将详情 tool 串接到现有 `recipeService.GetByID()`，并校验菜谱属于当前会话空间；搜索 tool 改用菜名 / 食材专用过滤条件。
+  - `README.md` 与 `backend/README.md` 更新饮食管家 tools 能力说明。
+- **影响范围**：
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 的 function calling 工具集合、搜索入参和工具状态文案。
+  - 不改变小程序正式菜谱详情接口、菜谱列表接口和数据库结构。
+- **兼容性/风险**：
+  - `search_recipes_by_name` 名称保持不变，但语义从“只按菜名”扩展为“菜名或食材”；旧模型若继续传 `titleKeyword` 仍兼容。
+  - 食材搜索基于 SQLite `LIKE`，当前默认 5 / 最大 10 控制返回规模；数据量继续增长后可再考虑索引或 FTS。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./internal/recipe`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue` 与 `pages/index/index.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
+## 2026-05-01 (饮食管家消息加粗渲染)
+
+### Added
+
+- **修改时间**：2026-05-01 02:24:47 +0800 CST
+- **变更背景**：饮食管家 AI 回复中可能包含 Markdown 风格的 `**加粗**` 标记，原聊天气泡使用普通 `<text>` 渲染，导致标记原样展示。
+- **核心改动**：
+  - `pages/index/components/diet-assistant-sheet.vue` 将真实聊天消息内容从纯文本 `<text>` 改为 `rich-text` nodes 渲染。
+  - 新增轻量 Markdown 解析，仅支持 `**...**` 加粗和换行；其它内容继续作为文本节点处理，避免引入完整 Markdown 依赖和额外 HTML 注入面。
+- **影响范围**：
+  - 影响饮食管家聊天消息展示；欢迎语、输入框、后端 SSE 协议和聊天记录存储不变。
+- **兼容性/风险**：
+  - 当前只支持加粗，不支持标题、列表、链接、图片等完整 Markdown 语法；未闭合的 `**` 会按普通文本展示。
+- **验证情况**：
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
 ## 2026-05-01 (修复饮食管家单轮后发送状态卡住)
 
 ### Fixed
@@ -8,6 +51,7 @@
 - **变更背景**：用户反馈在饮食管家当前窗口中问完一个问题后，发送按钮持续置灰，只能退出并重新进入 AI 窗口后才能继续提问。
 - **核心改动**：
   - `pages/index/components/diet-assistant-sheet.vue` 将 `resetStreamState()` 的定义提前到发起流式请求之前，避免 SSE `done` 或 promise 回调在极端时序下访问尚未初始化的复位函数，导致 `isStreaming` 无法释放。
+  - **追加调整**（2026-05-01 02:18:51 +0800 CST）：饮食管家前端改用当前助手消息 ID 作为流式请求释放状态的唯一标识，不再依赖 `activeStream` 对象引用匹配；同时历史同步状态不再让发送按钮置灰，避免历史请求卡住时影响继续提问。
   - `utils/diet-assistant-api.js` 新增流式回调安全调用封装，确保 `onDelta`、`onStatus`、`onError`、`onDone` 等 UI 回调即使抛错，也不会阻断内部 `finished` promise 的 resolve / reject。
 - **影响范围**：
   - 影响饮食管家流式回复完成后的输入框和发送按钮状态释放。

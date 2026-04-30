@@ -243,11 +243,20 @@ func New(cfg config.Config) (*App, error) {
 			}, nil
 		},
 		SearchRecipes: func(ctx context.Context, input dietassistant.RecipeSearchInput) ([]dietassistant.RecipeToolItem, error) {
-			items, err := recipeService.ListByKitchenID(ctx, input.UserID, input.KitchenID, recipe.ListFilter{
-				MealType:     input.MealType,
-				Status:       input.Status,
-				TitleKeyword: input.TitleKeyword,
-			})
+			filter := recipe.ListFilter{
+				MealType: input.MealType,
+				Status:   input.Status,
+			}
+			keyword := strings.TrimSpace(input.Keyword)
+			switch input.SearchScope {
+			case "title":
+				filter.TitleKeyword = keyword
+			case "ingredient":
+				filter.IngredientKeyword = keyword
+			default:
+				filter.TitleOrIngredientKeyword = keyword
+			}
+			items, err := recipeService.ListByKitchenID(ctx, input.UserID, input.KitchenID, filter)
 			if err != nil {
 				return nil, err
 			}
@@ -263,6 +272,16 @@ func New(cfg config.Config) (*App, error) {
 				result = append(result, buildDietAssistantRecipeToolItem(item))
 			}
 			return result, nil
+		},
+		GetRecipeByID: func(ctx context.Context, input dietassistant.RecipeGetInput) (dietassistant.RecipeDetailToolItem, error) {
+			item, err := recipeService.GetByID(ctx, input.UserID, input.RecipeID)
+			if err != nil {
+				return dietassistant.RecipeDetailToolItem{}, err
+			}
+			if input.KitchenID > 0 && item.KitchenID != input.KitchenID {
+				return dietassistant.RecipeDetailToolItem{}, errors.New("recipe not found in current kitchen")
+			}
+			return buildDietAssistantRecipeDetailToolItem(item), nil
 		},
 	})
 	dietAssistantHandler := dietassistant.NewHandler(dietAssistantService)
@@ -362,6 +381,40 @@ func buildDietAssistantRecipeToolItem(item recipe.Recipe) dietassistant.RecipeTo
 		Note:       item.Note,
 		Link:       item.Link,
 	}
+}
+
+func buildDietAssistantRecipeDetailToolItem(item recipe.Recipe) dietassistant.RecipeDetailToolItem {
+	return dietassistant.RecipeDetailToolItem{
+		RecipeToolItem:       buildDietAssistantRecipeToolItem(item),
+		ImageURL:             item.ImageURL,
+		ImageURLs:            cleanDietAssistantRecipeImageURLs(item.ImageURLs),
+		MainIngredients:      cleanDietAssistantRecipeLines(item.ParsedContent.MainIngredients, 20),
+		SecondaryIngredients: cleanDietAssistantRecipeLines(item.ParsedContent.SecondaryIngredients, 20),
+		Steps:                buildDietAssistantRecipeStepToolItems(item.ParsedContent.Steps, 20),
+		StepsCount:           len(item.ParsedContent.Steps),
+		ParseStatus:          item.ParseStatus,
+		CreatedAt:            item.CreatedAt,
+		UpdatedAt:            item.UpdatedAt,
+	}
+}
+
+func buildDietAssistantRecipeStepToolItems(steps []recipe.ParsedStep, limit int) []dietassistant.RecipeStepToolItem {
+	items := make([]dietassistant.RecipeStepToolItem, 0, len(steps))
+	for _, step := range steps {
+		title := truncateDietAssistantRecipeText(step.Title, 80)
+		detail := truncateDietAssistantRecipeText(step.Detail, 500)
+		if title == "" && detail == "" {
+			continue
+		}
+		items = append(items, dietassistant.RecipeStepToolItem{
+			Title:  title,
+			Detail: detail,
+		})
+		if limit > 0 && len(items) >= limit {
+			break
+		}
+	}
+	return items
 }
 
 func buildRecipeParsedContentFromLinkDraft(content linkparse.ParsedContent) recipe.ParsedContent {

@@ -348,6 +348,72 @@ func TestDietAssistantToolsExposeURLParserWithoutDirectAddRecipe(t *testing.T) {
 	if !names["parse_and_add_recipe_from_url"] {
 		t.Fatal("parse_and_add_recipe_from_url should be exposed as a diet assistant tool")
 	}
+	if !names["get_recipe_by_id"] {
+		t.Fatal("get_recipe_by_id should be exposed as a diet assistant tool")
+	}
+	if got, want := toolStatusMessage("get_recipe_by_id", "start"), "正在读取菜谱详情"; got != want {
+		t.Fatalf("get_recipe_by_id start status = %q, want %q", got, want)
+	}
+}
+
+func TestExecuteGetRecipeByID(t *testing.T) {
+	var gotInput RecipeGetInput
+	service := NewService(Options{
+		GetRecipeByID: func(ctx context.Context, input RecipeGetInput) (RecipeDetailToolItem, error) {
+			gotInput = input
+			return RecipeDetailToolItem{
+				RecipeToolItem: RecipeToolItem{
+					ID:         input.RecipeID,
+					Title:      "番茄炒蛋",
+					MealType:   "main",
+					Status:     "wishlist",
+					Ingredient: "番茄、鸡蛋",
+					Summary:    "家常快手菜",
+					Link:       "https://example.com/recipe",
+				},
+				MainIngredients:      []string{"番茄 2 个", "鸡蛋 3 个"},
+				SecondaryIngredients: []string{"盐 少许"},
+				Steps: []RecipeStepToolItem{{
+					Title:  "炒蛋",
+					Detail: "鸡蛋炒到凝固后盛出。",
+				}},
+				StepsCount: 1,
+			}, nil
+		},
+	})
+
+	missingID := service.executeGetRecipeByID(context.Background(), ChatContext{UserID: 1, KitchenID: 2}, openAIToolCall{
+		Function: openAIToolCallFunction{
+			Name:      "get_recipe_by_id",
+			Arguments: `{}`,
+		},
+	})
+	if missingID["ok"] != false {
+		t.Fatalf("missingID ok = %#v, want false", missingID["ok"])
+	}
+
+	result := service.executeGetRecipeByID(context.Background(), ChatContext{UserID: 7, KitchenID: 8}, openAIToolCall{
+		Function: openAIToolCallFunction{
+			Name:      "get_recipe_by_id",
+			Arguments: `{"recipeId":"rec_123"}`,
+		},
+	})
+	if result["ok"] != true {
+		t.Fatalf("result ok = %#v, want true", result["ok"])
+	}
+	if gotInput.UserID != 7 || gotInput.KitchenID != 8 || gotInput.RecipeID != "rec_123" {
+		t.Fatalf("input = %#v", gotInput)
+	}
+	recipe, ok := result["recipe"].(RecipeDetailToolItem)
+	if !ok {
+		t.Fatalf("recipe = %#v, want RecipeDetailToolItem", result["recipe"])
+	}
+	if recipe.ID != "rec_123" || recipe.Title != "番茄炒蛋" || recipe.StepsCount != 1 {
+		t.Fatalf("recipe = %#v", recipe)
+	}
+	if len(recipe.MainIngredients) != 2 || len(recipe.Steps) != 1 {
+		t.Fatalf("recipe detail = %#v", recipe)
+	}
 }
 
 func TestExecuteSearchRecipesByName(t *testing.T) {
@@ -367,7 +433,7 @@ func TestExecuteSearchRecipesByName(t *testing.T) {
 	result := service.executeSearchRecipesByName(context.Background(), ChatContext{UserID: 7, KitchenID: 8}, openAIToolCall{
 		Function: openAIToolCallFunction{
 			Name:      "search_recipes_by_name",
-			Arguments: `{"titleKeyword":"番茄","mealType":"all","status":"wishlist","limit":30}`,
+			Arguments: `{"keyword":"鸡蛋","searchScope":"ingredient","mealType":"all","status":"wishlist","limit":30}`,
 		},
 	})
 	if result["ok"] != true {
@@ -376,11 +442,40 @@ func TestExecuteSearchRecipesByName(t *testing.T) {
 	if gotInput.UserID != 7 || gotInput.KitchenID != 8 {
 		t.Fatalf("input context = %#v", gotInput)
 	}
-	if gotInput.TitleKeyword != "番茄" || gotInput.MealType != "" || gotInput.Status != "wishlist" || gotInput.Limit != 10 {
+	if gotInput.Keyword != "鸡蛋" || gotInput.SearchScope != "ingredient" || gotInput.MealType != "" || gotInput.Status != "wishlist" || gotInput.Limit != 10 {
 		t.Fatalf("input filters = %#v", gotInput)
+	}
+	if result["limit"] != 10 {
+		t.Fatalf("result limit = %#v, want 10", result["limit"])
 	}
 	if result["count"] != 1 {
 		t.Fatalf("result count = %#v, want 1", result["count"])
+	}
+}
+
+func TestExecuteSearchRecipesByNameDefaultsLimit(t *testing.T) {
+	var gotInput RecipeSearchInput
+	service := NewService(Options{
+		SearchRecipes: func(ctx context.Context, input RecipeSearchInput) ([]RecipeToolItem, error) {
+			gotInput = input
+			return nil, nil
+		},
+	})
+
+	result := service.executeSearchRecipesByName(context.Background(), ChatContext{UserID: 7, KitchenID: 8}, openAIToolCall{
+		Function: openAIToolCallFunction{
+			Name:      "search_recipes_by_name",
+			Arguments: `{"keyword":"番茄","searchScope":"title_or_ingredient","mealType":"all","status":"all"}`,
+		},
+	})
+	if result["ok"] != true {
+		t.Fatalf("result ok = %#v, want true", result["ok"])
+	}
+	if gotInput.Keyword != "番茄" || gotInput.SearchScope != "title_or_ingredient" || gotInput.Limit != 5 {
+		t.Fatalf("input filters = %#v", gotInput)
+	}
+	if result["limit"] != 5 {
+		t.Fatalf("result limit = %#v, want 5", result["limit"])
 	}
 }
 

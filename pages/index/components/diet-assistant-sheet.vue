@@ -82,15 +82,14 @@
 						class="chat-bubble"
 						:class="message.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--assistant'"
 					>
-						<text
+						<rich-text
 							class="chat-bubble__text"
 							:class="{
 								'chat-bubble__text--user': message.role === 'user',
 								'chat-bubble__text--pending': message.pending && !message.text
 							}"
-						>
-							{{ message.text || (message.pending ? message.statusText || '正在整理...' : '') }}
-						</text>
+							:nodes="renderChatMessageNodes(message)"
+						></rich-text>
 					</view>
 				</view>
 
@@ -212,7 +211,7 @@ export default {
 			return this.localMessages.length > 0
 		},
 		isSendDisabled() {
-			return this.isStreaming || this.isLoadingHistory || !String(this.draftMessage || '').trim()
+			return this.isStreaming || !String(this.draftMessage || '').trim()
 		},
 		composerPlaceholder() {
 			if (this.isLoadingHistory) return '正在同步历史...'
@@ -284,6 +283,56 @@ export default {
 				})
 				.filter(Boolean)
 		},
+		getMessageDisplayText(message = {}) {
+			return String(message?.text || (message?.pending ? message.statusText || '正在整理...' : '') || '')
+		},
+		renderChatMessageNodes(message = {}) {
+			return this.parseChatMarkdown(this.getMessageDisplayText(message))
+		},
+		parseChatMarkdown(text = '') {
+			const source = String(text || '')
+			const nodes = []
+
+			const pushText = (value = '', bold = false) => {
+				const parts = String(value || '').split('\n')
+				parts.forEach((part, index) => {
+					if (index > 0) {
+						nodes.push({ name: 'br' })
+					}
+					if (!part) return
+					if (bold) {
+						nodes.push({
+							name: 'span',
+							attrs: {
+								style: 'font-weight: 800;'
+							},
+							children: [{ type: 'text', text: part }]
+						})
+						return
+					}
+					nodes.push({ type: 'text', text: part })
+				})
+			}
+
+			let cursor = 0
+			while (cursor < source.length) {
+				const start = source.indexOf('**', cursor)
+				if (start < 0) {
+					pushText(source.slice(cursor))
+					break
+				}
+				const end = source.indexOf('**', start + 2)
+				if (end < 0) {
+					pushText(source.slice(cursor))
+					break
+				}
+				pushText(source.slice(cursor, start))
+				pushText(source.slice(start + 2, end), true)
+				cursor = end + 2
+			}
+
+			return nodes
+		},
 		applyInitialPrompt() {
 			const text = String(this.initialPrompt || '').trim()
 			if (!text || this.isStreaming) return
@@ -334,14 +383,15 @@ export default {
 		startStreamResponse(assistantID, messages) {
 			this.isStreaming = true
 			this.streamAbortExpected = false
+			this.activeStream = null
+			this.activeAssistantMessageID = assistantID
 			let stream = null
 			const resetStreamState = () => {
-				if (this.activeStream === stream) {
-					this.activeStream = null
-					this.activeAssistantMessageID = ''
-					this.isStreaming = false
-					this.streamAbortExpected = false
-				}
+				if (this.activeAssistantMessageID !== assistantID) return
+				this.activeStream = null
+				this.activeAssistantMessageID = ''
+				this.isStreaming = false
+				this.streamAbortExpected = false
 			}
 			stream = streamDietAssistantChat(messages, {
 				onDelta: (delta) => {
@@ -359,8 +409,9 @@ export default {
 					this.failAssistantMessage(assistantID, error?.message || '饮食管家暂时不可用，请稍后再试。')
 				}
 			})
-			this.activeStream = stream
-			this.activeAssistantMessageID = assistantID
+			if (this.activeAssistantMessageID === assistantID) {
+				this.activeStream = stream
+			}
 			stream.finished
 				.then(() => {
 					this.finishAssistantMessage(assistantID)

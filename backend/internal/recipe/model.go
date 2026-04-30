@@ -151,10 +151,12 @@ type Recipe struct {
 }
 
 type ListFilter struct {
-	MealType     string
-	Status       string
-	Keyword      string
-	TitleKeyword string
+	MealType                 string
+	Status                   string
+	Keyword                  string
+	TitleKeyword             string
+	IngredientKeyword        string
+	TitleOrIngredientKeyword string
 }
 
 type CreateInput struct {

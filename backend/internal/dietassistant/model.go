@@ -54,12 +54,21 @@ type RecipeFromURLInput struct {
 }
 
 type RecipeSearchInput struct {
-	UserID       int64
-	KitchenID    int64
-	TitleKeyword string
-	MealType     string
-	Status       string
-	Limit        int
+	UserID            int64
+	KitchenID         int64
+	Keyword           string
+	SearchScope       string
+	TitleKeyword      string
+	IngredientKeyword string
+	MealType          string
+	Status            string
+	Limit             int
+}
+
+type RecipeGetInput struct {
+	UserID    int64
+	KitchenID int64
+	RecipeID  string
 }
 
 type RecipeFromURLResult struct {
@@ -82,4 +91,22 @@ type RecipeToolItem struct {
 	Summary    string `json:"summary,omitempty"`
 	Note       string `json:"note,omitempty"`
 	Link       string `json:"link,omitempty"`
+}
+
+type RecipeStepToolItem struct {
+	Title  string `json:"title,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type RecipeDetailToolItem struct {
+	RecipeToolItem
+	ImageURL             string               `json:"imageUrl,omitempty"`
+	ImageURLs            []string             `json:"imageUrls,omitempty"`
+	MainIngredients      []string             `json:"mainIngredients,omitempty"`
+	SecondaryIngredients []string             `json:"secondaryIngredients,omitempty"`
+	Steps                []RecipeStepToolItem `json:"steps,omitempty"`
+	StepsCount           int                  `json:"stepsCount,omitempty"`
+	ParseStatus          string               `json:"parseStatus,omitempty"`
+	CreatedAt            string               `json:"createdAt,omitempty"`
+	UpdatedAt            string               `json:"updatedAt,omitempty"`
 }

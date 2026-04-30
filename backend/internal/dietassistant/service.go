@@ -24,6 +24,7 @@ type Options struct {
 	HTTPClient     *http.Client
 	CountRecipes   CountRecipesFunc
 	SearchRecipes  SearchRecipesFunc
+	GetRecipeByID  GetRecipeByIDFunc
 	CreateFromURL  CreateFromURLFunc
 	Repo           *Repository
 	EnsureMember   EnsureMemberFunc
@@ -33,6 +34,7 @@ type Options struct {
 
 type CountRecipesFunc func(context.Context, RecipeCountInput) (int, error)
 type SearchRecipesFunc func(context.Context, RecipeSearchInput) ([]RecipeToolItem, error)
+type GetRecipeByIDFunc func(context.Context, RecipeGetInput) (RecipeDetailToolItem, error)
 type CreateFromURLFunc func(context.Context, RecipeFromURLInput) (RecipeFromURLResult, error)
 type EnsureMemberFunc func(context.Context, int64, int64) error
 
@@ -44,6 +46,7 @@ type Service struct {
 	httpClient    *http.Client
 	countRecipes  CountRecipesFunc
 	searchRecipes SearchRecipesFunc
+	getRecipeByID GetRecipeByIDFunc
 	createFromURL CreateFromURLFunc
 	repo          *Repository
 	ensureMember  EnsureMemberFunc
@@ -71,6 +74,7 @@ func NewService(options Options) *Service {
 		httpClient:    client,
 		countRecipes:  options.CountRecipes,
 		searchRecipes: options.SearchRecipes,
+		getRecipeByID: options.GetRecipeByID,
 		createFromURL: options.CreateFromURL,
 		repo:          options.Repo,
 		ensureMember:  options.EnsureMember,
@@ -453,7 +457,8 @@ const dietAssistantSystemPrompt = `你是“饮食管家”，服务于一个家
 
 能力边界：
 - 用户问美食库里有多少菜、早餐/正餐数量、想吃/吃过数量时，调用 get_recipe_count。
-- 用户要求查找、搜索、确认是否已有某道菜时，调用 search_recipes_by_name；只按菜谱名模糊查询。
+- 用户要求查找、搜索、确认是否已有某道菜或某种食材相关菜谱时，调用 search_recipes_by_name；只按菜谱名或食材模糊查询，默认返回 5 条，最多 10 条。
+- 用户提供菜谱 ID 并要求查看菜谱详情、食材或步骤时，调用 get_recipe_by_id。
 - 用户只发送或要求保存 B 站 / 小红书菜谱链接时，调用 parse_and_add_recipe_from_url。该工具会解析链接内容，提取食材和步骤，并真正写入当前空间的美食库。
 - 当前不提供单独添加食材工具；如果用户只说添加食材但没有菜谱链接或菜名，先追问需要记录哪道菜或让用户提供链接。
 - 不要编造菜谱数量、搜索结果或保存状态；涉及数量、查询和保存必须基于工具结果。
@@ -562,15 +567,46 @@ func dietAssistantTools() []openAITool {
 		{
 			Type: "function",
 			Function: openAIToolFunction{
-				Name:        "search_recipes_by_name",
-				Description: "按菜谱名模糊查询当前空间的菜谱。用户询问是否已有某道菜、查找菜谱、按名称搜索时调用。",
+				Name:        "get_recipe_by_id",
+				Description: "根据菜谱 ID 获取当前空间内的一道菜谱详情，包括菜名、餐别、状态、食材、做法步骤、备注和来源链接。用户提供菜谱 ID 并要求查看详情时调用。",
 				Parameters: map[string]any{
 					"type":                 "object",
 					"additionalProperties": false,
 					"properties": map[string]any{
+						"recipeId": map[string]any{
+							"type":        "string",
+							"description": "菜谱 ID，必须来自用户提供或前文工具结果中的 id 字段。",
+						},
+					},
+					"required": []string{"recipeId"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: openAIToolFunction{
+				Name:        "search_recipes_by_name",
+				Description: "按菜谱名或食材模糊查询当前空间的菜谱。用户询问是否已有某道菜、查找菜谱、按名称搜索或查找某种食材能做什么时调用。",
+				Parameters: map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties": map[string]any{
+						"keyword": map[string]any{
+							"type":        "string",
+							"description": "菜名或食材关键词，例如“番茄”“鸡胸肉”。优先使用该字段。",
+						},
+						"searchScope": map[string]any{
+							"type":        "string",
+							"description": "搜索范围：title=只按菜名，ingredient=只按食材，title_or_ingredient=菜名或食材。无法判断时用 title_or_ingredient。",
+							"enum":        []string{"title", "ingredient", "title_or_ingredient"},
+						},
 						"titleKeyword": map[string]any{
 							"type":        "string",
-							"description": "菜名关键词，例如“番茄”“鸡胸肉沙拉”。",
+							"description": "兼容字段：只按菜名搜索的关键词。优先使用 keyword + searchScope。",
+						},
+						"ingredientKeyword": map[string]any{
+							"type":        "string",
+							"description": "兼容字段：只按食材搜索的关键词。优先使用 keyword + searchScope。",
 						},
 						"mealType": map[string]any{
 							"type":        "string",
@@ -584,10 +620,10 @@ func dietAssistantTools() []openAITool {
 						},
 						"limit": map[string]any{
 							"type":        "integer",
-							"description": "最多返回数量，建议 5，最大 10。",
+							"description": "最多返回数量，默认 5，最大 10。",
 						},
 					},
-					"required": []string{"titleKeyword", "mealType", "status", "limit"},
+					"required": []string{"keyword", "searchScope", "mealType", "status"},
 				},
 			},
 		},
@@ -601,6 +637,8 @@ func (s *Service) executeTool(ctx context.Context, chatCtx ChatContext, call ope
 		return s.executeGetRecipeCount(ctx, chatCtx, call)
 	case "search_recipes_by_name":
 		return s.executeSearchRecipesByName(ctx, chatCtx, call)
+	case "get_recipe_by_id":
+		return s.executeGetRecipeByID(ctx, chatCtx, call)
 	case "parse_and_add_recipe_from_url":
 		return s.executeParseAndAddRecipeFromURL(ctx, chatCtx, call)
 	default:
@@ -650,6 +688,8 @@ func toolStatusMessage(name, stage string) string {
 			return "正在统计美食库"
 		case "search_recipes_by_name":
 			return "正在查找菜谱"
+		case "get_recipe_by_id":
+			return "正在读取菜谱详情"
 		case "parse_and_add_recipe_from_url":
 			return "正在解析链接并保存食材"
 		default:
@@ -661,6 +701,8 @@ func toolStatusMessage(name, stage string) string {
 			return "已完成菜谱统计"
 		case "search_recipes_by_name":
 			return "已完成菜谱查找"
+		case "get_recipe_by_id":
+			return "已读取菜谱详情"
 		case "parse_and_add_recipe_from_url":
 			return "已解析并保存食材"
 		default:
@@ -672,6 +714,8 @@ func toolStatusMessage(name, stage string) string {
 			return "菜谱统计失败，正在整理说明"
 		case "search_recipes_by_name":
 			return "菜谱查找失败，正在整理说明"
+		case "get_recipe_by_id":
+			return "菜谱详情读取失败，正在整理说明"
 		case "parse_and_add_recipe_from_url":
 			return "链接解析保存失败，正在整理说明"
 		default:
@@ -688,6 +732,8 @@ func toolDisplayName(name string) string {
 		return "美食库统计"
 	case "search_recipes_by_name":
 		return "菜谱查找"
+	case "get_recipe_by_id":
+		return "菜谱详情"
 	case "parse_and_add_recipe_from_url":
 		return "链接解析保存"
 	default:
@@ -738,6 +784,47 @@ func (s *Service) executeGetRecipeCount(ctx context.Context, chatCtx ChatContext
 		"mealType":  mealType,
 		"status":    status,
 		"kitchenId": chatCtx.KitchenID,
+	}
+}
+
+func (s *Service) executeGetRecipeByID(ctx context.Context, chatCtx ChatContext, call openAIToolCall) map[string]any {
+	if s.getRecipeByID == nil {
+		return map[string]any{"ok": false, "error": "recipe detail tool is not configured"}
+	}
+	if chatCtx.UserID <= 0 {
+		return map[string]any{"ok": false, "error": "user is required"}
+	}
+	if chatCtx.KitchenID <= 0 {
+		return map[string]any{"ok": false, "error": "current kitchen is required"}
+	}
+
+	args, err := parseToolArguments(call.Function.Arguments)
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+
+	recipeID := truncateRunes(toolStringArg(args, "recipeId"), 120)
+	if recipeID == "" {
+		recipeID = truncateRunes(toolStringArg(args, "id"), 120)
+	}
+	if recipeID == "" {
+		return map[string]any{"ok": false, "error": "recipeId is required"}
+	}
+
+	item, err := s.getRecipeByID(ctx, RecipeGetInput{
+		UserID:    chatCtx.UserID,
+		KitchenID: chatCtx.KitchenID,
+		RecipeID:  recipeID,
+	})
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+
+	return map[string]any{
+		"ok":        true,
+		"kitchenId": chatCtx.KitchenID,
+		"recipeId":  recipeID,
+		"recipe":    item,
 	}
 }
 
@@ -812,9 +899,24 @@ func (s *Service) executeSearchRecipesByName(ctx context.Context, chatCtx ChatCo
 		return map[string]any{"ok": false, "error": err.Error()}
 	}
 
-	titleKeyword := toolStringArg(args, "titleKeyword")
-	if titleKeyword == "" {
-		return map[string]any{"ok": false, "error": "titleKeyword is required"}
+	keyword := truncateRunes(toolStringArg(args, "keyword"), 80)
+	searchScope := normalizeToolEnum(fmt.Sprint(args["searchScope"]), "title_or_ingredient")
+	titleKeyword := truncateRunes(toolStringArg(args, "titleKeyword"), 80)
+	ingredientKeyword := truncateRunes(toolStringArg(args, "ingredientKeyword"), 80)
+	if keyword == "" {
+		switch {
+		case titleKeyword != "":
+			keyword = titleKeyword
+			searchScope = "title"
+		case ingredientKeyword != "":
+			keyword = ingredientKeyword
+			searchScope = "ingredient"
+		default:
+			return map[string]any{"ok": false, "error": "keyword is required"}
+		}
+	}
+	if !isAllowedRecipeSearchScope(searchScope) {
+		return map[string]any{"ok": false, "error": "invalid searchScope: " + searchScope}
 	}
 	mealType := normalizeToolEnum(fmt.Sprint(args["mealType"]), "all")
 	status := normalizeToolEnum(fmt.Sprint(args["status"]), "all")
@@ -827,24 +929,31 @@ func (s *Service) executeSearchRecipesByName(ctx context.Context, chatCtx ChatCo
 
 	limit := normalizeToolLimit(args["limit"], 5, 10)
 	items, err := s.searchRecipes(ctx, RecipeSearchInput{
-		UserID:       chatCtx.UserID,
-		KitchenID:    chatCtx.KitchenID,
-		TitleKeyword: titleKeyword,
-		MealType:     emptyIfAll(mealType),
-		Status:       emptyIfAll(status),
-		Limit:        limit,
+		UserID:            chatCtx.UserID,
+		KitchenID:         chatCtx.KitchenID,
+		Keyword:           keyword,
+		SearchScope:       searchScope,
+		TitleKeyword:      titleKeyword,
+		IngredientKeyword: ingredientKeyword,
+		MealType:          emptyIfAll(mealType),
+		Status:            emptyIfAll(status),
+		Limit:             limit,
 	})
 	if err != nil {
 		return map[string]any{"ok": false, "error": err.Error()}
 	}
 
 	return map[string]any{
-		"ok":           true,
-		"titleKeyword": titleKeyword,
-		"mealType":     mealType,
-		"status":       status,
-		"count":        len(items),
-		"items":        items,
+		"ok":                true,
+		"keyword":           keyword,
+		"searchScope":       searchScope,
+		"titleKeyword":      titleKeyword,
+		"ingredientKeyword": ingredientKeyword,
+		"mealType":          mealType,
+		"status":            status,
+		"limit":             limit,
+		"count":             len(items),
+		"items":             items,
 	}
 }
 
@@ -933,6 +1042,15 @@ func isAllowedRecipeCountMealType(value string) bool {
 func isAllowedRecipeCountStatus(value string) bool {
 	switch value {
 	case "all", "wishlist", "done":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAllowedRecipeSearchScope(value string) bool {
+	switch value {
+	case "title", "ingredient", "title_or_ingredient":
 		return true
 	default:
 		return false

@@ -87,6 +87,8 @@ func (s *Service) ListByKitchenID(ctx context.Context, userID, kitchenID int64, 
 	filter.Status = strings.TrimSpace(filter.Status)
 	filter.Keyword = strings.TrimSpace(filter.Keyword)
 	filter.TitleKeyword = strings.TrimSpace(filter.TitleKeyword)
+	filter.IngredientKeyword = strings.TrimSpace(filter.IngredientKeyword)
+	filter.TitleOrIngredientKeyword = strings.TrimSpace(filter.TitleOrIngredientKeyword)
 
 	if filter.MealType != "" && !isAllowedMealType(filter.MealType) {
 		return nil, common.NewAppError(common.CodeBadRequest, "invalid mealType", http.StatusBadRequest)

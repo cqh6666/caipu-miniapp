@@ -53,6 +53,18 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 		args = append(args, "%"+filter.TitleKeyword+"%")
 	}
 
+	if filter.IngredientKeyword != "" {
+		query += " AND (ingredient LIKE ? OR ingredients_json LIKE ?)"
+		keyword := "%" + filter.IngredientKeyword + "%"
+		args = append(args, keyword, keyword)
+	}
+
+	if filter.TitleOrIngredientKeyword != "" {
+		query += " AND (title LIKE ? OR ingredient LIKE ? OR ingredients_json LIKE ?)"
+		keyword := "%" + filter.TitleOrIngredientKeyword + "%"
+		args = append(args, keyword, keyword, keyword)
+	}
+
 	query += " ORDER BY CASE WHEN COALESCE(pinned_at, '') = '' THEN 1 ELSE 0 END ASC, pinned_at DESC, updated_at DESC, id DESC"
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
