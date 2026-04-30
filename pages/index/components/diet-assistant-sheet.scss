@@ -111,38 +111,43 @@
 }
 
 .assistant-date-pill {
-	width: 176rpx;
-	margin: 0 auto 28rpx;
-	padding: 10rpx 22rpx;
+	width: 154rpx;
+	height: 42rpx;
+	margin: 0 auto 26rpx;
+	padding: 0 18rpx;
+	box-sizing: border-box;
 	border-radius: 999rpx;
-	background: rgba(255, 255, 255, 0.72);
-	border: 1px solid rgba(117, 88, 64, 0.06);
-	box-shadow: 0 8rpx 16rpx rgba(86, 67, 49, 0.04);
+	background: rgba(255, 255, 255, 0.62);
+	border: 1px solid rgba(117, 88, 64, 0.08);
+	box-shadow:
+		0 8rpx 16rpx rgba(86, 67, 49, 0.035),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.78);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10rpx;
+}
+
+.assistant-date-pill__dot {
+	width: 9rpx;
+	height: 9rpx;
+	border-radius: 999rpx;
+	background: #c89162;
+	box-shadow: 0 0 0 5rpx rgba(200, 145, 98, 0.12);
+	flex-shrink: 0;
+}
+
+.assistant-date-pill--loading .assistant-date-pill__dot {
+	background: #8f9f79;
+	box-shadow: 0 0 0 5rpx rgba(143, 159, 121, 0.14);
 }
 
 .assistant-date-pill__text {
-	font-size: 21rpx;
+	font-size: 22rpx;
 	line-height: 1;
-	font-weight: 700;
-	color: rgba(93, 72, 55, 0.54);
-}
-
-.assistant-history-status {
-	width: 212rpx;
-	margin: -10rpx auto 26rpx;
-	padding: 10rpx 18rpx;
-	border-radius: 999rpx;
-	background: rgba(255, 255, 255, 0.58);
-	border: 1px solid rgba(117, 88, 64, 0.06);
-	box-shadow: 0 8rpx 16rpx rgba(86, 67, 49, 0.03);
-	text-align: center;
-}
-
-.assistant-history-status__text {
-	font-size: 21rpx;
-	line-height: 1;
-	font-weight: 700;
-	color: rgba(93, 72, 55, 0.5);
+	font-weight: 800;
+	color: rgba(89, 68, 52, 0.62);
+	white-space: nowrap;
 }
 
 .chat-row {

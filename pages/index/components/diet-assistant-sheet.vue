@@ -30,16 +30,13 @@
 			<scroll-view
 				class="diet-assistant-chat"
 				scroll-y
-				scroll-with-animation
 				:scroll-into-view="scrollAnchor"
+				:scroll-with-animation="shouldAnimateScroll"
 				:show-scrollbar="false"
 			>
-				<view class="assistant-date-pill">
-					<text class="assistant-date-pill__text">今天的灵感台</text>
-				</view>
-
-				<view v-if="isLoadingHistory" class="assistant-history-status">
-					<text class="assistant-history-status__text">正在同步历史...</text>
+				<view class="assistant-date-pill" :class="{ 'assistant-date-pill--loading': isLoadingHistory }">
+					<view class="assistant-date-pill__dot"></view>
+					<text class="assistant-date-pill__text">{{ historyPillText }}</text>
 				</view>
 
 				<view class="chat-row chat-row--assistant">
@@ -179,10 +176,13 @@ export default {
 			localMessages: [],
 			messageSerial: 0,
 			scrollAnchor: '',
+			shouldAnimateScroll: false,
+			scrollAnchorTimer: null,
+			historyLoadTimer: null,
 			assistantOverlayStyle: {
 				'background-color': 'rgba(68, 48, 35, 0.24)',
-				'backdrop-filter': 'blur(18rpx) saturate(1.08)',
-				'-webkit-backdrop-filter': 'blur(18rpx) saturate(1.08)'
+				'backdrop-filter': 'blur(10rpx) saturate(1.04)',
+				'-webkit-backdrop-filter': 'blur(10rpx) saturate(1.04)'
 			},
 			quickSuggestions: [
 				{
@@ -217,15 +217,23 @@ export default {
 			if (this.isLoadingHistory) return '正在同步历史...'
 			if (this.isStreaming) return '饮食管家正在回复...'
 			return '贴链接，或先写下想吃什么...'
+		},
+		historyPillText() {
+			return this.isLoadingHistory ? '同步中' : '今日灵感'
 		}
 	},
 	watch: {
 		show(value) {
 			if (value) {
+				this.prepareSheetOpen()
 				this.applyInitialPrompt()
-				this.loadStoredMessages()
-				this.bumpScrollAnchor()
+				this.scheduleStoredMessagesLoad()
+				this.bumpScrollAnchor({ animate: false, delay: 80 })
+				return
 			}
+			this.cancelScheduledWork()
+			this.historyLoadSerial += 1
+			this.isLoadingHistory = false
 		},
 		initialPrompt() {
 			if (this.show) {
@@ -234,7 +242,25 @@ export default {
 		}
 	},
 	methods: {
+		prepareSheetOpen() {
+			this.cancelScheduledWork()
+			this.shouldAnimateScroll = false
+			this.scrollAnchor = ''
+		},
+		cancelScheduledWork() {
+			if (this.historyLoadTimer) {
+				clearTimeout(this.historyLoadTimer)
+				this.historyLoadTimer = null
+			}
+			if (this.scrollAnchorTimer) {
+				clearTimeout(this.scrollAnchorTimer)
+				this.scrollAnchorTimer = null
+			}
+		},
 		handleClose() {
+			this.cancelScheduledWork()
+			this.historyLoadSerial += 1
+			this.isLoadingHistory = false
 			this.abortActiveStream()
 			this.$emit('close')
 		},
@@ -253,7 +279,7 @@ export default {
 				const items = await listDietAssistantMessages()
 				if (serial !== this.historyLoadSerial || !this.show || this.isStreaming) return
 				this.localMessages = this.mapStoredMessages(items)
-				this.bumpScrollAnchor()
+				this.bumpScrollAnchor({ animate: false, delay: 32 })
 			} catch (error) {
 				if (serial === this.historyLoadSerial && this.show) {
 					uni.showToast({
@@ -266,6 +292,16 @@ export default {
 					this.isLoadingHistory = false
 				}
 			}
+		},
+		scheduleStoredMessagesLoad() {
+			if (this.historyLoadTimer) {
+				clearTimeout(this.historyLoadTimer)
+			}
+			this.historyLoadTimer = setTimeout(() => {
+				this.historyLoadTimer = null
+				if (!this.show || this.isStreaming) return
+				this.loadStoredMessages()
+			}, 220)
 		},
 		mapStoredMessages(items = []) {
 			return (Array.isArray(items) ? items : [])
@@ -364,7 +400,7 @@ export default {
 				contextExcluded: false
 			})
 			this.draftMessage = ''
-			this.bumpScrollAnchor()
+			this.bumpScrollAnchor({ animate: true })
 			this.startStreamResponse(assistantID, nextMessages)
 		},
 		buildConversationMessages(nextUserText = '') {
@@ -431,7 +467,7 @@ export default {
 			message.text = `${message.text || ''}${delta}`
 			message.pending = true
 			message.statusText = ''
-			this.bumpScrollAnchor()
+			this.bumpScrollAnchor({ animate: false, delay: 24 })
 		},
 		updateAssistantStatus(id = '', text = '') {
 			const message = this.findMessage(id)
@@ -439,7 +475,7 @@ export default {
 			if (!message || !statusText || String(message.text || '').trim()) return
 			message.statusText = statusText
 			message.pending = true
-			this.bumpScrollAnchor()
+			this.bumpScrollAnchor({ animate: false, delay: 24 })
 		},
 		handleStreamMutation(mutation = null) {
 			if (!mutation?.type) return
@@ -452,7 +488,7 @@ export default {
 			message.statusText = ''
 			message.pending = pending
 			message.transient = transient
-			this.bumpScrollAnchor()
+			this.bumpScrollAnchor({ animate: false, delay: 24 })
 		},
 		failAssistantMessage(id = '', text = '') {
 			this.excludeMessageRequestFromContext(id)
@@ -509,7 +545,7 @@ export default {
 			this.streamAbortExpected = false
 			this.isStreaming = false
 			this.isLoadingHistory = false
-			this.bumpScrollAnchor()
+			this.bumpScrollAnchor({ animate: false })
 			clearDietAssistantMessages().catch((error) => {
 				uni.showToast({
 					title: error?.message || '后端会话清空失败',
@@ -517,14 +553,26 @@ export default {
 				})
 			})
 		},
-		bumpScrollAnchor() {
-			this.$nextTick(() => {
-				this.scrollAnchor = ''
+		bumpScrollAnchor(options = {}) {
+			const animate = Boolean(options?.animate)
+			const delay = Number(options?.delay) || 0
+			if (this.scrollAnchorTimer) {
+				clearTimeout(this.scrollAnchorTimer)
+			}
+			this.shouldAnimateScroll = animate
+			this.scrollAnchorTimer = setTimeout(() => {
+				this.scrollAnchorTimer = null
 				this.$nextTick(() => {
-					this.scrollAnchor = 'diet-assistant-bottom'
+					this.scrollAnchor = ''
+					this.$nextTick(() => {
+						this.scrollAnchor = 'diet-assistant-bottom'
+					})
 				})
-			})
+			}, delay)
 		}
+	},
+	beforeUnmount() {
+		this.cancelScheduledWork()
 	}
 }
 </script>
