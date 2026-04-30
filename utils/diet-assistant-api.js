@@ -199,6 +199,14 @@ function createStreamParser(callbacks = {}) {
 				callbacks.onDelta?.(String(event.delta || ''))
 				return
 			}
+			if (['status', 'tool_start', 'tool_done', 'tool_error'].includes(event?.type)) {
+				callbacks.onStatus?.({
+					type: String(event.type || ''),
+					message: String(event.message || ''),
+					toolName: String(event.toolName || '')
+				})
+				return
+			}
 			if (event?.type === 'error') {
 				callbacks.onError?.(new Error(event.message || '饮食管家暂时不可用'))
 				return

@@ -101,12 +101,18 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 	finalMessages := upstreamMessages
 	if forcedCall, ok := buildURLOnlyParseToolCall(lastUserContent); ok {
 		finalMessages = append([]openAIChatMessage{}, upstreamMessages...)
-		finalMessages = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
+		finalMessages, err = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
 			Role:      "assistant",
 			Content:   "",
 			ToolCalls: []openAIToolCall{forcedCall},
-		}, []openAIToolCall{forcedCall})
+		}, []openAIToolCall{forcedCall}, emit)
+		if err != nil {
+			return err
+		}
 	} else {
+		if err := emit(StreamEvent{Type: "status", Message: "正在判断需要调用的能力"}); err != nil {
+			return err
+		}
 		toolResponse, err := s.createChatCompletion(ctx, openAIChatRequest{
 			Model:       s.model,
 			User:        buildUpstreamUser(chatCtx),
@@ -129,11 +135,14 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 		toolCalls := normalizeToolCallIDs(assistantMessage.ToolCalls)
 		if len(toolCalls) > 0 {
 			finalMessages = append([]openAIChatMessage{}, upstreamMessages...)
-			finalMessages = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
+			finalMessages, err = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
 				Role:      valueOrDefault(assistantMessage.Role, "assistant"),
 				Content:   assistantMessage.Content,
 				ToolCalls: toolCalls,
-			}, toolCalls)
+			}, toolCalls, emit)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -148,10 +157,27 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 	return nil
 }
 
-func (s *Service) appendToolResults(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, assistantMessage openAIChatMessage, toolCalls []openAIToolCall) []openAIChatMessage {
+func (s *Service) appendToolResults(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, assistantMessage openAIChatMessage, toolCalls []openAIToolCall, emit func(StreamEvent) error) ([]openAIChatMessage, error) {
 	messages = append(messages, assistantMessage)
 	for _, call := range toolCalls {
+		toolName := strings.TrimSpace(call.Function.Name)
+		if emit != nil {
+			if err := emit(StreamEvent{Type: "tool_start", ToolName: toolName, Message: toolStatusMessage(toolName, "start")}); err != nil {
+				return nil, err
+			}
+		}
 		result := s.executeTool(ctx, chatCtx, call)
+		if emit != nil {
+			eventType := "tool_done"
+			message := toolStatusMessage(toolName, "done")
+			if toolResultFailed(result) {
+				eventType = "tool_error"
+				message = toolStatusMessage(toolName, "error")
+			}
+			if err := emit(StreamEvent{Type: eventType, ToolName: toolName, Message: message}); err != nil {
+				return nil, err
+			}
+		}
 		messages = append(messages, openAIChatMessage{
 			Role:       "tool",
 			Content:    mustJSON(result),
@@ -159,7 +185,7 @@ func (s *Service) appendToolResults(ctx context.Context, chatCtx ChatContext, me
 			Name:       call.Function.Name,
 		})
 	}
-	return messages
+	return messages, nil
 }
 
 func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, emit func(StreamEvent) error) (string, error) {
@@ -579,6 +605,74 @@ func (s *Service) executeTool(ctx context.Context, chatCtx ChatContext, call ope
 			"ok":    false,
 			"error": "unknown tool: " + name,
 		}
+	}
+}
+
+func toolResultFailed(result map[string]any) bool {
+	value, ok := result["ok"]
+	if !ok {
+		return false
+	}
+	if passed, ok := value.(bool); ok {
+		return !passed
+	}
+	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(value)), "false")
+}
+
+func toolStatusMessage(name, stage string) string {
+	displayName := toolDisplayName(name)
+	switch stage {
+	case "start":
+		switch name {
+		case "get_recipe_count":
+			return "正在统计美食库"
+		case "search_recipes_by_name":
+			return "正在查找菜谱"
+		case "parse_and_add_recipe_from_url":
+			return "正在解析链接并保存食材"
+		default:
+			return "正在调用" + displayName
+		}
+	case "done":
+		switch name {
+		case "get_recipe_count":
+			return "已完成菜谱统计"
+		case "search_recipes_by_name":
+			return "已完成菜谱查找"
+		case "parse_and_add_recipe_from_url":
+			return "已解析并保存食材"
+		default:
+			return displayName + "调用完成"
+		}
+	case "error":
+		switch name {
+		case "get_recipe_count":
+			return "菜谱统计失败，正在整理说明"
+		case "search_recipes_by_name":
+			return "菜谱查找失败，正在整理说明"
+		case "parse_and_add_recipe_from_url":
+			return "链接解析保存失败，正在整理说明"
+		default:
+			return displayName + "调用失败，正在整理说明"
+		}
+	default:
+		return displayName
+	}
+}
+
+func toolDisplayName(name string) string {
+	switch name {
+	case "get_recipe_count":
+		return "美食库统计"
+	case "search_recipes_by_name":
+		return "菜谱查找"
+	case "parse_and_add_recipe_from_url":
+		return "链接解析保存"
+	default:
+		if strings.TrimSpace(name) == "" {
+			return "工具"
+		}
+		return strings.TrimSpace(name)
 	}
 }
 

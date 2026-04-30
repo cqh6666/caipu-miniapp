@@ -151,9 +151,11 @@ func TestServiceStreamChatExecutesRecipeCountTool(t *testing.T) {
 	})
 
 	var content strings.Builder
+	var events []StreamEvent
 	err := service.StreamChat(context.Background(), ChatContext{UserID: 11, KitchenID: 22}, []ChatMessage{
 		{Role: "user", Content: "正餐有多少道？"},
 	}, func(event StreamEvent) error {
+		events = append(events, event)
 		if event.Type == "delta" {
 			content.WriteString(event.Delta)
 		}
@@ -167,6 +169,15 @@ func TestServiceStreamChatExecutesRecipeCountTool(t *testing.T) {
 	}
 	if got, want := content.String(), "正餐共有 7 道。"; got != want {
 		t.Fatalf("content = %q, want %q", got, want)
+	}
+	if !hasStreamEvent(events, "status", "", "正在判断需要调用的能力") {
+		t.Fatalf("events missing planning status: %#v", events)
+	}
+	if !hasStreamEvent(events, "tool_start", "get_recipe_count", "正在统计美食库") {
+		t.Fatalf("events missing tool_start: %#v", events)
+	}
+	if !hasStreamEvent(events, "tool_done", "get_recipe_count", "已完成菜谱统计") {
+		t.Fatalf("events missing tool_done: %#v", events)
 	}
 }
 
@@ -221,9 +232,11 @@ func TestServiceStreamChatParsesURLOnlyMessageWithoutPlanningRequest(t *testing.
 	})
 
 	var content strings.Builder
+	var events []StreamEvent
 	err := service.StreamChat(context.Background(), ChatContext{UserID: 3, KitchenID: 4}, []ChatMessage{
 		{Role: "user", Content: "https://www.bilibili.com/video/BV1xx411c7mD"},
 	}, func(event StreamEvent) error {
+		events = append(events, event)
 		if event.Type == "delta" {
 			content.WriteString(event.Delta)
 		}
@@ -246,6 +259,15 @@ func TestServiceStreamChatParsesURLOnlyMessageWithoutPlanningRequest(t *testing.
 	}
 	if got, want := content.String(), "已保存番茄炒蛋。"; got != want {
 		t.Fatalf("content = %q, want %q", got, want)
+	}
+	if hasStreamEvent(events, "status", "", "正在判断需要调用的能力") {
+		t.Fatalf("url-only path should skip planning status: %#v", events)
+	}
+	if !hasStreamEvent(events, "tool_start", "parse_and_add_recipe_from_url", "正在解析链接并保存食材") {
+		t.Fatalf("events missing url tool_start: %#v", events)
+	}
+	if !hasStreamEvent(events, "tool_done", "parse_and_add_recipe_from_url", "已解析并保存食材") {
+		t.Fatalf("events missing url tool_done: %#v", events)
 	}
 }
 
@@ -370,4 +392,20 @@ func TestServiceStreamChatRequiresConfig(t *testing.T) {
 	if !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func hasStreamEvent(events []StreamEvent, eventType, toolName, message string) bool {
+	for _, event := range events {
+		if event.Type != eventType {
+			continue
+		}
+		if toolName != "" && event.ToolName != toolName {
+			continue
+		}
+		if message != "" && event.Message != message {
+			continue
+		}
+		return true
+	}
+	return false
 }

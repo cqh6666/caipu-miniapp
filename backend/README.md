@@ -91,7 +91,8 @@ go run ./cmd/server
 - `DIET_ASSISTANT_AI_API_KEY` 填 LongCat API Key
 
 当前 `POST /api/diet-assistant/chat/stream` 会先用非流式 tools 请求判断是否需要
-调用工具，再把工具结果交给模型并以 SSE 流式返回最终回复。已支持的工具：
+调用工具，执行工具阶段会通过 SSE 发送 `status` / `tool_start` / `tool_done`
+等状态事件，再把工具结果交给模型并以 `delta` 流式返回最终回复。已支持的工具：
 
 - `get_recipe_count`：按当前空间统计菜谱数量，支持餐别和状态过滤
 - `search_recipes_by_name`：按菜谱名模糊查询当前空间菜谱，支持餐别和状态过滤

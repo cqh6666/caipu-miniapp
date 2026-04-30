@@ -89,7 +89,7 @@
 								'chat-bubble__text--pending': message.pending && !message.text
 							}"
 						>
-							{{ message.text || (message.pending ? '正在整理...' : '') }}
+							{{ message.text || (message.pending ? message.statusText || '正在整理...' : '') }}
 						</text>
 					</view>
 				</view>
@@ -310,6 +310,7 @@ export default {
 				requestID,
 				role: 'assistant',
 				text: '',
+				statusText: '正在整理...',
 				pending: true,
 				contextExcluded: false
 			})
@@ -336,6 +337,9 @@ export default {
 			const stream = streamDietAssistantChat(messages, {
 				onDelta: (delta) => {
 					this.appendAssistantDelta(assistantID, delta)
+				},
+				onStatus: (event) => {
+					this.updateAssistantStatus(assistantID, event?.message || '')
 				},
 				onDone: () => {
 					this.finishAssistantMessage(assistantID)
@@ -373,12 +377,22 @@ export default {
 			if (!message || !delta) return
 			message.text = `${message.text || ''}${delta}`
 			message.pending = true
+			message.statusText = ''
+			this.bumpScrollAnchor()
+		},
+		updateAssistantStatus(id = '', text = '') {
+			const message = this.findMessage(id)
+			const statusText = String(text || '').trim()
+			if (!message || !statusText || String(message.text || '').trim()) return
+			message.statusText = statusText
+			message.pending = true
 			this.bumpScrollAnchor()
 		},
 		setAssistantMessage(id = '', text = '', pending = false, transient = false) {
 			const message = this.findMessage(id)
 			if (!message) return
 			message.text = String(text || '')
+			message.statusText = ''
 			message.pending = pending
 			message.transient = transient
 			this.bumpScrollAnchor()
@@ -402,6 +416,7 @@ export default {
 			if (!String(message.text || '').trim()) {
 				message.text = '我这边没有收到有效回复，可以换个问法再试一次。'
 			}
+			message.statusText = ''
 			message.pending = false
 			message.transient = false
 			this.bumpScrollAnchor()
@@ -415,9 +430,11 @@ export default {
 				const message = this.findMessage(this.activeAssistantMessageID)
 				if (message?.pending && !String(message.text || '').trim()) {
 					message.text = '已停止回复。'
+					message.statusText = ''
 					message.pending = false
 					message.transient = true
 				} else if (message) {
+					message.statusText = ''
 					message.pending = false
 					message.transient = true
 				}

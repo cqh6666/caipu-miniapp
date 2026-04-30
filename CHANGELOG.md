@@ -1,5 +1,31 @@
 # Project Changelog
 
+## 2026-05-01 (饮食管家工具调用实时状态)
+
+### Added
+
+- **修改时间**：2026-05-01 01:54:50 +0800 CST
+- **变更背景**：饮食管家执行 function calling 时，前端原本只能显示固定“正在整理...”，用户无法知道当前是在统计美食库、查找菜谱还是解析链接保存食材。
+- **核心改动**：
+  - `backend/internal/dietassistant/model.go` 为 SSE `StreamEvent` 增加 `toolName` 字段，保留既有 `delta` / `error` / `done` 事件兼容性。
+  - `backend/internal/dietassistant/service.go` 在工具规划阶段发送 `status`，在工具执行前后发送 `tool_start`、`tool_done` 或 `tool_error`，分别展示“正在统计美食库”“正在查找菜谱”“正在解析链接并保存食材”等状态。
+  - 纯 URL 输入直接走 `parse_and_add_recipe_from_url` 时同样会实时发送工具状态，不再只有最终 AI 流式回复。
+  - `utils/diet-assistant-api.js` 识别 `status` / `tool_start` / `tool_done` / `tool_error` 事件并回调前端。
+  - `pages/index/components/diet-assistant-sheet.vue` 为 pending 助手消息新增 `statusText`，在 AI 正文 delta 到达前动态更新气泡文案。
+  - `README.md` 与 `backend/README.md` 补充饮食管家工具执行阶段 SSE 状态事件说明。
+- **影响范围**：
+  - 影响饮食管家 `POST /api/diet-assistant/chat/stream` 的 SSE 事件内容；旧客户端会忽略新增事件，继续消费 `delta` / `done`。
+  - 仅调整饮食管家弹层 pending 文案，不改变聊天记录落库内容和最终 AI 回复内容。
+- **兼容性/风险**：
+  - 新状态事件不会写入后端聊天历史；历史记录仍只保存用户消息和助手最终回复。
+  - 如果某个工具失败，前端会先显示失败状态，随后仍由模型基于工具错误生成最终说明。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/diet-assistant-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析 `pages/index/components/diet-assistant-sheet.vue`，通过。
+  - 已执行 `git diff --check`，通过。
+
 ## 2026-05-01 (饮食管家 URL 解析保存 tool)
 
 ### Changed
