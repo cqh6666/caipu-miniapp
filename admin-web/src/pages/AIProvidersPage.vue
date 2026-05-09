@@ -863,6 +863,82 @@
                           />
                         </el-select>
                       </label>
+                      <template v-if="isImageGenerationProvider(provider)">
+                        <label class="routing-field">
+                          <span
+                            >图片尺寸
+                            <HelpTip :content="helpTips.imageSize"
+                          /></span>
+                          <el-select
+                            v-model="provider.extra.size"
+                            allow-create
+                            filterable
+                            placeholder="1536x1024"
+                          >
+                            <el-option
+                              v-for="item in imageSizeOptions"
+                              :key="item.value"
+                              :label="item.label"
+                              :value="item.value"
+                            />
+                          </el-select>
+                        </label>
+                        <label class="routing-field">
+                          <span>质量</span>
+                          <el-select v-model="provider.extra.quality">
+                            <el-option
+                              v-for="item in imageQualityOptions"
+                              :key="item.value"
+                              :label="item.label"
+                              :value="item.value"
+                            />
+                          </el-select>
+                        </label>
+                        <label class="routing-field">
+                          <span>背景</span>
+                          <el-select v-model="provider.extra.background">
+                            <el-option
+                              v-for="item in imageBackgroundOptions"
+                              :key="item.value"
+                              :label="item.label"
+                              :value="item.value"
+                            />
+                          </el-select>
+                        </label>
+                        <label class="routing-field">
+                          <span>输出格式</span>
+                          <el-select v-model="provider.extra.output_format">
+                            <el-option
+                              v-for="item in imageOutputFormatOptions"
+                              :key="item.value"
+                              :label="item.label"
+                              :value="item.value"
+                            />
+                          </el-select>
+                        </label>
+                        <label
+                          v-if="provider.extra.output_format !== 'png'"
+                          class="routing-field"
+                        >
+                          <span
+                            >压缩率
+                            <HelpTip :content="helpTips.imageCompression"
+                          /></span>
+                          <el-input-number
+                            v-model="provider.extra.output_compression"
+                            :min="0"
+                            :max="100"
+                          />
+                        </label>
+                        <label class="routing-field">
+                          <span>数量</span>
+                          <el-input-number
+                            v-model="provider.extra.n"
+                            :min="1"
+                            :max="10"
+                          />
+                        </label>
+                      </template>
                     </div>
                   </section>
                   <div class="provider-editor-secret">
@@ -1723,7 +1799,9 @@ const helpTips = {
   endpoint:
     "图片生成节点使用 images/generations；普通文本节点使用 chat/completions。",
   responseFormat:
-    "images/generations 固定 output_format=png；这里仅配置响应返回格式。",
+    "DALL-E 或三方兼容节点会随请求发送；GPT image 节点默认返回 b64_json，本字段只作为解码偏好。",
+  imageSize: "支持 auto 或 1024x1024、1536x1024、1024x1536 等 OpenAI 图片尺寸。",
+  imageCompression: "仅 jpeg / webp 生效；数值越低体积越小，画质损失越明显。",
   apiKey: "已保存密钥留空会继续保留旧值；点击清空并保存后才会移除。",
   audit: "默认只展示最近 5 条，完整审计可在抽屉中筛选和分页。",
 };
@@ -1752,6 +1830,28 @@ const providerResponseFormatOptions: Array<{
   { label: "auto", value: "auto" },
   { label: "image_url", value: "image_url" },
   { label: "b64_json", value: "b64_json" },
+];
+const imageSizeOptions = [
+  { label: "auto", value: "auto" },
+  { label: "1024x1024", value: "1024x1024" },
+  { label: "1536x1024", value: "1536x1024" },
+  { label: "1024x1536", value: "1024x1536" },
+];
+const imageQualityOptions = [
+  { label: "auto", value: "auto" },
+  { label: "low", value: "low" },
+  { label: "medium", value: "medium" },
+  { label: "high", value: "high" },
+];
+const imageBackgroundOptions = [
+  { label: "auto", value: "auto" },
+  { label: "opaque", value: "opaque" },
+  { label: "transparent", value: "transparent" },
+];
+const imageOutputFormatOptions = [
+  { label: "png", value: "png" },
+  { label: "jpeg", value: "jpeg" },
+  { label: "webp", value: "webp" },
 ];
 const auditPageSizeOptions = [20, 50, 100];
 
@@ -2071,8 +2171,12 @@ function isImageGenerationProvider(provider: AIRoutingProviderConfig) {
 function handleEndpointModeChange(provider: AIRoutingProviderConfig) {
   if (!isImageGenerationProvider(provider)) {
     provider.responseFormat = "auto";
+    provider.extra = normalizeProviderExtra(provider);
   } else if (!provider.responseFormat) {
     provider.responseFormat = "auto";
+    provider.extra = normalizeProviderExtra(provider);
+  } else {
+    provider.extra = normalizeProviderExtra(provider);
   }
 }
 
@@ -3022,7 +3126,16 @@ function hydrateScene(scene: AIRoutingSceneConfig): AIRoutingSceneConfig {
     hasAPIKey: false,
     apiKeyMasked: "",
     ...provider,
-    extra: provider.extra || {},
+    extra: normalizeProviderExtra({
+      ...provider,
+      endpointMode: (provider.endpointMode ||
+        "chat_completions") as AIRoutingProviderEndpointMode,
+      responseFormat:
+        provider.endpointMode === "images_generations"
+          ? provider.responseFormat || "auto"
+          : "auto",
+      extra: provider.extra || {},
+    } as AIRoutingProviderConfig),
     endpointMode: (provider.endpointMode ||
       "chat_completions") as AIRoutingProviderEndpointMode,
     responseFormat:
@@ -3033,6 +3146,65 @@ function hydrateScene(scene: AIRoutingSceneConfig): AIRoutingSceneConfig {
     clearApiKey: false,
   }));
   return clone;
+}
+
+function normalizeProviderExtra(provider: AIRoutingProviderConfig) {
+  const extra = { ...(provider.extra || {}) };
+  if ((provider.endpointMode || "chat_completions") !== "images_generations") {
+    delete extra.size;
+    delete extra.quality;
+    delete extra.background;
+    delete extra.output_format;
+    delete extra.output_compression;
+    delete extra.n;
+    return extra;
+  }
+
+  const outputFormat = normalizeImageOutputFormat(extra.output_format) || "png";
+  extra.output_format = outputFormat;
+
+  const size = String(extra.size || "").trim();
+  extra.size = size || "auto";
+
+  const quality = String(extra.quality || "").trim();
+  extra.quality = quality || "auto";
+
+  const background = String(extra.background || "").trim();
+  extra.background = background || "auto";
+
+  if (outputFormat === "png") {
+    delete extra.output_compression;
+  } else if (
+    extra.output_compression === undefined ||
+    extra.output_compression === null ||
+    extra.output_compression === ""
+  ) {
+    extra.output_compression = 60;
+  } else {
+    extra.output_compression = Math.min(
+      Math.max(Number(extra.output_compression) || 0, 0),
+      100,
+    );
+  }
+
+  if (extra.n === undefined || extra.n === null || extra.n === "") {
+    extra.n = 1;
+  } else {
+    extra.n = Math.min(Math.max(Number(extra.n) || 1, 1), 10);
+  }
+
+  return extra;
+}
+
+function normalizeImageOutputFormat(value: unknown) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "jpg") {
+    return "jpeg";
+  }
+  if (raw === "jpeg" || raw === "webp" || raw === "png") {
+    return raw;
+  }
+  return "";
 }
 
 function comparableScene(scene: AIRoutingSceneConfig) {
@@ -3056,6 +3228,7 @@ function buildScenePayload(scene: AIRoutingSceneConfig): AIRoutingSceneConfig {
       provider.endpointMode === "images_generations"
         ? provider.responseFormat || "auto"
         : "auto",
+    extra: normalizeProviderExtra(provider),
     apiKey: (provider.apiKey || "").trim(),
     apiKeyMasked: provider.apiKeyMasked || "",
     hasAPIKey: !!provider.hasAPIKey,
@@ -3101,7 +3274,17 @@ function createProvider(scene: AIRoutingSceneKey): AIRoutingProviderConfig {
     endpointMode:
       scene === "flowchart" ? "images_generations" : "chat_completions",
     responseFormat: scene === "flowchart" ? "b64_json" : "auto",
-    extra: {},
+    extra:
+      scene === "flowchart"
+        ? {
+            size: "1536x1024",
+            quality: "high",
+            background: "opaque",
+            output_format: "jpeg",
+            output_compression: 60,
+            n: 1,
+          }
+        : {},
   };
 }
 

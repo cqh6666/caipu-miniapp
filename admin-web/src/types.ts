@@ -164,6 +164,18 @@ export type AIRoutingProviderEndpointMode =
   | "images_generations";
 export type AIRoutingProviderResponseFormat = "auto" | "image_url" | "b64_json";
 
+export interface AIRoutingProviderExtra {
+  endpoint_mode?: string;
+  response_format?: string;
+  size?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  output_compression?: number;
+  n?: number;
+  [key: string]: unknown;
+}
+
 export interface AIRoutingBreakerConfig {
   failureThreshold: number;
   cooldownSeconds: number;
@@ -192,7 +204,7 @@ export interface AIRoutingProviderConfig {
   timeoutSeconds: number;
   endpointMode?: AIRoutingProviderEndpointMode;
   responseFormat?: AIRoutingProviderResponseFormat;
-  extra?: Record<string, unknown>;
+  extra: AIRoutingProviderExtra;
   updatedBySubject?: string;
   updatedAt?: string;
 }

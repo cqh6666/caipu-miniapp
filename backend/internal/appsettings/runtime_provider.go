@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
 )
@@ -755,7 +756,7 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 				{Group: "ai.flowchart", Key: "api_key", Label: "API Key", Description: "流程图模型密钥。", ValueType: "string", IsSecret: true, DefaultValue: strings.TrimSpace(cfg.AIFlowchartAPIKey)},
 				{Group: "ai.flowchart", Key: "model", Label: "Model", Description: "流程图生成模型。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartModel)},
 				{Group: "ai.flowchart", Key: "endpoint_mode", Label: "Endpoint Mode", Description: "流程图节点请求路径：chat_completions 或 images_generations。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartEndpointMode)},
-				{Group: "ai.flowchart", Key: "response_format", Label: "Response Format", Description: "images_generations 返回格式：auto / image_url / b64_json。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartResponseFormat)},
+				{Group: "ai.flowchart", Key: "response_format", Label: "Response Format", Description: "images_generations 响应偏好：auto / image_url / b64_json；GPT image 模型默认 b64_json，不随请求发送该字段。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartResponseFormat)},
 				{Group: "ai.flowchart", Key: "timeout_seconds", Label: "Timeout", Description: "请求超时时间（秒）。", ValueType: "int", DefaultValue: strconv.Itoa(cfg.AIFlowchartTimeoutSeconds)},
 			},
 		},
@@ -1014,9 +1015,13 @@ func testFlowchartCompatible(ctx context.Context, baseURL, apiKey, model, endpoi
 		switch strings.ToLower(strings.TrimSpace(responseFormat)) {
 		case "", "auto":
 		case "image_url", "image-url", "url":
-			payload["response_format"] = "image_url"
+			if !airouter.IsGPTImageModel(model) {
+				payload["response_format"] = "image_url"
+			}
 		case "b64_json", "b64-json", "base64":
-			payload["response_format"] = "b64_json"
+			if !airouter.IsGPTImageModel(model) {
+				payload["response_format"] = "b64_json"
+			}
 		default:
 			return GroupTestResult{OK: false, Message: "response_format 非法，应为 auto / image_url / b64_json"}
 		}

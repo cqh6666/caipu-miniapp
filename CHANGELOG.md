@@ -1,5 +1,45 @@
 # Project Changelog
 
+## 2026-05-09 (优化 GPT Image b64_json 生图协议)
+
+### Changed
+
+- **修改时间**：2026-05-09 17:06:16 +0800 CST
+- **变更背景**：`AI Provider -> flowchart` 接入 `gpt-image-*`
+  图片生成节点时，继续把 `response_format=b64_json` 当成主请求字段会与
+  GPT Image 默认 `b64_json` 响应口径冲突；同时原实现固定
+  `output_format=png`，无法支持 `jpeg + output_compression`、尺寸、质量和背景等
+  输出控制参数。
+- **核心改动**：
+  - `backend/internal/airouter` 为 `images/generations` 节点新增
+    `size / quality / background / output_format / output_compression / n`
+    参数解析、校验和持久化，参数来源为 Provider `extra`。
+  - `gpt-image-*` 模型不再随请求发送 `response_format`；`responseFormat`
+    保留为 DALL-E / 三方兼容字段和后端响应解码偏好。
+  - 后端解析 `b64_json` 时会按实际 `output_format` 生成
+    `data:image/jpeg|png|webp;base64,...`，避免 `jpeg` 响应被错误标记成
+    `png`。
+  - `admin-web` 的 AI Provider 页面为 `images/generations` 节点新增图片尺寸、
+    质量、背景、输出格式、压缩率和生成数量配置，新建 flowchart 图片节点默认
+    使用 `1536x1024 / high / opaque / jpeg / 60 / n=1`。
+  - README、后端 README 与 AI 多 Provider 设计文档同步更新协议口径。
+- **影响范围**：
+  - 影响 `flowchart` 场景中配置为 `images_generations` 的 AI Provider 请求体和
+    响应解析。
+  - 不影响 `summary / title` 文本场景，不影响 `chat/completions` 形式的流程图节点。
+- **兼容性/风险**：
+  - 旧的 `responseFormat=b64_json` 配置仍可保留；对 `gpt-image-*` 只作为解码偏好，
+    对非 GPT Image 模型仍按原逻辑随请求发送。
+  - 旧节点未配置图片输出参数时继续默认 `output_format=png`；只有在后台保存
+    Provider `extra` 后才会切到新的尺寸 / JPEG / 压缩配置。
+- **验证情况**：
+  - 已执行 `go test ./internal/airouter`，通过。
+  - 已执行 `go test ./internal/recipe`，通过。
+  - 已执行 `go test ./internal/appsettings`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `npm --prefix admin-web run build`，通过（仅有既有 chunk size warning）。
+  - 已执行 `git diff --check`，通过。
+
 ## 2026-05-09 (配置中心移除旧 AI 单节点分组)
 
 ### Changed

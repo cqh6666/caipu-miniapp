@@ -515,6 +515,13 @@ admin-web/src/
 - 由 `AI Router` 执行多节点尝试
 - 最终成功则记录真实 Provider
 - 全部失败保持失败，不生成伪结果
+- `images/generations` 节点支持在 Provider `extra` 中配置
+  `size / quality / background / output_format / output_compression / n`。
+  对 `gpt-image-*` 模型，`response_format` 不随请求发送；后端按模型默认的
+  `b64_json` 响应解析，并用实际 `output_format` 生成正确的
+  `data:image/...;base64` URL。
+- `responseFormat` 保留为解码偏好与 DALL-E / 三方兼容字段：
+  当模型不是 `gpt-image-*` 且配置为 `image_url` 或 `b64_json` 时才会随请求发送。
 
 ## 11. 审计与观测口径
 

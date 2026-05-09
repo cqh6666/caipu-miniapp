@@ -89,8 +89,8 @@ func TestRuntimeProviderTestRuntimeGroupUsesImageGenerationEndpointForFlowchart(
 		if got := payload["output_format"]; got != "png" {
 			t.Fatalf("request output_format = %#v, want %q", got, "png")
 		}
-		if got := payload["response_format"]; got != "b64_json" {
-			t.Fatalf("request response_format = %#v, want %q", got, "b64_json")
+		if _, ok := payload["response_format"]; ok {
+			t.Fatalf("request body unexpectedly contains response_format for gpt-image model: %#v", payload["response_format"])
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}]}`))

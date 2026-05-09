@@ -341,7 +341,7 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 			logCall(audit.CallStatusFailed, 0, callErr)
 			return "", callErr
 		}
-		if c.responseFormat != airouter.ResponseFormatAuto {
+		if airouter.ShouldSendImageResponseFormat(c.model, c.responseFormat) {
 			payload.ResponseFormat = string(c.responseFormat)
 		}
 		marshaled, err := json.Marshal(payload)
@@ -426,7 +426,11 @@ func (c *flowchartClient) decodeResponse(resp *http.Response) (string, error) {
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
 			return "", errors.New(strings.TrimSpace(parsed.Error.Message))
 		}
-		content := extractFlowchartGeneratedImageContent(parsed.Data, c.responseFormat)
+		content := extractFlowchartGeneratedImageContent(
+			parsed.Data,
+			c.responseFormat,
+			airouter.ImageMIMEType(defaultFlowchartImageOutputFormat),
+		)
 		if content == "" {
 			return "", fmt.Errorf("flowchart image response contained no image")
 		}
@@ -787,7 +791,11 @@ func extractFlowchartMessageContent(raw json.RawMessage) string {
 func extractFlowchartGeneratedImageContent(items []struct {
 	URL     string `json:"url"`
 	B64JSON string `json:"b64_json"`
-}, responseFormat airouter.ProviderResponseFormat) string {
+}, responseFormat airouter.ProviderResponseFormat, imageMIMEType string) string {
+	imageMIMEType = strings.TrimSpace(imageMIMEType)
+	if imageMIMEType == "" {
+		imageMIMEType = airouter.ImageMIMEType(defaultFlowchartImageOutputFormat)
+	}
 	for _, item := range items {
 		url := normalizeFlowchartImageReference(item.URL)
 		b64 := strings.TrimSpace(item.B64JSON)
@@ -798,14 +806,14 @@ func extractFlowchartGeneratedImageContent(items []struct {
 			}
 		case airouter.ResponseFormatB64JSON:
 			if b64 != "" {
-				return "data:image/" + defaultFlowchartImageOutputFormat + ";base64," + b64
+				return "data:image/" + imageMIMEType + ";base64," + b64
 			}
 		default:
 			if url != "" {
 				return url
 			}
 			if b64 != "" {
-				return "data:image/" + defaultFlowchartImageOutputFormat + ";base64," + b64
+				return "data:image/" + imageMIMEType + ";base64," + b64
 			}
 		}
 	}

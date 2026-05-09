@@ -1,6 +1,9 @@
 package airouter
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -80,6 +83,15 @@ type ProviderConfig struct {
 	Extra          map[string]any         `json:"extra,omitempty"`
 	UpdatedBy      string                 `json:"updatedBySubject,omitempty"`
 	UpdatedAt      string                 `json:"updatedAt,omitempty"`
+}
+
+type ImageGenerationOptions struct {
+	Size              string
+	Quality           string
+	Background        string
+	OutputFormat      string
+	OutputCompression *int
+	N                 *int
 }
 
 type SceneConfig struct {
@@ -263,9 +275,244 @@ func IsValidProviderResponseFormat(value string) bool {
 	return ok
 }
 
+func DefaultImageGenerationOptions() ImageGenerationOptions {
+	return ImageGenerationOptions{
+		OutputFormat: "png",
+	}
+}
+
+func ImageGenerationOptionsFromExtra(extra map[string]any) ImageGenerationOptions {
+	options := DefaultImageGenerationOptions()
+	if len(extra) == 0 {
+		return options
+	}
+	if value := extraStringValue(extra, providerExtraKeyImageSize); value != "" {
+		options.Size = value
+	}
+	if value := extraStringValue(extra, providerExtraKeyImageQuality); value != "" {
+		options.Quality = value
+	}
+	if value := extraStringValue(extra, providerExtraKeyImageBackground); value != "" {
+		options.Background = value
+	}
+	if value := extraStringValue(extra, providerExtraKeyImageOutputFormat); value != "" {
+		options.OutputFormat = value
+	}
+	if value, ok := extraIntValue(extra, providerExtraKeyImageOutputCompression); ok {
+		options.OutputCompression = &value
+	}
+	if value, ok := extraIntValue(extra, providerExtraKeyImageN); ok {
+		options.N = &value
+	}
+	return options
+}
+
+func NormalizeImageOutputFormat(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "jpg", "jpeg":
+		return "jpeg"
+	case "webp":
+		return "webp"
+	case "", "png":
+		return "png"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func ImageMIMEType(outputFormat string) string {
+	switch NormalizeImageOutputFormat(outputFormat) {
+	case "jpeg":
+		return "jpeg"
+	case "webp":
+		return "webp"
+	default:
+		return "png"
+	}
+}
+
+func IsGPTImageModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gpt-image-")
+}
+
+func ShouldSendImageResponseFormat(model string, responseFormat ProviderResponseFormat) bool {
+	if responseFormat == ResponseFormatAuto {
+		return false
+	}
+	return !IsGPTImageModel(model)
+}
+
+func ValidateImageGenerationOptions(options ImageGenerationOptions) error {
+	if options.Size != "" && !isValidImageSize(options.Size) {
+		return fmt.Errorf("provider image size is invalid")
+	}
+	if options.Quality != "" && !isValidImageQuality(options.Quality) {
+		return fmt.Errorf("provider image quality is invalid")
+	}
+	if options.Background != "" && !isValidImageBackground(options.Background) {
+		return fmt.Errorf("provider image background is invalid")
+	}
+	if options.OutputFormat != "" && !isValidImageOutputFormat(options.OutputFormat) {
+		return fmt.Errorf("provider image outputFormat is invalid")
+	}
+	if options.OutputCompression != nil {
+		if *options.OutputCompression < 0 || *options.OutputCompression > 100 {
+			return fmt.Errorf("provider image outputCompression must be between 0 and 100")
+		}
+		if NormalizeImageOutputFormat(options.OutputFormat) == "png" {
+			return fmt.Errorf("provider image outputCompression only applies to jpeg or webp")
+		}
+	}
+	if options.N != nil && (*options.N < 1 || *options.N > 10) {
+		return fmt.Errorf("provider image n must be between 1 and 10")
+	}
+	return nil
+}
+
+func ImageGenerationExtraForPersistence(extra map[string]any, endpointMode ProviderEndpointMode) (map[string]any, error) {
+	cloned := cloneProviderExtra(extra)
+	if cloned == nil {
+		cloned = make(map[string]any)
+	}
+	if endpointMode != EndpointModeImagesGenerations {
+		deleteImageGenerationExtra(cloned)
+		return cloned, nil
+	}
+
+	options := ImageGenerationOptionsFromExtra(cloned)
+	options.OutputFormat = NormalizeImageOutputFormat(options.OutputFormat)
+	if err := ValidateImageGenerationOptions(options); err != nil {
+		return nil, err
+	}
+
+	setOrDeleteString(cloned, providerExtraKeyImageSize, options.Size)
+	setOrDeleteString(cloned, providerExtraKeyImageQuality, strings.ToLower(strings.TrimSpace(options.Quality)))
+	setOrDeleteString(cloned, providerExtraKeyImageBackground, strings.ToLower(strings.TrimSpace(options.Background)))
+	setOrDeleteString(cloned, providerExtraKeyImageOutputFormat, options.OutputFormat)
+	if options.OutputCompression == nil {
+		delete(cloned, providerExtraKeyImageOutputCompression)
+	} else {
+		cloned[providerExtraKeyImageOutputCompression] = *options.OutputCompression
+	}
+	if options.N == nil {
+		delete(cloned, providerExtraKeyImageN)
+	} else {
+		cloned[providerExtraKeyImageN] = *options.N
+	}
+	return cloned, nil
+}
+
 func DefaultBreakerConfig() BreakerConfig {
 	return BreakerConfig{
 		FailureThreshold: 3,
 		CooldownSeconds:  60,
+	}
+}
+
+func isValidImageSize(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || value == "auto" {
+		return true
+	}
+	parts := strings.Split(value, "x")
+	if len(parts) != 2 {
+		return false
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil || width <= 0 {
+		return false
+	}
+	height, err := strconv.Atoi(parts[1])
+	return err == nil && height > 0
+}
+
+func isValidImageQuality(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "auto", "low", "medium", "high", "standard", "hd":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidImageBackground(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "auto", "opaque", "transparent":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidImageOutputFormat(value string) bool {
+	switch NormalizeImageOutputFormat(value) {
+	case "", "png", "jpeg", "webp":
+		return true
+	default:
+		return false
+	}
+}
+
+func deleteImageGenerationExtra(extra map[string]any) {
+	delete(extra, providerExtraKeyImageSize)
+	delete(extra, providerExtraKeyImageQuality)
+	delete(extra, providerExtraKeyImageBackground)
+	delete(extra, providerExtraKeyImageOutputFormat)
+	delete(extra, providerExtraKeyImageOutputCompression)
+	delete(extra, providerExtraKeyImageN)
+}
+
+func setOrDeleteString(extra map[string]any, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		delete(extra, key)
+		return
+	}
+	extra[key] = value
+}
+
+func extraIntValue(extra map[string]any, key string) (int, bool) {
+	if len(extra) == 0 {
+		return 0, false
+	}
+	value, ok := extra[key]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int8:
+		return int(typed), true
+	case int16:
+		return int(typed), true
+	case int32:
+		return int(typed), true
+	case int64:
+		return int(typed), true
+	case uint:
+		return int(typed), true
+	case uint8:
+		return int(typed), true
+	case uint16:
+		return int(typed), true
+	case uint32:
+		return int(typed), true
+	case uint64:
+		return int(typed), true
+	case float32:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case json.Number:
+		parsed, err := strconv.Atoi(typed.String())
+		return parsed, err == nil
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed, err == nil
+	default:
+		parsed, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(typed)))
+		return parsed, err == nil
 	}
 }

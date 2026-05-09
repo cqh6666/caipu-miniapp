@@ -30,9 +30,15 @@ var (
 )
 
 const (
-	providerExtraKeyEndpointMode   = "endpoint_mode"
-	providerExtraKeyResponseFormat = "response_format"
-	defaultImageOutputFormat       = "png"
+	providerExtraKeyEndpointMode           = "endpoint_mode"
+	providerExtraKeyResponseFormat         = "response_format"
+	providerExtraKeyImageSize              = "size"
+	providerExtraKeyImageQuality           = "quality"
+	providerExtraKeyImageBackground        = "background"
+	providerExtraKeyImageOutputFormat      = "output_format"
+	providerExtraKeyImageOutputCompression = "output_compression"
+	providerExtraKeyImageN                 = "n"
+	defaultImageOutputFormat               = "png"
 )
 
 type Service struct {
@@ -559,6 +565,9 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 		if provider.EndpointMode == EndpointModeImagesGenerations && scene != SceneFlowchart {
 			return SceneConfig{}, nil, common.NewAppError(common.CodeBadRequest, "images generation endpoint is only supported for flowchart scene", http.StatusBadRequest)
 		}
+		if _, err := ImageGenerationExtraForPersistence(provider.Extra, provider.EndpointMode); err != nil {
+			return SceneConfig{}, nil, common.NewAppError(common.CodeBadRequest, err.Error(), http.StatusBadRequest).WithErr(err)
+		}
 		if provider.Priority <= 0 {
 			provider.Priority = (index + 1) * 10
 		}
@@ -929,11 +938,15 @@ type openAIChatResponse struct {
 }
 
 type openAIImageGenerationRequest struct {
-	Model          string `json:"model"`
-	Prompt         string `json:"prompt"`
-	Quality        string `json:"quality,omitempty"`
-	OutputFormat   string `json:"output_format,omitempty"`
-	ResponseFormat string `json:"response_format,omitempty"`
+	Model             string `json:"model"`
+	Prompt            string `json:"prompt"`
+	Size              string `json:"size,omitempty"`
+	Quality           string `json:"quality,omitempty"`
+	Background        string `json:"background,omitempty"`
+	N                 *int   `json:"n,omitempty"`
+	OutputFormat      string `json:"output_format,omitempty"`
+	OutputCompression *int   `json:"output_compression,omitempty"`
+	ResponseFormat    string `json:"response_format,omitempty"`
 }
 
 type openAIImageGenerationResponse struct {
@@ -954,17 +967,24 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 
 	switch endpointMode {
 	case EndpointModeImagesGenerations:
+		imageOptions := ImageGenerationOptionsFromExtra(provider.Extra)
+		imageOptions.OutputFormat = NormalizeImageOutputFormat(imageOptions.OutputFormat)
 		endpointPath = "/images/generations"
 		request := openAIImageGenerationRequest{
-			Model:        provider.Model,
-			Prompt:       buildImageGenerationPrompt(input.Messages),
-			OutputFormat: defaultImageOutputFormat,
+			Model:             provider.Model,
+			Prompt:            buildImageGenerationPrompt(input.Messages),
+			Size:              strings.TrimSpace(imageOptions.Size),
+			Quality:           strings.TrimSpace(imageOptions.Quality),
+			Background:        strings.TrimSpace(imageOptions.Background),
+			N:                 imageOptions.N,
+			OutputFormat:      imageOptions.OutputFormat,
+			OutputCompression: imageOptions.OutputCompression,
 		}
 		if request.Prompt == "" {
 			return "", endpointPath, 0, 0, common.NewAppError(common.CodeBadRequest, "image generation prompt is required", http.StatusBadRequest)
 		}
 		responseFormat := NormalizeProviderResponseFormat(string(provider.ResponseFormat))
-		if responseFormat != ResponseFormatAuto {
+		if ShouldSendImageResponseFormat(provider.Model, responseFormat) {
 			request.ResponseFormat = string(responseFormat)
 		}
 		marshaled, err := json.Marshal(request)
@@ -1053,7 +1073,11 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
 			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(parsed.Error.Message))
 		}
-		content := extractGeneratedImageContent(parsed.Data, NormalizeProviderResponseFormat(string(provider.ResponseFormat)))
+		content := extractGeneratedImageContent(
+			parsed.Data,
+			NormalizeProviderResponseFormat(string(provider.ResponseFormat)),
+			ImageMIMEType(ImageGenerationOptionsFromExtra(provider.Extra).OutputFormat),
+		)
 		if content == "" {
 			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
 				errorType:  ErrorTypeInvalidResponse,
@@ -1183,7 +1207,11 @@ func buildImageGenerationPrompt(messages []ChatMessage) string {
 func extractGeneratedImageContent(items []struct {
 	URL     string `json:"url"`
 	B64JSON string `json:"b64_json"`
-}, responseFormat ProviderResponseFormat) string {
+}, responseFormat ProviderResponseFormat, imageMIMEType string) string {
+	imageMIMEType = strings.TrimSpace(imageMIMEType)
+	if imageMIMEType == "" {
+		imageMIMEType = ImageMIMEType(defaultImageOutputFormat)
+	}
 	for _, item := range items {
 		url := normalizeImageReference(item.URL)
 		b64 := strings.TrimSpace(item.B64JSON)
@@ -1194,14 +1222,14 @@ func extractGeneratedImageContent(items []struct {
 			}
 		case ResponseFormatB64JSON:
 			if b64 != "" {
-				return "data:image/" + defaultImageOutputFormat + ";base64," + b64
+				return "data:image/" + imageMIMEType + ";base64," + b64
 			}
 		default:
 			if url != "" {
 				return url
 			}
 			if b64 != "" {
-				return "data:image/" + defaultImageOutputFormat + ";base64," + b64
+				return "data:image/" + imageMIMEType + ";base64," + b64
 			}
 		}
 	}
@@ -1435,9 +1463,12 @@ func cloneProviderExtra(extra map[string]any) map[string]any {
 }
 
 func providerExtraForPersistence(extra map[string]any, endpointMode ProviderEndpointMode, responseFormat ProviderResponseFormat) map[string]any {
-	cloned := cloneProviderExtra(extra)
+	cloned, err := ImageGenerationExtraForPersistence(extra, endpointMode)
+	if err != nil {
+		cloned = cloneProviderExtra(extra)
+	}
 	if cloned == nil {
-		cloned = make(map[string]any, 2)
+		cloned = make(map[string]any)
 	}
 	if endpointMode == EndpointModeChatCompletions {
 		delete(cloned, providerExtraKeyEndpointMode)

@@ -186,6 +186,9 @@
 - 更完整的项目专用清单见 `docs/wechat-login-checklist.md`
 - 菜名和步骤生成 `nano-banana-pro` 手绘流程图的调用说明见 `docs/nano-banana-recipe-flowchart.md`
 - AI 多 Provider 配置与轮询 / 降级设计见 `docs/ai-multi-provider-routing-design.md`
+- `AI Provider -> flowchart` 的 `images/generations` 节点可配置图片尺寸、质量、
+  背景、输出格式、压缩率和生成数量；`gpt-image-*` 模型默认按 `b64_json`
+  响应解析，后端不再向这类模型发送 `response_format` 字段。
 - 后台 `配置中心 -> AI Provider 告警` 支持对多 Provider 路由配置连续异常邮件告警，
   默认阈值为 `3` 次，支持 QQ 邮箱 SMTP、授权码和收件邮箱
 - 饮食管家默认直连 LongCat OpenAI-compatible `/chat/completions`，已接入

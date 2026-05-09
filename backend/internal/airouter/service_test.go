@@ -296,14 +296,26 @@ func TestRouteChatFlowchartUsesImageGenerationsEndpoint(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request body error = %v", err)
 		}
-		if _, ok := payload["quality"]; ok {
-			t.Fatalf("request body unexpectedly contains quality: %#v", payload["quality"])
+		if got := payload["quality"]; got != "high" {
+			t.Fatalf("request quality = %#v, want %q", got, "high")
 		}
-		if got := payload["output_format"]; got != "png" {
-			t.Fatalf("request output_format = %#v, want %q", got, "png")
+		if got := payload["size"]; got != "1536x1024" {
+			t.Fatalf("request size = %#v, want %q", got, "1536x1024")
 		}
-		if got := payload["response_format"]; got != "b64_json" {
-			t.Fatalf("request response_format = %#v, want %q", got, "b64_json")
+		if got := payload["background"]; got != "opaque" {
+			t.Fatalf("request background = %#v, want %q", got, "opaque")
+		}
+		if got := payload["output_format"]; got != "jpeg" {
+			t.Fatalf("request output_format = %#v, want %q", got, "jpeg")
+		}
+		if got := payload["output_compression"]; got != float64(60) {
+			t.Fatalf("request output_compression = %#v, want %d", got, 60)
+		}
+		if got := payload["n"]; got != float64(1) {
+			t.Fatalf("request n = %#v, want %d", got, 1)
+		}
+		if _, ok := payload["response_format"]; ok {
+			t.Fatalf("request body unexpectedly contains response_format for gpt-image model: %#v", payload["response_format"])
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}]}`))
@@ -334,6 +346,14 @@ func TestRouteChatFlowchartUsesImageGenerationsEndpoint(t *testing.T) {
 				Scene:          SceneFlowchart,
 				EndpointMode:   EndpointModeImagesGenerations,
 				ResponseFormat: ResponseFormatB64JSON,
+				Extra: map[string]any{
+					"size":               "1536x1024",
+					"quality":            "high",
+					"background":         "opaque",
+					"output_format":      "jpeg",
+					"output_compression": 60,
+					"n":                  1,
+				},
 			},
 		},
 	}, buildSceneTestInput(SceneFlowchart))
@@ -343,8 +363,8 @@ func TestRouteChatFlowchartUsesImageGenerationsEndpoint(t *testing.T) {
 	if result.ProviderID != "flowchart-image-main" {
 		t.Fatalf("routeChat().ProviderID = %q, want %q", result.ProviderID, "flowchart-image-main")
 	}
-	if !strings.HasPrefix(result.Content, "data:image/png;base64,") {
-		t.Fatalf("routeChat() content = %q, want data image url", result.Content)
+	if !strings.HasPrefix(result.Content, "data:image/jpeg;base64,") {
+		t.Fatalf("routeChat() content = %q, want jpeg data image url", result.Content)
 	}
 }
 

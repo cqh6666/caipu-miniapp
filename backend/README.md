@@ -144,6 +144,10 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - AI 多 Provider 配置与轮询 / 降级设计见：[../docs/ai-multi-provider-routing-design.md](../docs/ai-multi-provider-routing-design.md)
 - 后台 `AI Provider` 页面是 `summary / title / flowchart` 多节点路由的唯一运维入口；
   `配置中心` 不再展示旧单节点 AI 分组。
+- `AI Provider -> flowchart` 的 `images/generations` 节点支持配置
+  `size / quality / background / output_format / output_compression / n`；
+  对 `gpt-image-*` 模型，后端默认解析 `b64_json`，不会随请求发送
+  `response_format` 字段。
 - 后台 `配置中心 -> AI Provider 告警` 支持对多 Provider 路由配置连续异常邮件告警，
   默认按同一 Provider 连续异常 `3` 次触发一次邮件；QQ 邮箱推荐使用
   `smtp.qq.com:587` + SMTP 授权码
