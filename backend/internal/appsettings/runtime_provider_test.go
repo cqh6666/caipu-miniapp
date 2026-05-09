@@ -20,20 +20,20 @@ func TestRuntimeProviderUpdateRuntimeGroupPrefersExplicitSecretValueOverClear(t 
 	provider := newRuntimeProviderForTest(t)
 	ctx := context.Background()
 
-	if _, err := provider.UpdateRuntimeGroup(ctx, "tester", "req-1", "ai.summary", map[string]any{
+	if _, err := provider.UpdateRuntimeGroup(ctx, "tester", "req-1", "sidecar.linkparse", map[string]any{
 		"api_key": "old-secret",
 	}, nil); err != nil {
 		t.Fatalf("initial UpdateRuntimeGroup() error = %v", err)
 	}
 
-	if _, err := provider.UpdateRuntimeGroup(ctx, "tester", "req-2", "ai.summary", map[string]any{
+	if _, err := provider.UpdateRuntimeGroup(ctx, "tester", "req-2", "sidecar.linkparse", map[string]any{
 		"api_key": "new-secret",
 	}, []string{"api_key"}); err != nil {
 		t.Fatalf("conflicting UpdateRuntimeGroup() error = %v", err)
 	}
 
-	if got := provider.SummaryAI(ctx).APIKey; got != "new-secret" {
-		t.Fatalf("provider.SummaryAI().APIKey = %q, want %q", got, "new-secret")
+	if got := provider.LinkparseSidecar(ctx).APIKey; got != "new-secret" {
+		t.Fatalf("provider.LinkparseSidecar().APIKey = %q, want %q", got, "new-secret")
 	}
 }
 
@@ -44,7 +44,7 @@ func TestRuntimeProviderTestRuntimeGroupPrefersExplicitValueOverClear(t *testing
 	ctx := context.Background()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
+		if r.URL.Path != "/v1/health" {
 			t.Fatalf("unexpected path = %q", r.URL.Path)
 		}
 		if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "Bearer live-secret" {
@@ -55,11 +55,10 @@ func TestRuntimeProviderTestRuntimeGroupPrefersExplicitValueOverClear(t *testing
 	}))
 	defer server.Close()
 
-	result, err := provider.TestRuntimeGroup(ctx, "tester", "req-3", "ai.summary", map[string]any{
+	result, err := provider.TestRuntimeGroup(ctx, "tester", "req-3", "sidecar.linkparse", map[string]any{
 		"base_url": server.URL,
-		"model":    "gpt-test",
 		"api_key":  "live-secret",
-	}, []string{"base_url", "model", "api_key"})
+	}, []string{"base_url", "api_key"})
 	if err != nil {
 		t.Fatalf("TestRuntimeGroup() error = %v", err)
 	}
@@ -71,7 +70,6 @@ func TestRuntimeProviderTestRuntimeGroupPrefersExplicitValueOverClear(t *testing
 func TestRuntimeProviderTestRuntimeGroupUsesImageGenerationEndpointForFlowchart(t *testing.T) {
 	t.Parallel()
 
-	provider := newRuntimeProviderForTest(t)
 	ctx := context.Background()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,18 +97,67 @@ func TestRuntimeProviderTestRuntimeGroupUsesImageGenerationEndpointForFlowchart(
 	}))
 	defer server.Close()
 
-	result, err := provider.TestRuntimeGroup(ctx, "tester", "req-flowchart", "ai.flowchart", map[string]any{
-		"base_url":        server.URL,
-		"model":           "gpt-image-2",
-		"api_key":         "flowchart-secret",
-		"endpoint_mode":   "images_generations",
-		"response_format": "b64_json",
-	}, nil)
-	if err != nil {
-		t.Fatalf("TestRuntimeGroup(ai.flowchart) error = %v", err)
-	}
+	result := testFlowchartCompatible(
+		ctx,
+		server.URL,
+		"flowchart-secret",
+		"gpt-image-2",
+		"images_generations",
+		"b64_json",
+		0,
+	)
 	if !result.OK {
-		t.Fatalf("TestRuntimeGroup(ai.flowchart).OK = false, message = %q", result.Message)
+		t.Fatalf("testFlowchartCompatible().OK = false, message = %q", result.Message)
+	}
+}
+
+func TestRuntimeProviderListRuntimeGroupsHidesLegacySingleAIConfig(t *testing.T) {
+	t.Parallel()
+
+	provider := newRuntimeProviderForTest(t)
+	groups, err := provider.ListRuntimeGroups(context.Background())
+	if err != nil {
+		t.Fatalf("ListRuntimeGroups() error = %v", err)
+	}
+
+	names := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		names[group.Name] = struct{}{}
+	}
+
+	for _, hidden := range []string{"ai.summary", "ai.title", "ai.flowchart"} {
+		if _, ok := names[hidden]; ok {
+			t.Fatalf("ListRuntimeGroups() includes hidden legacy group %q", hidden)
+		}
+	}
+	for _, visible := range []string{"ai.provider_alert", "sidecar.linkparse"} {
+		if _, ok := names[visible]; !ok {
+			t.Fatalf("ListRuntimeGroups() missing visible group %q", visible)
+		}
+	}
+
+	if got := provider.SummaryAI(context.Background()).BaseURL; got != "https://default.example.com/v1" {
+		t.Fatalf("SummaryAI().BaseURL = %q, want default compatibility value", got)
+	}
+}
+
+func TestRuntimeProviderRejectsLegacySingleAIAdminMutation(t *testing.T) {
+	t.Parallel()
+
+	provider := newRuntimeProviderForTest(t)
+	ctx := context.Background()
+
+	if _, err := provider.UpdateRuntimeGroup(ctx, "tester", "req-hidden-update", "ai.summary", map[string]any{
+		"api_key": "secret",
+	}, nil); err == nil {
+		t.Fatal("UpdateRuntimeGroup(ai.summary) error = nil, want not found")
+	}
+
+	if _, err := provider.TestRuntimeGroup(ctx, "tester", "req-hidden-test", "ai.flowchart", map[string]any{
+		"base_url": "https://example.com/v1",
+		"model":    "gpt-test",
+	}, nil); err == nil {
+		t.Fatal("TestRuntimeGroup(ai.flowchart) error = nil, want not found")
 	}
 }
 

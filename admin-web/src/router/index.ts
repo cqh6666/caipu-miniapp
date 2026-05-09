@@ -69,7 +69,7 @@ const router = createRouter({
       component: () => import('@/pages/SettingsPage.vue'),
       meta: {
         title: '配置中心',
-        description: '在线管理兼容模式参数、测试连通性并追踪审计记录。'
+        description: '在线管理 Provider 告警、Sidecar、B 站字幕等通用配置，并追踪审计记录。'
       }
     }
   ]

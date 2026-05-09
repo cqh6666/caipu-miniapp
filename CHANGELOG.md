@@ -1,5 +1,34 @@
 # Project Changelog
 
+## 2026-05-09 (配置中心移除旧 AI 单节点分组)
+
+### Changed
+
+- **修改时间**：2026-05-09 14:47:42 +0800 CST
+- **变更背景**：`AI Provider` 页面已承接 `summary / title / flowchart`
+  多节点路由配置，配置中心继续展示旧单节点 AI 分组会造成运维入口重复和生效口径混淆。
+- **核心改动**：
+  - `backend/internal/appsettings/runtime_provider.go` 将 `ai.summary`、
+    `ai.title`、`ai.flowchart` 标记为后台不可见分组；`GET /api/admin/runtime-settings`
+    不再返回这些旧单节点配置，`PUT/POST /api/admin/runtime-settings/groups/{group}`
+    也不再允许编辑或测试这些分组。
+  - 后端仍保留旧 `app_runtime_settings` / 环境变量读取能力作为内部兼容兜底；
+    正常运维入口统一使用 `admin-web` 的 `AI Provider` 页面。
+  - `admin-web/src/pages/SettingsPage.vue` 移除旧兼容模式提示分支，
+    `admin-web/src/router/index.ts` 更新配置中心描述。
+  - `README.md`、`backend/README.md` 与 AI Provider 相关设计文档同步更新配置入口口径。
+- **影响范围**：
+  - 影响后台配置中心展示、保存和测试的分组范围。
+  - 不影响 `AI Provider` 多节点路由页面、路由配置表、AI 调用审计或小程序端功能。
+- **兼容性/风险**：
+  - 如果某个部署尚未在 `AI Provider` 页面启用对应场景，后端内部仍可按旧配置兜底；
+    但后台不再提供旧单节点分组的可视化编辑入口。
+- **验证情况**：
+  - 已执行 `go test ./internal/appsettings`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `npm --prefix admin-web run build`，通过。
+  - 已执行 `git diff --check`，通过。
+
 ## 2026-05-01 (修复饮食管家流式阶段 LongCat 工具标记泄漏)
 
 ### Fixed

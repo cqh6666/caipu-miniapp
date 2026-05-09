@@ -10,9 +10,9 @@
 - 调用审计表里已经具备 `provider`、`final_provider`、`fallback_used`
   等字段，便于后续扩展多 Provider 观测
 
-但当前实现仍然以“单场景单 Provider 配置”为主，主要限制包括：
+本方案设计时，早期实现仍然以“单场景单 Provider 配置”为主，主要限制包括：
 
-- `ai.summary / ai.title / ai.flowchart` 仍是单组
+- `ai.summary / ai.title / ai.flowchart` 是单组
   `base_url + api_key + model + timeout`
 - `admin-web` 当前配置中心只适合编辑固定数量的标量字段，不适合维护
   可增删、可排序的 Provider 列表
@@ -757,8 +757,10 @@ AI 路由建议继续沿用相似心智模型：
 
 在新页面正式上线后：
 
-- 旧 `ai.summary / ai.title / ai.flowchart` 通用配置页建议标记为“兼容模式”
-- 页面上明确提示：若场景已启用新的多 Provider 路由，旧配置只作为兜底源
+- 配置中心不再展示或允许编辑旧 `ai.summary / ai.title / ai.flowchart`
+  单 Provider 分组
+- 后端仍可读取旧 `app_runtime_settings` 和环境变量作为内部兜底源，便于
+  未迁移部署回退；正常运维入口统一迁移到 `AI Provider` 页面
 
 ## 15. 分阶段实施建议
 
@@ -785,7 +787,7 @@ AI 路由建议继续沿用相似心智模型：
 
 - 新增 `AI Provider` 页面
 - 补齐场景测试结果展示
-- 对旧单 Provider 配置页加兼容提示
+- 从配置中心移除旧单 Provider 分组入口，仅保留内部兼容兜底
 - 补齐 README 与运维文档
 
 ## 16. 风险与注意事项

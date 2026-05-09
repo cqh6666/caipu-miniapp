@@ -32,10 +32,11 @@ type runtimeFieldDefinition struct {
 }
 
 type runtimeGroupDefinition struct {
-	Name        string
-	Title       string
-	Description string
-	Fields      []runtimeFieldDefinition
+	Name            string
+	Title           string
+	Description     string
+	HiddenFromAdmin bool
+	Fields          []runtimeFieldDefinition
 }
 
 type RuntimeProvider struct {
@@ -56,7 +57,9 @@ func NewRuntimeProvider(repo *Repository, secret string, cfg config.Config) *Run
 	groupIndex := make(map[string]runtimeGroupDefinition, len(groups))
 	fieldIndex := make(map[string]runtimeFieldDefinition)
 	for _, group := range groups {
-		groupIndex[group.Name] = group
+		if !group.HiddenFromAdmin {
+			groupIndex[group.Name] = group
+		}
 		for _, field := range group.Fields {
 			fieldIndex[field.Group+"."+field.Key] = field
 		}
@@ -141,8 +144,11 @@ func (p *RuntimeProvider) ListRuntimeGroups(ctx context.Context) ([]RuntimeSetti
 		return nil, err
 	}
 
-	groups := make([]RuntimeSettingGroupView, 0, len(p.groups))
+	groups := make([]RuntimeSettingGroupView, 0, len(p.groupIndex))
 	for _, group := range p.groups {
+		if group.HiddenFromAdmin {
+			continue
+		}
 		view := RuntimeSettingGroupView{
 			Name:        group.Name,
 			Title:       group.Title,
@@ -728,9 +734,10 @@ INSERT INTO app_setting_audits (
 func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 	return []runtimeGroupDefinition{
 		{
-			Name:        "ai.summary",
-			Title:       "AI 总结",
-			Description: "自动解析里的菜谱总结调用配置。",
+			Name:            "ai.summary",
+			Title:           "AI 总结",
+			Description:     "自动解析里的菜谱总结调用配置。",
+			HiddenFromAdmin: true,
 			Fields: []runtimeFieldDefinition{
 				{Group: "ai.summary", Key: "base_url", Label: "Base URL", Description: "OpenAI-compatible 接口地址。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIBaseURL)},
 				{Group: "ai.summary", Key: "api_key", Label: "API Key", Description: "AI 总结使用的密钥。", ValueType: "string", IsSecret: true, DefaultValue: strings.TrimSpace(cfg.AIAPIKey)},
@@ -739,9 +746,10 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 			},
 		},
 		{
-			Name:        "ai.flowchart",
-			Title:       "流程图生成",
-			Description: "步骤图生成调用配置。",
+			Name:            "ai.flowchart",
+			Title:           "流程图生成",
+			Description:     "步骤图生成调用配置。",
+			HiddenFromAdmin: true,
 			Fields: []runtimeFieldDefinition{
 				{Group: "ai.flowchart", Key: "base_url", Label: "Base URL", Description: "流程图模型接口地址。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIFlowchartBaseURL)},
 				{Group: "ai.flowchart", Key: "api_key", Label: "API Key", Description: "流程图模型密钥。", ValueType: "string", IsSecret: true, DefaultValue: strings.TrimSpace(cfg.AIFlowchartAPIKey)},
@@ -752,9 +760,10 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 			},
 		},
 		{
-			Name:        "ai.title",
-			Title:       "标题精修",
-			Description: "链接预览里的 AI 标题清洗配置。",
+			Name:            "ai.title",
+			Title:           "标题精修",
+			Description:     "链接预览里的 AI 标题清洗配置。",
+			HiddenFromAdmin: true,
 			Fields: []runtimeFieldDefinition{
 				{Group: "ai.title", Key: "enabled", Label: "Enabled", Description: "是否启用 AI 标题精修。", ValueType: "bool", DefaultValue: strconv.FormatBool(cfg.AITitleEnabled)},
 				{Group: "ai.title", Key: "base_url", Label: "Base URL", Description: "标题精修接口地址。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AITitleBaseURL)},

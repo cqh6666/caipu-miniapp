@@ -142,6 +142,8 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - [docs/xiaohongshu-cloud-deploy.md](./docs/xiaohongshu-cloud-deploy.md)
 - [docs/linkparse-sidecar-refactor-migration.md](./docs/linkparse-sidecar-refactor-migration.md)
 - AI 多 Provider 配置与轮询 / 降级设计见：[../docs/ai-multi-provider-routing-design.md](../docs/ai-multi-provider-routing-design.md)
+- 后台 `AI Provider` 页面是 `summary / title / flowchart` 多节点路由的唯一运维入口；
+  `配置中心` 不再展示旧单节点 AI 分组。
 - 后台 `配置中心 -> AI Provider 告警` 支持对多 Provider 路由配置连续异常邮件告警，
   默认按同一 Provider 连续异常 `3` 次触发一次邮件；QQ 邮箱推荐使用
   `smtp.qq.com:587` + SMTP 授权码

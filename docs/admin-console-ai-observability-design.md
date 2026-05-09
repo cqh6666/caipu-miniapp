@@ -303,6 +303,10 @@ type Tracker interface {
 | `sidecar.linkparse` | `enabled`、`base_url`、`api_key`、`timeout_seconds` |
 | `bilibili.session` | 继续复用现有全局 SESSDATA 存储 |
 
+当前实现已将 `ai.summary`、`ai.flowchart`、`ai.title` 的运维入口迁移到
+`AI Provider` 页面；上述旧 AI 分组仅保留为后端内部兼容读取口径，不再出现在
+配置中心。
+
 ### 10.2 一期不建议动态化
 
 - `APP_ADDR`
@@ -425,8 +429,11 @@ MVP 认证建议：
 
 当前实现说明：
 
-- 配置中心仍保留旧单节点 AI / sidecar 兼容入口
-- AI 多 Provider 正式入口已迁移到 `AI Provider` 页面
+- 配置中心不再展示 `ai.summary` / `ai.title` / `ai.flowchart`
+  旧单节点 AI 分组；AI 多 Provider 正式入口已迁移到
+  `AI Provider` 页面
+- 旧单节点 AI 配置仅保留为后端内部兼容兜底，不再作为后台管理入口
+- 配置中心仍保留 `sidecar.linkparse`、`ai.provider_alert` 等通用运行时配置
 - B 站 `SESSDATA` 以 `bilibili.session` 分组形式并入后台运行时配置
 
 ### 12.6 访问前缀与部署口径

@@ -103,7 +103,8 @@
   - `服务健康`
   - `AI 任务`
   - `API 调用`
-  - `配置中心`（含 `AI Provider 告警` 分组，可配置连续异常阈值、QQ SMTP 和收件邮箱）
+  - `配置中心`（保留 `AI Provider 告警`、Sidecar、B 站字幕等通用配置；
+    AI 多节点路由统一在 `AI Provider` 页面维护）
 - 线上小规格服务器若需要先判断本次拉码是否会触发真正发布，优先使用：
   - 如果你当前人在 **Mac 本地**，想通过 `ssh` 发起远端后端重部署，使用：
     `cd backend && SERVER_HOST=<ssh主机别名或user@host> ./scripts/deploy-server-build.sh`
