@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **修改时间**：2026-05-09 17:06:16 +0800 CST
+- **修改时间**：2026-05-09 17:24:34 +0800 CST
 - **变更背景**：`AI Provider -> flowchart` 接入 `gpt-image-*`
   图片生成节点时，继续把 `response_format=b64_json` 当成主请求字段会与
   GPT Image 默认 `b64_json` 响应口径冲突；同时原实现固定
@@ -22,6 +22,9 @@
   - `admin-web` 的 AI Provider 页面为 `images/generations` 节点新增图片尺寸、
     质量、背景、输出格式、压缩率和生成数量配置，新建 flowchart 图片节点默认
     使用 `1536x1024 / high / opaque / jpeg / 60 / n=1`。
+  - **追加调整**（2026-05-09 17:24:34 +0800 CST）：背景字段标题新增
+    HelpTip，并在 `auto / opaque / transparent` 下拉选项内补充一句话说明，提示
+    `jpeg` 建议使用不透明背景、透明背景更适合 `png / webp`。
   - README、后端 README 与 AI 多 Provider 设计文档同步更新协议口径。
 - **影响范围**：
   - 影响 `flowchart` 场景中配置为 `images_generations` 的 AI Provider 请求体和

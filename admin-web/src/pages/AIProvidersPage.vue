@@ -895,14 +895,26 @@
                           </el-select>
                         </label>
                         <label class="routing-field">
-                          <span>背景</span>
+                          <span
+                            >背景
+                            <HelpTip :content="helpTips.imageBackground"
+                          /></span>
                           <el-select v-model="provider.extra.background">
                             <el-option
                               v-for="item in imageBackgroundOptions"
                               :key="item.value"
                               :label="item.label"
                               :value="item.value"
-                            />
+                            >
+                              <div class="image-option">
+                                <span class="image-option__label">{{
+                                  item.label
+                                }}</span>
+                                <small class="image-option__tip">{{
+                                  item.tip
+                                }}</small>
+                              </div>
+                            </el-option>
                           </el-select>
                         </label>
                         <label class="routing-field">
@@ -1801,6 +1813,8 @@ const helpTips = {
   responseFormat:
     "DALL-E 或三方兼容节点会随请求发送；GPT image 节点默认返回 b64_json，本字段只作为解码偏好。",
   imageSize: "支持 auto 或 1024x1024、1536x1024、1024x1536 等 OpenAI 图片尺寸。",
+  imageBackground:
+    "控制生成图的背景透明度；JPEG 建议选择 opaque，透明背景请配合 png 或 webp。",
   imageCompression: "仅 jpeg / webp 生效；数值越低体积越小，画质损失越明显。",
   apiKey: "已保存密钥留空会继续保留旧值；点击清空并保存后才会移除。",
   audit: "默认只展示最近 5 条，完整审计可在抽屉中筛选和分页。",
@@ -1844,9 +1858,13 @@ const imageQualityOptions = [
   { label: "high", value: "high" },
 ];
 const imageBackgroundOptions = [
-  { label: "auto", value: "auto" },
-  { label: "opaque", value: "opaque" },
-  { label: "transparent", value: "transparent" },
+  { label: "auto", value: "auto", tip: "交给模型或上游默认处理，兼容性最好。" },
+  { label: "opaque", value: "opaque", tip: "强制不透明背景，适合 jpeg 和小程序展示。" },
+  {
+    label: "transparent",
+    value: "transparent",
+    tip: "透明背景，建议搭配 png 或 webp；jpeg 通常不适用。",
+  },
 ];
 const imageOutputFormatOptions = [
   { label: "png", value: "png" },
@@ -5142,6 +5160,25 @@ function extractMessage(error: unknown) {
 
 .routing-field__hint--warn {
   color: var(--color-warning, #d97706);
+}
+
+.image-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 0;
+  line-height: 1.35;
+}
+
+.image-option__label {
+  color: var(--color-text, #1f2937);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.image-option__tip {
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
 }
 
 .routing-timeline-hint {
