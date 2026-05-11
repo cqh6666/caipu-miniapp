@@ -8,10 +8,24 @@ import (
 
 type Handler struct {
 	service *Service
+	runtime *RuntimeProvider
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, runtime *RuntimeProvider) *Handler {
+	return &Handler{service: service, runtime: runtime}
+}
+
+func (h *Handler) GetPublicAppConfig(w http.ResponseWriter, r *http.Request) {
+	features := MiniProgramFeatureConfig{
+		DietAssistantEnabled: true,
+	}
+	if h.runtime != nil {
+		features = h.runtime.MiniProgramFeatures(r.Context())
+	}
+
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"features": features,
+	})
 }
 
 func (h *Handler) GetBilibiliSession(w http.ResponseWriter, r *http.Request) {

@@ -263,9 +263,9 @@
 					hover-start-time="0"
 					hover-stay-time="140"
 					hover-stop-propagation
-					@tap="openDietAssistantSheet"
+					@tap="handlePrimaryFabTap"
 				>
-					<!-- 星闪入口：打开饮食管家聊天窗 -->
+					<!-- 底部主入口：按后台功能开关分流到饮食管家或添加菜谱 -->
 					<image
 						class="nav-fab__icon"
 						src="/static/icons/sparkle-plus.svg"
@@ -441,6 +441,7 @@
 <script>
 import ActionFeedback from '../../components/action-feedback.vue'
 import { appConfig } from '../../utils/app-config'
+import { loadPublicAppConfig, readCachedPublicAppConfig } from '../../utils/public-app-config-api'
 import {
 	listMealPlanStore,
 	saveMealPlanDraft,
@@ -576,6 +577,8 @@ export default {
 			showAddSheet: false,
 			showDietAssistantSheet: false,
 			dietAssistantInitialPrompt: '',
+			publicAppConfig: readCachedPublicAppConfig(),
+			publicAppConfigRequestID: 0,
 			draftLinkPrefillSource: '',
 			draftClipboardPrefillRequestID: 0,
 			showInviteSheet: false,
@@ -672,6 +675,7 @@ export default {
 		}
 	},
 	onShow() {
+		this.refreshPublicAppConfig()
 		this.refreshRecipes()
 		this.playPendingRecipeReturnFocus()
 	},
@@ -1091,6 +1095,9 @@ export default {
 		canResetLibraryFilters() {
 			return this.activeStatus !== 'all' || this.hasSearchKeyword
 		},
+		isDietAssistantEntryEnabled() {
+			return this.publicAppConfig?.features?.dietAssistantEnabled !== false
+		},
 		emptyStateKind() {
 			if (this.hasSearchKeyword) return 'search-no-results'
 			if (this.activeStatus !== 'all') return 'status-empty'
@@ -1115,17 +1122,17 @@ export default {
 			return `可以先把${this.currentMealLabel}里的菜标记为${this.currentStatusLabel}，或者点下方按钮回到全部。`
 		},
 		emptyStatePrimaryText() {
-			if (this.hasSearchKeyword) return '问问 AI 怎么做'
+			if (this.hasSearchKeyword) return this.isDietAssistantEntryEnabled ? '问问 AI 怎么做' : '添加这道菜'
 			if (this.activeStatus !== 'all') return '查看全部'
 			return '添加这道菜'
 		},
 		emptyStatePrimaryIcon() {
-			if (this.hasSearchKeyword) return ''
+			if (this.hasSearchKeyword) return this.isDietAssistantEntryEnabled ? '' : 'plus'
 			if (this.activeStatus !== 'all') return 'list-dot'
 			return 'plus'
 		},
 		emptyStatePrimaryIconSrc() {
-			if (this.hasSearchKeyword) return '/static/icons/sparkle-plus-warm.svg'
+			if (this.hasSearchKeyword && this.isDietAssistantEntryEnabled) return '/static/icons/sparkle-plus-warm.svg'
 			return ''
 		},
 		emptyStateSecondaryText() {
@@ -1407,7 +1414,11 @@ export default {
 		},
 		handleEmptyStatePrimary() {
 			if (this.hasSearchKeyword) {
-				this.openDietAssistantSheet(this.buildSearchNoResultPrompt())
+				if (this.isDietAssistantEntryEnabled) {
+					this.openDietAssistantSheet(this.buildSearchNoResultPrompt())
+				} else {
+					this.openAddSheet()
+				}
 				return
 			}
 			if (this.activeStatus !== 'all') {
@@ -1431,6 +1442,24 @@ export default {
 				return '我想找一道菜的简单做法，可以给我一个适合家常复刻的版本吗？'
 			}
 			return `我在美食库搜不到「${keyword}」，想做这道菜，可以给我一个简单做法吗？`
+		},
+		refreshPublicAppConfig() {
+			const requestID = ++this.publicAppConfigRequestID
+			loadPublicAppConfig()
+				.then((config) => {
+					if (requestID !== this.publicAppConfigRequestID) return
+					this.publicAppConfig = config
+				})
+				.catch((error) => {
+					console.warn?.('load public app config failed', error)
+				})
+		},
+		handlePrimaryFabTap() {
+			if (this.isDietAssistantEntryEnabled) {
+				this.openDietAssistantSheet()
+				return
+			}
+			this.openAddSheet()
 		},
 		triggerToolbarBounce(direction = 'right') {
 			const cls = `toolbar--bounce-${direction === 'left' ? 'left' : 'right'}`

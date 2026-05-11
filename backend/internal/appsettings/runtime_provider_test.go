@@ -130,7 +130,7 @@ func TestRuntimeProviderListRuntimeGroupsHidesLegacySingleAIConfig(t *testing.T)
 			t.Fatalf("ListRuntimeGroups() includes hidden legacy group %q", hidden)
 		}
 	}
-	for _, visible := range []string{"ai.provider_alert", "sidecar.linkparse"} {
+	for _, visible := range []string{"ai.provider_alert", "sidecar.linkparse", "miniapp.features"} {
 		if _, ok := names[visible]; !ok {
 			t.Fatalf("ListRuntimeGroups() missing visible group %q", visible)
 		}
@@ -138,6 +138,27 @@ func TestRuntimeProviderListRuntimeGroupsHidesLegacySingleAIConfig(t *testing.T)
 
 	if got := provider.SummaryAI(context.Background()).BaseURL; got != "https://default.example.com/v1" {
 		t.Fatalf("SummaryAI().BaseURL = %q, want default compatibility value", got)
+	}
+}
+
+func TestRuntimeProviderMiniProgramFeaturesDefaultsAndUpdates(t *testing.T) {
+	t.Parallel()
+
+	provider := newRuntimeProviderForTest(t)
+	ctx := context.Background()
+
+	if got := provider.MiniProgramFeatures(ctx).DietAssistantEnabled; !got {
+		t.Fatal("MiniProgramFeatures().DietAssistantEnabled = false, want true default")
+	}
+
+	if _, err := provider.UpdateRuntimeGroup(ctx, "tester", "req-miniapp-features", "miniapp.features", map[string]any{
+		"diet_assistant_enabled": false,
+	}, nil); err != nil {
+		t.Fatalf("UpdateRuntimeGroup(miniapp.features) error = %v", err)
+	}
+
+	if got := provider.MiniProgramFeatures(ctx).DietAssistantEnabled; got {
+		t.Fatal("MiniProgramFeatures().DietAssistantEnabled = true, want false after update")
 	}
 }
 

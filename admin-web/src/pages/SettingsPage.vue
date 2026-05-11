@@ -40,7 +40,9 @@
               tone="warning"
               :text="`${getGroupDiff(group.name).length} 项待保存`"
             />
-            <el-button :loading="testingGroups[group.name]" @click="handleTest(group.name)">测试连接</el-button>
+            <el-button v-if="canTestGroup(group.name)" :loading="testingGroups[group.name]" @click="handleTest(group.name)">
+              测试连接
+            </el-button>
             <el-button type="primary" :loading="savingGroups[group.name]" @click="handleSave(group.name)">保存</el-button>
           </div>
         </div>
@@ -256,6 +258,7 @@ const clearKeyMap = reactive<Record<string, string[]>>({})
 const savingGroups = reactive<Record<string, boolean>>({})
 const testingGroups = reactive<Record<string, boolean>>({})
 const testResults = reactive<Record<string, StoredTestResult | null>>({})
+const untestableGroupNames = new Set(['miniapp.features'])
 
 const auditFilters = reactive({
   group: '',
@@ -282,7 +285,14 @@ function groupAnchorId(groupName: string) {
   if (groupName === 'ai.provider_alert') {
     return 'ai-provider-alert'
   }
+  if (groupName === 'miniapp.features') {
+    return 'miniapp-features'
+  }
   return `setting-group-${groupName.replace(/\./g, '-')}`
+}
+
+function canTestGroup(groupName: string) {
+  return !untestableGroupNames.has(groupName)
 }
 
 function setGroupCardRef(groupName: string, element: Element | null) {

@@ -157,6 +157,9 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - 后台 `配置中心 -> AI Provider 告警` 支持对多 Provider 路由配置连续异常邮件告警，
   默认按同一 Provider 连续异常 `3` 次触发一次邮件；QQ 邮箱推荐使用
   `smtp.qq.com:587` + SMTP 授权码
+- 后台 `配置中心 -> 小程序功能开关 -> AI 助手入口` 控制小程序首页底部中间按钮：
+  开启时打开饮食管家，关闭时打开添加菜谱弹层；小程序通过
+  `GET /api/public/app-config` 读取公开功能开关。
 
 接口口径说明：
 
@@ -168,6 +171,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 
 - `GET /healthz`
 - `GET /api/healthz`
+- `GET /api/public/app-config`
 - `POST /api/admin/auth/login`
 - `POST /api/admin/auth/logout`
 - `GET /api/admin/auth/me`

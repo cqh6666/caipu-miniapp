@@ -1,5 +1,37 @@
 # Project Changelog
 
+## 2026-05-11 (新增小程序 AI 助手入口开关)
+
+### Added
+
+- **修改时间**：2026-05-11 11:28:36 +0800 CST
+- **变更背景**：需要在后台控制小程序首页底部中间按钮的点击目标；开启 AI
+  助手时继续打开饮食管家，关闭后回到常规添加菜谱入口。
+- **核心改动**：
+  - 后端运行时配置新增 `miniapp.features.diet_assistant_enabled`，
+    默认值为 `true`，保持现有线上底部按钮默认打开饮食管家的行为。
+  - 后端新增 `GET /api/public/app-config`，只返回小程序公开功能开关，不暴露
+    后台敏感配置。
+  - `admin-web` 配置中心新增“小程序功能开关”分组，使用现有开关控件维护
+    “AI 助手入口”。
+  - 小程序首页会拉取并缓存公开配置；底部中间按钮和搜索无结果空态会按开关
+    分流到饮食管家或添加菜谱弹层。
+- **影响范围**：
+  - 影响小程序首页底部中间按钮点击行为和搜索无结果空态主操作。
+  - 不修改饮食管家聊天协议、菜谱添加接口、AI Provider 路由配置或登录链路。
+- **兼容性/风险**：
+  - 默认开启，旧部署升级后行为保持不变；只有后台显式关闭后才改为添加菜谱。
+  - 小程序拉取公开配置失败时使用本地缓存或默认开启兜底。
+- **验证情况**：
+  - 已执行 `go test ./internal/appsettings`，通过。
+  - 已执行 `go test ./internal/app`，通过。
+  - 已执行 `go test ./internal/admin`，通过。
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check utils/public-app-config-api.js`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析
+    `pages/index/index.vue` 与 `admin-web/src/pages/SettingsPage.vue`，通过。
+  - 已执行 `npm --prefix admin-web run build`，通过（仅有既有 chunk size warning）。
+
 ## 2026-05-11 (修复饮食管家 DeepSeek thinking tools 回传协议)
 
 ### Fixed

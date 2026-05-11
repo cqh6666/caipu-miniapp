@@ -139,6 +139,12 @@ func (p *RuntimeProvider) LinkparseSidecar(ctx context.Context) LinkparseSidecar
 	}
 }
 
+func (p *RuntimeProvider) MiniProgramFeatures(ctx context.Context) MiniProgramFeatureConfig {
+	return MiniProgramFeatureConfig{
+		DietAssistantEnabled: p.getBool(ctx, "miniapp.features.diet_assistant_enabled", true),
+	}
+}
+
 func (p *RuntimeProvider) ListRuntimeGroups(ctx context.Context) ([]RuntimeSettingGroupView, error) {
 	settings, err := p.loadSettings(ctx)
 	if err != nil {
@@ -800,6 +806,21 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 				{Group: "sidecar.linkparse", Key: "base_url", Label: "Base URL", Description: "sidecar 服务地址。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.LinkparseSidecarBaseURL)},
 				{Group: "sidecar.linkparse", Key: "api_key", Label: "API Key", Description: "sidecar 内部认证密钥。", ValueType: "string", IsSecret: true, DefaultValue: strings.TrimSpace(cfg.LinkparseSidecarAPIKey)},
 				{Group: "sidecar.linkparse", Key: "timeout_seconds", Label: "Timeout", Description: "sidecar 请求超时时间（秒）。", ValueType: "int", DefaultValue: strconv.Itoa(cfg.LinkparseSidecarTimeoutSec)},
+			},
+		},
+		{
+			Name:        "miniapp.features",
+			Title:       "小程序功能开关",
+			Description: "控制小程序端入口级功能的展示与点击行为，保存后小程序下次拉取配置生效。",
+			Fields: []runtimeFieldDefinition{
+				{
+					Group:        "miniapp.features",
+					Key:          "diet_assistant_enabled",
+					Label:        "AI 助手入口",
+					Description:  "开启后首页底部中间按钮打开饮食管家；关闭后同一按钮打开添加菜谱弹层。",
+					ValueType:    "bool",
+					DefaultValue: "true",
+				},
 			},
 		},
 	}

@@ -132,6 +132,7 @@ func NewRouter(
 		api.Get("/invites/{token}", inviteHandler.Preview)
 		api.Get("/invites/{token}/share-image", inviteHandler.ShareImage)
 		api.Get("/invite-codes/{code}", inviteHandler.PreviewByCode)
+		api.Get("/public/app-config", appSettingsHandler.GetPublicAppConfig)
 		api.Get("/public/recipes/by-share-token/{token}", recipeHandler.PublicByShareToken)
 
 		api.Group(func(protected chi.Router) {

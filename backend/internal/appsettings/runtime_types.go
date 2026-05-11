@@ -13,6 +13,7 @@ type RuntimeConfigProvider interface {
 	TitleAI(ctx context.Context) TitleAIConfig
 	AIProviderAlert(ctx context.Context) aialert.Config
 	LinkparseSidecar(ctx context.Context) LinkparseSidecarConfig
+	MiniProgramFeatures(ctx context.Context) MiniProgramFeatureConfig
 }
 
 type SummaryAIConfig struct {
@@ -47,6 +48,10 @@ type LinkparseSidecarConfig struct {
 	BaseURL string
 	APIKey  string
 	Timeout time.Duration
+}
+
+type MiniProgramFeatureConfig struct {
+	DietAssistantEnabled bool `json:"dietAssistantEnabled"`
 }
 
 type RuntimeSettingFieldView struct {

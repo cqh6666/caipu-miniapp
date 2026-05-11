@@ -304,7 +304,7 @@ func New(cfg config.Config) (*App, error) {
 	authHandler := auth.NewHandler(authService)
 	authMiddleware := appmiddleware.Authenticate(tokenManager)
 	appSettingsService = appsettings.NewService(appSettingsRepo, cfg.CredentialsSecret, linkParseService, authService.EnsureCanManageAppSettings)
-	appSettingsHandler := appsettings.NewHandler(appSettingsService)
+	appSettingsHandler := appsettings.NewHandler(appSettingsService, runtimeProvider)
 	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour)
 	adminService := admin.NewService(cfg.AdminUsername, cfg.AdminPasswordHash, adminTokenManager, cfg.AppEnv != "local")
 	serverHealthService := admin.NewServerHealthService(cfg, runtimeProvider)
