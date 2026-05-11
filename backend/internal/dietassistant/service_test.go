@@ -101,6 +101,65 @@ func TestServiceStreamChatConsumesOpenAICompatibleSSE(t *testing.T) {
 	}
 }
 
+func TestServiceStreamChatAppliesThinkingOptions(t *testing.T) {
+	var requestCount int
+	var sawPlanningOptions bool
+	var sawFinalOptions bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount += 1
+		var req openAIChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req.Thinking == nil || req.Thinking.Type != "enabled" {
+			t.Fatalf("thinking = %#v, want enabled", req.Thinking)
+		}
+		if req.ReasoningEffort != "max" {
+			t.Fatalf("reasoning_effort = %q, want max", req.ReasoningEffort)
+		}
+
+		if requestCount == 1 {
+			if req.Stream {
+				t.Fatal("first request should be non-streaming")
+			}
+			sawPlanningOptions = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"你好，想吃什么？"},"finish_reason":"stop"}]}`))
+			return
+		}
+
+		if !req.Stream {
+			t.Fatal("final request should be streaming")
+		}
+		sawFinalOptions = true
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"你好。\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	service := NewService(Options{
+		BaseURL:         server.URL,
+		APIKey:          "test-key",
+		Model:           "deepseek-v4-flash",
+		ThinkingType:    "enabled",
+		ReasoningEffort: "max",
+		Timeout:         3 * time.Second,
+	})
+
+	err := service.StreamChat(context.Background(), ChatContext{UserID: 1, KitchenID: 2}, []ChatMessage{
+		{Role: "user", Content: "你好"},
+	}, func(StreamEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat returned error: %v", err)
+	}
+	if !sawPlanningOptions || !sawFinalOptions {
+		t.Fatalf("missing thinking options: planning=%v final=%v", sawPlanningOptions, sawFinalOptions)
+	}
+}
+
 func TestServiceStreamChatExecutesRecipeCountTool(t *testing.T) {
 	var requestCount int
 	var sawToolResult bool
@@ -178,6 +237,72 @@ func TestServiceStreamChatExecutesRecipeCountTool(t *testing.T) {
 	}
 	if !hasStreamEvent(events, "tool_done", "get_recipe_count", "已完成菜谱统计") {
 		t.Fatalf("events missing tool_done: %#v", events)
+	}
+}
+
+func TestServiceStreamChatPassesBackReasoningContentForToolCalls(t *testing.T) {
+	var requestCount int
+	var sawReasoningContent bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount += 1
+		var req openAIChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		if requestCount == 1 {
+			if req.Stream {
+				t.Fatal("first request should be non-streaming")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"","reasoning_content":"需要先统计当前空间的正餐数量。","tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_recipe_count","arguments":"{\"mealType\":\"main\",\"status\":\"all\"}"}}]},"finish_reason":"tool_calls"}]}`))
+			return
+		}
+
+		if !req.Stream {
+			t.Fatal("final request should be streaming")
+		}
+		for _, message := range req.Messages {
+			if message.Role != "assistant" || len(message.ToolCalls) == 0 {
+				continue
+			}
+			if message.ReasoningContent == nil {
+				t.Fatal("assistant tool-call message missing reasoning_content")
+			}
+			if *message.ReasoningContent != "需要先统计当前空间的正餐数量。" {
+				t.Fatalf("reasoning_content = %q", *message.ReasoningContent)
+			}
+			sawReasoningContent = true
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"正餐共有 7 道。\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	service := NewService(Options{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Model:   "deepseek-v4-flash",
+		Timeout: 3 * time.Second,
+		CountRecipes: func(ctx context.Context, input RecipeCountInput) (int, error) {
+			return 7, nil
+		},
+	})
+
+	err := service.StreamChat(context.Background(), ChatContext{UserID: 11, KitchenID: 22}, []ChatMessage{
+		{Role: "user", Content: "正餐有多少道？"},
+	}, func(StreamEvent) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamChat returned error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("requestCount = %d, want 2", requestCount)
+	}
+	if !sawReasoningContent {
+		t.Fatal("final request did not pass back reasoning_content")
 	}
 }
 

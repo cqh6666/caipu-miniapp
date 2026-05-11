@@ -1,5 +1,39 @@
 # Project Changelog
 
+## 2026-05-11 (修复饮食管家 DeepSeek thinking tools 回传协议)
+
+### Fixed
+
+- **修改时间**：2026-05-11 11:24:03 +0800 CST
+- **变更背景**：线上饮食管家切到 `deepseek-v4-flash` 后，tools 规划阶段在
+  thinking mode 下会返回 `reasoning_content`；后续工具结果请求若只回传
+  `tool_calls` 而未回传该字段，上游会返回
+  `The 'reasoning_content' in the thinking mode must be passed back to the API.`。
+- **核心改动**：
+  - `backend/internal/dietassistant` 的 OpenAI-compatible assistant 消息结构新增
+    `reasoning_content` 字段，并在 tools 调用后随原 assistant tool-call 消息原样带回。
+  - 饮食管家 AI 请求新增可选环境变量
+    `DIET_ASSISTANT_AI_THINKING_TYPE=enabled|disabled` 和
+    `DIET_ASSISTANT_AI_REASONING_EFFORT=high|max`；留空时不发送对应字段，继续使用
+    provider 默认行为。
+  - `backend/configs/example.env`、`README.md` 与 `backend/README.md` 同步补充
+    thinking 配置口径。
+- **影响范围**：
+  - 影响 `POST /api/diet-assistant/chat/stream` 对 DeepSeek-style thinking
+    OpenAI-compatible 接口的请求上下文组装。
+  - 不修改小程序 SSE 事件结构、聊天记录表结构、饮食管家 tools 契约或 LongCat
+    内嵌工具标记兼容逻辑。
+- **兼容性/风险**：
+  - 默认不主动发送 `thinking` / `reasoning_effort`，避免影响 LongCat 或其它
+    OpenAI-compatible provider。
+  - 当 thinking mode 开启时，后端会按上游要求回传 `reasoning_content`；如果显式配置
+    `DIET_ASSISTANT_AI_THINKING_TYPE=disabled`，则不会发送
+    `reasoning_effort`。
+- **验证情况**：
+  - 已执行 `go test ./internal/dietassistant`，通过。
+  - 已执行 `go test ./internal/config`，通过（无测试文件，仅编译检查）。
+  - 已执行 `go test ./...`，通过。
+
 ## 2026-05-09 (优化 GPT Image b64_json 生图协议)
 
 ### Changed

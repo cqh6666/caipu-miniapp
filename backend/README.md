@@ -76,6 +76,8 @@ go run ./cmd/server
 - `DIET_ASSISTANT_AI_BASE_URL`
 - `DIET_ASSISTANT_AI_API_KEY`
 - `DIET_ASSISTANT_AI_MODEL`
+- `DIET_ASSISTANT_AI_THINKING_TYPE`
+- `DIET_ASSISTANT_AI_REASONING_EFFORT`
 - `DIET_ASSISTANT_AI_TIMEOUT_SECONDS`
 - `LINKPARSE_SIDECAR_ENABLED`
 - `LINKPARSE_SIDECAR_BASE_URL`
@@ -89,6 +91,10 @@ go run ./cmd/server
 - `DIET_ASSISTANT_AI_BASE_URL=https://api.longcat.chat/openai/v1`
 - `DIET_ASSISTANT_AI_MODEL=LongCat-2.0-Preview`
 - `DIET_ASSISTANT_AI_API_KEY` 填 LongCat API Key
+- `DIET_ASSISTANT_AI_THINKING_TYPE` 可选填 `enabled` 或 `disabled`；留空时不发送
+  `thinking` 字段，使用 provider 默认值
+- `DIET_ASSISTANT_AI_REASONING_EFFORT` 可选填 `high` 或 `max`；仅在 thinking
+  未禁用时随请求发送
 
 当前 `POST /api/diet-assistant/chat/stream` 会先用非流式 tools 请求判断是否需要
 调用工具，执行工具阶段会通过 SSE 发送 `status` / `tool_start` / `tool_done`

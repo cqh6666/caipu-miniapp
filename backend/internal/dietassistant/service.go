@@ -17,19 +17,21 @@ import (
 )
 
 type Options struct {
-	BaseURL        string
-	APIKey         string
-	Model          string
-	Timeout        time.Duration
-	HTTPClient     *http.Client
-	CountRecipes   CountRecipesFunc
-	SearchRecipes  SearchRecipesFunc
-	GetRecipeByID  GetRecipeByIDFunc
-	CreateFromURL  CreateFromURLFunc
-	Repo           *Repository
-	EnsureMember   EnsureMemberFunc
-	NowForTest     func() time.Time
-	DisableTimeout bool
+	BaseURL         string
+	APIKey          string
+	Model           string
+	ThinkingType    string
+	ReasoningEffort string
+	Timeout         time.Duration
+	HTTPClient      *http.Client
+	CountRecipes    CountRecipesFunc
+	SearchRecipes   SearchRecipesFunc
+	GetRecipeByID   GetRecipeByIDFunc
+	CreateFromURL   CreateFromURLFunc
+	Repo            *Repository
+	EnsureMember    EnsureMemberFunc
+	NowForTest      func() time.Time
+	DisableTimeout  bool
 }
 
 type CountRecipesFunc func(context.Context, RecipeCountInput) (int, error)
@@ -39,18 +41,20 @@ type CreateFromURLFunc func(context.Context, RecipeFromURLInput) (RecipeFromURLR
 type EnsureMemberFunc func(context.Context, int64, int64) error
 
 type Service struct {
-	baseURL       string
-	apiKey        string
-	model         string
-	timeout       time.Duration
-	httpClient    *http.Client
-	countRecipes  CountRecipesFunc
-	searchRecipes SearchRecipesFunc
-	getRecipeByID GetRecipeByIDFunc
-	createFromURL CreateFromURLFunc
-	repo          *Repository
-	ensureMember  EnsureMemberFunc
-	now           func() time.Time
+	baseURL         string
+	apiKey          string
+	model           string
+	thinkingType    string
+	reasoningEffort string
+	timeout         time.Duration
+	httpClient      *http.Client
+	countRecipes    CountRecipesFunc
+	searchRecipes   SearchRecipesFunc
+	getRecipeByID   GetRecipeByIDFunc
+	createFromURL   CreateFromURLFunc
+	repo            *Repository
+	ensureMember    EnsureMemberFunc
+	now             func() time.Time
 }
 
 func NewService(options Options) *Service {
@@ -67,18 +71,20 @@ func NewService(options Options) *Service {
 		now = time.Now
 	}
 	return &Service{
-		baseURL:       strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
-		apiKey:        strings.TrimSpace(options.APIKey),
-		model:         strings.TrimSpace(options.Model),
-		timeout:       timeout,
-		httpClient:    client,
-		countRecipes:  options.CountRecipes,
-		searchRecipes: options.SearchRecipes,
-		getRecipeByID: options.GetRecipeByID,
-		createFromURL: options.CreateFromURL,
-		repo:          options.Repo,
-		ensureMember:  options.EnsureMember,
-		now:           now,
+		baseURL:         strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
+		apiKey:          strings.TrimSpace(options.APIKey),
+		model:           strings.TrimSpace(options.Model),
+		thinkingType:    normalizeThinkingType(options.ThinkingType),
+		reasoningEffort: normalizeReasoningEffort(options.ReasoningEffort),
+		timeout:         timeout,
+		httpClient:      client,
+		countRecipes:    options.CountRecipes,
+		searchRecipes:   options.SearchRecipes,
+		getRecipeByID:   options.GetRecipeByID,
+		createFromURL:   options.CreateFromURL,
+		repo:            options.Repo,
+		ensureMember:    options.EnsureMember,
+		now:             now,
 	}
 }
 
@@ -144,9 +150,10 @@ func (s *Service) StreamChat(ctx context.Context, chatCtx ChatContext, messages 
 		if len(toolCalls) > 0 {
 			finalMessages = append([]openAIChatMessage{}, upstreamMessages...)
 			finalMessages, err = s.appendToolResults(ctx, chatCtx, finalMessages, openAIChatMessage{
-				Role:      valueOrDefault(assistantMessage.Role, "assistant"),
-				Content:   sanitizeAssistantVisibleContent(openAIContentText(assistantMessage.Content)),
-				ToolCalls: toolCalls,
+				Role:             valueOrDefault(assistantMessage.Role, "assistant"),
+				Content:          sanitizeAssistantVisibleContent(openAIContentText(assistantMessage.Content)),
+				ReasoningContent: assistantMessage.ReasoningContent,
+				ToolCalls:        toolCalls,
 			}, toolCalls, emit)
 			if err != nil {
 				return err
@@ -251,6 +258,7 @@ func (s *Service) streamFinalChatOnce(ctx context.Context, chatCtx ChatContext, 
 		MaxTokens:   1200,
 		Temperature: floatPtr(0.7),
 	}
+	s.applyRequestOptions(&payload)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return finalStreamResult{}, common.ErrInternal.WithErr(err)
@@ -857,22 +865,29 @@ func normalizeMessageLimit(limit int) int {
 }
 
 type openAIChatRequest struct {
-	Model       string              `json:"model"`
-	User        string              `json:"user,omitempty"`
-	Messages    []openAIChatMessage `json:"messages"`
-	Tools       []openAITool        `json:"tools,omitempty"`
-	ToolChoice  any                 `json:"tool_choice,omitempty"`
-	Stream      bool                `json:"stream"`
-	MaxTokens   int                 `json:"max_tokens,omitempty"`
-	Temperature *float64            `json:"temperature,omitempty"`
+	Model           string                `json:"model"`
+	User            string                `json:"user,omitempty"`
+	Messages        []openAIChatMessage   `json:"messages"`
+	Tools           []openAITool          `json:"tools,omitempty"`
+	ToolChoice      any                   `json:"tool_choice,omitempty"`
+	Thinking        *openAIThinkingConfig `json:"thinking,omitempty"`
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
+	Stream          bool                  `json:"stream"`
+	MaxTokens       int                   `json:"max_tokens,omitempty"`
+	Temperature     *float64              `json:"temperature,omitempty"`
 }
 
 type openAIChatMessage struct {
-	Role       string           `json:"role"`
-	Content    any              `json:"content"`
-	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
-	Name       string           `json:"name,omitempty"`
+	Role             string           `json:"role"`
+	Content          any              `json:"content"`
+	ReasoningContent *string          `json:"reasoning_content,omitempty"`
+	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
+	Name             string           `json:"name,omitempty"`
+}
+
+type openAIThinkingConfig struct {
+	Type string `json:"type"`
 }
 
 type openAITool struct {
@@ -919,6 +934,7 @@ const dietAssistantSystemPrompt = `你是“饮食管家”，服务于一个家
 - 最终回复使用中文，简洁、自然、可执行。`
 
 func (s *Service) createChatCompletion(ctx context.Context, payload openAIChatRequest) (openAIChatResponse, error) {
+	s.applyRequestOptions(&payload)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return openAIChatResponse{}, common.ErrInternal.WithErr(err)
@@ -1554,6 +1570,36 @@ func valueOrDefault(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func normalizeThinkingType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "enabled", "disabled":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func normalizeReasoningEffort(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "high", "max":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func (s *Service) applyRequestOptions(payload *openAIChatRequest) {
+	if s == nil || payload == nil {
+		return
+	}
+	if s.thinkingType != "" {
+		payload.Thinking = &openAIThinkingConfig{Type: s.thinkingType}
+	}
+	if s.reasoningEffort != "" && s.thinkingType != "disabled" {
+		payload.ReasoningEffort = s.reasoningEffort
+	}
 }
 
 func floatPtr(value float64) *float64 {
