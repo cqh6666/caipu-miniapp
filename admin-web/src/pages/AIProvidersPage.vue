@@ -899,7 +899,10 @@
                             >背景
                             <HelpTip :content="helpTips.imageBackground"
                           /></span>
-                          <el-select v-model="provider.extra.background">
+                          <el-select
+                            v-model="provider.extra.background"
+                            popper-class="image-background-select-popper"
+                          >
                             <el-option
                               v-for="item in imageBackgroundOptions"
                               :key="item.value"
@@ -5179,6 +5182,22 @@ function extractMessage(error: unknown) {
 .image-option__tip {
   color: var(--color-text-subtle, #64748b);
   font-size: 12px;
+}
+
+:global(.image-background-select-popper .el-select-dropdown__item) {
+  height: auto;
+  min-height: 58px;
+  padding: 8px 16px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+:global(.image-background-select-popper .el-select-dropdown__item.is-selected) {
+  font-weight: 500;
+}
+
+:global(.image-background-select-popper .image-option) {
+  width: 100%;
 }
 
 .routing-timeline-hint {

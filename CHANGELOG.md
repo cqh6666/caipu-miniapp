@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **修改时间**：2026-05-09 17:24:34 +0800 CST
+- **修改时间**：2026-05-09 17:33:16 +0800 CST
 - **变更背景**：`AI Provider -> flowchart` 接入 `gpt-image-*`
   图片生成节点时，继续把 `response_format=b64_json` 当成主请求字段会与
   GPT Image 默认 `b64_json` 响应口径冲突；同时原实现固定
@@ -25,6 +25,8 @@
   - **追加调整**（2026-05-09 17:24:34 +0800 CST）：背景字段标题新增
     HelpTip，并在 `auto / opaque / transparent` 下拉选项内补充一句话说明，提示
     `jpeg` 建议使用不透明背景、透明背景更适合 `png / webp`。
+  - **追加修复**（2026-05-09 17:33:16 +0800 CST）：为背景下拉框增加专属
+    `popper-class`，修复 Element Plus 默认单行选项高度导致 tips 文案重叠和裁切的问题。
   - README、后端 README 与 AI 多 Provider 设计文档同步更新协议口径。
 - **影响范围**：
   - 影响 `flowchart` 场景中配置为 `images_generations` 的 AI Provider 请求体和
