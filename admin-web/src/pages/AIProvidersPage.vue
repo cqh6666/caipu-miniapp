@@ -636,6 +636,12 @@
                       <span class="provider-compact-grid__item">{{
                         provider.endpointMode || "chat_completions"
                       }}</span>
+                      <span
+                        v-if="providerThinkingLabel(provider)"
+                        class="provider-compact-grid__item"
+                      >
+                        {{ providerThinkingLabel(provider) }}
+                      </span>
                       <span class="provider-compact-grid__item"
                         >{{ provider.timeoutSeconds }}s</span
                       >
@@ -863,6 +869,42 @@
                           />
                         </el-select>
                       </label>
+                      <template v-else>
+                        <label class="routing-field">
+                          <span
+                            >Thinking
+                            <HelpTip :content="helpTips.thinkingType"
+                          /></span>
+                          <el-select
+                            v-model="provider.extra.thinking_type"
+                            @change="handleThinkingTypeChange(provider)"
+                          >
+                            <el-option
+                              v-for="item in thinkingTypeOptions"
+                              :key="item.value"
+                              :label="item.label"
+                              :value="item.value"
+                            />
+                          </el-select>
+                        </label>
+                        <label
+                          v-if="provider.extra.thinking_type !== 'disabled'"
+                          class="routing-field"
+                        >
+                          <span
+                            >Reasoning Effort
+                            <HelpTip :content="helpTips.reasoningEffort"
+                          /></span>
+                          <el-select v-model="provider.extra.reasoning_effort">
+                            <el-option
+                              v-for="item in reasoningEffortOptions"
+                              :key="item.value"
+                              :label="item.label"
+                              :value="item.value"
+                            />
+                          </el-select>
+                        </label>
+                      </template>
                       <template v-if="isImageGenerationProvider(provider)">
                         <label class="routing-field">
                           <span
@@ -1815,6 +1857,10 @@ const helpTips = {
     "图片生成节点使用 images/generations；普通文本节点使用 chat/completions。",
   responseFormat:
     "DALL-E 或三方兼容节点会随请求发送；GPT image 节点默认返回 b64_json，本字段只作为解码偏好。",
+  thinkingType:
+    "DeepSeek 等兼容接口可用；auto 不发送字段，disabled 会关闭思考模式。",
+  reasoningEffort:
+    "仅 thinking 未关闭时发送；DeepSeek 当前支持 high / max。",
   imageSize: "支持 auto 或 1024x1024、1536x1024、1024x1536 等 OpenAI 图片尺寸。",
   imageBackground:
     "控制生成图的背景透明度；JPEG 建议选择 opaque，透明背景请配合 png 或 webp。",
@@ -1847,6 +1893,18 @@ const providerResponseFormatOptions: Array<{
   { label: "auto", value: "auto" },
   { label: "image_url", value: "image_url" },
   { label: "b64_json", value: "b64_json" },
+];
+
+const thinkingTypeOptions = [
+  { label: "auto", value: "auto" },
+  { label: "enabled", value: "enabled" },
+  { label: "disabled", value: "disabled" },
+];
+
+const reasoningEffortOptions = [
+  { label: "auto", value: "" },
+  { label: "high", value: "high" },
+  { label: "max", value: "max" },
 ];
 const imageSizeOptions = [
   { label: "auto", value: "auto" },
@@ -2199,6 +2257,24 @@ function handleEndpointModeChange(provider: AIRoutingProviderConfig) {
   } else {
     provider.extra = normalizeProviderExtra(provider);
   }
+}
+
+function handleThinkingTypeChange(provider: AIRoutingProviderConfig) {
+  if (provider.extra.thinking_type === "disabled") {
+    provider.extra.reasoning_effort = "";
+  }
+  provider.extra = normalizeProviderExtra(provider);
+}
+
+function providerThinkingLabel(provider: AIRoutingProviderConfig) {
+  if (isImageGenerationProvider(provider)) {
+    return "";
+  }
+  const thinkingType = String(provider.extra?.thinking_type || "").trim();
+  if (!thinkingType || thinkingType === "auto") {
+    return "";
+  }
+  return `thinking ${thinkingType}`;
 }
 
 function goAlertConfig() {
@@ -3178,8 +3254,20 @@ function normalizeProviderExtra(provider: AIRoutingProviderConfig) {
     delete extra.output_format;
     delete extra.output_compression;
     delete extra.n;
+    const thinkingType = normalizeThinkingType(extra.thinking_type);
+    extra.thinking_type = thinkingType || "auto";
+    if (thinkingType === "disabled") {
+      extra.reasoning_effort = "";
+    } else {
+      extra.reasoning_effort = normalizeReasoningEffort(
+        extra.reasoning_effort,
+      );
+    }
     return extra;
   }
+
+  delete extra.thinking_type;
+  delete extra.reasoning_effort;
 
   const outputFormat = normalizeImageOutputFormat(extra.output_format) || "png";
   extra.output_format = outputFormat;
@@ -3215,6 +3303,22 @@ function normalizeProviderExtra(provider: AIRoutingProviderConfig) {
   }
 
   return extra;
+}
+
+function normalizeThinkingType(value: unknown) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "enabled" || raw === "disabled") {
+    return raw;
+  }
+  return "";
+}
+
+function normalizeReasoningEffort(value: unknown) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "high" || raw === "max") {
+    return raw;
+  }
+  return "";
 }
 
 function normalizeImageOutputFormat(value: unknown) {

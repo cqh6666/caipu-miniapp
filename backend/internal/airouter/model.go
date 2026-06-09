@@ -94,6 +94,11 @@ type ImageGenerationOptions struct {
 	N                 *int
 }
 
+type ChatCompletionOptions struct {
+	ThinkingType    string
+	ReasoningEffort string
+}
+
 type SceneConfig struct {
 	Scene             Scene            `json:"scene"`
 	Enabled           bool             `json:"enabled"`
@@ -307,6 +312,20 @@ func ImageGenerationOptionsFromExtra(extra map[string]any) ImageGenerationOption
 	return options
 }
 
+func ChatCompletionOptionsFromExtra(extra map[string]any) ChatCompletionOptions {
+	var options ChatCompletionOptions
+	if len(extra) == 0 {
+		return options
+	}
+	if value := extraStringValue(extra, providerExtraKeyThinkingType); value != "" {
+		options.ThinkingType = strings.ToLower(strings.TrimSpace(value))
+	}
+	if value := extraStringValue(extra, providerExtraKeyReasoningEffort); value != "" {
+		options.ReasoningEffort = strings.ToLower(strings.TrimSpace(value))
+	}
+	return options
+}
+
 func NormalizeImageOutputFormat(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "jpg", "jpeg":
@@ -370,6 +389,26 @@ func ValidateImageGenerationOptions(options ImageGenerationOptions) error {
 	return nil
 }
 
+func ValidateChatCompletionOptions(options ChatCompletionOptions) error {
+	if options.ThinkingType != "" && !isValidThinkingType(options.ThinkingType) {
+		return fmt.Errorf("provider thinkingType must be auto, enabled or disabled")
+	}
+	if options.ReasoningEffort != "" && !isValidReasoningEffort(options.ReasoningEffort) {
+		return fmt.Errorf("provider reasoningEffort must be high or max")
+	}
+	if normalizeThinkingType(options.ThinkingType) == "disabled" && options.ReasoningEffort != "" {
+		return fmt.Errorf("provider reasoningEffort cannot be set when thinking is disabled")
+	}
+	return nil
+}
+
+func ValidateProviderExtra(extra map[string]any, endpointMode ProviderEndpointMode) error {
+	if endpointMode == EndpointModeImagesGenerations {
+		return ValidateImageGenerationOptions(ImageGenerationOptionsFromExtra(extra))
+	}
+	return ValidateChatCompletionOptions(ChatCompletionOptionsFromExtra(extra))
+}
+
 func ImageGenerationExtraForPersistence(extra map[string]any, endpointMode ProviderEndpointMode) (map[string]any, error) {
 	cloned := cloneProviderExtra(extra)
 	if cloned == nil {
@@ -400,6 +439,25 @@ func ImageGenerationExtraForPersistence(extra map[string]any, endpointMode Provi
 	} else {
 		cloned[providerExtraKeyImageN] = *options.N
 	}
+	return cloned, nil
+}
+
+func ChatCompletionExtraForPersistence(extra map[string]any, endpointMode ProviderEndpointMode) (map[string]any, error) {
+	cloned := cloneProviderExtra(extra)
+	if cloned == nil {
+		cloned = make(map[string]any)
+	}
+	if endpointMode == EndpointModeImagesGenerations {
+		deleteChatCompletionExtra(cloned)
+		return cloned, nil
+	}
+
+	options := ChatCompletionOptionsFromExtra(cloned)
+	if err := ValidateChatCompletionOptions(options); err != nil {
+		return nil, err
+	}
+	setOrDeleteString(cloned, providerExtraKeyThinkingType, normalizeThinkingType(options.ThinkingType))
+	setOrDeleteString(cloned, providerExtraKeyReasoningEffort, options.ReasoningEffort)
 	return cloned, nil
 }
 
@@ -454,6 +512,33 @@ func isValidImageOutputFormat(value string) bool {
 	}
 }
 
+func isValidThinkingType(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "auto", "enabled", "disabled":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeThinkingType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "enabled", "disabled":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func isValidReasoningEffort(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "high", "max":
+		return true
+	default:
+		return false
+	}
+}
+
 func deleteImageGenerationExtra(extra map[string]any) {
 	delete(extra, providerExtraKeyImageSize)
 	delete(extra, providerExtraKeyImageQuality)
@@ -461,6 +546,11 @@ func deleteImageGenerationExtra(extra map[string]any) {
 	delete(extra, providerExtraKeyImageOutputFormat)
 	delete(extra, providerExtraKeyImageOutputCompression)
 	delete(extra, providerExtraKeyImageN)
+}
+
+func deleteChatCompletionExtra(extra map[string]any) {
+	delete(extra, providerExtraKeyThinkingType)
+	delete(extra, providerExtraKeyReasoningEffort)
 }
 
 func setOrDeleteString(extra map[string]any, key, value string) {

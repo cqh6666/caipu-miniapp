@@ -191,6 +191,10 @@
 - 更完整的项目专用清单见 `docs/wechat-login-checklist.md`
 - 菜名和步骤生成 `nano-banana-pro` 手绘流程图的调用说明见 `docs/nano-banana-recipe-flowchart.md`
 - AI 多 Provider 配置与轮询 / 降级设计见 `docs/ai-multi-provider-routing-design.md`
+- `AI Provider` 的文本类 `chat/completions` 节点支持配置
+  `thinking_type=auto|enabled|disabled` 和 `reasoning_effort=high|max`；
+  `auto` 不随请求发送字段。DeepSeek `deepseek-v4-flash` 用于标题清洗时建议设置
+  `thinking_type=disabled`，避免默认思考模式占用 `max_tokens` 导致标题 JSON 为空。
 - `AI Provider -> flowchart` 的 `images/generations` 节点可配置图片尺寸、质量、
   背景、输出格式、压缩率和生成数量；`gpt-image-*` 模型默认按 `b64_json`
   响应解析，后端不再向这类模型发送 `response_format` 字段。

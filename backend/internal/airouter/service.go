@@ -32,6 +32,8 @@ var (
 const (
 	providerExtraKeyEndpointMode           = "endpoint_mode"
 	providerExtraKeyResponseFormat         = "response_format"
+	providerExtraKeyThinkingType           = "thinking_type"
+	providerExtraKeyReasoningEffort        = "reasoning_effort"
 	providerExtraKeyImageSize              = "size"
 	providerExtraKeyImageQuality           = "quality"
 	providerExtraKeyImageBackground        = "background"
@@ -565,7 +567,7 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 		if provider.EndpointMode == EndpointModeImagesGenerations && scene != SceneFlowchart {
 			return SceneConfig{}, nil, common.NewAppError(common.CodeBadRequest, "images generation endpoint is only supported for flowchart scene", http.StatusBadRequest)
 		}
-		if _, err := ImageGenerationExtraForPersistence(provider.Extra, provider.EndpointMode); err != nil {
+		if err := ValidateProviderExtra(provider.Extra, provider.EndpointMode); err != nil {
 			return SceneConfig{}, nil, common.NewAppError(common.CodeBadRequest, err.Error(), http.StatusBadRequest).WithErr(err)
 		}
 		if provider.Priority <= 0 {
@@ -912,11 +914,17 @@ func (s *Service) resetRoundRobin(scene Scene) {
 }
 
 type openAIChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	Stream      *bool         `json:"stream,omitempty"`
-	MaxTokens   *int          `json:"max_tokens,omitempty"`
+	Model           string                `json:"model"`
+	Messages        []ChatMessage         `json:"messages"`
+	Temperature     *float64              `json:"temperature,omitempty"`
+	Stream          *bool                 `json:"stream,omitempty"`
+	MaxTokens       *int                  `json:"max_tokens,omitempty"`
+	Thinking        *openAIThinkingConfig `json:"thinking,omitempty"`
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
+}
+
+type openAIThinkingConfig struct {
+	Type string `json:"type"`
 }
 
 type openAIChatResponse struct {
@@ -993,6 +1001,7 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 		}
 		body = marshaled
 	default:
+		chatOptions := ChatCompletionOptionsFromExtra(provider.Extra)
 		request := openAIChatRequest{
 			Model:    provider.Model,
 			Messages: input.Messages,
@@ -1019,6 +1028,12 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 		}
 		if maxTokens > 0 {
 			request.MaxTokens = &maxTokens
+		}
+		if chatOptions.ThinkingType != "" {
+			request.Thinking = &openAIThinkingConfig{Type: chatOptions.ThinkingType}
+		}
+		if chatOptions.ReasoningEffort != "" && chatOptions.ThinkingType != "disabled" {
+			request.ReasoningEffort = chatOptions.ReasoningEffort
 		}
 
 		marshaled, err := json.Marshal(request)
@@ -1466,6 +1481,9 @@ func providerExtraForPersistence(extra map[string]any, endpointMode ProviderEndp
 	cloned, err := ImageGenerationExtraForPersistence(extra, endpointMode)
 	if err != nil {
 		cloned = cloneProviderExtra(extra)
+	}
+	if normalized, chatErr := ChatCompletionExtraForPersistence(cloned, endpointMode); chatErr == nil {
+		cloned = normalized
 	}
 	if cloned == nil {
 		cloned = make(map[string]any)

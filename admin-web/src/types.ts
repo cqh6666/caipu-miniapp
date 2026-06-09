@@ -167,6 +167,8 @@ export type AIRoutingProviderResponseFormat = "auto" | "image_url" | "b64_json";
 export interface AIRoutingProviderExtra {
   endpoint_mode?: string;
   response_format?: string;
+  thinking_type?: "auto" | "enabled" | "disabled" | string;
+  reasoning_effort?: "high" | "max" | string;
   size?: string;
   quality?: string;
   background?: string;

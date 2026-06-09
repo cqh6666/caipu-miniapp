@@ -240,6 +240,127 @@ func TestRouteChatRouteTestSkipsProviderAlerts(t *testing.T) {
 	}
 }
 
+func TestRouteChatSendsThinkingOptions(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body error = %v", err)
+		}
+		thinking, ok := payload["thinking"].(map[string]any)
+		if !ok {
+			t.Fatalf("request thinking = %#v, want object", payload["thinking"])
+		}
+		if got := thinking["type"]; got != "disabled" {
+			t.Fatalf("request thinking.type = %#v, want disabled", got)
+		}
+		if _, ok := payload["reasoning_effort"]; ok {
+			t.Fatalf("request should not contain reasoning_effort when thinking disabled: %#v", payload["reasoning_effort"])
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"西红柿炒鸡蛋\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+		return SceneConfig{}
+	}, nil, nil)
+
+	_, err := service.routeChat(context.Background(), SceneConfig{
+		Scene:       SceneTitle,
+		Enabled:     true,
+		Strategy:    StrategyPriorityFailover,
+		MaxAttempts: 1,
+		RetryOn:     DefaultRetryOn(),
+		Breaker:     DefaultBreakerConfig(),
+		RequestOptions: RequestOptions{
+			MaxTokens: 64,
+		},
+		Providers: []ProviderConfig{
+			{
+				ID:             "title-main",
+				Name:           "标题节点",
+				Adapter:        AdapterOpenAICompatible,
+				Enabled:        true,
+				Priority:       10,
+				BaseURL:        server.URL,
+				Model:          "deepseek-v4-flash",
+				TimeoutSeconds: 5,
+				Scene:          SceneTitle,
+				EndpointMode:   EndpointModeChatCompletions,
+				Extra: map[string]any{
+					"thinking_type": "disabled",
+				},
+			},
+		},
+	}, buildSceneTestInput(SceneTitle))
+	if err != nil {
+		t.Fatalf("routeChat() error = %v", err)
+	}
+}
+
+func TestRouteChatSendsReasoningEffortWhenThinkingEnabled(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body error = %v", err)
+		}
+		thinking, ok := payload["thinking"].(map[string]any)
+		if !ok {
+			t.Fatalf("request thinking = %#v, want object", payload["thinking"])
+		}
+		if got := thinking["type"]; got != "enabled" {
+			t.Fatalf("request thinking.type = %#v, want enabled", got)
+		}
+		if got := payload["reasoning_effort"]; got != "max" {
+			t.Fatalf("request reasoning_effort = %#v, want max", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"西红柿炒鸡蛋\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+		return SceneConfig{}
+	}, nil, nil)
+
+	_, err := service.routeChat(context.Background(), SceneConfig{
+		Scene:       SceneTitle,
+		Enabled:     true,
+		Strategy:    StrategyPriorityFailover,
+		MaxAttempts: 1,
+		RetryOn:     DefaultRetryOn(),
+		Breaker:     DefaultBreakerConfig(),
+		Providers: []ProviderConfig{
+			{
+				ID:             "title-main",
+				Name:           "标题节点",
+				Adapter:        AdapterOpenAICompatible,
+				Enabled:        true,
+				Priority:       10,
+				BaseURL:        server.URL,
+				Model:          "deepseek-v4-flash",
+				TimeoutSeconds: 5,
+				Scene:          SceneTitle,
+				EndpointMode:   EndpointModeChatCompletions,
+				Extra: map[string]any{
+					"thinking_type":    "enabled",
+					"reasoning_effort": "max",
+				},
+			},
+		},
+	}, buildSceneTestInput(SceneTitle))
+	if err != nil {
+		t.Fatalf("routeChat() error = %v", err)
+	}
+}
+
 func TestRouteChatFlowchartUsesMessageImagesWhenContentIsEmpty(t *testing.T) {
 	t.Parallel()
 

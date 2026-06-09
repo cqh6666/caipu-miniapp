@@ -150,6 +150,11 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - AI 多 Provider 配置与轮询 / 降级设计见：[../docs/ai-multi-provider-routing-design.md](../docs/ai-multi-provider-routing-design.md)
 - 后台 `AI Provider` 页面是 `summary / title / flowchart` 多节点路由的唯一运维入口；
   `配置中心` 不再展示旧单节点 AI 分组。
+- `AI Provider` 文本类 `chat/completions` 节点支持通过 Provider `extra`
+  透传 `thinking_type=auto|enabled|disabled` 和 `reasoning_effort=high|max`；
+  `auto` 不发送字段，`thinking_type=disabled` 会清空并禁止发送
+  `reasoning_effort`。DeepSeek `deepseek-v4-flash` 标题清洗节点建议关闭
+  thinking，并保持 `maxTokens=64`、`timeoutSeconds=3-5`。
 - `AI Provider -> flowchart` 的 `images/generations` 节点支持配置
   `size / quality / background / output_format / output_compression / n`；
   对 `gpt-image-*` 模型，后端默认解析 `b64_json`，不会随请求发送

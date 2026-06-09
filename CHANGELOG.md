@@ -1,5 +1,33 @@
 # Project Changelog
 
+## 2026-06-09 (AI Provider 支持 thinking 参数透传)
+
+### Changed
+
+- **修改时间**：2026-06-09 17:51:50 +0800 CST
+- **变更背景**：DeepSeek `deepseek-v4-flash` 默认开启 thinking；用于后台标题清洗时，
+  默认思考模式会消耗 `max_tokens`，导致 `content` 为空或 JSON 不稳定，需要能在
+  `AI Provider` 页面显式关闭 thinking。
+- **核心改动**：
+  - `admin-web` 的 `AI Provider` 文本类节点新增 `Thinking` 与
+    `Reasoning Effort` 配置；非图片节点可选择 `auto / enabled / disabled`，
+    摘要行会展示已显式配置的 thinking 状态。
+  - `backend/internal/airouter` 新增 Provider `extra` 中
+    `thinking_type` 与 `reasoning_effort` 的规范化、校验、持久化和 OpenAI-compatible
+    请求体透传；`auto` 不发送字段，`thinking_type=disabled` 时不发送
+    `reasoning_effort`。
+  - README 与后端 README 同步说明 DeepSeek 标题清洗建议配置。
+- **影响范围**：
+  - 影响 `AI Provider` 多节点路由中 `summary / title` 等
+    `chat/completions` 文本节点的可选请求参数。
+  - 不影响 `images/generations` 图片节点；图片节点会自动清理文本 thinking 参数。
+- **兼容性/风险**：
+  - 默认 `auto` 不发送新字段，既有 Provider 行为保持不变。
+  - 非 DeepSeek 兼容方若不支持这些字段，应保持 `auto`，避免上游拒绝未知参数。
+- **验证情况**：
+  - 已执行 `go test ./internal/airouter`，通过。
+  - 已执行 `npm --prefix admin-web run build`，通过（仅有既有 chunk size warning）。
+
 ## 2026-05-11 (新增小程序 AI 助手入口开关)
 
 ### Added
