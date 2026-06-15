@@ -631,12 +631,12 @@ import {
 	getCurrentKitchenId,
 	getFriendlySessionErrorMessage,
 	getSessionSnapshot,
-	isProfileIncomplete,
 	isPlaceholderNickname,
 	saveCurrentUserProfile,
 	setCurrentKitchenId,
 	updateSessionKitchen
 } from '../../utils/auth'
+import { getAccessToken } from '../../utils/session-storage'
 import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
 import AddRecipeSheet from './components/add-recipe-sheet.vue'
 import DietAssistantSheet from './components/diet-assistant-sheet.vue'
@@ -876,7 +876,6 @@ export default {
 			draftLinkPreviewTimer: null,
 			draftLinkPreviewRequestID: 0,
 			isDraftLinkPreviewing: false,
-			hasDismissedProfilePrompt: false,
 			cachedRecipeCoverMap: {},
 			recipeCardCoverFallbackMap: {},
 			recipeCardHiddenMap: {},
@@ -2824,15 +2823,23 @@ export default {
 					if (this.mealOrderStoreLoadedKitchenId !== nextKitchenId) {
 						this.loadMealOrderStore({ silent: true })
 					}
-				}
+			}
 			this.activeInvite = null
 			this.inviteCodeCopied = false
-			this.maybePromptProfile()
 		},
 		async refreshRecipes(options = {}) {
 			const { silent = true } = options
 			const cachedRecipes = getCachedRecipes()
 			this.applyRecipes(cachedRecipes)
+			const storedToken = getAccessToken()
+			if (!storedToken) {
+				this.applySession(null)
+				this.syncErrorMessage = ''
+				this.applyPlaces(getCachedPlaces())
+				this.kitchenMembers = []
+				this.kitchenMembersKitchenId = 0
+				return cachedRecipes
+			}
 
 			try {
 				this.isSyncing = true
@@ -2988,17 +2995,9 @@ export default {
 				avatarUrl: ''
 			}
 		},
-		maybePromptProfile() {
-			if (appConfig.authMode !== 'wechat') return
-			if (this.hasDismissedProfilePrompt || this.showProfileSheet) return
-			if (!this.currentUser?.id) return
-			if (!isProfileIncomplete(this.currentUser)) return
-			this.openProfileSheetWithMode('prompt')
-		},
 		closeProfileSheet() {
 			this.showProfileSheet = false
 			this.profileSheetMode = 'prompt'
-			this.hasDismissedProfilePrompt = true
 			this.resetProfileDraft()
 		},
 		handleChooseAvatar(event) {
@@ -3035,7 +3034,6 @@ export default {
 				}
 				this.showProfileSheet = false
 				this.profileSheetMode = 'prompt'
-				this.hasDismissedProfilePrompt = true
 				this.resetProfileDraft()
 				this.applySession(nextSession || getSessionSnapshot())
 				await this.refreshKitchenMembers({ silent: true })

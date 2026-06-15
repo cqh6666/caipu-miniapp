@@ -1,7 +1,6 @@
 import { appConfig, resolveAssetURL } from './app-config'
 import { request } from './http'
 import { clearSessionState, getAccessToken, getSessionState, setAccessToken, setSessionState } from './session-storage'
-import { isTemporaryImagePath } from './upload-api'
 
 let pendingSessionPromise = null
 const DEV_IDENTITY_STORAGE_KEY = 'caipu-miniapp-dev-identity'
@@ -131,34 +130,6 @@ function getMiniProgramAppID() {
 	}
 }
 
-function getUserProfileFromPayload(payload = {}) {
-	const userInfo = payload?.userInfo || payload
-	const avatarUrl = String(userInfo?.avatarUrl || userInfo?.avatarURL || '').trim()
-	return {
-		nickname: String(userInfo?.nickName || userInfo?.nickname || '').trim(),
-		avatarUrl: isTemporaryImagePath(avatarUrl) ? '' : avatarUrl
-	}
-}
-
-function getOptionalWeChatProfile() {
-	return new Promise((resolve) => {
-		if (typeof uni.getUserInfo !== 'function') {
-			resolve({})
-			return
-		}
-
-		uni.getUserInfo({
-			provider: 'weixin',
-			success: (result) => {
-				resolve(getUserProfileFromPayload(result))
-			},
-			fail: () => {
-				resolve({})
-			}
-		})
-	})
-}
-
 function isFallbackNickname(value = '') {
 	return String(value).trim().startsWith(FALLBACK_NICKNAME_PREFIX)
 }
@@ -173,24 +144,6 @@ export function isProfileIncomplete(user = {}) {
 	const nickname = String(user?.nickname || '').trim()
 	const avatarUrl = String(user?.avatarUrl || '').trim()
 	return !avatarUrl || isPlaceholderNickname(nickname)
-}
-
-function shouldSyncUserProfile(currentUser = {}, profile = {}) {
-	const nickname = String(profile.nickname || '').trim()
-	const avatarUrl = String(profile.avatarUrl || '').trim()
-	if (!nickname && !avatarUrl) {
-		return false
-	}
-
-	const currentNickname = String(currentUser?.nickname || '').trim()
-	const currentAvatarUrl = String(currentUser?.avatarUrl || '').trim()
-	if (nickname && !isPlaceholderNickname(nickname) && (!currentNickname || isPlaceholderNickname(currentNickname))) {
-		return true
-	}
-	if (avatarUrl && (!currentAvatarUrl || isTemporaryImagePath(currentAvatarUrl))) {
-		return true
-	}
-	return false
 }
 
 function isLegacyProfileRequestError(error) {
@@ -241,35 +194,15 @@ async function createSession() {
 	}
 
 	const code = await loginWithWeChat()
-	const profile = await getOptionalWeChatProfile()
-	let payload
-	try {
-		payload = await request({
-			url: '/caipu-api/auth/wechat/login',
-			method: 'POST',
-			data: {
-				code,
-				appId: getMiniProgramAppID(),
-				nickname: profile.nickname || '',
-				avatarUrl: profile.avatarUrl || ''
-			},
-			auth: false
-		})
-	} catch (error) {
-		if (!isLegacyProfileRequestError(error)) {
-			throw error
-		}
-
-		payload = await request({
-			url: '/caipu-api/auth/wechat/login',
-			method: 'POST',
-			data: {
-				code,
-				appId: getMiniProgramAppID()
-			},
-			auth: false
-		})
-	}
+	const payload = await request({
+		url: '/caipu-api/auth/wechat/login',
+		method: 'POST',
+		data: {
+			code,
+			appId: getMiniProgramAppID()
+		},
+		auth: false
+	})
 
 	return normalizeSessionPayload(payload, payload?.token || '')
 }
@@ -285,35 +218,10 @@ export async function ensureSession(options = {}) {
 			const storedToken = getAccessToken()
 			if (storedToken) {
 				try {
-					let payload = await request({
+					const payload = await request({
 						url: '/caipu-api/auth/me',
 						method: 'GET'
 					})
-					let profileSynced = false
-					const profile = await getOptionalWeChatProfile()
-					try {
-						if (shouldSyncUserProfile(payload?.user, profile)) {
-							const user = await updateSessionUserProfile(profile)
-							if (user) {
-								payload.user = user
-								profileSynced = true
-							}
-						}
-					} catch (error) {
-						if (!isLegacyProfileRequestError(error)) {
-							throw error
-						}
-					}
-					if (profileSynced) {
-						try {
-							payload = await request({
-								url: '/caipu-api/auth/me',
-								method: 'GET'
-							})
-						} catch (error) {
-							// Keep the refreshed user payload even if this follow-up session sync fails.
-						}
-					}
 					if (shouldRefreshDevSession(payload)) {
 						clearSessionState()
 						uni.setStorageSync(DEV_IDENTITY_STORAGE_KEY, getConfiguredDevLoginIdentity())
