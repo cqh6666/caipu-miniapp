@@ -1,34 +1,26 @@
 <template>
 	<view>
-		<view class="page-header" :class="{ 'page-header--meal-order': isLibraryMealOrderMode }">
+		<view v-if="isLibraryMealOrderMode" class="page-header page-header--meal-order">
 			<view class="page-header__top">
 				<view class="page-header__heading">
 					<view class="page-header__title-row">
-						<view
-							class="page-header__title-mark"
-							:class="isLibraryMealOrderMode ? 'page-header__title-mark--meal-order' : 'page-header__title-mark--library'"
-						>
+						<view class="page-header__title-mark page-header__title-mark--meal-order">
 							<up-icon
-								:name="isLibraryMealOrderMode ? 'heart-fill' : 'grid-fill'"
-								:size="isLibraryMealOrderMode ? 14 : 15"
-								:color="isLibraryMealOrderMode ? '#bf715f' : '#7a6755'"
+								name="heart-fill"
+								size="14"
+								color="#bf715f"
 							></up-icon>
 						</view>
 						<text class="page-header__title">{{ libraryHeaderTitle }}</text>
 					</view>
-					<text v-if="libraryHeaderSummary" class="page-header__summary">{{ libraryHeaderSummary }}</text>
 				</view>
-				<view v-if="isLibraryMealOrderMode" class="meal-order-mode-bar__actions page-header__mode-actions">
+				<view class="meal-order-mode-bar__actions page-header__mode-actions">
 					<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--accent" @tap="$emit('open-meal-order-date-sheet')">
 						<text class="meal-order-mode-bar__chip-text">改日期</text>
 					</view>
 					<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--ghost" @tap="$emit('exit-meal-order-mode')">
 						<text class="meal-order-mode-bar__chip-text">返回</text>
 					</view>
-				</view>
-				<view v-else class="page-header__action" @tap="$emit('open-meal-order-date-sheet')">
-					<up-icon name="calendar" size="16" color="#745742"></up-icon>
-					<text class="page-header__action-text">安排菜单</text>
 				</view>
 			</view>
 		</view>

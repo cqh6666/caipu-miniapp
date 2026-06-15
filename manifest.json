@@ -54,6 +54,11 @@
         "setting" : {
             "urlCheck" : false
         },
+        "permission" : {
+            "scope.userLocation" : {
+                "desc" : "用于选择和打开打卡点位置"
+            }
+        },
         "mergeVirtualHostAttributes" : true,
         "usingComponents" : true
     },

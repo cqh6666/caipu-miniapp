@@ -224,6 +224,12 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/kitchens/{kitchenID}/meal-plans/{planDate}/submit`
 - `POST /api/kitchens/{kitchenID}/meal-plans/{planDate}/draft-from-submitted`
 - `DELETE /api/kitchens/{kitchenID}/meal-plans/{planDate}/submitted`
+- `GET /api/kitchens/{kitchenID}/places`
+- `POST /api/kitchens/{kitchenID}/places`
+- `GET /api/places/{placeID}`
+- `PUT /api/places/{placeID}`
+- `PATCH /api/places/{placeID}/status`
+- `DELETE /api/places/{placeID}`
 - `GET /api/kitchens/{kitchenID}/recipes`
 - `POST /api/kitchens/{kitchenID}/recipes`
 - `GET /api/recipes/{recipeID}`

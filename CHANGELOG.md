@@ -1,5 +1,40 @@
 # Project Changelog
 
+## 2026-06-15 (打卡点数据交互 v1)
+
+### Added
+
+- **修改时间**：2026-06-15 22:40:28 +0800 CST
+- **变更背景**：首页已有“打卡点”原型入口和卡片展示，但仍使用本地
+  `mockPlaces`，没有空间维度数据同步、增删改、状态切换、地图选点或后端接口，
+  无法形成可用闭环。
+- **核心改动**：
+  - 后端新增 `places` 表迁移、`backend/internal/place` 模块和受保护接口：
+    `GET/POST /api/kitchens/{kitchenID}/places`、`GET/PUT/DELETE /api/places/{placeID}`、
+    `PATCH /api/places/{placeID}/status`；权限模型复用空间成员校验，删除为软删除。
+  - 小程序新增 `utils/place-api.js` 与 `utils/place-store.js`，按 `kitchenId`
+    本地缓存打卡点数据，并复用现有上传链路保存图片。
+  - 首页打卡点模式移除 `mockPlaces`，接入真实列表、新增/编辑半屏弹层、详情弹层、
+    删除确认、想去/去过状态切换、搜索筛选、图片预览、微信地图选点和打开地图。
+  - `manifest.json` 补充微信位置权限说明；README 与后端 README 同步新增打卡点能力和接口说明。
+- **影响范围**：
+  - 影响首页“清单 -> 打卡点”模式、底部主按钮在打卡点模式下的点击目标、
+    小程序位置权限声明、后端数据库迁移与受保护 API 路由。
+  - 不修改菜谱详情页、菜单详情页、饮食管家协议或第三方地点解析能力。
+- **兼容性/风险**：
+  - 新表独立新增，不迁移既有菜谱或菜单数据；旧客户端不调用新接口时不受影响。
+  - 地图选点和打开地图依赖微信小程序位置授权，真机需补充验证授权弹窗与拒绝授权后的提示。
+- **验证情况**：
+  - 已执行 `go test ./internal/place`，通过。
+  - 已执行 `go test ./internal/app`，通过（无测试文件，仅编译检查）。
+  - 已执行 `go test ./...`，通过。
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析并编译
+    `pages/index/index.vue`、`place-card-item.vue`、`place-edit-sheet.vue`、
+    `place-detail-sheet.vue`，通过。
+  - 已执行 `node --check utils/place-api.js utils/place-store.js`，通过。
+  - 未运行 HBuilderX / 微信开发者工具真机预览；建议补测新增、编辑、删除、
+    切空间同步、离线缓存兜底、地图选点和打开地图。
+
 ## 2026-06-09 (AI Provider 支持 thinking 参数透传)
 
 ### Changed
@@ -27,6 +62,26 @@
 - **验证情况**：
   - 已执行 `go test ./internal/airouter`，通过。
   - 已执行 `npm --prefix admin-web run build`，通过（仅有既有 chunk size warning）。
+
+## 2026-05-21 (修复首页模板多余闭合标签)
+
+### Fixed
+
+- **修改时间**：2026-05-21 23:39:53 +0800 CST
+- **变更背景**：HBuilderX / Vite 编译首页时报
+  `[plugin:vite:vue] Invalid end tag`，定位到
+  `pages/index/index.vue:540:2` 的根节点结束标签被误判为非法结束标签。
+- **核心改动**：
+  - 删除 `pages/index/index.vue` 中“美食库模式”和“打卡点模式”之间多余的
+    `</view>`，恢复 `appMode === 'cook'` 与 `v-else` 打卡点分支的正确模板层级。
+- **影响范围**：
+  - 仅影响首页 Vue 模板编译结构，不修改页面业务逻辑、接口契约或运行配置。
+- **兼容性/风险**：
+  - 低风险；修复前模板根节点被提前闭合，修复后分支结构恢复为预期的
+    `cook / explore` 互斥渲染。
+- **验证情况**：
+  - 已使用 `admin-web/node_modules/@vue/compiler-sfc` 解析并编译
+    `pages/index/index.vue`，通过。
 
 ## 2026-05-11 (新增小程序 AI 助手入口开关)
 

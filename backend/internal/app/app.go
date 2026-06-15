@@ -25,6 +25,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/mealplan"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/place"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/wechat"
@@ -59,6 +60,9 @@ func New(cfg config.Config) (*App, error) {
 	mealPlanRepo := mealplan.NewRepository(dbConn)
 	mealPlanService := mealplan.NewService(mealPlanRepo, kitchenService)
 	mealPlanHandler := mealplan.NewHandler(mealPlanService)
+	placeRepo := place.NewRepository(dbConn)
+	placeService := place.NewService(placeRepo, kitchenService)
+	placeHandler := place.NewHandler(placeService)
 
 	appSettingsRepo := appsettings.NewRepository(dbConn)
 	runtimeProvider := appsettings.NewRuntimeProvider(appSettingsRepo, cfg.CredentialsSecret, cfg)
@@ -346,6 +350,7 @@ func New(cfg config.Config) (*App, error) {
 		kitchenHandler,
 		inviteHandler,
 		mealPlanHandler,
+		placeHandler,
 		recipeHandler,
 		linkParseHandler,
 		dietAssistantHandler,

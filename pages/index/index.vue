@@ -8,11 +8,44 @@
 				'page-content--meal-order-leaving': mealOrderModeMotionState === 'leaving'
 			}"
 		>
-			<view
-				v-if="activeSection === 'library'"
-				class="library-shell"
-			>
-				<library-header-section
+		<view
+			v-if="activeSection === 'library'"
+			class="library-shell"
+		>
+			<!-- Mode Switcher: 美食库 / 打卡点 -->
+			<view class="mode-switcher">
+				<view class="mode-switcher__track">
+					<view
+						class="mode-switcher__btn"
+						:class="{ 'mode-switcher__btn--active': appMode === 'cook' }"
+						@tap="switchAppMode('cook')"
+					>
+						<up-icon name="grid-fill" size="14" :color="appMode === 'cook' ? '#5c4033' : 'rgba(92,64,51,0.4)'"></up-icon>
+						<text class="mode-switcher__btn-text">美食库</text>
+					</view>
+					<view
+						class="mode-switcher__btn"
+						:class="{ 'mode-switcher__btn--active': appMode === 'explore' }"
+						@tap="switchAppMode('explore')"
+					>
+						<up-icon name="map-fill" size="14" :color="appMode === 'explore' ? '#5c4033' : 'rgba(92,64,51,0.4)'"></up-icon>
+						<text class="mode-switcher__btn-text">打卡点</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 模式描述行 + 安排菜单按钮 -->
+			<view v-if="!isLibraryMealOrderMode" class="mode-desc-row">
+				<text class="mode-desc-row__text">{{ appMode === 'cook' ? libraryHeaderSummary : '记录心动店铺，周末去哪儿不用愁' }}</text>
+				<view v-if="appMode === 'cook'" class="mode-desc-row__action" @tap="openMealOrderDateSheet">
+					<up-icon name="calendar" size="14" color="#745742"></up-icon>
+					<text class="mode-desc-row__action-text">安排菜单</text>
+				</view>
+			</view>
+
+			<!-- 美食库模式 -->
+			<view v-if="appMode === 'cook'" class="library-mode-content">
+			<library-header-section
 					:is-library-meal-order-mode="isLibraryMealOrderMode"
 					:library-header-title="libraryHeaderTitle"
 					:library-header-summary="libraryHeaderSummary"
@@ -172,6 +205,83 @@
 				></library-empty-state>
 			</view>
 
+			<!-- 打卡点模式 -->
+			<view v-else class="explore-mode-content">
+				<!-- 打卡点搜索 & 筛选 -->
+				<view class="toolbar">
+					<view class="toolbar__search-row">
+						<view
+							class="search-box"
+							:class="{ 'search-box--active': isPlaceSearchFocused || trimmedPlaceSearchKeyword }"
+						>
+							<view class="search-box__icon">
+								<up-icon name="search" size="14" color="#a08775"></up-icon>
+							</view>
+							<input
+								v-model="placeSearchKeyword"
+								class="search-box__input"
+								placeholder="搜索店铺 / 地点..."
+								placeholder-class="search-box__placeholder"
+								confirm-type="search"
+								@focus="isPlaceSearchFocused = true"
+								@blur="isPlaceSearchFocused = false"
+							/>
+							<view v-if="trimmedPlaceSearchKeyword" class="search-box__clear" @tap="placeSearchKeyword = ''">
+								<up-icon name="close" size="14" color="#a08775"></up-icon>
+							</view>
+						</view>
+					</view>
+
+					<view class="filter-group filter-group--compact">
+						<view class="status-track">
+							<view
+								v-for="tab in placeStatusTabs"
+								:key="tab.value"
+								class="status-pill"
+								:class="[`status-pill--${tab.value}`, { 'status-pill--active': activePlaceStatus === tab.value }]"
+								@tap="activePlaceStatus = tab.value"
+							>
+								<up-icon
+									:name="tab.icon"
+									size="16"
+									:color="activePlaceStatus === tab.value ? '#fffaf3' : tab.value === 'visited' ? '#75866f' : '#a08775'"
+								></up-icon>
+								<text class="status-pill__text">{{ tab.label }}</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<!-- 打卡点列表标题 -->
+				<view class="list-caption">
+					<view class="list-caption__top">
+						<text class="list-caption__title">打卡心愿单 · {{ filteredPlaces.length }}个</text>
+					</view>
+				</view>
+
+				<!-- 打卡点列表 -->
+				<view v-if="filteredPlaces.length" class="place-list">
+					<place-card-item
+						v-for="place in filteredPlaces"
+						:key="place.id"
+						:place="place"
+						@open="handlePlaceOpen"
+						@open-location="openPlaceLocation"
+					></place-card-item>
+				</view>
+
+				<view v-else class="explore-empty">
+					<view class="explore-empty__icon-shell">
+						<up-icon name="map-fill" size="24" color="rgba(92,64,51,0.25)"></up-icon>
+					</view>
+					<text class="explore-empty__text">还没有打卡点，去添加一些吧</text>
+					<view class="explore-empty__action" @tap="openPlaceCreateSheet">
+						<text class="explore-empty__action-text">添加打卡点</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
 			<template v-else>
 				<kitchen-section
 					:current-kitchen-name="currentKitchenName"
@@ -253,7 +363,7 @@
 						:color="activeSection === 'library' ? '#6b4d3d' : '#b9aea8'"
 					></up-icon>
 				</view>
-				<text class="nav-item__label">美食库</text>
+				<text class="nav-item__label">清单</text>
 			</view>
 
 			<view class="nav-center">
@@ -406,6 +516,45 @@
 			@submit="submitDraft"
 		></add-recipe-sheet>
 
+		<place-edit-sheet
+			:show="showPlaceEditSheet"
+			:is-edit="placeEditMode === 'edit'"
+			:draft="placeDraft"
+			:status-options="placeStatusOptions"
+			:type-options="placeTypeOptions"
+			:source-options="placeSourceOptions"
+			:max-place-images="maxPlaceImages"
+			:can-submit="canSubmitPlaceDraft"
+			:is-submitting="isSubmittingPlace"
+			@close="closePlaceEditSheet"
+			@name-input="handlePlaceDraftNameInput"
+			@select-status="handlePlaceDraftStatusSelect"
+			@select-type="handlePlaceDraftTypeSelect"
+			@choose-location="choosePlaceLocation"
+			@address-input="handlePlaceDraftAddressInput"
+			@price-input="handlePlaceDraftPriceInput"
+			@choose-images="choosePlaceImages"
+			@preview-image="previewPlaceDraftImages"
+			@remove-image="removePlaceDraftImage"
+			@tags-input="handlePlaceDraftTagsInput"
+			@select-source="handlePlaceDraftSourceSelect"
+			@source-url-input="handlePlaceDraftSourceUrlInput"
+			@note-input="handlePlaceDraftNoteInput"
+			@submit="submitPlaceDraft"
+		></place-edit-sheet>
+
+		<place-detail-sheet
+			:show="showPlaceDetailSheet"
+			:place="selectedPlace"
+			:is-submitting="isSubmittingPlace"
+			@close="closePlaceDetailSheet"
+			@preview-image="previewSelectedPlaceImages"
+			@open-location="openPlaceLocation"
+			@toggle-status="togglePlaceStatus"
+			@edit="openPlaceEditSheet"
+			@delete="confirmDeletePlace"
+		></place-detail-sheet>
+
 		<diet-assistant-sheet
 			:show="showDietAssistantSheet"
 			:initial-prompt="dietAssistantInitialPrompt"
@@ -451,6 +600,19 @@ import { previewRecipeLink } from '../../utils/recipe-api'
 import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import {
+	MAX_PLACE_IMAGES,
+	createPlaceFromDraft,
+	deletePlaceById,
+	getCachedPlaces,
+	loadPlaces,
+	placeSourceOptions,
+	placeStatusOptions,
+	placeTypeOptions,
+	updatePlaceById,
+	updatePlaceStatusById,
+	normalizePlace
+} from '../../utils/place-store'
+import {
 	MAX_RECIPE_IMAGES,
 	createRecipeFromDraft,
 	getCachedRecipes,
@@ -485,8 +647,11 @@ import MealOrderCartSheet from './components/meal-order-cart-sheet.vue'
 import MealOrderCheckoutSheet from './components/meal-order-checkout-sheet.vue'
 import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
 import MealOrderSuccessSheet from './components/meal-order-success-sheet.vue'
+import PlaceDetailSheet from './components/place-detail-sheet.vue'
+import PlaceEditSheet from './components/place-edit-sheet.vue'
 import ProfileSheet from './components/profile-sheet.vue'
 import RandomPickSheet from './components/random-pick-sheet.vue'
+import PlaceCardItem from './components/place-card-item.vue'
 import RecipeCardItem from './components/recipe-card-item.vue'
 import {
 	addDaysFromISODate,
@@ -508,6 +673,49 @@ import { buildRecipeCard, buildRecipeCoverVersion, buildRecipeSearchText, extrac
 import { readLastDraftLinkPrefill, readRecentSearches, writeLastDraftLinkPrefill, writeRecentSearches } from './storage'
 
 const inviteShareFallbackImageUrl = '/static/invite-share-cover.png'
+
+function createEmptyPlaceDraft(overrides = {}) {
+	return {
+		name: '',
+		type: 'food',
+		address: '',
+		latitude: 0,
+		longitude: 0,
+		price: '',
+		source: 'manual',
+		sourceUrl: '',
+		images: [],
+		status: 'want',
+		tags: [],
+		note: '',
+		...overrides
+	}
+}
+
+function createPlaceDraftFromPlace(place = {}) {
+	const normalized = normalizePlace(place)
+	return createEmptyPlaceDraft({
+		name: normalized.name,
+		type: normalized.type,
+		address: normalized.address,
+		latitude: normalized.latitude,
+		longitude: normalized.longitude,
+		price: normalized.price,
+		source: normalized.source,
+		sourceUrl: normalized.sourceUrl,
+		images: normalized.imageUrls,
+		status: normalized.status,
+		tags: normalized.tags,
+		note: normalized.note
+	})
+}
+
+function parsePlaceTagsInput(value = '') {
+	return String(value || '')
+		.split(/[，,\n]/)
+		.map((item) => item.trim())
+		.filter(Boolean)
+}
 
 function replaceKitchenLabel(value = '') {
 	return String(value || '').replace(/厨房/g, '空间')
@@ -553,6 +761,9 @@ export default {
 		MealOrderCheckoutSheet,
 		MealOrderDateSheet,
 		MealOrderSuccessSheet,
+		PlaceCardItem,
+		PlaceDetailSheet,
+		PlaceEditSheet,
 		ProfileSheet,
 		RandomPickSheet,
 		RecipeCardItem
@@ -561,7 +772,30 @@ export default {
 		return {
 			statusMap,
 			activeSection: 'library',
-			activeMealType: 'main',
+			appMode: 'cook',
+			activePlaceStatus: 'all',
+			placeSearchKeyword: '',
+			isPlaceSearchFocused: false,
+			placeStatusTabs: [
+				{ label: '全部', value: 'all', icon: 'map-fill' },
+				{ label: '想去', value: 'want', icon: 'heart' },
+				{ label: '去过', value: 'visited', icon: 'checkmark-circle' }
+			],
+			places: [],
+			placeSyncErrorMessage: '',
+			isLoadingPlaces: false,
+			showPlaceEditSheet: false,
+			showPlaceDetailSheet: false,
+			placeEditMode: 'create',
+			editingPlaceId: '',
+			selectedPlaceId: '',
+			placeDraft: createEmptyPlaceDraft(),
+				placeStatusOptions,
+				placeTypeOptions,
+				placeSourceOptions,
+				maxPlaceImages: MAX_PLACE_IMAGES,
+				isSubmittingPlace: false,
+				activeMealType: 'main',
 			activeStatus: 'all',
 			toolbarBounceClass: '',
 			toolbarBounceTimer: null,
@@ -674,11 +908,11 @@ export default {
 			this.activeSection = 'kitchen'
 		}
 	},
-	onShow() {
-		this.refreshPublicAppConfig()
-		this.refreshRecipes()
-		this.playPendingRecipeReturnFocus()
-	},
+		onShow() {
+			this.refreshPublicAppConfig()
+			this.refreshRecipes()
+			this.playPendingRecipeReturnFocus()
+		},
 	onHide() {
 		if (!this.isSubmittingMealOrder) {
 			this.syncMealOrderDraft({ silent: true })
@@ -689,8 +923,8 @@ export default {
 		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
 		this.clearSearchBlurTimer()
-		this.recipeCoverCacheRequestID += 1
-	},
+				this.recipeCoverCacheRequestID += 1
+			},
 	onUnload() {
 		if (!this.isSubmittingMealOrder) {
 			this.syncMealOrderDraft({ silent: true })
@@ -722,8 +956,33 @@ export default {
 			path: '/pages/index/index'
 		}
 	},
-	computed: {
-		currentMealLabel() {
+		computed: {
+			trimmedPlaceSearchKeyword() {
+				return String(this.placeSearchKeyword || '').trim()
+			},
+			filteredPlaces() {
+				return this.places.filter((place) => {
+					const matchStatus = this.activePlaceStatus === 'all' || place.status === this.activePlaceStatus
+					const keyword = this.trimmedPlaceSearchKeyword.toLowerCase()
+					const searchable = [
+						place.name,
+						place.address,
+						place.price,
+						place.note,
+						...(Array.isArray(place.tags) ? place.tags : [])
+					].join(' ').toLowerCase()
+					const matchSearch = !keyword || searchable.includes(keyword)
+					return matchStatus && matchSearch
+				})
+			},
+			selectedPlace() {
+				const targetPlaceId = String(this.selectedPlaceId || '').trim()
+				return this.places.find((place) => place.id === targetPlaceId) || {}
+			},
+			canSubmitPlaceDraft() {
+				return !!String(this.placeDraft.name || '').trim()
+			},
+			currentMealLabel() {
 			return this.mealTabs.find((tab) => tab.value === this.activeMealType)?.label || '早餐'
 		},
 		currentStatusLabel() {
@@ -1255,8 +1514,304 @@ export default {
 			this.bumpRecipeListMotion()
 		}
 	},
-	methods: {
-		clearRecipeStatusFeedbackTimer() {
+		methods: {
+			switchAppMode(mode) {
+				if (this.appMode === mode) return
+				this.appMode = mode
+				if (mode === 'explore') {
+					this.refreshPlaces({ silent: true })
+				}
+			},
+			handlePlaceOpen(placeId) {
+				const targetPlaceId = String(placeId || '').trim()
+				if (!targetPlaceId) return
+				this.selectedPlaceId = targetPlaceId
+				this.showPlaceDetailSheet = true
+			},
+			applyPlaces(places = []) {
+				this.places = Array.isArray(places) ? places.map((item) => normalizePlace(item)).filter((item) => item.id) : []
+			},
+			async refreshPlaces(options = {}) {
+				const { silent = true } = options
+				this.applyPlaces(getCachedPlaces())
+
+				try {
+					this.isLoadingPlaces = true
+					const places = await loadPlaces({ forceRefresh: true })
+					this.placeSyncErrorMessage = ''
+					this.applyPlaces(places)
+					return places
+				} catch (error) {
+					this.placeSyncErrorMessage = error?.message || '同步打卡点失败'
+					this.applyPlaces(getCachedPlaces())
+					if (!silent) {
+						uni.showToast({
+							title: error?.message || '同步打卡点失败',
+							icon: 'none'
+						})
+					}
+					return this.places
+				} finally {
+					this.isLoadingPlaces = false
+				}
+			},
+			openPlaceCreateSheet() {
+				if (!getCurrentKitchenId()) {
+					uni.showToast({
+						title: '请先完成空间同步',
+						icon: 'none'
+					})
+					return
+				}
+				this.placeEditMode = 'create'
+				this.editingPlaceId = ''
+				this.placeDraft = createEmptyPlaceDraft()
+				this.showPlaceEditSheet = true
+			},
+			openPlaceEditSheet(placeId = '') {
+				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
+				const place = this.places.find((item) => item.id === targetPlaceId)
+				if (!place) return
+				this.placeEditMode = 'edit'
+				this.editingPlaceId = targetPlaceId
+				this.placeDraft = createPlaceDraftFromPlace(place)
+				this.showPlaceDetailSheet = false
+				this.showPlaceEditSheet = true
+			},
+			closePlaceEditSheet() {
+				if (this.isSubmittingPlace) return
+				this.showPlaceEditSheet = false
+				this.placeEditMode = 'create'
+				this.editingPlaceId = ''
+				this.placeDraft = createEmptyPlaceDraft()
+			},
+			closePlaceDetailSheet() {
+				if (this.isSubmittingPlace) return
+				this.showPlaceDetailSheet = false
+			},
+			handlePlaceDraftNameInput(event) {
+				this.placeDraft.name = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftStatusSelect(value) {
+				if (!this.placeStatusOptions.some((item) => item.value === value)) return
+				this.placeDraft.status = value
+			},
+			handlePlaceDraftTypeSelect(value) {
+				if (!this.placeTypeOptions.some((item) => item.value === value)) return
+				this.placeDraft.type = value
+			},
+			handlePlaceDraftAddressInput(event) {
+				this.placeDraft.address = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftPriceInput(event) {
+				this.placeDraft.price = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftTagsInput(event) {
+				this.placeDraft.tags = parsePlaceTagsInput(event?.detail?.value || '')
+			},
+			handlePlaceDraftSourceSelect(value) {
+				if (!this.placeSourceOptions.some((item) => item.value === value)) return
+				this.placeDraft.source = value
+			},
+			handlePlaceDraftSourceUrlInput(event) {
+				this.placeDraft.sourceUrl = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftNoteInput(event) {
+				this.placeDraft.note = String(event?.detail?.value || '')
+			},
+			choosePlaceLocation() {
+				if (typeof uni.chooseLocation !== 'function') {
+					uni.showToast({
+						title: '当前环境不支持地图选点',
+						icon: 'none'
+					})
+					return
+				}
+				uni.chooseLocation({
+					success: (result) => {
+						const nextName = String(result?.name || '').trim()
+						const nextAddress = String(result?.address || '').trim()
+						if (nextName && !String(this.placeDraft.name || '').trim()) {
+							this.placeDraft.name = nextName
+						}
+						this.placeDraft.address = nextAddress || nextName || this.placeDraft.address
+						this.placeDraft.latitude = Number(result?.latitude) || 0
+						this.placeDraft.longitude = Number(result?.longitude) || 0
+					},
+					fail: (error) => {
+						const message = String(error?.errMsg || '')
+						if (message.includes('cancel')) return
+						uni.showToast({
+							title: '地图选点失败',
+							icon: 'none'
+						})
+					}
+				})
+			},
+			choosePlaceImages() {
+				const images = Array.isArray(this.placeDraft.images) ? this.placeDraft.images : []
+				const remaining = Math.max(this.maxPlaceImages - images.length, 0)
+				if (!remaining) {
+					uni.showToast({
+						title: `最多上传 ${this.maxPlaceImages} 张`,
+						icon: 'none'
+					})
+					return
+				}
+
+				uni.chooseImage({
+					count: remaining,
+					sizeType: ['compressed'],
+					sourceType: ['album', 'camera'],
+					success: ({ tempFilePaths }) => {
+						if (!tempFilePaths || !tempFilePaths.length) return
+						const nextImages = [...images]
+						tempFilePaths.forEach((path) => {
+							if (path && !nextImages.includes(path) && nextImages.length < this.maxPlaceImages) {
+								nextImages.push(path)
+							}
+						})
+						this.placeDraft.images = nextImages
+					}
+				})
+			},
+			removePlaceDraftImage(index) {
+				if (typeof index !== 'number') return
+				this.placeDraft.images = (Array.isArray(this.placeDraft.images) ? this.placeDraft.images : [])
+					.filter((_, currentIndex) => currentIndex !== index)
+			},
+			previewPlaceDraftImages(index = 0) {
+				const urls = Array.isArray(this.placeDraft.images) ? this.placeDraft.images.filter(Boolean) : []
+				if (!urls.length) return
+				uni.previewImage({
+					current: urls[index] || urls[0],
+					urls
+				})
+			},
+			previewSelectedPlaceImages(index = 0) {
+				const urls = Array.isArray(this.selectedPlace?.imageUrls) ? this.selectedPlace.imageUrls.filter(Boolean) : []
+				if (!urls.length) return
+				uni.previewImage({
+					current: urls[index] || urls[0],
+					urls
+				})
+			},
+			async submitPlaceDraft() {
+				if (!this.canSubmitPlaceDraft || this.isSubmittingPlace) return
+				this.isSubmittingPlace = true
+				try {
+					const saved = this.placeEditMode === 'edit' && this.editingPlaceId
+						? await updatePlaceById(this.editingPlaceId, this.placeDraft)
+						: await createPlaceFromDraft(this.placeDraft)
+					this.applyPlaces(getCachedPlaces())
+					this.selectedPlaceId = saved?.id || this.selectedPlaceId
+					this.showPlaceEditSheet = false
+					this.showPlaceDetailSheet = !!saved?.id
+					this.placeEditMode = 'create'
+					this.editingPlaceId = ''
+					this.placeDraft = createEmptyPlaceDraft()
+					uni.showToast({
+						title: '打卡点已保存',
+						icon: 'none'
+					})
+				} catch (error) {
+					uni.showToast({
+						title: error?.message || '保存打卡点失败',
+						icon: 'none'
+					})
+				} finally {
+					this.isSubmittingPlace = false
+				}
+			},
+			openPlaceLocation(placeId = '') {
+				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
+				const place = this.places.find((item) => item.id === targetPlaceId)
+				if (!place) return
+				const latitude = Number(place.latitude) || 0
+				const longitude = Number(place.longitude) || 0
+				if (!latitude || !longitude || typeof uni.openLocation !== 'function') {
+					uni.showToast({
+						title: '还没有可打开的位置',
+						icon: 'none'
+					})
+					return
+				}
+				uni.openLocation({
+					latitude,
+					longitude,
+					name: place.name || '打卡点',
+					address: place.address || '',
+					fail: () => {
+						uni.showToast({
+							title: '打开地图失败',
+							icon: 'none'
+						})
+					}
+				})
+			},
+			async togglePlaceStatus(placeId = '') {
+				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
+				const place = this.places.find((item) => item.id === targetPlaceId)
+				if (!place || this.isSubmittingPlace) return
+				const nextStatus = place.status === 'visited' ? 'want' : 'visited'
+				this.isSubmittingPlace = true
+				try {
+					const updated = await updatePlaceStatusById(targetPlaceId, nextStatus)
+					this.applyPlaces(getCachedPlaces())
+					this.selectedPlaceId = updated?.id || targetPlaceId
+					uni.showToast({
+						title: nextStatus === 'visited' ? '已标记去过' : '已改回想去',
+						icon: 'none'
+					})
+				} catch (error) {
+					uni.showToast({
+						title: error?.message || '更新打卡状态失败',
+						icon: 'none'
+					})
+				} finally {
+					this.isSubmittingPlace = false
+				}
+			},
+			confirmDeletePlace(placeId = '') {
+				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
+				const place = this.places.find((item) => item.id === targetPlaceId)
+				if (!place || this.isSubmittingPlace) return
+				uni.showModal({
+					title: '删除打卡点',
+					content: `确认删除「${place.name || '这个打卡点'}」吗？`,
+					confirmText: '删除',
+					confirmColor: '#a95549',
+					success: async ({ confirm }) => {
+						if (!confirm) return
+						await this.deletePlace(targetPlaceId)
+					}
+				})
+			},
+			async deletePlace(placeId = '') {
+				const targetPlaceId = String(placeId || '').trim()
+				if (!targetPlaceId || this.isSubmittingPlace) return
+				this.isSubmittingPlace = true
+				try {
+					await deletePlaceById(targetPlaceId)
+					this.applyPlaces(getCachedPlaces())
+					if (this.selectedPlaceId === targetPlaceId) {
+						this.selectedPlaceId = ''
+						this.showPlaceDetailSheet = false
+					}
+					uni.showToast({
+						title: '打卡点已删除',
+						icon: 'none'
+					})
+				} catch (error) {
+					uni.showToast({
+						title: error?.message || '删除打卡点失败',
+						icon: 'none'
+					})
+				} finally {
+					this.isSubmittingPlace = false
+				}
+			},
+			clearRecipeStatusFeedbackTimer() {
 			if (!this.recipeStatusFeedbackTimer) return
 			clearTimeout(this.recipeStatusFeedbackTimer)
 			this.recipeStatusFeedbackTimer = null
@@ -2202,22 +2757,29 @@ export default {
 			this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
 			const nextKitchenId = Number(snapshot?.currentKitchenId) || 0
 			this.currentKitchenId = nextKitchenId
-			if (nextKitchenId !== this.kitchenMembersKitchenId) {
-				this.kitchenMembers = []
-				this.kitchenMembersKitchenId = nextKitchenId
-			}
-			if (previousKitchenId !== nextKitchenId) {
-				this.mealOrderSyncContextID += 1
-				this.mealOrderStoreLoadedKitchenId = 0
-				this.mealOrderLocalVersion += 1
-				this.resetMealOrderState()
-			}
-			if (!nextKitchenId) {
-				this.mealOrderStoreLoadedKitchenId = 0
-				this.resetMealOrderState()
-			} else if (this.mealOrderStoreLoadedKitchenId !== nextKitchenId) {
-				this.loadMealOrderStore({ silent: true })
-			}
+				if (nextKitchenId !== this.kitchenMembersKitchenId) {
+					this.kitchenMembers = []
+					this.kitchenMembersKitchenId = nextKitchenId
+				}
+				if (previousKitchenId !== nextKitchenId) {
+					this.mealOrderSyncContextID += 1
+					this.mealOrderStoreLoadedKitchenId = 0
+					this.mealOrderLocalVersion += 1
+					this.resetMealOrderState()
+					this.selectedPlaceId = ''
+					this.showPlaceDetailSheet = false
+					this.showPlaceEditSheet = false
+				}
+				if (!nextKitchenId) {
+					this.mealOrderStoreLoadedKitchenId = 0
+					this.resetMealOrderState()
+					this.applyPlaces([])
+				} else {
+					this.applyPlaces(getCachedPlaces(nextKitchenId))
+					if (this.mealOrderStoreLoadedKitchenId !== nextKitchenId) {
+						this.loadMealOrderStore({ silent: true })
+					}
+				}
 			this.activeInvite = null
 			this.inviteCodeCopied = false
 			this.maybePromptProfile()
@@ -2232,17 +2794,20 @@ export default {
 				const session = await ensureSession()
 				this.syncErrorMessage = ''
 				this.applySession(session)
-				const kitchenId = getCurrentKitchenId()
-				const [recipes] = await Promise.all([
-					loadRecipes({ forceRefresh: true }),
-					this.refreshKitchenMembers({ kitchenId, silent: true })
-				])
-				this.applyRecipes(recipes)
-				await this.applyPendingMealOrderAction(kitchenId)
-			} catch (error) {
+					const kitchenId = getCurrentKitchenId()
+					const [recipes, places] = await Promise.all([
+						loadRecipes({ forceRefresh: true }),
+						loadPlaces({ forceRefresh: true }),
+						this.refreshKitchenMembers({ kitchenId, silent: true })
+					])
+					this.applyRecipes(recipes)
+					this.applyPlaces(places)
+					await this.applyPendingMealOrderAction(kitchenId)
+				} catch (error) {
 				this.syncErrorMessage = getFriendlySessionErrorMessage(error)
-				this.applySession()
-				this.applyRecipes(getCachedRecipes())
+					this.applySession()
+					this.applyRecipes(getCachedRecipes())
+					this.applyPlaces(getCachedPlaces())
 				this.kitchenMembers = []
 				this.kitchenMembersKitchenId = 0
 				if (!silent) {
@@ -3092,6 +3657,125 @@ export default {
 
 	.library-shell {
 		display: block;
+	}
+
+	.mode-switcher {
+		display: flex;
+		justify-content: center;
+		margin-bottom: 16rpx;
+	}
+
+	.mode-desc-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 12rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.mode-desc-row__text {
+		font-size: 22rpx;
+		color: rgba(92, 64, 51, 0.45);
+		font-weight: 500;
+		font-style: italic;
+	}
+
+	.mode-desc-row__action {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		padding: 12rpx 20rpx;
+		background: rgba(92, 64, 51, 0.04);
+		border: 1px solid rgba(92, 64, 51, 0.08);
+		border-radius: 24rpx;
+	}
+
+	.mode-desc-row__action-text {
+		font-size: 24rpx;
+		font-weight: 700;
+		color: #5c4033;
+	}
+
+	.mode-switcher__track {
+		display: flex;
+		align-items: center;
+		padding: 6rpx;
+		background: rgba(92, 64, 51, 0.04);
+		border-radius: 28rpx;
+		border: 1px solid rgba(92, 64, 51, 0.04);
+		box-shadow: inset 0 2rpx 4rpx rgba(92, 64, 51, 0.04);
+	}
+
+	.mode-switcher__btn {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		padding: 14rpx 28rpx;
+		border-radius: 22rpx;
+		transition: all 0.2s ease;
+
+		&--active {
+			background: #ffffff;
+			box-shadow: 0 4rpx 12rpx rgba(92, 64, 51, 0.05), 0 1rpx 3rpx rgba(92, 64, 51, 0.1);
+		}
+	}
+
+	.mode-switcher__btn-text {
+		font-size: 24rpx;
+		font-weight: 700;
+		color: rgba(92, 64, 51, 0.4);
+
+		.mode-switcher__btn--active & {
+			color: #5c4033;
+		}
+	}
+
+	.place-list {
+		padding: 0 4rpx;
+	}
+
+	.explore-empty {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 120rpx 40rpx;
+		background: #ffffff;
+		border-radius: 32rpx;
+		margin: 20rpx 4rpx;
+		box-shadow: 0 4rpx 12rpx rgba(92, 64, 51, 0.05), 0 1rpx 3rpx rgba(92, 64, 51, 0.1);
+		border: 1px solid rgba(240, 237, 230, 0.8);
+	}
+
+	.explore-empty__icon-shell {
+		width: 80rpx;
+		height: 80rpx;
+		background: #f9f7f2;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 24rpx;
+	}
+
+	.explore-empty__text {
+		font-size: 26rpx;
+		color: rgba(92, 64, 51, 0.5);
+		font-weight: 500;
+	}
+
+	.explore-empty__action {
+		margin-top: 26rpx;
+		padding: 16rpx 28rpx;
+		border-radius: 999rpx;
+		background: #5c4033;
+		box-shadow: 0 8rpx 16rpx rgba(92, 64, 51, 0.16);
+	}
+
+	.explore-empty__action-text {
+		font-size: 24rpx;
+		font-weight: 800;
+		color: #fffaf3;
 	}
 
 	.page-content--meal-order-entering {

@@ -19,6 +19,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/mealplan"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/place"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
@@ -32,6 +33,7 @@ func NewRouter(
 	kitchenHandler *kitchen.Handler,
 	inviteHandler *invite.Handler,
 	mealPlanHandler *mealplan.Handler,
+	placeHandler *place.Handler,
 	recipeHandler *recipe.Handler,
 	linkParseHandler *linkparse.Handler,
 	dietAssistantHandler *dietassistant.Handler,
@@ -160,6 +162,12 @@ func NewRouter(
 			protected.Post("/kitchens/{kitchenID}/meal-plans/{planDate}/submit", mealPlanHandler.Submit)
 			protected.Post("/kitchens/{kitchenID}/meal-plans/{planDate}/draft-from-submitted", mealPlanHandler.CreateDraftFromSubmitted)
 			protected.Delete("/kitchens/{kitchenID}/meal-plans/{planDate}/submitted", mealPlanHandler.DeleteSubmitted)
+			protected.Get("/kitchens/{kitchenID}/places", placeHandler.List)
+			protected.Post("/kitchens/{kitchenID}/places", placeHandler.Create)
+			protected.Get("/places/{placeID}", placeHandler.Detail)
+			protected.Put("/places/{placeID}", placeHandler.Update)
+			protected.Patch("/places/{placeID}/status", placeHandler.UpdateStatus)
+			protected.Delete("/places/{placeID}", placeHandler.Delete)
 			protected.Get("/kitchens/{kitchenID}/recipes", recipeHandler.List)
 			protected.Post("/kitchens/{kitchenID}/recipes", recipeHandler.Create)
 			protected.Get("/recipes/{recipeID}", recipeHandler.Detail)
