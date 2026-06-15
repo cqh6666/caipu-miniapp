@@ -34,13 +34,13 @@
 			@touchstart="$emit('spotlight-touchstart', $event)"
 			@touchend="$emit('spotlight-touchend', $event)"
 		>
-			<view class="meal-order-spotlight__icon-mark">
-				<up-icon name="calendar" size="16" color="#bf715f"></up-icon>
+			<view class="meal-order-spotlight__date-card">
+				<text v-if="mealOrderSpotlightLeadText" class="meal-order-spotlight__lead">{{ mealOrderSpotlightLeadText }}</text>
+				<text class="meal-order-spotlight__date">{{ mealOrderSpotlightDateText }}</text>
+				<text v-if="mealOrderSpotlightWeekday" class="meal-order-spotlight__weekday">{{ mealOrderSpotlightWeekday }}</text>
 			</view>
 			<view class="meal-order-spotlight__main">
-				<view class="meal-order-spotlight__heading">
-					<text class="meal-order-spotlight__date">{{ mealOrderSpotlightDateText }}</text>
-					<text v-if="mealOrderSpotlightWeekday" class="meal-order-spotlight__weekday">{{ mealOrderSpotlightWeekday }}</text>
+				<view class="meal-order-spotlight__meta-row">
 					<view
 						v-if="mealOrderSpotlightStatusText"
 						class="meal-order-spotlight__chip"
@@ -48,14 +48,18 @@
 					>
 						<text class="meal-order-spotlight__chip-text">{{ mealOrderSpotlightStatusText }}</text>
 					</view>
+					<text v-if="mealOrderSpotlightCountText" class="meal-order-spotlight__count">{{ mealOrderSpotlightCountText }}</text>
 				</view>
-				<text class="meal-order-spotlight__desc">· {{ mealOrderSpotlightDesc }}</text>
+				<text class="meal-order-spotlight__title">这天的小菜单</text>
+				<text class="meal-order-spotlight__desc">{{ mealOrderSpotlightDesc }}</text>
 			</view>
 			<view class="meal-order-spotlight__aside">
 				<view v-if="mealOrderSpotlightMetaText" class="meal-order-spotlight__progress">
 					<text class="meal-order-spotlight__progress-text">{{ mealOrderSpotlightMetaText }}</text>
 				</view>
-				<up-icon name="arrow-right" size="14" color="#8a7968"></up-icon>
+				<view class="meal-order-spotlight__arrow">
+					<up-icon name="arrow-right" size="15" color="#fff9f1"></up-icon>
+				</view>
 			</view>
 		</view>
 	</view>
@@ -89,6 +93,10 @@ export default {
 			type: String,
 			default: ''
 		},
+		mealOrderSpotlightLeadText: {
+			type: String,
+			default: ''
+		},
 		mealOrderSpotlightStatusText: {
 			type: String,
 			default: ''
@@ -98,6 +106,10 @@ export default {
 			default: ''
 		},
 		mealOrderSpotlightDesc: {
+			type: String,
+			default: ''
+		},
+		mealOrderSpotlightCountText: {
 			type: String,
 			default: ''
 		},

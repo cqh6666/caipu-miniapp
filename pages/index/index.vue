@@ -52,9 +52,11 @@
 					:has-meal-order-spotlight-record="!!mealOrderSpotlightRecord"
 					:meal-order-spotlight-date-text="mealOrderSpotlightDateText"
 					:meal-order-spotlight-weekday="mealOrderSpotlightWeekday"
+					:meal-order-spotlight-lead-text="mealOrderSpotlightLeadText"
 					:meal-order-spotlight-status-text="mealOrderSpotlightStatusText"
 					:meal-order-spotlight-status-kind="mealOrderSpotlightStatusKind"
 					:meal-order-spotlight-desc="mealOrderSpotlightDesc"
+					:meal-order-spotlight-count-text="mealOrderSpotlightCountText"
 					:meal-order-spotlight-meta-text="mealOrderSpotlightMetaText"
 					:meal-order-spotlight-motion-direction="mealOrderSpotlightMotionDirection"
 					:meal-order-spotlight-motion-tick="mealOrderSpotlightMotionTick"
@@ -375,7 +377,7 @@
 					hover-stop-propagation
 					@tap="handlePrimaryFabTap"
 				>
-					<!-- 底部主入口：按后台功能开关分流到饮食管家或添加菜谱 -->
+					<!-- 底部主入口：打卡点模式添加打卡点；美食库模式按后台开关分流到饮食管家或添加菜品 -->
 					<image
 						class="nav-fab__icon"
 						src="/static/icons/sparkle-plus.svg"
@@ -550,6 +552,7 @@
 			@close="closePlaceDetailSheet"
 			@preview-image="previewSelectedPlaceImages"
 			@open-location="openPlaceLocation"
+			@open-source="openPlaceSourceURL"
 			@toggle-status="togglePlaceStatus"
 			@edit="openPlaceEditSheet"
 			@delete="confirmDeletePlace"
@@ -1193,10 +1196,7 @@ export default {
 			const upcoming = allRecords
 				.filter((record) => record.planDate >= today)
 				.sort(sortRecords)
-			const fallback = allRecords
-				.filter((record) => record.planDate < today)
-				.sort((left, right) => String(right.planDate || '').localeCompare(String(left.planDate || '')))
-			return [...upcoming, ...fallback]
+			return upcoming
 		},
 		mealOrderSpotlightRecordIndex() {
 			const total = this.mealOrderSpotlightRecords.length
@@ -1217,6 +1217,11 @@ export default {
 			if (!record) return ''
 			return formatMealOrderDateParts(record.planDate).weekday
 		},
+		mealOrderSpotlightLeadText() {
+			const record = this.mealOrderSpotlightRecord
+			if (!record) return ''
+			return record.planDate === this.mealOrderDateStart ? '今日菜单' : '接下来'
+		},
 		mealOrderSpotlightStatusText() {
 			const record = this.mealOrderSpotlightRecord
 			if (!record) return ''
@@ -1231,6 +1236,12 @@ export default {
 			const record = this.mealOrderSpotlightRecord
 			if (!record) return '点右侧安排菜单，先挑一天'
 			return buildMealOrderDishSummary(record.items)
+		},
+		mealOrderSpotlightCountText() {
+			const record = this.mealOrderSpotlightRecord
+			const count = Array.isArray(record?.items) ? record.items.length : 0
+			if (!count) return ''
+			return record.type === 'draft' ? `已选 ${count} 道` : `${count} 道菜`
 		},
 		mealOrderSpotlightMetaText() {
 			const total = this.mealOrderSpotlightRecords.length
@@ -1356,6 +1367,9 @@ export default {
 		},
 		isDietAssistantEntryEnabled() {
 			return this.publicAppConfig?.features?.dietAssistantEnabled !== false
+		},
+		isExplorePrimaryFab() {
+			return this.activeSection === 'library' && this.appMode === 'explore'
 		},
 		emptyStateKind() {
 			if (this.hasSearchKeyword) return 'search-no-results'
@@ -1749,6 +1763,33 @@ export default {
 					}
 				})
 			},
+			openPlaceSourceURL(placeId = '') {
+				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
+				const place = this.places.find((item) => item.id === targetPlaceId)
+				const sourceUrl = String(place?.sourceUrl || '').trim()
+				if (!sourceUrl) {
+					uni.showToast({
+						title: '暂无来源链接',
+						icon: 'none'
+					})
+					return
+				}
+				uni.setClipboardData({
+					data: sourceUrl,
+					success: () => {
+						uni.showToast({
+							title: '来源链接已复制',
+							icon: 'none'
+						})
+					},
+					fail: () => {
+						uni.showToast({
+							title: '复制链接失败',
+							icon: 'none'
+						})
+					}
+				})
+			},
 			async togglePlaceStatus(placeId = '') {
 				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
 				const place = this.places.find((item) => item.id === targetPlaceId)
@@ -2010,6 +2051,10 @@ export default {
 				})
 		},
 		handlePrimaryFabTap() {
+			if (this.isExplorePrimaryFab) {
+				this.openPlaceCreateSheet()
+				return
+			}
 			if (this.isDietAssistantEntryEnabled) {
 				this.openDietAssistantSheet()
 				return
@@ -3731,7 +3776,11 @@ export default {
 	}
 
 	.place-list {
-		padding: 0 4rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 28rpx;
+		padding: 0 2rpx;
+		margin-top: 22rpx;
 	}
 
 	.explore-empty {
@@ -3739,12 +3788,15 @@ export default {
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 120rpx 40rpx;
-		background: #ffffff;
-		border-radius: 32rpx;
-		margin: 20rpx 4rpx;
-		box-shadow: 0 4rpx 12rpx rgba(92, 64, 51, 0.05), 0 1rpx 3rpx rgba(92, 64, 51, 0.1);
-		border: 1px solid rgba(240, 237, 230, 0.8);
+		padding: 112rpx 40rpx;
+		background:
+			radial-gradient(circle at top, rgba(255, 255, 255, 0.86) 0%, rgba(255, 255, 255, 0.55) 52%, rgba(255, 255, 255, 0.92) 100%);
+		border-radius: 30rpx;
+		margin: 18rpx 4rpx 0;
+		box-shadow:
+			0 10rpx 24rpx rgba(92, 64, 51, 0.05),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
+		border: 1px solid rgba(240, 237, 230, 0.88);
 	}
 
 	.explore-empty__icon-shell {
@@ -3760,16 +3812,21 @@ export default {
 
 	.explore-empty__text {
 		font-size: 26rpx;
-		color: rgba(92, 64, 51, 0.5);
-		font-weight: 500;
+		color: rgba(92, 64, 51, 0.56);
+		font-weight: 600;
+		line-height: 1.4;
 	}
 
 	.explore-empty__action {
 		margin-top: 26rpx;
 		padding: 16rpx 28rpx;
 		border-radius: 999rpx;
-		background: #5c4033;
-		box-shadow: 0 8rpx 16rpx rgba(92, 64, 51, 0.16);
+		background:
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 38%),
+			linear-gradient(180deg, #5c4033 0%, #50392d 100%);
+		box-shadow:
+			0 10rpx 18rpx rgba(92, 64, 51, 0.18),
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.12);
 	}
 
 	.explore-empty__action-text {
@@ -3821,15 +3878,21 @@ export default {
 	}
 
 	.app-footer-link {
-		padding: 10rpx 18rpx 0;
+		min-height: 56rpx;
+		padding: 0 18rpx;
+		border-radius: 16rpx;
+		background: rgba(255, 255, 255, 0.28);
 		opacity: 0.82;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.app-footer-link__label {
 		font-size: 22rpx;
 		font-weight: 600;
-		color: #7b6c5f;
-		letter-spacing: 1rpx;
+		color: #827366;
+		letter-spacing: 0;
 	}
 
 	.toolbar {
@@ -4644,8 +4707,7 @@ export default {
 		box-shadow: none;
 	}
 
-	.nav-item__label,
-	.nav-center__label {
+	.nav-item__label {
 		font-size: 24rpx;
 		line-height: 1;
 		color: #b9aea8;
@@ -4709,10 +4771,6 @@ export default {
 		box-shadow:
 			0 10rpx 18rpx rgba(91, 74, 59, 0.12),
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.14);
-	}
-
-	.nav-center:active .nav-center__label {
-		color: #6a5848;
 	}
 
 </style>
