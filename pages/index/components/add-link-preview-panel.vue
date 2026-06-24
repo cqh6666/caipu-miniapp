@@ -97,6 +97,9 @@
 </template>
 
 <script>
+import { previewAddLink } from '../../../utils/add-preview-api'
+import { getCurrentKitchenId } from '../../../utils/auth'
+
 export default {
 	name: 'AddLinkPreviewPanel',
 	props: {
@@ -178,133 +181,39 @@ export default {
 				this.parsingDuration++
 			}, 1000)
 
-			// 模拟解析流程
-			this.mockParseFlow(text)
+			this.parseShareText(text)
 		},
-		async mockParseFlow(text) {
-			// 模拟阶段切换
-			await this.sleep(800)
-			this.parsingStage = 'identifying'
-
-			await this.sleep(600)
-
-			// 判断内容类型（简单的关键词匹配）
-			const isMeituan = text.includes('美团') || text.includes('dpurl.cn')
-			const isDianping = text.includes('大众点评') || text.includes('dianping')
-			const isXiaohongshu = text.includes('小红书') || text.includes('xhslink')
-			const isDouyin = text.includes('抖音') || text.includes('douyin')
-
-			if (isMeituan || isDianping) {
-				// 打卡地流程
-				this.parsingStage = 'place'
-				await this.sleep(1000)
-
-				this.parsingStage = 'poi'
-				await this.sleep(1500)
-
-				this.parsingStage = 'finalizing'
-				await this.sleep(800)
-
-				// 生成 mock 候选结果
-				const mockResult = this.generateMockPlaceCandidates(text)
-				this.finishParsing(mockResult)
-			} else if (isXiaohongshu || isDouyin) {
-				// 菜谱流程
-				this.parsingStage = 'recipe'
-				await this.sleep(1200)
-
-				this.parsingStage = 'finalizing'
-				await this.sleep(600)
-
-				const mockResult = this.generateMockRecipeResult(text)
-				this.finishParsing(mockResult)
-			} else {
-				// 无法识别
-				await this.sleep(1000)
-				this.finishParsing({ status: 'failed', message: '无法识别分享内容类型' })
-			}
-		},
-		generateMockPlaceCandidates(text) {
-			// 从文本中提取信息（简单正则）
-			const nameMatch = text.match(/【(.+?)】/)
-			const addressMatch = text.match(/地址：(.+?)】/)
-			const phoneMatch = text.match(/电话：(\d+)/)
-
-			const name = nameMatch ? nameMatch[1] : '旺记碳烤肥牛·烤肉大排档（北滘悦然里店）'
-			const address = addressMatch ? addressMatch[1] : '顺德区人昌路2号（华美达和悦然里中间停车场）'
-			const phone = phoneMatch ? phoneMatch[1] : '17303028852'
-
-			return {
-				status: 'place_candidates',
-				contentType: 'place',
-				source: text.includes('美团') ? 'meituan' : 'dianping',
-				extracted: {
-					name,
-					address,
-					phone,
-					sourceUrl: 'http://dpurl.cn/4zWiEohz'
-				},
-				candidates: [
-					{
-						candidateId: 'amap:B0JUN7FVJK',
-						provider: 'amap',
-						name: '旺记碳烤肥牛(多丰喜市园区北滘店)',
-						type: 'food',
-						address: '人昌路2号(华美达广场旁)',
-						latitude: 22.927688,
-						longitude: 113.218424,
-						phone: '13760678135',
-						price: '¥79/人',
-						rating: '4.7',
-						imageUrls: [
-							'https://via.placeholder.com/400x300/F7F5F1/745742?text=店铺照片1',
-							'https://via.placeholder.com/400x300/F7F5F1/745742?text=店铺照片2'
-						],
-						matchScore: 219,
-						matchReasons: ['名称接近', '地址匹配', '餐饮类目']
-					},
-					{
-						candidateId: 'amap:B0XXX2',
-						provider: 'amap',
-						name: '彩虹大排档(悦然里店)',
-						type: 'food',
-						address: '北滘新城人昌路3号',
-						latitude: 22.928,
-						longitude: 113.219,
-						price: '¥88/人',
-						rating: '4.5',
-						imageUrls: ['https://via.placeholder.com/400x300/F7F5F1/745742?text=店铺照片'],
-						matchScore: 165,
-						matchReasons: ['同商圈', '餐饮类目']
-					},
-					{
-						candidateId: 'amap:B0XXX3',
-						provider: 'amap',
-						name: '北滘美食广场',
-						type: 'food',
-						address: '人昌路8号',
-						latitude: 22.929,
-						longitude: 113.217,
-						price: '¥60/人',
-						rating: '4.3',
-						imageUrls: ['https://via.placeholder.com/400x300/F7F5F1/745742?text=广场照片'],
-						matchScore: 120,
-						matchReasons: ['附近', '餐饮类目']
-					}
-				]
-			}
-		},
-		generateMockRecipeResult(text) {
-			return {
-				status: 'recipe_result',
-				contentType: 'recipe',
-				source: text.includes('小红书') ? 'xiaohongshu' : 'douyin',
-				recipeDraft: {
-					title: '番茄牛肉饭',
-					link: text,
-					images: ['https://via.placeholder.com/400x300/F7F5F1/745742?text=菜谱封面'],
-					note: ''
+		async parseShareText(text) {
+			try {
+				const kitchenId = Number(getCurrentKitchenId()) || 0
+				if (!kitchenId) {
+					this.finishParsing({ status: 'failed', message: '请先完成空间同步' })
+					return
 				}
+
+				await this.sleep(200)
+				this.parsingStage = 'identifying'
+				const result = await previewAddLink(kitchenId, {
+					text,
+					city: '佛山',
+					limit: 3
+				})
+
+				if (result?.contentType === 'place') {
+					this.parsingStage = result.status === 'place_candidates' ? 'poi' : 'place'
+				} else if (result?.contentType === 'recipe') {
+					this.parsingStage = 'recipe'
+				}
+
+				await this.sleep(240)
+				this.parsingStage = 'finalizing'
+				await this.sleep(160)
+				this.finishParsing(result || { status: 'failed', message: '解析结果为空' })
+			} catch (error) {
+				this.finishParsing({
+					status: 'failed',
+					message: error?.message || '解析失败，请手动填写'
+				})
 			}
 		},
 		finishParsing(result) {

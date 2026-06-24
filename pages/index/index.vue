@@ -740,6 +740,44 @@ function createPlaceDraftFromPlace(place = {}) {
 	})
 }
 
+function normalizePreviewImageList(source = {}) {
+	const values = source.images || source.imageUrls || source.imageURL || source.imageUrl || []
+	const items = Array.isArray(values) ? values : [values]
+	return items.map((item) => String(item || '').trim()).filter(Boolean)
+}
+
+function stringifyRecipeParsedContent(content) {
+	if (!content) return ''
+	if (typeof content === 'string') return content.trim()
+
+	const lines = []
+	const mainIngredients = Array.isArray(content.mainIngredients) ? content.mainIngredients : []
+	const secondaryIngredients = Array.isArray(content.secondaryIngredients) ? content.secondaryIngredients : []
+	const steps = Array.isArray(content.steps) ? content.steps : []
+
+	if (mainIngredients.length) {
+		lines.push(`主料：${mainIngredients.filter(Boolean).join('、')}`)
+	}
+	if (secondaryIngredients.length) {
+		lines.push(`辅料：${secondaryIngredients.filter(Boolean).join('、')}`)
+	}
+	if (steps.length) {
+		lines.push('步骤：')
+		steps.forEach((step, index) => {
+			if (typeof step === 'string') {
+				if (step.trim()) lines.push(`${index + 1}. ${step.trim()}`)
+				return
+			}
+			const title = String(step?.title || '').trim()
+			const detail = String(step?.detail || '').trim()
+			const text = [title, detail].filter(Boolean).join('：')
+			if (text) lines.push(`${index + 1}. ${text}`)
+		})
+	}
+
+	return lines.join('\n').trim()
+}
+
 function parsePlaceTagsInput(value = '') {
 	return String(value || '')
 		.split(/[，,\n]/)
@@ -1909,6 +1947,29 @@ export default {
 					this.placeExtracted = result.extracted || {}
 					this.placeParseSource = result.source || 'meituan'
 					this.showPlaceCandidateSheet = true
+				} else if (result.status === 'partial' && result.contentType === 'place') {
+					this.placeExtracted = result.extracted || {}
+					this.placeParseSource = result.source || 'other'
+					const draft = result.draft || {}
+					this.placeDraft = {
+						...createEmptyPlaceDraft(),
+						...draft,
+						images: normalizePreviewImageList(draft)
+					}
+					this.placeEditMode = 'create'
+					this.editingPlaceId = ''
+					this.showPlaceEditSheet = true
+					uni.showToast({
+						title: '已提取基础信息，可继续补充',
+						icon: 'none',
+						duration: 2000
+					})
+				} else if (result.status === 'failed') {
+					uni.showToast({
+						title: result.message || '解析失败，请手动填写',
+						icon: 'none',
+						duration: 2000
+					})
 				}
 			},
 			closePlaceCandidateSheet() {
@@ -1918,7 +1979,11 @@ export default {
 				console.log('选择候选:', candidate)
 				// 将候选转换为 draft 并打开编辑表单
 				if (candidate.placeDraft) {
-					this.placeDraft = { ...createEmptyPlaceDraft(), ...candidate.placeDraft }
+					this.placeDraft = {
+						...createEmptyPlaceDraft(),
+						...candidate.placeDraft,
+						images: normalizePreviewImageList(candidate.placeDraft)
+					}
 				} else {
 					// 兜底：手动构建 draft
 					this.placeDraft = createEmptyPlaceDraft({
@@ -1930,7 +1995,7 @@ export default {
 						price: candidate.price || '',
 						source: this.placeParseSource || 'manual',
 						sourceUrl: this.placeExtracted.sourceUrl || '',
-						images: candidate.imageUrls || [],
+						images: normalizePreviewImageList(candidate),
 						status: 'want'
 					})
 				}
@@ -3500,8 +3565,9 @@ export default {
 				}
 
 				// 预填图片
-				if (result.recipeDraft.images && result.recipeDraft.images.length) {
-					this.draft.images = result.recipeDraft.images.slice(0, this.maxRecipeImages)
+				const recipeImages = normalizePreviewImageList(result.recipeDraft)
+				if (recipeImages.length) {
+					this.draft.images = recipeImages.slice(0, this.maxRecipeImages)
 				}
 
 				// 预填备注（食材 + 步骤）
@@ -3509,8 +3575,12 @@ export default {
 				if (result.recipeDraft.ingredient) {
 					noteParts.push(`食材：${result.recipeDraft.ingredient}`)
 				}
-				if (result.recipeDraft.parsedContent) {
-					noteParts.push(`步骤：\n${result.recipeDraft.parsedContent}`)
+				const parsedContentText = stringifyRecipeParsedContent(result.recipeDraft.parsedContent)
+				if (parsedContentText) {
+					noteParts.push(parsedContentText)
+				}
+				if (result.recipeDraft.note) {
+					noteParts.push(result.recipeDraft.note)
 				}
 				if (noteParts.length) {
 					this.draft.note = noteParts.join('\n\n')

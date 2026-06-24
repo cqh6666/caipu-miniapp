@@ -61,6 +61,12 @@ type Config struct {
 	LinkparseSidecarBaseURL        string
 	LinkparseSidecarTimeoutSec     int
 	LinkparseSidecarAPIKey         string
+	AMapPlacePreviewEnabled        bool
+	AMapWebServiceKey              string
+	AMapPlacePreviewDefaultCity    string
+	AMapPlacePreviewTimeoutSeconds int
+	AMapPlacePreviewMaxAttempts    int
+	AMapPlacePreviewQPSDelayMS     int
 	WechatAppID                    string
 	WechatAppSecret                string
 	SQLitePath                     string
@@ -139,6 +145,12 @@ func Load() (Config, error) {
 		LinkparseSidecarBaseURL:        strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_BASE_URL")),
 		LinkparseSidecarTimeoutSec:     getInt("LINKPARSE_SIDECAR_TIMEOUT_SECONDS", 150),
 		LinkparseSidecarAPIKey:         strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_API_KEY")),
+		AMapPlacePreviewEnabled:        getBool("AMAP_PLACE_PREVIEW_ENABLED", false),
+		AMapWebServiceKey:              strings.TrimSpace(os.Getenv("AMAP_WEB_SERVICE_KEY")),
+		AMapPlacePreviewDefaultCity:    strings.TrimSpace(getEnv("AMAP_PLACE_PREVIEW_DEFAULT_CITY", "佛山")),
+		AMapPlacePreviewTimeoutSeconds: getInt("AMAP_PLACE_PREVIEW_TIMEOUT_SECONDS", 8),
+		AMapPlacePreviewMaxAttempts:    getInt("AMAP_PLACE_PREVIEW_MAX_ATTEMPTS", 4),
+		AMapPlacePreviewQPSDelayMS:     getInt("AMAP_PLACE_PREVIEW_QPS_DELAY_MS", 400),
 		WechatAppID:                    os.Getenv("WECHAT_APP_ID"),
 		WechatAppSecret:                os.Getenv("WECHAT_APP_SECRET"),
 		SQLitePath:                     filepath.Clean(getEnv("SQLITE_PATH", "./data/app.db")),
@@ -209,6 +221,18 @@ func Load() (Config, error) {
 
 	if cfg.LinkparseSidecarTimeoutSec <= 0 {
 		return Config{}, errors.New("LINKPARSE_SIDECAR_TIMEOUT_SECONDS must be positive")
+	}
+
+	if cfg.AMapPlacePreviewTimeoutSeconds <= 0 {
+		return Config{}, errors.New("AMAP_PLACE_PREVIEW_TIMEOUT_SECONDS must be positive")
+	}
+
+	if cfg.AMapPlacePreviewMaxAttempts <= 0 {
+		return Config{}, errors.New("AMAP_PLACE_PREVIEW_MAX_ATTEMPTS must be positive")
+	}
+
+	if cfg.AMapPlacePreviewQPSDelayMS < 0 {
+		return Config{}, errors.New("AMAP_PLACE_PREVIEW_QPS_DELAY_MS must be zero or positive")
 	}
 
 	if cfg.InviteDefaultExpireHours <= 0 {

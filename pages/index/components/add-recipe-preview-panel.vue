@@ -97,6 +97,9 @@
 </template>
 
 <script>
+import { previewAddLink } from '../../../utils/add-preview-api'
+import { getCurrentKitchenId } from '../../../utils/auth'
+
 export default {
 	name: 'AddRecipePreviewPanel',
 	props: {
@@ -185,39 +188,30 @@ export default {
 			this.parseRecipeLink(text)
 		},
 		async parseRecipeLink(text) {
-			// TODO: 对接后端统一智能添加接口 POST /caipu-api/kitchens/{kitchenId}/add-link-previews
-			// 当前先模拟流程
 			try {
-				await this.sleep(600)
-				this.parsingStage = 'identifying'
-
-				await this.sleep(800)
-				this.parsingStage = 'fetching'
-
-				await this.sleep(1200)
-				this.parsingStage = 'parsing'
-
-				await this.sleep(1000)
-				this.parsingStage = 'finalizing'
-
-				await this.sleep(600)
-
-				// 生成 mock 结果
-				const mockResult = {
-					status: 'recipe_result',
-					contentType: 'recipe',
-					source: this.detectPlatform(text),
-					recipeDraft: {
-						title: '番茄牛肉饭',
-						link: text,
-						images: ['https://via.placeholder.com/400x300/F7F5F1/745742?text=菜谱封面'],
-						note: '',
-						ingredient: '牛肉 200g、番茄 2个、洋葱半个、大蒜3瓣',
-						parsedContent: '1. 牛肉切块腌制\n2. 番茄切块\n3. 热锅爆香洋葱蒜末\n4. 加入牛肉翻炒\n5. 加入番茄炖煮'
-					}
+				const kitchenId = Number(getCurrentKitchenId()) || 0
+				if (!kitchenId) {
+					this.finishParsing({ status: 'failed', message: '请先完成空间同步' })
+					return
 				}
 
-				this.finishParsing(mockResult)
+				await this.sleep(200)
+				this.parsingStage = 'identifying'
+
+				await this.sleep(200)
+				this.parsingStage = 'fetching'
+
+				const result = await previewAddLink(kitchenId, {
+					text,
+					city: '佛山',
+					limit: 3
+				})
+
+				this.parsingStage = 'parsing'
+				await this.sleep(240)
+				this.parsingStage = 'finalizing'
+				await this.sleep(160)
+				this.finishParsing(result || { status: 'failed', message: '解析结果为空' })
 			} catch (error) {
 				console.error('解析失败:', error)
 				this.finishParsing({
@@ -225,18 +219,6 @@ export default {
 					message: error.message || '解析失败，请手动填写'
 				})
 			}
-		},
-		detectPlatform(text) {
-			if (text.includes('xiaohongshu') || text.includes('xhslink')) {
-				return 'xiaohongshu'
-			}
-			if (text.includes('douyin') || text.includes('v.douyin')) {
-				return 'douyin'
-			}
-			if (text.includes('bilibili') || text.includes('b23.tv')) {
-				return 'bilibili'
-			}
-			return 'unknown'
 		},
 		finishParsing(result) {
 			clearInterval(this.parsingTimer)

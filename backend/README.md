@@ -83,6 +83,12 @@ go run ./cmd/server
 - `LINKPARSE_SIDECAR_BASE_URL`
 - `LINKPARSE_SIDECAR_TIMEOUT_SECONDS`
 - `LINKPARSE_SIDECAR_API_KEY`
+- `AMAP_PLACE_PREVIEW_ENABLED`
+- `AMAP_WEB_SERVICE_KEY`
+- `AMAP_PLACE_PREVIEW_DEFAULT_CITY`
+- `AMAP_PLACE_PREVIEW_TIMEOUT_SECONDS`
+- `AMAP_PLACE_PREVIEW_MAX_ATTEMPTS`
+- `AMAP_PLACE_PREVIEW_QPS_DELAY_MS`
 - `INVITE_SHARE_FONT_PATH`
 - `INVITE_SHARE_FONT_BOLD_PATH`
 
@@ -215,6 +221,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/link-parsers/preview`
 - `POST /api/link-parsers/bilibili`
 - `POST /api/link-parsers/xiaohongshu`
+- `POST /api/kitchens/{kitchenID}/add-link-previews`
 - `GET /api/diet-assistant/messages`
 - `DELETE /api/diet-assistant/messages`
 - `POST /api/diet-assistant/chat/stream`

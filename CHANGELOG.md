@@ -1,5 +1,55 @@
 # Project Changelog
 
+## 2026-06-24 (分享链接智能添加真实接口联调)
+
+### Added
+
+- **修改时间**：2026-06-24 11:33:07 +0800 CST
+- **变更背景**：分享链接智能添加前端 POC 已验证交互，需要实现后端统一预览接口，
+  并将前端从 Mock 数据改为调用真实接口，支持美团 / 大众点评打卡地解析和小红书 /
+  B站菜谱解析分流。
+- **核心改动**：
+  - 新增 `backend/internal/addpreview/` 服务包，提供
+    `POST /api/kitchens/{kitchenID}/add-link-previews`，在鉴权和空间成员校验后识别
+    `recipe` / `place` 内容类型，并返回 `recipe_result`、`place_candidates`、
+    `partial` 或 `failed`。
+  - 打卡地分支支持从分享文案提取名称、地址、电话、来源链接和美团 `poiId` 信息；
+    高德 POI 查询启用时，会按店名、清洗店名、店名 + 地址、电话、地址多关键词查询，
+    并基于名称、地址、道路 / 商圈 / 地标、类目、图片和评分做可解释排序。
+  - 菜谱分支复用现有 `linkparse.Service.ParseRecipeLink`，不修改旧
+    `link-parsers/preview`、`link-parsers/bilibili`、`link-parsers/xiaohongshu`
+    接口契约。
+  - 新增高德预览配置项：`AMAP_PLACE_PREVIEW_ENABLED`、`AMAP_WEB_SERVICE_KEY`、
+    `AMAP_PLACE_PREVIEW_DEFAULT_CITY`、`AMAP_PLACE_PREVIEW_TIMEOUT_SECONDS`、
+    `AMAP_PLACE_PREVIEW_MAX_ATTEMPTS`、`AMAP_PLACE_PREVIEW_QPS_DELAY_MS`；示例配置只保留
+    占位，不写入真实 Key。
+  - 新增 `utils/add-preview-api.js`，将打卡点与菜品智能添加面板都改为调用真实
+    `add-link-previews` 接口；移除固定 Mock 候选和固定菜谱数据。
+  - 更新 `pages/index/index.vue`，兼容后端 `partial` 打卡地结果、候选 `placeDraft`
+    图片字段、菜谱 `imageUrls` 和结构化 `parsedContent` 到现有表单字段的转换。
+  - 更新 `docs/place-link-preview-poc-test.md` 与 `backend/README.md`，同步当前真实
+    接口联调口径、配置项和接口清单。
+- **影响范围**：
+  - 影响首页新增菜品 / 新增打卡点的智能识别入口；编辑已有记录、旧菜谱链接解析接口、
+    菜品保存接口、打卡点保存接口和数据库结构保持不变。
+  - 高德 Key 仅通过后端环境变量配置，不下发前端；未新增数据库迁移。
+- **兼容性/风险**：
+  - 高德未启用或查询失败时，新接口返回 `partial`，前端会用基础字段进入原手动表单。
+  - 候选图片仍为高德外链，保存前暂未镜像到 `/uploads/`；后续需补图片镜像和微信域名
+    白名单策略。
+  - 高德 POI 仍可能返回同商圈或同品牌异地门店，因此前端继续展示候选让用户确认，不会
+    自动创建菜品或打卡点。
+- **验证情况**：
+  - 已执行 `go test ./...`，通过。
+  - 已执行 `node --check scripts/probe-meituan-place-link.mjs`，通过。
+  - 已使用临时 `/tmp/caipu-miniapp-sfc-check` 依赖中的 `@vue/compiler-sfc` 对首页和
+    3 个智能添加组件完成 SFC 解析检查，通过。
+  - 已执行 `git diff --check`，通过。
+  - 已启动临时本地后端并用临时环境变量配置高德 WebService Key，调用
+    `POST /api/kitchens/1/add-link-previews` 复测样例美团文案，返回
+    `place_candidates`，首个候选为 `旺记碳烤肥牛(多丰喜市园区北滘店)`，包含评分、
+    人均和 3 张图片。
+
 ## 2026-06-24 (分享链接智能添加前端 POC)
 
 ### Added

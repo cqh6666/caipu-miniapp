@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/addpreview"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/admin"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
@@ -155,6 +156,15 @@ func New(cfg config.Config) (*App, error) {
 		},
 	})
 	linkParseHandler := linkparse.NewHandler(linkParseService)
+	addPreviewService := addpreview.NewService(kitchenService, linkParseService, addpreview.Options{
+		AMapEnabled:     cfg.AMapPlacePreviewEnabled,
+		AMapKey:         cfg.AMapWebServiceKey,
+		AMapDefaultCity: cfg.AMapPlacePreviewDefaultCity,
+		AMapTimeout:     time.Duration(cfg.AMapPlacePreviewTimeoutSeconds) * time.Second,
+		AMapMaxAttempts: cfg.AMapPlacePreviewMaxAttempts,
+		AMapQPSDelay:    time.Duration(cfg.AMapPlacePreviewQPSDelayMS) * time.Millisecond,
+	})
+	addPreviewHandler := addpreview.NewHandler(addPreviewService)
 	runtimeProvider.SetBilibiliVerifier(linkParseService.VerifyBilibiliSessdata)
 	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
 	uploadHandler := upload.NewHandler(uploadService)
@@ -353,6 +363,7 @@ func New(cfg config.Config) (*App, error) {
 		placeHandler,
 		recipeHandler,
 		linkParseHandler,
+		addPreviewHandler,
 		dietAssistantHandler,
 		uploadHandler,
 		authMiddleware,

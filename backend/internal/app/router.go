@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/addpreview"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/admin"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/appsettings"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
@@ -36,6 +37,7 @@ func NewRouter(
 	placeHandler *place.Handler,
 	recipeHandler *recipe.Handler,
 	linkParseHandler *linkparse.Handler,
+	addPreviewHandler *addpreview.Handler,
 	dietAssistantHandler *dietassistant.Handler,
 	uploadHandler *upload.Handler,
 	authMiddleware func(http.Handler) http.Handler,
@@ -153,6 +155,7 @@ func NewRouter(
 			protected.Post("/invite-codes/{code}/accept", inviteHandler.AcceptByCode)
 			protected.Post("/link-parsers/bilibili", linkParseHandler.ParseBilibili)
 			protected.Post("/link-parsers/xiaohongshu", linkParseHandler.ParseXiaohongshu)
+			protected.Post("/kitchens/{kitchenID}/add-link-previews", addPreviewHandler.Preview)
 			protected.Get("/diet-assistant/messages", dietAssistantHandler.ListMessages)
 			protected.Delete("/diet-assistant/messages", dietAssistantHandler.ClearMessages)
 			protected.Post("/diet-assistant/chat/stream", dietAssistantHandler.StreamChat)
