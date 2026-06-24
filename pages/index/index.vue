@@ -492,6 +492,13 @@
 			@submit="submitProfile"
 		></profile-sheet>
 
+		<add-recipe-preview-panel
+			:show="showAddRecipePreviewPanel"
+			@close="closeAddRecipePreviewPanel"
+			@manual-entry="handleRecipeManualEntry"
+			@parse-result="handleRecipeParseResult"
+		></add-recipe-preview-panel>
+
 		<add-recipe-sheet
 			:show="showAddSheet"
 			:draft="draft"
@@ -544,6 +551,23 @@
 			@note-input="handlePlaceDraftNoteInput"
 			@submit="submitPlaceDraft"
 		></place-edit-sheet>
+
+		<add-link-preview-panel
+			:show="showAddLinkPreviewPanel"
+			@close="closeAddLinkPreviewPanel"
+			@manual-entry="handleManualEntry"
+			@parse-result="handleParseResult"
+		></add-link-preview-panel>
+
+		<place-candidate-sheet
+			:show="showPlaceCandidateSheet"
+			:candidates="placeCandidates"
+			:extracted="placeExtracted"
+			:source="placeParseSource"
+			@close="closePlaceCandidateSheet"
+			@select-candidate="handleSelectCandidate"
+			@manual-entry="handleManualEntry"
+		></place-candidate-sheet>
 
 		<place-detail-sheet
 			:show="showPlaceDetailSheet"
@@ -639,6 +663,7 @@ import {
 import { getAccessToken } from '../../utils/session-storage'
 import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
 import AddRecipeSheet from './components/add-recipe-sheet.vue'
+import AddRecipePreviewPanel from './components/add-recipe-preview-panel.vue'
 import DietAssistantSheet from './components/diet-assistant-sheet.vue'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import InviteCodeSheet from './components/invite-code-sheet.vue'
@@ -652,6 +677,8 @@ import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
 import MealOrderSuccessSheet from './components/meal-order-success-sheet.vue'
 import PlaceDetailSheet from './components/place-detail-sheet.vue'
 import PlaceEditSheet from './components/place-edit-sheet.vue'
+import AddLinkPreviewPanel from './components/add-link-preview-panel.vue'
+import PlaceCandidateSheet from './components/place-candidate-sheet-v2.vue'
 import ProfileSheet from './components/profile-sheet.vue'
 import RandomPickSheet from './components/random-pick-sheet.vue'
 import PlaceCardItem from './components/place-card-item.vue'
@@ -754,6 +781,8 @@ export default {
 	components: {
 		ActionFeedback,
 		AddRecipeSheet,
+		AddRecipePreviewPanel,
+		AddLinkPreviewPanel,
 		DietAssistantSheet,
 		InviteCodeSheet,
 		InviteSheet,
@@ -765,6 +794,7 @@ export default {
 		MealOrderDateSheet,
 		MealOrderSuccessSheet,
 		PlaceCardItem,
+		PlaceCandidateSheet,
 		PlaceDetailSheet,
 		PlaceEditSheet,
 		ProfileSheet,
@@ -789,6 +819,12 @@ export default {
 			isLoadingPlaces: false,
 			showPlaceEditSheet: false,
 			showPlaceDetailSheet: false,
+			showAddLinkPreviewPanel: false,
+			showAddRecipePreviewPanel: false,
+			showPlaceCandidateSheet: false,
+			placeCandidates: [],
+			placeExtracted: {},
+			placeParseSource: '',
 			placeEditMode: 'create',
 			editingPlaceId: '',
 			selectedPlaceId: '',
@@ -1576,10 +1612,8 @@ export default {
 					})
 					return
 				}
-				this.placeEditMode = 'create'
-				this.editingPlaceId = ''
-				this.placeDraft = createEmptyPlaceDraft()
-				this.showPlaceEditSheet = true
+				// 打开智能识别面板
+				this.showAddLinkPreviewPanel = true
 			},
 			openPlaceEditSheet(placeId = '') {
 				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
@@ -1850,6 +1884,68 @@ export default {
 				} finally {
 					this.isSubmittingPlace = false
 				}
+			},
+			// 智能识别相关方法
+			closeAddLinkPreviewPanel() {
+				this.showAddLinkPreviewPanel = false
+			},
+			handleManualEntry() {
+				// 用户选择手动填写，关闭所有智能识别界面，打开传统编辑表单
+				this.showAddLinkPreviewPanel = false
+				this.showPlaceCandidateSheet = false
+				this.placeEditMode = 'create'
+				this.editingPlaceId = ''
+				this.placeDraft = createEmptyPlaceDraft()
+				this.showPlaceEditSheet = true
+			},
+			handleParseResult(result) {
+				console.log('解析结果:', result)
+				if (result.status === 'recipe_result') {
+					this.showAddLinkPreviewPanel = false
+					this.handleRecipeParseResult(result)
+				} else if (result.status === 'place_candidates') {
+					// 打卡地候选结果
+					this.placeCandidates = result.candidates || []
+					this.placeExtracted = result.extracted || {}
+					this.placeParseSource = result.source || 'meituan'
+					this.showPlaceCandidateSheet = true
+				}
+			},
+			closePlaceCandidateSheet() {
+				this.showPlaceCandidateSheet = false
+			},
+			handleSelectCandidate(candidate) {
+				console.log('选择候选:', candidate)
+				// 将候选转换为 draft 并打开编辑表单
+				if (candidate.placeDraft) {
+					this.placeDraft = { ...createEmptyPlaceDraft(), ...candidate.placeDraft }
+				} else {
+					// 兜底：手动构建 draft
+					this.placeDraft = createEmptyPlaceDraft({
+						name: candidate.name || '',
+						type: candidate.type || 'food',
+						address: candidate.address || '',
+						latitude: candidate.latitude || 0,
+						longitude: candidate.longitude || 0,
+						price: candidate.price || '',
+						source: this.placeParseSource || 'manual',
+						sourceUrl: this.placeExtracted.sourceUrl || '',
+						images: candidate.imageUrls || [],
+						status: 'want'
+					})
+				}
+
+				this.showPlaceCandidateSheet = false
+				this.placeEditMode = 'create'
+				this.editingPlaceId = ''
+				this.showPlaceEditSheet = true
+
+				// 提示用户
+				uni.showToast({
+					title: '已根据分享链接填入，可继续修改后保存',
+					icon: 'none',
+					duration: 2000
+				})
 			},
 			clearRecipeStatusFeedbackTimer() {
 			if (!this.recipeStatusFeedbackTimer) return
@@ -3353,11 +3449,8 @@ export default {
 			}
 		},
 		openAddSheet() {
-			this.resetDraftAssistState()
-			this.draft = this.createDraftFromContext()
-			this.showAddSheet = true
-			this.draftClipboardPrefillRequestID += 1
-			this.tryAutoPrefillDraftLinkFromClipboard(this.draftClipboardPrefillRequestID)
+			// V1.1: 打开智能识别面板，而不是直接打开表单
+			this.showAddRecipePreviewPanel = true
 		},
 		openDietAssistantSheet(initialPrompt = '') {
 			this.dietAssistantInitialPrompt = typeof initialPrompt === 'string' ? initialPrompt : ''
@@ -3373,6 +3466,69 @@ export default {
 		handleDietAssistantRecipesMutated(mutation = {}) {
 			if (mutation?.type !== 'recipe_created') return
 			this.refreshRecipes({ silent: true })
+		},
+		closeAddRecipePreviewPanel() {
+			this.showAddRecipePreviewPanel = false
+		},
+		handleRecipeManualEntry() {
+			// 关闭智能识别面板，打开原始手动表单
+			this.showAddRecipePreviewPanel = false
+			this.resetDraftAssistState()
+			this.draft = this.createDraftFromContext()
+			this.showAddSheet = true
+			this.draftClipboardPrefillRequestID += 1
+			this.tryAutoPrefillDraftLinkFromClipboard(this.draftClipboardPrefillRequestID)
+		},
+		handleRecipeParseResult(result) {
+			// 处理菜品解析结果
+			this.showAddRecipePreviewPanel = false
+
+			if (result.status === 'recipe_result' && result.recipeDraft) {
+				// 预填表单字段
+				this.resetDraftAssistState()
+				this.draft = this.createDraftFromContext()
+
+				// 预填菜谱名
+				if (result.recipeDraft.title) {
+					this.draft.title = result.recipeDraft.title
+					this.draftTitleTouched = true
+				}
+
+				// 预填链接
+				if (result.recipeDraft.link) {
+					this.draft.link = result.recipeDraft.link
+				}
+
+				// 预填图片
+				if (result.recipeDraft.images && result.recipeDraft.images.length) {
+					this.draft.images = result.recipeDraft.images.slice(0, this.maxRecipeImages)
+				}
+
+				// 预填备注（食材 + 步骤）
+				const noteParts = []
+				if (result.recipeDraft.ingredient) {
+					noteParts.push(`食材：${result.recipeDraft.ingredient}`)
+				}
+				if (result.recipeDraft.parsedContent) {
+					noteParts.push(`步骤：\n${result.recipeDraft.parsedContent}`)
+				}
+				if (noteParts.length) {
+					this.draft.note = noteParts.join('\n\n')
+				}
+
+				// 打开表单
+				this.showAddSheet = true
+
+				// 提示用户
+				uni.showToast({
+					title: '已自动填入，可继续修改',
+					icon: 'none',
+					duration: 2000
+				})
+			} else {
+				// 解析失败或部分成功，直接打开空表单
+				this.handleRecipeManualEntry()
+			}
 		},
 		closeAddSheet() {
 			if (this.isSubmittingDraft) return
