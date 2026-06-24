@@ -119,7 +119,7 @@ func (s *Service) IsManagedImageURL(raw string) bool {
 	if value == "" {
 		return false
 	}
-	if strings.HasPrefix(value, "/uploads/") {
+	if strings.HasPrefix(value, "/uploads/") || strings.HasPrefix(value, "/caipu-uploads/") {
 		return true
 	}
 	if s.publicBaseURL != "" && strings.HasPrefix(value, s.publicBaseURL+"/") {
@@ -129,7 +129,8 @@ func (s *Service) IsManagedImageURL(raw string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasPrefix(strings.TrimSpace(parsed.Path), "/uploads/")
+	path := strings.TrimSpace(parsed.Path)
+	return strings.HasPrefix(path, "/uploads/") || strings.HasPrefix(path, "/caipu-uploads/")
 }
 
 func (s *Service) ManagedImageContentHash(raw string) (string, error) {

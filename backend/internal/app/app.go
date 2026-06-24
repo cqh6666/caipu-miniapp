@@ -156,6 +156,9 @@ func New(cfg config.Config) (*App, error) {
 		},
 	})
 	linkParseHandler := linkparse.NewHandler(linkParseService)
+	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
+	uploadHandler := upload.NewHandler(uploadService)
+	placeService.SetUploadService(uploadService)
 	addPreviewService := addpreview.NewService(kitchenService, linkParseService, addpreview.Options{
 		AMapEnabled:     cfg.AMapPlacePreviewEnabled,
 		AMapKey:         cfg.AMapWebServiceKey,
@@ -166,8 +169,6 @@ func New(cfg config.Config) (*App, error) {
 	})
 	addPreviewHandler := addpreview.NewHandler(addPreviewService)
 	runtimeProvider.SetBilibiliVerifier(linkParseService.VerifyBilibiliSessdata)
-	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
-	uploadHandler := upload.NewHandler(uploadService)
 	recipeFlowchart := recipe.NewFlowchartGenerator(recipe.FlowchartOptions{
 		BaseURL:        cfg.AIFlowchartBaseURL,
 		APIKey:         cfg.AIFlowchartAPIKey,

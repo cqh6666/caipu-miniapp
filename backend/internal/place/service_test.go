@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 	_ "modernc.org/sqlite"
 )
 
@@ -117,6 +121,52 @@ func TestServiceRejectsInvalidInputAndNonMember(t *testing.T) {
 	_, err = service.ListByKitchenID(ctx, 8, 1, ListFilter{})
 	if !errors.Is(err, common.ErrForbidden) {
 		t.Fatalf("ListByKitchenID(non-member) error = %v, want forbidden", err)
+	}
+}
+
+func TestServiceCreateMirrorsRemoteImages(t *testing.T) {
+	db := openPlaceTestDB(t)
+	defer db.Close()
+
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+			0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+			0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c,
+			0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41,
+			0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00,
+			0x03, 0x03, 0x02, 0x00, 0xef, 0x9a, 0x17, 0xdb,
+			0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+			0xae, 0x42, 0x60, 0x82,
+		})
+	}))
+	defer imageServer.Close()
+
+	service := newPlaceTestService(db)
+	service.SetUploadService(upload.NewService(t.TempDir(), "https://static.example.com/uploads", 10))
+
+	created, err := service.Create(context.Background(), 7, 1, placeRequest{
+		Name:      "远程图片店",
+		Status:    StatusWant,
+		ImageURLs: []string{imageServer.URL + "/cover.png"},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if got := len(created.ImageURLs); got != 1 {
+		t.Fatalf("len(created.ImageURLs) = %d, want 1", got)
+	}
+	if got := created.ImageURLs[0]; !strings.HasPrefix(got, "https://static.example.com/uploads/") {
+		t.Fatalf("created.ImageURLs[0] = %q, want mirrored uploads url", got)
+	}
+}
+
+func TestUploadServiceRecognizesCaipuUploadsAsManaged(t *testing.T) {
+	service := upload.NewService(t.TempDir(), "", 10)
+	if !service.IsManagedImageURL("https://www.gxm1227.top/caipu-uploads/2026/06/img_test.jpg") {
+		t.Fatal("expected /caipu-uploads/ url to be managed")
 	}
 }
 

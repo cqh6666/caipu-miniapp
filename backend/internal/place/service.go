@@ -11,6 +11,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
 
 const (
@@ -48,10 +49,15 @@ var (
 type Service struct {
 	repo    *Repository
 	kitchen *kitchen.Service
+	upload  *upload.Service
 }
 
 func NewService(repo *Repository, kitchenService *kitchen.Service) *Service {
 	return &Service{repo: repo, kitchen: kitchenService}
+}
+
+func (s *Service) SetUploadService(uploadService *upload.Service) {
+	s.upload = uploadService
 }
 
 func (s *Service) ListByKitchenID(ctx context.Context, userID, kitchenID int64, filter ListFilter) ([]Place, error) {
@@ -77,6 +83,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req place
 	if err != nil {
 		return Place{}, err
 	}
+	item.ImageURLs = s.mirrorExternalImages(ctx, item.ImageURLs)
 
 	placeID, err := common.NewPrefixedID("pla")
 	if err != nil {
@@ -103,7 +110,6 @@ func (s *Service) GetByID(ctx context.Context, userID int64, placeID string) (Pl
 	if err != nil {
 		return Place{}, err
 	}
-
 	if err := s.kitchen.EnsureMember(ctx, userID, item.KitchenID); err != nil {
 		return Place{}, err
 	}
@@ -121,6 +127,7 @@ func (s *Service) Update(ctx context.Context, userID int64, placeID string, req 
 	if err != nil {
 		return Place{}, err
 	}
+	next.ImageURLs = s.mirrorExternalImages(ctx, next.ImageURLs)
 
 	now := time.Now().Format(time.RFC3339)
 	next.ID = current.ID
@@ -184,6 +191,46 @@ func (s *Service) Delete(ctx context.Context, userID int64, placeID string) erro
 	}
 
 	return nil
+}
+
+func (s *Service) mirrorExternalImages(ctx context.Context, imageURLs []string) []string {
+	if s.upload == nil || len(imageURLs) == 0 {
+		return imageURLs
+	}
+
+	next := make([]string, 0, len(imageURLs))
+	seen := map[string]struct{}{}
+	for _, raw := range imageURLs {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+
+		resolved := value
+		if isRemoteImageURL(value) && !s.upload.IsManagedImageURL(value) {
+			if image, err := s.upload.SaveRemoteImage(ctx, value); err == nil && strings.TrimSpace(image.URL) != "" {
+				resolved = strings.TrimSpace(image.URL)
+			} else {
+				continue
+			}
+		}
+
+		key := strings.ToLower(resolved)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		next = append(next, resolved)
+		if len(next) >= 9 {
+			break
+		}
+	}
+	return next
+}
+
+func isRemoteImageURL(value string) bool {
+	value = strings.TrimSpace(strings.ToLower(value))
+	return strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")
 }
 
 func normalizePlaceInput(req placeRequest) (Place, error) {
