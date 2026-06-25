@@ -1,5 +1,30 @@
 # Project Changelog
 
+## 2026-06-25 (智能添加剪贴板读取兜底)
+
+### Fixed
+
+- **修改时间**：2026-06-25 10:48:34 +0800 CST
+- **变更背景**：用户点击智能添加入口的“点此粘贴分享链接”时，即使系统剪贴板已有分享
+  文案，前端仍提示“请使用下方输入框粘贴分享内容”，说明智能添加面板没有稳定读到
+  `uni.getClipboardData` 的返回值。
+- **核心改动**：
+  - 将 `add-link-preview-panel.vue` 和 `add-recipe-preview-panel.vue` 的剪贴板读取从
+    `await uni.getClipboardData()` 改为 callback 包装的 `success/fail` 形式，和项目内
+    现有自动预填逻辑保持一致。
+  - 读取失败时保留 `console.warn` 输出，便于在微信开发者工具中区分 API 失败、权限 /
+    隐私配置失败和剪贴板为空。
+  - 将兜底提示调整为“未读取到剪贴板，请粘贴到输入框”，避免误导用户以为必须手动粘贴。
+- **影响范围**：
+  - 影响新增打卡点和新增菜品的智能识别入口；不影响手动填写、后端预览接口或保存接口。
+- **兼容性/风险**：
+  - 如果微信小程序后台未在用户隐私保护指引中声明剪贴板读取，或运行环境禁止读取剪贴板，
+    前端仍会进入输入框兜底，但现在控制台会保留失败原因。
+- **验证情况**：
+  - 已使用 `@vue/compiler-sfc` 对 `add-link-preview-panel.vue` 和
+    `add-recipe-preview-panel.vue` 完成 SFC 解析检查，通过。
+  - 已执行 `git diff --check -- pages/index/components/add-link-preview-panel.vue pages/index/components/add-recipe-preview-panel.vue`，通过。
+
 ## 2026-06-25 (打卡点增强字段后端接口)
 
 ### Added

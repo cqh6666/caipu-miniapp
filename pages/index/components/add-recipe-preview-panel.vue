@@ -140,25 +140,29 @@ export default {
 			this.$emit('close')
 		},
 		async handlePasteLink() {
-			try {
-				// 尝试读取剪贴板
-				const clipboardData = await uni.getClipboardData()
-				if (clipboardData && clipboardData.data) {
-					const text = clipboardData.data.trim()
-					if (text) {
-						this.startParsing(text)
-						return
-					}
-				}
-			} catch (err) {
-				console.warn('读取剪贴板失败:', err)
+			const text = await this.readClipboardText()
+			if (text) {
+				this.startParsing(text)
+				return
 			}
 
-			// 读取失败，提示用户使用底部输入框
 			uni.showToast({
-				title: '请使用下方输入框粘贴链接',
+				title: '未读取到剪贴板，请粘贴到输入框',
 				icon: 'none',
 				duration: 2000
+			})
+		},
+		readClipboardText() {
+			return new Promise((resolve) => {
+				uni.getClipboardData({
+					success: (result) => {
+						resolve(String(result?.data || '').trim())
+					},
+					fail: (error) => {
+						console.warn('读取剪贴板失败:', error)
+						resolve('')
+					}
+				})
 			})
 		},
 		handleManualInputSubmit() {
