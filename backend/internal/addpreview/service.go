@@ -275,6 +275,7 @@ func buildExtractedPlaceDraft(extracted ExtractedPlace, source string) PlaceDraf
 		Name:      extracted.Name,
 		Type:      "food",
 		Address:   extracted.Address,
+		Phone:     extracted.Phone,
 		Source:    normalizePlaceSource(source),
 		SourceURL: extracted.SourceURL,
 		Images:    []string{},

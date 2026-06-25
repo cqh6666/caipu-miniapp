@@ -52,19 +52,23 @@ type ExtractedPlace struct {
 }
 
 type PlaceDraft struct {
-	Name      string   `json:"name,omitempty"`
-	Type      string   `json:"type,omitempty"`
-	Address   string   `json:"address,omitempty"`
-	Latitude  float64  `json:"latitude,omitempty"`
-	Longitude float64  `json:"longitude,omitempty"`
-	Price     string   `json:"price,omitempty"`
-	Source    string   `json:"source,omitempty"`
-	SourceURL string   `json:"sourceUrl,omitempty"`
-	Images    []string `json:"images,omitempty"`
-	ImageURLs []string `json:"imageUrls,omitempty"`
-	Status    string   `json:"status,omitempty"`
-	Tags      []string `json:"tags,omitempty"`
-	Note      string   `json:"note,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Type             string   `json:"type,omitempty"`
+	Address          string   `json:"address,omitempty"`
+	Latitude         float64  `json:"latitude,omitempty"`
+	Longitude        float64  `json:"longitude,omitempty"`
+	Phone            string   `json:"phone,omitempty"`
+	Price            string   `json:"price,omitempty"`
+	Source           string   `json:"source,omitempty"`
+	SourceURL        string   `json:"sourceUrl,omitempty"`
+	Images           []string `json:"images,omitempty"`
+	ImageURLs        []string `json:"imageUrls,omitempty"`
+	Status           string   `json:"status,omitempty"`
+	Tags             []string `json:"tags,omitempty"`
+	Note             string   `json:"note,omitempty"`
+	ExternalProvider string   `json:"externalProvider,omitempty"`
+	ExternalPOIID    string   `json:"externalPoiId,omitempty"`
+	Rating           string   `json:"rating,omitempty"`
 }
 
 type PlaceCandidate struct {
@@ -104,14 +108,18 @@ type poiSearchInput struct {
 }
 
 type poiItem struct {
-	ID       string
-	Name     string
-	Type     string
-	TypeCode string
-	Address  string
-	Location string
-	Tel      string
-	Rating   string
-	Cost     string
-	Photos   []string
+	ID           string
+	Name         string
+	Type         string
+	TypeCode     string
+	Address      string
+	Location     string
+	Tel          string
+	Rating       string
+	Cost         string
+	BusinessArea string
+	AdName       string
+	PName        string
+	CityName     string
+	Photos       []string
 }

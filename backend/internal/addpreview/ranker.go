@@ -73,21 +73,27 @@ func buildCandidate(extracted ExtractedPlace, source string, poi poiItem) PlaceC
 	latitude, longitude := parseAMapLocation(poi.Location)
 	price := formatCost(poi.Cost)
 	score, reasons := scorePOI(extracted, poi)
+	tags := buildPlaceTags(poi)
+	address := formatPOIAddress(poi.Address, poi.BusinessArea)
 
 	draft := PlaceDraft{
-		Name:      poi.Name,
-		Type:      mapPOIType(poi.Type),
-		Address:   poi.Address,
-		Latitude:  latitude,
-		Longitude: longitude,
-		Price:     price,
-		Source:    normalizePlaceSource(source),
-		SourceURL: extracted.SourceURL,
-		Images:    append([]string{}, poi.Photos...),
-		ImageURLs: append([]string{}, poi.Photos...),
-		Status:    "want",
-		Tags:      []string{},
-		Note:      "",
+		Name:             poi.Name,
+		Type:             mapPOIType(poi.Type),
+		Address:          address,
+		Latitude:         latitude,
+		Longitude:        longitude,
+		Phone:            poi.Tel,
+		Price:            price,
+		Source:           normalizePlaceSource(source),
+		SourceURL:        extracted.SourceURL,
+		Images:           append([]string{}, poi.Photos...),
+		ImageURLs:        append([]string{}, poi.Photos...),
+		Status:           "want",
+		Tags:             tags,
+		Note:             "",
+		ExternalProvider: "amap",
+		ExternalPOIID:    poi.ID,
+		Rating:           poi.Rating,
 	}
 
 	return PlaceCandidate{
@@ -96,7 +102,7 @@ func buildCandidate(extracted ExtractedPlace, source string, poi poiItem) PlaceC
 		ProviderPOIID: poi.ID,
 		Name:          poi.Name,
 		Type:          draft.Type,
-		Address:       poi.Address,
+		Address:       address,
 		Latitude:      latitude,
 		Longitude:     longitude,
 		Phone:         poi.Tel,
@@ -286,16 +292,78 @@ func formatCost(value string) string {
 		return ""
 	}
 	if strings.HasPrefix(value, "¥") {
+		if strings.Contains(value, "/人") {
+			return value
+		}
 		return value + "/人"
 	}
+	value = strings.TrimSuffix(value, ".00")
 	return "¥" + value + "/人"
 }
 
 func mapPOIType(value string) string {
-	if strings.Contains(value, "风景名胜") || strings.Contains(value, "体育休闲") {
+	if strings.Contains(value, "风景名胜") ||
+		strings.Contains(value, "体育休闲") ||
+		strings.Contains(value, "景点") ||
+		strings.Contains(value, "公园") ||
+		strings.Contains(value, "博物馆") {
 		return "attraction"
 	}
-	return "food"
+	if strings.Contains(value, "餐饮") {
+		return "food"
+	}
+	return "other"
+}
+
+func formatPOIAddress(address, businessArea string) string {
+	address = strings.TrimSpace(address)
+	businessArea = strings.TrimSpace(businessArea)
+	if address == "" || businessArea == "" || strings.Contains(address, businessArea) {
+		return address
+	}
+	return address + " · " + businessArea
+}
+
+func buildPlaceTags(poi poiItem) []string {
+	candidates := []string{}
+	for index, part := range strings.Split(poi.Type, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" || index == 0 {
+			continue
+		}
+		for _, sub := range strings.Split(part, "/") {
+			sub = strings.TrimSpace(strings.TrimSuffix(sub, "餐厅"))
+			if sub != "" {
+				candidates = append(candidates, sub)
+			}
+		}
+	}
+	candidates = append(candidates, poi.BusinessArea, poi.AdName)
+	return cleanTagList(candidates, 8)
+}
+
+func cleanTagList(values []string, limit int) []string {
+	items := make([]string, 0, limit)
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || value == "[]" {
+			continue
+		}
+		if len([]rune(value)) > 12 {
+			value = string([]rune(value)[:12])
+		}
+		key := strings.ToLower(value)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, value)
+		if len(items) >= limit {
+			break
+		}
+	}
+	return items
 }
 
 func normalizePlaceSource(value string) string {

@@ -27,13 +27,15 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 
 	if filter.Keyword != "" {
 		keyword := "%" + strings.ToLower(filter.Keyword) + "%"
-		clauses = append(clauses, `(LOWER(name) LIKE ? OR LOWER(address) LIKE ? OR LOWER(note) LIKE ? OR LOWER(tags_json) LIKE ?)`)
-		args = append(args, keyword, keyword, keyword, keyword)
+		clauses = append(clauses, `(LOWER(name) LIKE ? OR LOWER(address) LIKE ? OR LOWER(note) LIKE ? OR LOWER(tags_json) LIKE ? OR LOWER(phone) LIKE ? OR LOWER(recommended_items_json) LIKE ? OR LOWER(scenes_json) LIKE ?)`)
+		args = append(args, keyword, keyword, keyword, keyword, keyword, keyword, keyword)
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
 SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, source_url,
-       image_urls_json, status, tags_json, note, visited_at, created_by, updated_by, created_at, updated_at
+       image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
+       phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
+       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
   FROM places
  WHERE `+strings.Join(clauses, " AND ")+`
  ORDER BY
@@ -64,7 +66,9 @@ SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, 
 func (r *Repository) FindByID(ctx context.Context, placeID string) (Place, error) {
 	return scanPlace(r.db.QueryRowContext(ctx, `
 SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, source_url,
-       image_urls_json, status, tags_json, note, visited_at, created_by, updated_by, created_at, updated_at
+       image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
+       phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
+       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
   FROM places
  WHERE id = ? AND deleted_at IS NULL`, placeID))
 }
@@ -78,15 +82,31 @@ func (r *Repository) Create(ctx context.Context, item Place) (Place, error) {
 	if err != nil {
 		return Place{}, fmt.Errorf("marshal place tags: %w", err)
 	}
+	recommendedItemsJSON, err := marshalStringList(item.RecommendedItems)
+	if err != nil {
+		return Place{}, fmt.Errorf("marshal place recommended items: %w", err)
+	}
+	scenesJSON, err := marshalStringList(item.Scenes)
+	if err != nil {
+		return Place{}, fmt.Errorf("marshal place scenes: %w", err)
+	}
+	companionTagsJSON, err := marshalStringList(item.CompanionTags)
+	if err != nil {
+		return Place{}, fmt.Errorf("marshal place companion tags: %w", err)
+	}
 
 	_, err = r.db.ExecContext(ctx, `
 INSERT INTO places (
   id, kitchen_id, name, type, address, latitude, longitude, price, source, source_url,
-  image_urls_json, status, tags_json, note, visited_at, created_by, updated_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
+  phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time, duration,
+  companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID, item.KitchenID, item.Name, item.Type, item.Address, item.Latitude, item.Longitude,
 		item.Price, item.Source, item.SourceURL, imageURLsJSON, item.Status, tagsJSON, item.Note,
-		item.VisitedAt, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt,
+		item.VisitedAt, item.RevisitRating, recommendedItemsJSON, item.Phone, item.ExternalProvider,
+		item.ExternalPOIID, item.Rating, item.DiningTips, scenesJSON, item.BestTime, item.Duration,
+		companionTagsJSON, item.ParkingNote, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt,
 	)
 	if err != nil {
 		return Place{}, fmt.Errorf("insert place: %w", err)
@@ -104,6 +124,18 @@ func (r *Repository) Update(ctx context.Context, item Place) (Place, error) {
 	if err != nil {
 		return Place{}, fmt.Errorf("marshal place tags: %w", err)
 	}
+	recommendedItemsJSON, err := marshalStringList(item.RecommendedItems)
+	if err != nil {
+		return Place{}, fmt.Errorf("marshal place recommended items: %w", err)
+	}
+	scenesJSON, err := marshalStringList(item.Scenes)
+	if err != nil {
+		return Place{}, fmt.Errorf("marshal place scenes: %w", err)
+	}
+	companionTagsJSON, err := marshalStringList(item.CompanionTags)
+	if err != nil {
+		return Place{}, fmt.Errorf("marshal place companion tags: %w", err)
+	}
 
 	result, err := r.db.ExecContext(ctx, `
 UPDATE places
@@ -120,11 +152,25 @@ UPDATE places
        tags_json = ?,
        note = ?,
        visited_at = ?,
+       revisit_rating = ?,
+       recommended_items_json = ?,
+       phone = ?,
+       external_provider = ?,
+       external_poi_id = ?,
+       rating = ?,
+       dining_tips = ?,
+       scenes_json = ?,
+       best_time = ?,
+       duration = ?,
+       companion_tags_json = ?,
+       parking_note = ?,
        updated_by = ?,
        updated_at = ?
  WHERE id = ? AND deleted_at IS NULL`,
 		item.Name, item.Type, item.Address, item.Latitude, item.Longitude, item.Price, item.Source,
 		item.SourceURL, imageURLsJSON, item.Status, tagsJSON, item.Note, item.VisitedAt,
+		item.RevisitRating, recommendedItemsJSON, item.Phone, item.ExternalProvider, item.ExternalPOIID,
+		item.Rating, item.DiningTips, scenesJSON, item.BestTime, item.Duration, companionTagsJSON, item.ParkingNote,
 		item.UpdatedBy, item.UpdatedAt, item.ID,
 	)
 	if err != nil {
@@ -164,6 +210,9 @@ func scanPlace(s scanner) (Place, error) {
 	var item Place
 	var imageURLsJSON string
 	var tagsJSON string
+	var recommendedItemsJSON string
+	var scenesJSON string
+	var companionTagsJSON string
 
 	if err := s.Scan(
 		&item.ID,
@@ -181,6 +230,18 @@ func scanPlace(s scanner) (Place, error) {
 		&tagsJSON,
 		&item.Note,
 		&item.VisitedAt,
+		&item.RevisitRating,
+		&recommendedItemsJSON,
+		&item.Phone,
+		&item.ExternalProvider,
+		&item.ExternalPOIID,
+		&item.Rating,
+		&item.DiningTips,
+		&scenesJSON,
+		&item.BestTime,
+		&item.Duration,
+		&companionTagsJSON,
+		&item.ParkingNote,
 		&item.CreatedBy,
 		&item.UpdatedBy,
 		&item.CreatedAt,
@@ -191,6 +252,9 @@ func scanPlace(s scanner) (Place, error) {
 
 	item.ImageURLs = unmarshalStringList(imageURLsJSON)
 	item.Tags = unmarshalStringList(tagsJSON)
+	item.RecommendedItems = unmarshalStringList(recommendedItemsJSON)
+	item.Scenes = unmarshalStringList(scenesJSON)
+	item.CompanionTags = unmarshalStringList(companionTagsJSON)
 	return item, nil
 }
 

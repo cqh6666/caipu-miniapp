@@ -37,14 +37,16 @@ func TestRankPOIsPrefersRestaurantCandidate(t *testing.T) {
 			Location: "113.218100,22.927100",
 		},
 		{
-			ID:       "B0JUN7FVJK",
-			Name:     "旺记碳烤肥牛(多丰喜市园区北滘店)",
-			Type:     "餐饮服务;中餐厅;中餐厅",
-			Address:  "人昌路2号(华美达广场旁)",
-			Location: "113.218424,22.927688",
-			Rating:   "4.7",
-			Cost:     "79.00",
-			Photos:   []string{"https://example.com/1.jpg"},
+			ID:           "B0JUN7FVJK",
+			Name:         "旺记碳烤肥牛(多丰喜市园区北滘店)",
+			Type:         "餐饮服务;中餐厅;中餐厅",
+			Address:      "人昌路2号(华美达广场旁)",
+			Location:     "113.218424,22.927688",
+			Tel:          "17303028852",
+			Rating:       "4.7",
+			Cost:         "79.00",
+			BusinessArea: "北滘",
+			Photos:       []string{"https://example.com/1.jpg"},
 		},
 	}, 3)
 
@@ -56,6 +58,21 @@ func TestRankPOIsPrefersRestaurantCandidate(t *testing.T) {
 	}
 	if candidates[0].PlaceDraft.Source != SourceMeituan {
 		t.Fatalf("PlaceDraft.Source = %q, want %q", candidates[0].PlaceDraft.Source, SourceMeituan)
+	}
+	if got, want := candidates[0].PlaceDraft.Phone, "17303028852"; got != want {
+		t.Fatalf("PlaceDraft.Phone = %q, want %q", got, want)
+	}
+	if got, want := candidates[0].PlaceDraft.Rating, "4.7"; got != want {
+		t.Fatalf("PlaceDraft.Rating = %q, want %q", got, want)
+	}
+	if got, want := candidates[0].PlaceDraft.ExternalProvider, "amap"; got != want {
+		t.Fatalf("PlaceDraft.ExternalProvider = %q, want %q", got, want)
+	}
+	if got, want := candidates[0].PlaceDraft.ExternalPOIID, "B0JUN7FVJK"; got != want {
+		t.Fatalf("PlaceDraft.ExternalPOIID = %q, want %q", got, want)
+	}
+	if len(candidates[0].PlaceDraft.Tags) == 0 {
+		t.Fatalf("expected PlaceDraft.Tags from POI metadata")
 	}
 	if len(candidates[0].MatchReasons) == 0 {
 		t.Fatalf("expected match reasons for top candidate")

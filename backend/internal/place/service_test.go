@@ -23,17 +23,17 @@ func TestServiceCreateListSearchAndSoftDelete(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := service.Create(ctx, 7, 1, placeRequest{
-		Name:      "Bites & Brews",
-		Type:      TypeFood,
-		Address:   "静安区武定路150号",
-		Latitude:  31.2321,
-		Longitude: 121.4432,
-		Price:     "¥98/人",
-		Source:    SourceManual,
+		Name:      ptrString("Bites & Brews"),
+		Type:      ptrString(TypeFood),
+		Address:   ptrString("静安区武定路150号"),
+		Latitude:  ptrFloat64(31.2321),
+		Longitude: ptrFloat64(121.4432),
+		Price:     ptrString("¥98/人"),
+		Source:    ptrString(SourceManual),
 		ImageURLs: []string{"https://cdn.example.com/place.jpg"},
-		Status:    StatusWant,
+		Status:    ptrString(StatusWant),
 		Tags:      []string{"早午餐", "氛围感"},
-		Note:      "周末可去",
+		Note:      ptrString("周末可去"),
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -77,9 +77,9 @@ func TestServiceUpdateStatusManagesVisitedAt(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := service.Create(ctx, 7, 1, placeRequest{
-		Name:   "共青国家森林公园",
-		Type:   TypeAttraction,
-		Status: StatusWant,
+		Name:   ptrString("共青国家森林公园"),
+		Type:   ptrString(TypeAttraction),
+		Status: ptrString(StatusWant),
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -88,7 +88,7 @@ func TestServiceUpdateStatusManagesVisitedAt(t *testing.T) {
 		t.Fatalf("created.VisitedAt = %q, want empty", created.VisitedAt)
 	}
 
-	visited, err := service.UpdateStatus(ctx, 7, created.ID, StatusVisited)
+	visited, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{Status: StatusVisited})
 	if err != nil {
 		t.Fatalf("UpdateStatus(visited) error = %v", err)
 	}
@@ -96,7 +96,7 @@ func TestServiceUpdateStatusManagesVisitedAt(t *testing.T) {
 		t.Fatalf("visited.VisitedAt is empty")
 	}
 
-	want, err := service.UpdateStatus(ctx, 7, created.ID, StatusWant)
+	want, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{Status: StatusWant})
 	if err != nil {
 		t.Fatalf("UpdateStatus(want) error = %v", err)
 	}
@@ -112,7 +112,7 @@ func TestServiceRejectsInvalidInputAndNonMember(t *testing.T) {
 	service := newPlaceTestService(db)
 	ctx := context.Background()
 
-	_, err := service.Create(ctx, 7, 1, placeRequest{Name: "", Status: StatusWant})
+	_, err := service.Create(ctx, 7, 1, placeRequest{Name: ptrString(""), Status: ptrString(StatusWant)})
 	var appErr *common.AppError
 	if !errors.As(err, &appErr) || appErr.Code != common.CodeBadRequest {
 		t.Fatalf("Create(empty name) error = %v, want bad request", err)
@@ -148,8 +148,8 @@ func TestServiceCreateMirrorsRemoteImages(t *testing.T) {
 	service.SetUploadService(upload.NewService(t.TempDir(), "https://static.example.com/uploads", 10))
 
 	created, err := service.Create(context.Background(), 7, 1, placeRequest{
-		Name:      "远程图片店",
-		Status:    StatusWant,
+		Name:      ptrString("远程图片店"),
+		Status:    ptrString(StatusWant),
 		ImageURLs: []string{imageServer.URL + "/cover.png"},
 	})
 	if err != nil {
@@ -172,6 +172,95 @@ func TestUploadServiceRecognizesCaipuUploadsAsManaged(t *testing.T) {
 
 func newPlaceTestService(db *sql.DB) *Service {
 	return NewService(NewRepository(db), kitchen.NewService(kitchen.NewRepository(db)))
+}
+
+func ptrString(value string) *string {
+	return &value
+}
+
+func ptrFloat64(value float64) *float64 {
+	return &value
+}
+
+func ptrInt(value int) *int {
+	return &value
+}
+
+func TestServicePartialUpdatePreservesExistingEnhancementFields(t *testing.T) {
+	db := openPlaceTestDB(t)
+	defer db.Close()
+
+	service := newPlaceTestService(db)
+	ctx := context.Background()
+
+	created, err := service.Create(ctx, 7, 1, placeRequest{
+		Name:             ptrString("旺记碳烤肥牛"),
+		Status:           ptrString(StatusVisited),
+		Phone:            ptrString("17303028852"),
+		ExternalProvider: ptrString(ExternalProviderAMap),
+		ExternalPOIID:    ptrString("B0JUN7FVJK"),
+		Rating:           ptrString("4.7"),
+		RecommendedItems: []string{"碳烤肥牛", "烤鸡翅"},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	updated, err := service.Update(ctx, 7, created.ID, placeRequest{
+		Name:  ptrString("旺记碳烤肥牛"),
+		Phone: ptrString("17303028852"),
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if got, want := updated.ExternalProvider, ExternalProviderAMap; got != want {
+		t.Fatalf("updated.ExternalProvider = %q, want %q", got, want)
+	}
+	if got, want := updated.ExternalPOIID, "B0JUN7FVJK"; got != want {
+		t.Fatalf("updated.ExternalPOIID = %q, want %q", got, want)
+	}
+	if got, want := updated.Rating, "4.7"; got != want {
+		t.Fatalf("updated.Rating = %q, want %q", got, want)
+	}
+	if got, want := len(updated.RecommendedItems), 2; got != want {
+		t.Fatalf("len(updated.RecommendedItems) = %d, want %d", got, want)
+	}
+}
+
+func TestServiceUpdateStatusStoresExperienceFields(t *testing.T) {
+	db := openPlaceTestDB(t)
+	defer db.Close()
+
+	service := newPlaceTestService(db)
+	ctx := context.Background()
+
+	created, err := service.Create(ctx, 7, 1, placeRequest{
+		Name:   ptrString("旺记碳烤肥牛"),
+		Status: ptrString(StatusWant),
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	visitedAt := "2026-06-25T18:30:00+08:00"
+	visited, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{
+		Status:           StatusVisited,
+		VisitedAt:        &visitedAt,
+		RevisitRating:    ptrInt(5),
+		RecommendedItems: []string{"碳烤肥牛", "烤鸡翅"},
+	})
+	if err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if got, want := visited.VisitedAt, visitedAt; got != want {
+		t.Fatalf("visited.VisitedAt = %q, want %q", got, want)
+	}
+	if got, want := visited.RevisitRating, 5; got != want {
+		t.Fatalf("visited.RevisitRating = %d, want %d", got, want)
+	}
+	if got, want := len(visited.RecommendedItems), 2; got != want {
+		t.Fatalf("len(visited.RecommendedItems) = %d, want %d", got, want)
+	}
 }
 
 func openPlaceTestDB(t *testing.T) *sql.DB {
@@ -223,6 +312,18 @@ CREATE TABLE places (
   tags_json TEXT NOT NULL DEFAULT '[]',
   note TEXT NOT NULL DEFAULT '',
   visited_at TEXT NOT NULL DEFAULT '',
+  revisit_rating INTEGER NOT NULL DEFAULT 0,
+  recommended_items_json TEXT NOT NULL DEFAULT '[]',
+  phone TEXT NOT NULL DEFAULT '',
+  external_provider TEXT NOT NULL DEFAULT '',
+  external_poi_id TEXT NOT NULL DEFAULT '',
+  rating TEXT NOT NULL DEFAULT '',
+  dining_tips TEXT NOT NULL DEFAULT '',
+  scenes_json TEXT NOT NULL DEFAULT '[]',
+  best_time TEXT NOT NULL DEFAULT '',
+  duration TEXT NOT NULL DEFAULT '',
+  companion_tags_json TEXT NOT NULL DEFAULT '[]',
+  parking_note TEXT NOT NULL DEFAULT '',
   created_by INTEGER NOT NULL,
   updated_by INTEGER NOT NULL,
   created_at TEXT NOT NULL,

@@ -88,16 +88,20 @@ func (c *AMapClient) SearchPOIs(ctx context.Context, input poiSearchInput) ([]po
 	items := make([]poiItem, 0, len(payload.POIs))
 	for _, poi := range payload.POIs {
 		items = append(items, poiItem{
-			ID:       strings.TrimSpace(poi.ID),
-			Name:     strings.TrimSpace(poi.Name),
-			Type:     strings.TrimSpace(poi.Type),
-			TypeCode: strings.TrimSpace(poi.TypeCode),
-			Address:  strings.TrimSpace(poi.Address.String()),
-			Location: strings.TrimSpace(poi.Location.String()),
-			Tel:      normalizePhone(poi.Tel.String()),
-			Rating:   strings.TrimSpace(poi.BizExt.Rating.String()),
-			Cost:     strings.TrimSpace(poi.BizExt.Cost.String()),
-			Photos:   normalizePhotoURLs(poi.Photos),
+			ID:           strings.TrimSpace(poi.ID),
+			Name:         strings.TrimSpace(poi.Name),
+			Type:         strings.TrimSpace(poi.Type),
+			TypeCode:     strings.TrimSpace(poi.TypeCode),
+			Address:      strings.TrimSpace(poi.Address.String()),
+			Location:     strings.TrimSpace(poi.Location.String()),
+			Tel:          normalizePhone(poi.Tel.String()),
+			Rating:       strings.TrimSpace(poi.BizExt.Rating.String()),
+			Cost:         strings.TrimSpace(poi.BizExt.Cost.String()),
+			BusinessArea: strings.TrimSpace(poi.BusinessArea),
+			AdName:       strings.TrimSpace(poi.AdName),
+			PName:        strings.TrimSpace(poi.PName),
+			CityName:     strings.TrimSpace(poi.CityName),
+			Photos:       normalizePhotoURLs(poi.Photos),
 		})
 	}
 
@@ -111,15 +115,19 @@ type amapTextResponse struct {
 }
 
 type amapRawPOI struct {
-	ID       string         `json:"id"`
-	Name     string         `json:"name"`
-	Type     string         `json:"type"`
-	TypeCode string         `json:"typecode"`
-	Address  flexibleString `json:"address"`
-	Location flexibleString `json:"location"`
-	Tel      flexibleString `json:"tel"`
-	BizExt   amapRawBizExt  `json:"biz_ext"`
-	Photos   []amapRawPhoto `json:"photos"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Type         string         `json:"type"`
+	TypeCode     string         `json:"typecode"`
+	Address      flexibleString `json:"address"`
+	Location     flexibleString `json:"location"`
+	Tel          flexibleString `json:"tel"`
+	BizExt       amapRawBizExt  `json:"biz_ext"`
+	Photos       []amapRawPhoto `json:"photos"`
+	BusinessArea string         `json:"business_area"`
+	AdName       string         `json:"adname"`
+	PName        string         `json:"pname"`
+	CityName     string         `json:"cityname"`
 }
 
 type amapRawBizExt struct {

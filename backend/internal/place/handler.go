@@ -148,7 +148,12 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.service.UpdateStatus(r.Context(), userID, placeID, req.Status)
+	item, err := h.service.UpdateStatus(r.Context(), userID, placeID, statusUpdateInput{
+		Status:           req.Status,
+		VisitedAt:        req.VisitedAt,
+		RevisitRating:    req.RevisitRating,
+		RecommendedItems: req.RecommendedItems,
+	})
 	if err != nil {
 		common.WriteError(w, err)
 		return
