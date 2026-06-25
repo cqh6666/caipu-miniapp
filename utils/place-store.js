@@ -95,6 +95,19 @@ export function normalizePlace(place = {}) {
 		tags: normalizeTextList(place.tags, 8),
 		note: normalizeString(place.note),
 		visitedAt: normalizeString(place.visitedAt),
+		// 新增字段
+		phone: normalizeString(place.phone),
+		revisitRating: Number(place.revisitRating) || 0,
+		recommendedItems: normalizeTextList(place.recommendedItems, 12),
+		externalProvider: normalizeString(place.externalProvider),
+		externalPoiId: normalizeString(place.externalPoiId),
+		rating: normalizeString(place.rating),
+		diningTips: normalizeString(place.diningTips),
+		scenes: normalizeTextList(place.scenes, 8),
+		bestTime: normalizeString(place.bestTime),
+		duration: normalizeString(place.duration),
+		companionTags: normalizeTextList(place.companionTags, 6),
+		parkingNote: normalizeString(place.parkingNote),
 		createdAt: normalizeString(place.createdAt),
 		updatedAt: normalizeString(place.updatedAt)
 	}
@@ -193,7 +206,20 @@ function buildPlacePayload(draft = {}) {
 		imageUrls: normalizeImageList(draft.imageUrls || draft.images),
 		status: normalizeOption(draft.status, placeStatusOptions, 'want'),
 		tags: normalizeTextList(draft.tags, 8),
-		note: normalizeString(draft.note)
+		note: normalizeString(draft.note),
+		// 新增字段
+		phone: normalizeString(draft.phone),
+		revisitRating: Number(draft.revisitRating) || 0,
+		recommendedItems: normalizeTextList(draft.recommendedItems, 12),
+		externalProvider: normalizeString(draft.externalProvider),
+		externalPoiId: normalizeString(draft.externalPoiId),
+		rating: normalizeString(draft.rating),
+		diningTips: normalizeString(draft.diningTips),
+		scenes: normalizeTextList(draft.scenes, 8),
+		bestTime: normalizeString(draft.bestTime),
+		duration: normalizeString(draft.duration),
+		companionTags: normalizeTextList(draft.companionTags, 6),
+		parkingNote: normalizeString(draft.parkingNote)
 	}
 }
 
@@ -226,8 +252,8 @@ export async function updatePlaceById(placeId, updates = {}) {
 	return upsertPlaceInCache(item)
 }
 
-export async function updatePlaceStatusById(placeId, nextStatus) {
-	const item = await updatePlaceStatus(placeId, nextStatus)
+export async function updatePlaceStatusById(placeId, nextStatus, experienceData = {}) {
+	const item = await updatePlaceStatus(placeId, nextStatus, experienceData)
 	return upsertPlaceInCache(item)
 }
 

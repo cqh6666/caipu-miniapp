@@ -541,6 +541,7 @@
 			@select-type="handlePlaceDraftTypeSelect"
 			@choose-location="choosePlaceLocation"
 			@address-input="handlePlaceDraftAddressInput"
+			@phone-input="handlePlaceDraftPhoneInput"
 			@price-input="handlePlaceDraftPriceInput"
 			@choose-images="choosePlaceImages"
 			@preview-image="previewPlaceDraftImages"
@@ -549,6 +550,14 @@
 			@select-source="handlePlaceDraftSourceSelect"
 			@source-url-input="handlePlaceDraftSourceUrlInput"
 			@note-input="handlePlaceDraftNoteInput"
+			@rating-input="handlePlaceDraftRatingInput"
+			@recommended-items-input="handlePlaceDraftRecommendedItemsInput"
+			@dining-tips-input="handlePlaceDraftDiningTipsInput"
+			@scenes-input="handlePlaceDraftScenesInput"
+			@best-time-input="handlePlaceDraftBestTimeInput"
+			@duration-input="handlePlaceDraftDurationInput"
+			@companion-tags-input="handlePlaceDraftCompanionTagsInput"
+			@parking-note-input="handlePlaceDraftParkingNoteInput"
 			@submit="submitPlaceDraft"
 		></place-edit-sheet>
 
@@ -581,6 +590,15 @@
 			@edit="openPlaceEditSheet"
 			@delete="confirmDeletePlace"
 		></place-detail-sheet>
+
+		<place-experience-sheet
+			:show="showPlaceExperienceSheet"
+			:place-type="pendingPlaceType"
+			:is-submitting="isSubmittingPlace"
+			@close="closePlaceExperienceSheet"
+			@skip="handleExperienceSkip"
+			@submit="handleExperienceSubmit"
+		></place-experience-sheet>
 
 		<diet-assistant-sheet
 			:show="showDietAssistantSheet"
@@ -677,6 +695,7 @@ import MealOrderDateSheet from './components/meal-order-date-sheet.vue'
 import MealOrderSuccessSheet from './components/meal-order-success-sheet.vue'
 import PlaceDetailSheet from './components/place-detail-sheet.vue'
 import PlaceEditSheet from './components/place-edit-sheet.vue'
+import PlaceExperienceSheet from './components/place-experience-sheet.vue'
 import AddLinkPreviewPanel from './components/add-link-preview-panel.vue'
 import PlaceCandidateSheet from './components/place-candidate-sheet-v2.vue'
 import ProfileSheet from './components/profile-sheet.vue'
@@ -835,6 +854,7 @@ export default {
 		PlaceCandidateSheet,
 		PlaceDetailSheet,
 		PlaceEditSheet,
+		PlaceExperienceSheet,
 		ProfileSheet,
 		RandomPickSheet,
 		RecipeCardItem
@@ -857,6 +877,8 @@ export default {
 			isLoadingPlaces: false,
 			showPlaceEditSheet: false,
 			showPlaceDetailSheet: false,
+			showPlaceExperienceSheet: false,
+			pendingPlaceStatusChangeId: '',
 			showAddLinkPreviewPanel: false,
 			showAddRecipePreviewPanel: false,
 			showPlaceCandidateSheet: false,
@@ -1054,6 +1076,11 @@ export default {
 			selectedPlace() {
 				const targetPlaceId = String(this.selectedPlaceId || '').trim()
 				return this.places.find((place) => place.id === targetPlaceId) || {}
+			},
+			pendingPlaceType() {
+				const targetPlaceId = String(this.pendingPlaceStatusChangeId || '').trim()
+				const place = this.places.find((p) => p.id === targetPlaceId)
+				return place?.type || 'food'
 			},
 			canSubmitPlaceDraft() {
 				return !!String(this.placeDraft.name || '').trim()
@@ -1674,6 +1701,61 @@ export default {
 				if (this.isSubmittingPlace) return
 				this.showPlaceDetailSheet = false
 			},
+			closePlaceExperienceSheet() {
+				if (this.isSubmittingPlace) return
+				this.showPlaceExperienceSheet = false
+				this.pendingPlaceStatusChangeId = ''
+			},
+			async handleExperienceSkip() {
+				// 跳过体验采集，直接切换状态
+				const targetPlaceId = this.pendingPlaceStatusChangeId
+				this.closePlaceExperienceSheet()
+
+				if (!targetPlaceId) return
+
+				this.isSubmittingPlace = true
+				try {
+					const updated = await updatePlaceStatusById(targetPlaceId, 'visited')
+					this.applyPlaces(getCachedPlaces())
+					this.selectedPlaceId = updated?.id || targetPlaceId
+					uni.showToast({
+						title: '已标记去过',
+						icon: 'none'
+					})
+				} catch (error) {
+					uni.showToast({
+						title: error?.message || '更新打卡状态失败',
+						icon: 'none'
+					})
+				} finally {
+					this.isSubmittingPlace = false
+				}
+			},
+			async handleExperienceSubmit(experienceData) {
+				// 保存体验数据并切换状态
+				const targetPlaceId = this.pendingPlaceStatusChangeId
+				this.closePlaceExperienceSheet()
+
+				if (!targetPlaceId) return
+
+				this.isSubmittingPlace = true
+				try {
+					const updated = await updatePlaceStatusById(targetPlaceId, 'visited', experienceData)
+					this.applyPlaces(getCachedPlaces())
+					this.selectedPlaceId = updated?.id || targetPlaceId
+					uni.showToast({
+						title: '打卡完成！',
+						icon: 'success'
+					})
+				} catch (error) {
+					uni.showToast({
+						title: error?.message || '保存体验失败',
+						icon: 'none'
+					})
+				} finally {
+					this.isSubmittingPlace = false
+				}
+			},
 			handlePlaceDraftNameInput(event) {
 				this.placeDraft.name = String(event?.detail?.value || '')
 			},
@@ -1703,6 +1785,48 @@ export default {
 			},
 			handlePlaceDraftNoteInput(event) {
 				this.placeDraft.note = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftPhoneInput(event) {
+				this.placeDraft.phone = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftRatingInput(rating) {
+				this.placeDraft.revisitRating = Number(rating) || 0
+			},
+			handlePlaceDraftRecommendedItemsInput(event) {
+				const text = String(event?.detail?.value || '')
+				this.placeDraft.recommendedItems = text
+					.split(/[，,\n]/)
+					.map((item) => item.trim())
+					.filter(Boolean)
+					.slice(0, 12)
+			},
+			handlePlaceDraftDiningTipsInput(event) {
+				this.placeDraft.diningTips = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftScenesInput(event) {
+				const text = String(event?.detail?.value || '')
+				this.placeDraft.scenes = text
+					.split(/[，,\n]/)
+					.map((item) => item.trim())
+					.filter(Boolean)
+					.slice(0, 8)
+			},
+			handlePlaceDraftBestTimeInput(event) {
+				this.placeDraft.bestTime = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftDurationInput(event) {
+				this.placeDraft.duration = String(event?.detail?.value || '')
+			},
+			handlePlaceDraftCompanionTagsInput(event) {
+				const text = String(event?.detail?.value || '')
+				this.placeDraft.companionTags = text
+					.split(/[，,\n]/)
+					.map((item) => item.trim())
+					.filter(Boolean)
+					.slice(0, 6)
+			},
+			handlePlaceDraftParkingNoteInput(event) {
+				this.placeDraft.parkingNote = String(event?.detail?.value || '')
 			},
 			choosePlaceLocation() {
 				if (typeof uni.chooseLocation !== 'function') {
@@ -1865,14 +1989,24 @@ export default {
 				const targetPlaceId = String(placeId || this.selectedPlaceId || '').trim()
 				const place = this.places.find((item) => item.id === targetPlaceId)
 				if (!place || this.isSubmittingPlace) return
+
 				const nextStatus = place.status === 'visited' ? 'want' : 'visited'
+
+				// 如果切换到"去过"，先弹出体验采集弹窗
+				if (nextStatus === 'visited') {
+					this.pendingPlaceStatusChangeId = targetPlaceId
+					this.showPlaceExperienceSheet = true
+					return
+				}
+
+				// 切回"想去"直接执行
 				this.isSubmittingPlace = true
 				try {
 					const updated = await updatePlaceStatusById(targetPlaceId, nextStatus)
 					this.applyPlaces(getCachedPlaces())
 					this.selectedPlaceId = updated?.id || targetPlaceId
 					uni.showToast({
-						title: nextStatus === 'visited' ? '已标记去过' : '已改回想去',
+						title: '已改回想去',
 						icon: 'none'
 					})
 				} catch (error) {

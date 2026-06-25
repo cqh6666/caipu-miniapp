@@ -1,7 +1,11 @@
 <template>
 	<view
 		class="place-card"
-		:class="{ 'place-card--visited': isVisited, 'place-card--no-location': !canOpenLocation }"
+		:class="{
+			'place-card--visited': isVisited,
+			'place-card--no-location': !canOpenLocation,
+			'place-card--low-rating': isLowRating
+		}"
 		@tap="$emit('open', place.id)"
 	>
 		<view class="place-card__cover-shell">
@@ -20,6 +24,9 @@
 			<view class="place-card__source-badge">
 				<text class="place-card__source-text">{{ sourceLabel }}</text>
 			</view>
+			<view v-if="isHighlyRecommended" class="place-card__star-badge">
+				<up-icon name="star-fill" size="13" color="#f4a236"></up-icon>
+			</view>
 		</view>
 
 		<view class="place-card__body">
@@ -33,35 +40,56 @@
 
 				<text class="place-card__name" :class="{ 'place-card__name--visited': isVisited }">{{ place.name }}</text>
 
+				<!-- 重访意愿（仅去过） -->
+				<view v-if="isVisited && hasRevisitRating" class="place-card__rating-row">
+					<view class="place-card__stars">
+						<up-icon
+							v-for="star in 5"
+							:key="`star-${star}`"
+							:name="star <= place.revisitRating ? 'star-fill' : 'star'"
+							size="14"
+							:color="star <= place.revisitRating ? '#f4a236' : '#d4c4b8'"
+						></up-icon>
+					</view>
+					<text class="place-card__rating-text">{{ revisitRatingText }}</text>
+				</view>
+
+				<!-- 推荐项（仅去过且有推荐） -->
+				<view v-if="isVisited && displayRecommendedItems.length" class="place-card__recommended-row">
+					<text class="place-card__recommended-label">🍴</text>
+					<text class="place-card__recommended-text">{{ displayRecommendedItemsText }}</text>
+				</view>
+
+				<!-- 位置 -->
 				<view class="place-card__location-row">
 					<up-icon name="map-fill" size="13" color="#a08775"></up-icon>
 					<text class="place-card__location-text">{{ addressText }}</text>
 				</view>
 			</view>
 
-			<view class="place-card__footer">
+			<view v-if="displayTags.length" class="place-card__footer">
 				<view class="place-card__tags">
 					<view v-for="(tag, i) in displayTags" :key="i" class="place-card__tag">
 						<text class="place-card__tag-text">{{ tag }}</text>
 					</view>
 				</view>
-
-				<view
-					class="place-card__action-btn"
-					:class="{
-						'place-card__action-btn--visited': isVisited,
-						'place-card__action-btn--unavailable': !canOpenLocation
-					}"
-					@tap.stop="$emit('open-location', place.id)"
-				>
-					<up-icon
-						:class="{ 'place-card__nav-icon': !isVisited }"
-						:name="isVisited ? 'checkmark-circle-fill' : 'arrow-upward'"
-						:size="isVisited ? 22 : 19"
-						:color="actionIconColor"
-					></up-icon>
-				</view>
 			</view>
+		</view>
+
+		<view
+			class="place-card__action-btn"
+			:class="{
+				'place-card__action-btn--visited': isVisited,
+				'place-card__action-btn--unavailable': !canOpenLocation
+			}"
+			@tap.stop="$emit('open-location', place.id)"
+		>
+			<up-icon
+				:class="{ 'place-card__nav-icon': !isVisited }"
+				:name="isVisited ? 'checkmark-circle-fill' : 'arrow-upward'"
+				:size="isVisited ? 22 : 19"
+				:color="actionIconColor"
+			></up-icon>
 		</view>
 
 		<view v-if="isVisited" class="place-card__visited-stamp">
@@ -118,7 +146,36 @@ export default {
 			return this.isVisited ? '#8a9a5b' : '#fffaf3'
 		},
 		displayTags() {
-			return (this.place.tags || []).slice(0, 2)
+			const scenes = this.place.scenes || []
+			const tags = this.place.tags || []
+			const combined = [...scenes, ...tags]
+			return combined.slice(0, 2)
+		},
+		hasRevisitRating() {
+			return this.isVisited && Number(this.place.revisitRating) > 0
+		},
+		isHighlyRecommended() {
+			return this.hasRevisitRating && Number(this.place.revisitRating) === 5
+		},
+		isLowRating() {
+			return this.hasRevisitRating && Number(this.place.revisitRating) <= 2
+		},
+		revisitRatingText() {
+			const rating = Number(this.place.revisitRating)
+			if (rating === 5) return '非常推荐'
+			if (rating === 4) return '值得再去'
+			if (rating === 3) return '还可以'
+			if (rating === 2) return '不太推荐'
+			if (rating === 1) return '不推荐'
+			return ''
+		},
+		displayRecommendedItems() {
+			if (!this.isVisited) return []
+			const items = this.place.recommendedItems || []
+			return Array.isArray(items) ? items.slice(0, 2) : []
+		},
+		displayRecommendedItemsText() {
+			return this.displayRecommendedItems.join('，')
 		}
 	}
 }
@@ -129,9 +186,9 @@ export default {
 	position: relative;
 	display: flex;
 	align-items: stretch;
-	gap: 24rpx;
-	padding: 22rpx;
-	border-radius: 34rpx;
+	gap: 22rpx;
+	padding: 18rpx;
+	border-radius: 30rpx;
 	background:
 		radial-gradient(circle at top left, rgba(255, 255, 255, 0.86) 0%, rgba(255, 255, 255, 0) 48%),
 		linear-gradient(180deg, rgba(255, 253, 249, 0.99) 0%, rgba(255, 250, 244, 0.97) 100%);
@@ -140,7 +197,7 @@ export default {
 		0 16rpx 32rpx rgba(70, 54, 40, 0.06),
 		0 3rpx 8rpx rgba(70, 54, 40, 0.06),
 		inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
-	min-height: 220rpx;
+	min-height: 208rpx;
 	margin-bottom: 0;
 	overflow: hidden;
 	transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -155,16 +212,21 @@ export default {
 			radial-gradient(circle at top right, rgba(232, 238, 217, 0.42) 0%, rgba(232, 238, 217, 0) 44%),
 			linear-gradient(180deg, rgba(255, 253, 249, 0.99) 0%, rgba(250, 248, 242, 0.98) 100%);
 	}
+
+	&--low-rating {
+		opacity: 0.7;
+	}
 }
 
 .place-card__cover-shell {
 	position: relative;
-	width: 176rpx;
-	height: 176rpx;
+	width: 204rpx;
+	min-height: 172rpx;
+	max-height: 212rpx;
+	align-self: stretch;
 	flex-shrink: 0;
-	border-radius: 26rpx;
+	border-radius: 24rpx;
 	overflow: hidden;
-	align-self: center;
 	background: #eadfD2;
 	box-shadow: 0 8rpx 18rpx rgba(61, 44, 34, 0.08);
 }
@@ -172,7 +234,7 @@ export default {
 .place-card__cover {
 	width: 100%;
 	height: 100%;
-	border-radius: 26rpx;
+	border-radius: 24rpx;
 
 	&--visited {
 		opacity: 0.8;
@@ -183,7 +245,7 @@ export default {
 .place-card__cover-placeholder {
 	width: 100%;
 	height: 100%;
-	border-radius: 26rpx;
+	border-radius: 24rpx;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -227,14 +289,28 @@ export default {
 	white-space: nowrap;
 }
 
+.place-card__star-badge {
+	position: absolute;
+	top: 10rpx;
+	right: 10rpx;
+	width: 36rpx;
+	height: 36rpx;
+	border-radius: 50%;
+	background: rgba(244, 162, 54, 0.95);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 4rpx 10rpx rgba(244, 162, 54, 0.3);
+}
+
 .place-card__body {
 	flex: 1;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	justify-content: space-between;
-	gap: 16rpx;
-	padding: 8rpx 4rpx 8rpx 0;
+	justify-content: flex-start;
+	gap: 14rpx;
+	padding: 6rpx 82rpx 6rpx 0;
 	overflow: hidden;
 }
 
@@ -267,11 +343,11 @@ export default {
 
 .place-card__name {
 	font-family: "Songti SC", "STSong", "SimSun", "DejaVu Serif", serif;
-	font-size: 36rpx;
+	font-size: 34rpx;
 	font-weight: 900;
 	color: #5c4033;
-	line-height: 1.24;
-	margin-top: 12rpx;
+	line-height: 1.22;
+	margin-top: 10rpx;
 	display: -webkit-box;
 	overflow: hidden;
 	word-break: break-all;
@@ -284,7 +360,54 @@ export default {
 }
 
 .place-card--visited .place-card__content {
-	padding-right: 120rpx;
+	padding-right: 42rpx;
+}
+
+.place-card__rating-row {
+	display: flex;
+	align-items: center;
+	gap: 10rpx;
+	margin-top: 10rpx;
+}
+
+.place-card__stars {
+	display: flex;
+	align-items: center;
+	gap: 4rpx;
+}
+
+.place-card__rating-text {
+	font-size: 22rpx;
+	font-weight: 700;
+	color: #f4a236;
+	line-height: 1.2;
+}
+
+.place-card__recommended-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 6rpx;
+	margin-top: 10rpx;
+}
+
+.place-card__recommended-label {
+	font-size: 20rpx;
+	line-height: 1.4;
+	flex-shrink: 0;
+}
+
+.place-card__recommended-text {
+	flex: 1;
+	min-width: 0;
+	font-size: 22rpx;
+	font-weight: 600;
+	color: rgba(92, 64, 51, 0.72);
+	line-height: 1.4;
+	display: -webkit-box;
+	overflow: hidden;
+	word-break: break-all;
+	-webkit-line-clamp: 1;
+	-webkit-box-orient: vertical;
 }
 
 .place-card__location-row {
@@ -292,13 +415,13 @@ export default {
 	min-width: 0;
 	align-items: flex-start;
 	gap: 8rpx;
-	margin-top: 12rpx;
+	margin-top: 10rpx;
 }
 
 .place-card__location-text {
 	flex: 1;
 	min-width: 0;
-	font-size: 25rpx;
+	font-size: 24rpx;
 	color: rgba(92, 64, 51, 0.58);
 	line-height: 1.35;
 	display: -webkit-box;
@@ -311,8 +434,7 @@ export default {
 .place-card__footer {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 12rpx;
+	justify-content: flex-start;
 	min-width: 0;
 }
 
@@ -347,8 +469,12 @@ export default {
 }
 
 .place-card__action-btn {
-	width: 64rpx;
-	height: 64rpx;
+	position: absolute;
+	right: 24rpx;
+	bottom: 24rpx;
+	z-index: 3;
+	width: 68rpx;
+	height: 68rpx;
 	border-radius: 50%;
 	display: flex;
 	align-items: center;

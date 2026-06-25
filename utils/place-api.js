@@ -31,11 +31,26 @@ export function updatePlace(placeId, payload) {
 	}).then((data) => data?.place || null)
 }
 
-export function updatePlaceStatus(placeId, status) {
+export function updatePlaceStatus(placeId, status, experienceData = {}) {
+	const payload = { status }
+
+	// 如果切换到"去过"且提供了体验数据，一并提交
+	if (status === 'visited' && experienceData) {
+		if (experienceData.revisitRating) {
+			payload.revisitRating = experienceData.revisitRating
+		}
+		if (experienceData.recommendedItems) {
+			payload.recommendedItems = experienceData.recommendedItems
+		}
+		if (experienceData.visitedAt) {
+			payload.visitedAt = experienceData.visitedAt
+		}
+	}
+
 	return request({
 		url: `/caipu-api/places/${placeId}/status`,
 		method: 'PATCH',
-		data: { status }
+		data: payload
 	}).then((data) => data?.place || null)
 }
 

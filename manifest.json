@@ -56,9 +56,10 @@
         },
         "permission" : {
             "scope.userLocation" : {
-                "desc" : "用于选择和打开打卡点位置"
+                "desc" : "用于选择并保存打卡点位置"
             }
         },
+        "requiredPrivateInfos" : [ "chooseLocation" ],
         "mergeVirtualHostAttributes" : true,
         "usingComponents" : true
     },
