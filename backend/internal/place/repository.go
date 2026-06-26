@@ -34,6 +34,7 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 	rows, err := r.db.QueryContext(ctx, `
 SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, source_url,
        image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
+       price_amount_cents, price_currency, price_type,
        phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
        duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
   FROM places
@@ -67,6 +68,7 @@ func (r *Repository) FindByID(ctx context.Context, placeID string) (Place, error
 	return scanPlace(r.db.QueryRowContext(ctx, `
 SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, source_url,
        image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
+       price_amount_cents, price_currency, price_type,
        phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
        duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
   FROM places
@@ -95,21 +97,38 @@ func (r *Repository) Create(ctx context.Context, item Place) (Place, error) {
 		return Place{}, fmt.Errorf("marshal place companion tags: %w", err)
 	}
 
-	_, err = r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Place{}, fmt.Errorf("begin create place tx: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO places (
   id, kitchen_id, name, type, address, latitude, longitude, price, source, source_url,
   image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
+  price_amount_cents, price_currency, price_type,
   phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time, duration,
   companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID, item.KitchenID, item.Name, item.Type, item.Address, item.Latitude, item.Longitude,
 		item.Price, item.Source, item.SourceURL, imageURLsJSON, item.Status, tagsJSON, item.Note,
-		item.VisitedAt, item.RevisitRating, recommendedItemsJSON, item.Phone, item.ExternalProvider,
+		item.VisitedAt, item.RevisitRating, recommendedItemsJSON, item.PriceAmountCents, item.PriceCurrency, item.PriceType,
+		item.Phone, item.ExternalProvider,
 		item.ExternalPOIID, item.Rating, item.DiningTips, scenesJSON, item.BestTime, item.Duration,
 		companionTagsJSON, item.ParkingNote, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt,
 	)
 	if err != nil {
+		_ = tx.Rollback()
 		return Place{}, fmt.Errorf("insert place: %w", err)
+	}
+
+	if err := insertPlaceStatusEvent(ctx, tx, item.KitchenID, item.ID, "", item.Status, item.CreatedBy, item.CreatedAt, "api"); err != nil {
+		_ = tx.Rollback()
+		return Place{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Place{}, fmt.Errorf("commit create place: %w", err)
 	}
 
 	return r.FindByID(ctx, item.ID)
@@ -137,7 +156,17 @@ func (r *Repository) Update(ctx context.Context, item Place) (Place, error) {
 		return Place{}, fmt.Errorf("marshal place companion tags: %w", err)
 	}
 
-	result, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Place{}, fmt.Errorf("begin update place tx: %w", err)
+	}
+	current, err := findPlaceByIDTx(ctx, tx, item.ID)
+	if err != nil {
+		_ = tx.Rollback()
+		return Place{}, err
+	}
+
+	result, err := tx.ExecContext(ctx, `
 UPDATE places
    SET name = ?,
        type = ?,
@@ -154,6 +183,9 @@ UPDATE places
        visited_at = ?,
        revisit_rating = ?,
        recommended_items_json = ?,
+       price_amount_cents = ?,
+       price_currency = ?,
+       price_type = ?,
        phone = ?,
        external_provider = ?,
        external_poi_id = ?,
@@ -169,16 +201,30 @@ UPDATE places
  WHERE id = ? AND deleted_at IS NULL`,
 		item.Name, item.Type, item.Address, item.Latitude, item.Longitude, item.Price, item.Source,
 		item.SourceURL, imageURLsJSON, item.Status, tagsJSON, item.Note, item.VisitedAt,
-		item.RevisitRating, recommendedItemsJSON, item.Phone, item.ExternalProvider, item.ExternalPOIID,
+		item.RevisitRating, recommendedItemsJSON, item.PriceAmountCents, item.PriceCurrency, item.PriceType,
+		item.Phone, item.ExternalProvider, item.ExternalPOIID,
 		item.Rating, item.DiningTips, scenesJSON, item.BestTime, item.Duration, companionTagsJSON, item.ParkingNote,
 		item.UpdatedBy, item.UpdatedAt, item.ID,
 	)
 	if err != nil {
+		_ = tx.Rollback()
 		return Place{}, fmt.Errorf("update place: %w", err)
 	}
 
 	if count, _ := result.RowsAffected(); count == 0 {
+		_ = tx.Rollback()
 		return Place{}, sql.ErrNoRows
+	}
+
+	if current.Status != item.Status {
+		if err := insertPlaceStatusEvent(ctx, tx, item.KitchenID, item.ID, current.Status, item.Status, item.UpdatedBy, item.UpdatedAt, "api"); err != nil {
+			_ = tx.Rollback()
+			return Place{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Place{}, fmt.Errorf("commit update place: %w", err)
 	}
 
 	return r.FindByID(ctx, item.ID)
@@ -232,6 +278,9 @@ func scanPlace(s scanner) (Place, error) {
 		&item.VisitedAt,
 		&item.RevisitRating,
 		&recommendedItemsJSON,
+		&item.PriceAmountCents,
+		&item.PriceCurrency,
+		&item.PriceType,
 		&item.Phone,
 		&item.ExternalProvider,
 		&item.ExternalPOIID,
@@ -256,6 +305,42 @@ func scanPlace(s scanner) (Place, error) {
 	item.Scenes = unmarshalStringList(scenesJSON)
 	item.CompanionTags = unmarshalStringList(companionTagsJSON)
 	return item, nil
+}
+
+func findPlaceByIDTx(ctx context.Context, tx *sql.Tx, placeID string) (Place, error) {
+	return scanPlace(tx.QueryRowContext(ctx, `
+SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, source_url,
+       image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
+       price_amount_cents, price_currency, price_type,
+       phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
+       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
+  FROM places
+ WHERE id = ? AND deleted_at IS NULL`, placeID))
+}
+
+func insertPlaceStatusEvent(ctx context.Context, tx *sql.Tx, kitchenID int64, placeID string, fromStatus string, toStatus string, changedBy int64, changedAt string, source string) error {
+	toStatus = strings.TrimSpace(toStatus)
+	if toStatus == "" {
+		return nil
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "api"
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO place_status_events (
+  kitchen_id, place_id, from_status, to_status, changed_by, changed_at, source
+) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		kitchenID,
+		placeID,
+		strings.TrimSpace(fromStatus),
+		toStatus,
+		changedBy,
+		strings.TrimSpace(changedAt),
+		strings.TrimSpace(source),
+	); err != nil {
+		return fmt.Errorf("insert place status event: %w", err)
+	}
+	return nil
 }
 
 func marshalStringList(values []string) (string, error) {

@@ -22,6 +22,7 @@ import (
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/place"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/recipe"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/spacestats"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
 
@@ -36,6 +37,7 @@ func NewRouter(
 	mealPlanHandler *mealplan.Handler,
 	placeHandler *place.Handler,
 	recipeHandler *recipe.Handler,
+	spaceStatsHandler *spacestats.Handler,
 	linkParseHandler *linkparse.Handler,
 	addPreviewHandler *addpreview.Handler,
 	dietAssistantHandler *dietassistant.Handler,
@@ -149,6 +151,7 @@ func NewRouter(
 			protected.Post("/kitchens", kitchenHandler.Create)
 			protected.Patch("/kitchens/{kitchenID}", kitchenHandler.Update)
 			protected.Get("/kitchens/{kitchenID}/members", kitchenHandler.ListMembers)
+			protected.Get("/kitchens/{kitchenID}/stats", spaceStatsHandler.Overview)
 			protected.Delete("/kitchens/{kitchenID}/members/me", kitchenHandler.LeaveCurrentMember)
 			protected.Post("/kitchens/{kitchenID}/invites", inviteHandler.Create)
 			protected.Post("/invites/{token}/accept", inviteHandler.Accept)

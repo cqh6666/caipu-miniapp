@@ -306,8 +306,19 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID strin
 	}
 
 	current.Status = status
+	current.DoneAt = resolveRecipeStatusDoneAt(current.DoneAt, status, now)
 	current.UpdatedBy = userID
 	return current, nil
+}
+
+func resolveRecipeStatusDoneAt(currentDoneAt string, status string, touchedAt string) string {
+	if status != "done" {
+		return ""
+	}
+	if strings.TrimSpace(currentDoneAt) != "" {
+		return currentDoneAt
+	}
+	return touchedAt
 }
 
 func (s *Service) GenerateFlowchart(ctx context.Context, userID int64, recipeID string) (Recipe, error) {

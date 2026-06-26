@@ -44,6 +44,24 @@ func TestServiceCreateListSearchAndSoftDelete(t *testing.T) {
 	if got, want := created.Status, StatusWant; got != want {
 		t.Fatalf("created.Status = %q, want %q", got, want)
 	}
+	if got, want := created.PriceAmountCents, int64(9800); got != want {
+		t.Fatalf("created.PriceAmountCents = %d, want %d", got, want)
+	}
+	if got, want := created.PriceType, "per_person"; got != want {
+		t.Fatalf("created.PriceType = %q, want %q", got, want)
+	}
+
+	var eventToStatus string
+	if err := db.QueryRow(`
+SELECT to_status
+FROM place_status_events
+WHERE place_id = ?
+`, created.ID).Scan(&eventToStatus); err != nil {
+		t.Fatalf("query place status event error = %v", err)
+	}
+	if got, want := eventToStatus, StatusWant; got != want {
+		t.Fatalf("place status event to_status = %q, want %q", got, want)
+	}
 
 	items, err := service.ListByKitchenID(ctx, 7, 1, ListFilter{Keyword: "武定"})
 	if err != nil {
@@ -94,6 +112,21 @@ func TestServiceUpdateStatusManagesVisitedAt(t *testing.T) {
 	}
 	if visited.VisitedAt == "" {
 		t.Fatalf("visited.VisitedAt is empty")
+	}
+	var fromStatus string
+	var toStatus string
+	if err := db.QueryRow(`
+SELECT from_status, to_status
+FROM place_status_events
+WHERE place_id = ? AND to_status = ?
+`, created.ID, StatusVisited).Scan(&fromStatus, &toStatus); err != nil {
+		t.Fatalf("query visited status event error = %v", err)
+	}
+	if got, want := fromStatus, StatusWant; got != want {
+		t.Fatalf("visited event from_status = %q, want %q", got, want)
+	}
+	if got, want := toStatus, StatusVisited; got != want {
+		t.Fatalf("visited event to_status = %q, want %q", got, want)
 	}
 
 	want, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{Status: StatusWant})
@@ -314,6 +347,9 @@ CREATE TABLE places (
   visited_at TEXT NOT NULL DEFAULT '',
   revisit_rating INTEGER NOT NULL DEFAULT 0,
   recommended_items_json TEXT NOT NULL DEFAULT '[]',
+  price_amount_cents INTEGER NOT NULL DEFAULT 0,
+  price_currency TEXT NOT NULL DEFAULT 'CNY',
+  price_type TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL DEFAULT '',
   external_provider TEXT NOT NULL DEFAULT '',
   external_poi_id TEXT NOT NULL DEFAULT '',
@@ -329,6 +365,17 @@ CREATE TABLE places (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT
+);
+
+CREATE TABLE place_status_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kitchen_id INTEGER NOT NULL,
+  place_id TEXT NOT NULL,
+  from_status TEXT NOT NULL DEFAULT '',
+  to_status TEXT NOT NULL,
+  changed_by INTEGER NOT NULL DEFAULT 0,
+  changed_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'api'
 );
 
 INSERT INTO users (id, openid, created_at, updated_at)

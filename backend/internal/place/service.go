@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,6 +109,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req place
 	item.CreatedAt = now
 	item.UpdatedAt = now
 	item.VisitedAt = resolveVisitedAt("", item.Status, now)
+	applyPlacePriceStatsFields(&item)
 
 	return s.repo.Create(ctx, item)
 }
@@ -146,6 +149,7 @@ func (s *Service) Update(ctx context.Context, userID int64, placeID string, req 
 	next.UpdatedBy = userID
 	next.UpdatedAt = now
 	next.VisitedAt = resolveVisitedAt(firstNonEmpty(next.VisitedAt, current.VisitedAt), next.Status, now)
+	applyPlacePriceStatsFields(&next)
 
 	updated, err := s.repo.Update(ctx, next)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -191,6 +195,7 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, placeID string
 	}
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
+	applyPlacePriceStatsFields(&current)
 
 	updated, err := s.repo.Update(ctx, current)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -453,6 +458,39 @@ func normalizeExternalProvider(value string) string {
 	default:
 		return truncateRunes(value, 40)
 	}
+}
+
+var priceAmountPattern = regexp.MustCompile(`\d+(?:\.\d+)?`)
+
+func applyPlacePriceStatsFields(item *Place) {
+	if item == nil {
+		return
+	}
+	amountCents, priceType := parsePlacePrice(item.Price)
+	item.PriceAmountCents = amountCents
+	item.PriceCurrency = "CNY"
+	item.PriceType = priceType
+}
+
+func parsePlacePrice(price string) (int64, string) {
+	value := strings.TrimSpace(price)
+	if value == "" {
+		return 0, ""
+	}
+	match := priceAmountPattern.FindString(value)
+	if match == "" {
+		return 0, ""
+	}
+	amount, err := strconv.ParseFloat(match, 64)
+	if err != nil || amount <= 0 {
+		return 0, ""
+	}
+	priceType := "amount"
+	lower := strings.ToLower(value)
+	if strings.Contains(value, "人均") || strings.Contains(value, "/人") || strings.Contains(value, "每人") || strings.Contains(lower, "per") {
+		priceType = "per_person"
+	}
+	return int64(amount*100 + 0.5), priceType
 }
 
 func firstNonEmpty(values ...string) string {

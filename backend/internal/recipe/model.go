@@ -127,6 +127,7 @@ type Recipe struct {
 	FlowchartEstimatedWait int               `json:"flowchartEstimatedWaitSeconds,omitempty"`
 	MealType               string            `json:"mealType"`
 	Status                 string            `json:"status"`
+	DoneAt                 string            `json:"-"`
 	Note                   string            `json:"note"`
 	ParsedContent          ParsedContent     `json:"parsedContent"`
 	ParsedContentEdited    bool              `json:"parsedContentEdited"`

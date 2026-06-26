@@ -9,6 +9,9 @@ type Place struct {
 	Latitude         float64  `json:"latitude"`
 	Longitude        float64  `json:"longitude"`
 	Price            string   `json:"price"`
+	PriceAmountCents int64    `json:"-"`
+	PriceCurrency    string   `json:"-"`
+	PriceType        string   `json:"-"`
 	Source           string   `json:"source"`
 	SourceURL        string   `json:"sourceUrl"`
 	ImageURLs        []string `json:"imageUrls"`

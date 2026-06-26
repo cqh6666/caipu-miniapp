@@ -1,5 +1,67 @@
 # Project Changelog
 
+## 2026-06-26 (空间统计后端能力提前落地)
+
+### Added
+
+- **修改时间**：2026-06-26 19:51:09 +0800 CST
+- **变更背景**：空间统计前端 V1 可以先基于本地快照聚合，但用户希望提前完成后端表结构、
+  数据源和接口，方便后续切换到服务端统计，同时不能影响现有菜谱、打卡点和菜单接口。
+- **核心改动**：
+  - 新增 `backend/internal/spacestats/` 模块，提供
+    `GET /api/kitchens/{kitchenID}/stats?window=7d|30d|90d|all`，默认窗口为 `30d`。
+  - 接口响应按 `overview`、`recipes`、`places`、`mealPlans`、`members`、`trends`、
+    `actions` 分组返回，并复用空间成员权限校验。
+  - 新增 `backend/migrations/021_add_space_stats_support.sql`，补充 `recipes.done_at`、
+    `recipe_status_events`、`place_status_events`、打卡点结构化价格字段和统计索引。
+  - 菜谱创建 / 编辑 / 状态切换会维护 `done_at` 和状态事件；状态切换仍不改
+    `recipe.updated_at`，保持首页排序行为不变。
+  - 打卡点创建 / 编辑 / 状态切换会维护状态事件，并从原始 `price` 文本提取内部
+    `price_amount_cents / price_currency / price_type`，不改变现有打卡点 JSON 响应。
+  - 更新 `backend/README.md` 和 `docs/space-statistics-capability-design.md`，标记后端
+    stats 能力已提前落地，前端后续可选择接入。
+- **影响范围**：
+  - 影响后端统计接口、菜谱和打卡点写入链路、数据库迁移、后端接口文档和空间统计设计文档。
+  - 不改变现有 `recipes`、`places`、`meal-plans` 业务接口响应契约；新增价格结构字段为
+    后端内部统计使用。
+- **兼容性/风险**：
+  - 迁移会为存量菜谱和打卡点回填初始状态事件；历史事件只有迁移时点可推断的信息，
+    后续趋势以新写入事件为准。
+  - `price` 文本解析只提取首个数字，适配 `¥98/人`、`人均 98` 等常见格式；复杂价格描述
+    会保留原文本但不进入金额统计。
+  - 状态事件只在状态实际变化时新增，避免重复点击造成趋势虚高。
+- **验证情况**：
+  - 已执行 `go test ./internal/recipe ./internal/place ./internal/spacestats`，通过。
+  - 已执行后端全量 `go test ./...`，通过。
+  - 已执行 `git diff --check`，通过。
+  - 已用 `sqlite3` 顺序执行 `001` 到 `021` 迁移文件，验证新增状态事件表和索引可创建。
+
+## 2026-06-25 (空间统计落地工作评估补充)
+
+### Changed
+
+- **修改时间**：2026-06-25 21:44:21 +0800 CST
+- **变更背景**：空间统计设计已明确产品方向，但后续实施仍需要拆清前端、后端各自要做的
+  工作、V1 / V2 边界、接口演进条件和验证标准。
+- **核心改动**：
+  - 更新 `docs/space-statistics-capability-design.md` 的修改时间。
+  - 新增“落地工作评估：前后端工作包”章节，明确 V1 先以前端本地聚合闭环，
+    V2 再新增后端统计接口。
+  - 拆分 V1 前端必须完成的工作包：`utils/space-stats.js`、空间统计卡、
+    空间洞察半屏、首页接线、数据刷新、筛选跳转、快速安排和局部计数。
+  - 补充 V1 后端配合项、V2 后端 `spacestats` 模块、V2 前端数据源切换、
+    建议实施顺序和暂缓项。
+- **影响范围**：
+  - 本次仅修改设计文档和变更记录，不修改前端页面、后端接口、数据库迁移或运行配置。
+- **兼容性/风险**：
+  - 文档明确 V1 不新增接口，避免为了当前快照统计提前引入后端聚合复杂度。
+  - V2 接口、状态事件表、索引优化仍为后续演进项，真正实现时需单独补接口契约和测试。
+- **验证情况**：
+  - 已基于现有 `pages/index/index.vue`、`kitchen-section.vue`、`utils/recipe-store.js`、
+    `utils/place-store.js`、`utils/meal-plan-api.js`、`backend/internal/app/router.go`
+    和 `backend/internal/mealplan` 结构校准落地工作包。
+  - 本次为文档更新，未执行前后端构建或单测。
+
 ## 2026-06-25 (打卡点增强字段前端接入)
 
 ### Added

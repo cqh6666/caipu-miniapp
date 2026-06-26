@@ -212,6 +212,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `POST /api/kitchens`
 - `PATCH /api/kitchens/{kitchenID}`
 - `GET /api/kitchens/{kitchenID}/members`
+- `GET /api/kitchens/{kitchenID}/stats`
 - `DELETE /api/kitchens/{kitchenID}/members/me`
 - `GET /api/invites/{token}`
 - `GET /api/invites/{token}/share-image`
@@ -340,6 +341,18 @@ go run ./cmd/server -migrate-only
 - 当前仍不会自动重生成已有但过期的步骤图
 - 步骤图队列状态和生成结果会更新 `flowchart_*` 字段，但不会改 `recipe.updated_at`，避免首页列表被后台任务打乱顺序
 - `PATCH /api/recipes/{recipeID}/status` 只切换 `想吃 / 吃过` 状态，不会改 `recipe.updated_at`，避免首页列表被轻操作打乱顺序
+
+空间统计接口：
+
+- `GET /api/kitchens/{kitchenID}/stats?window=30d`
+- `window` 支持 `7d`、`30d`、`90d`、`all`，默认 `30d`
+- 响应格式为 `{ "stats": ... }`，包含 `overview`、`recipes`、`places`、`mealPlans`、
+  `members`、`trends`、`actions`
+- 统计接口复用空间成员校验；非成员不能读取目标空间统计
+- 菜谱“吃过趋势”来自 `recipe_status_events`，并维护内部字段 `recipes.done_at`
+- 打卡点“去过趋势”来自 `place_status_events`
+- 打卡点消费统计保留原始 `price` 文本，同时写入内部结构化字段
+  `price_amount_cents / price_currency / price_type`；现有打卡点 API 不暴露这些内部字段
 
 当前小红书预留策略：
 

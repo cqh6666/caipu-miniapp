@@ -1,6 +1,6 @@
 # 空间统计能力设计
 
-修改时间：2026-06-25 19:30:00 +0800 CST
+修改时间：2026-06-26 19:51:09 +0800 CST
 
 适用范围：微信小程序首页、空间页、美食库、打卡点、菜单安排、Go 后端空间相关接口。
 
@@ -16,10 +16,10 @@
 3. 支持**下拉刷新**，主动触发数据同步 + 统计重新聚合，并显示明确的同步状态。
 4. 点击”查看洞察”打开半屏详情，分为”总览 / 美食库 / 打卡库 / 菜单安排”四组。
 5. **总览 Tab 直接露出”高分复访推荐 Top 3”**，让用户一眼看到”下次可以去哪”。
-6. V1 先基于前端已同步的 `recipes`、`places`、`mealOrderStore`、`kitchenMembers`
-   本地聚合，不新增后端接口。
-7. V2 再补 `GET /api/kitchens/{kitchenID}/stats?window=30d` 后端聚合接口，用于趋势、
-   成员贡献、历史行为和大数据量场景。
+6. V1 前端先基于已同步的 `recipes`、`places`、`mealOrderStore`、`kitchenMembers`
+   本地聚合，不强依赖后端统计接口。
+7. 后端已提前补齐 `GET /api/kitchens/{kitchenID}/stats?window=30d` 聚合接口，可用于趋势、
+   成员贡献、历史行为和大数据量场景；前端 V1 仍可先本地聚合，后续按需切换。
 
 不建议新增底部第四个”统计”Tab。统计属于低频回看和空间经营感增强，放在 `空间` 页
 最符合现有信息架构；美食库和打卡点列表页只保留轻量计数，避免干扰”找菜 / 找店”的
@@ -434,9 +434,133 @@ protected.Get("/kitchens/{kitchenID}/stats", spaceStatsHandler.Overview)
 | 状态历史 | 当前只存最终状态 | 增加事件表 |
 | 长期趋势 | 前端只拿当前列表 | 后端按时间窗口聚合 |
 
-## 9. 数据口径与风险
+## 9. 落地工作评估：前后端工作包
 
-### 9.1 口径约束
+### 9.1 总体判断
+
+当前最合理的落地策略是：
+
+1. **V1 只做前端闭环**：基于首页已经同步到内存和本地缓存的 `recipes`、`places`、
+   `mealOrderStore`、`kitchenMembers` 聚合，前端不依赖新增后端接口或新增数据库迁移。
+2. **V1.1 继续前端增强**：补齐重访评分分布、推荐项 Top、场景标签 Top、缺项补全提醒和
+   “快速安排下一餐”体验。
+3. **V2 接入后端统计接口**：当需要趋势、成员贡献、历史状态或列表不再全量加载时，切到
+   已提前落地的 `/api/kitchens/{kitchenID}/stats`。
+
+这样拆分的原因：
+
+- 当前统计的核心价值是“当前空间快照 + 行动建议”，前端已有足够数据。
+- `recipe-store.js`、`place-store.js`、`meal-plan-api.js` 已按 `kitchenId` 组织数据，
+  空间切换后前端可以重新聚合。
+- 后端已提前具备状态历史和结构化消费金额能力；前端仍可先用本地聚合降低首版 UI 复杂度，
+  后续再切换数据源。
+
+### 9.2 V1 前端必须完成的工作
+
+| 工作包 | 涉及文件 | 具体任务 | 验收标准 |
+| --- | --- | --- | --- |
+| 统计纯函数 | `utils/space-stats.js` | 新增 `buildSpaceStats({ recipes, places, mealOrderStore, members, now, source, isSyncing })`；内部完成数量、比例、Top 列表、行动项和更新时间聚合 | 空数据、字段缺失、异常日期、重复标签、无当前空间时均能返回稳定结构 |
+| 统计卡组件 | `pages/index/components/space-stats-card.vue` | 展示空间资产、菜品数、打卡点数、已安排天数、本周可选、周末可去和同步状态；暴露 `open-stats`、`action`、`refresh` 事件 | 375px 宽度不溢出；同步中 / 缓存 / 空空间状态清晰 |
+| 洞察半屏 | `pages/index/components/space-stats-sheet.vue` | 实现 `总览 / 美食库 / 打卡库 / 菜单安排` Tab；展示高分复访 Top 3、结构分布、补全提醒和菜单安排指标 | 半屏打开关闭稳定；Tab 切换不丢状态；内容为空时有明确引导 |
+| 首页接线 | `pages/index/index.vue` | 引入 `buildSpaceStats`、统计卡和半屏；新增 `showSpaceStatsSheet`、`isRefreshingSpaceStats`、`spaceStatsUpdatedAt` 等状态；在空间页当前空间卡片下方插入统计卡 | 切换空间后统计随当前空间变化；不影响成员、邀请和退出空间操作 |
+| 数据刷新 | `pages/index/index.vue` | 新增 `refreshSpaceStats`：串起 `refreshRecipes({ silent: true })`、`refreshPlaces({ silent: true })`、`loadMealOrderStore({ silent: true })`、`refreshKitchenMembers({ silent: true })`；刷新前先处理可能存在的菜单草稿同步 | 下拉或点击刷新时有 loading；成功后更新时间更新；失败但有缓存时继续展示缓存统计 |
+| 筛选跳转 | `pages/index/index.vue` | 新增 `handleSpaceStatsAction`，把统计项映射到 `activeSection`、`appMode`、`activeStatus`、`activePlaceStatus`、`selectedPlaceId` 等页面状态 | “本周可选”“周末可去”“去过点”“高分店铺”等动作能跳到正确列表或详情 |
+| 快速安排 | `pages/index/index.vue` | 从 `status === 'wishlist'` 的菜谱中选 3 道，复用现有点菜模式和菜单草稿方法写入当前草稿；无想吃菜时引导添加菜品 | 点击后能进入点菜 / 日期选择链路，草稿中出现推荐菜，不覆盖用户已选菜 |
+| 局部计数 | `pages/index/index.vue` | 美食库和打卡点筛选条补充结果数或状态数，避免只在空间页能看到统计 | 筛选状态切换后数字同步更新 |
+| 前端验证 | 临时脚本或后续测试文件 | 对 `utils/space-stats.js` 做纯函数用例；对新增 SFC 做解析检查；微信开发者工具验证布局 | `git diff --check`、SFC 解析、核心统计用例通过；真机至少验证刷新和跳转 |
+
+V1 推荐先实现 `utils/space-stats.js`，再做 UI 组件。原因是卡片和半屏都依赖同一个结构，
+先稳定数据模型可以避免组件里重复聚合。
+
+### 9.3 V1 后端需要配合的工作
+
+V1 不需要新增后端代码，但后端仍需要做三类配合确认：
+
+| 工作包 | 涉及位置 | 具体任务 | 验收标准 |
+| --- | --- | --- | --- |
+| 字段确认 | `recipe`、`place`、`mealplan` 响应 | 确认列表接口已返回统计所需字段：`mealType`、`status`、`imageUrls`、`parseStatus`、`flowchartStatus`、`createdAt`、`visitedAt`、`revisitRating`、`recommendedItems`、`scenes`、`tags`、`planDate`、`items` | 前端不需要为了统计额外调用详情接口 |
+| 样例数据 | `backend/cmd/seed-demo`（可选） | 补充带图片、解析状态、打卡评分、推荐项、菜单安排的演示数据，方便本地预览统计卡 | 本地 seed 后空间概览不是全 0，能覆盖高分复访和菜单安排场景 |
+| 接口性能 | 现有列表接口 | V1 仍会拉取全量列表，需要确认当前数据量下 `GET /recipes`、`GET /places`、`GET /meal-plans` 响应可接受 | 普通空间下刷新不会明显卡顿；后续数据量增大时转 V2 |
+
+如果 V1 阶段发现列表接口缺字段，应优先补齐现有列表响应，而不是新增统计接口。新增统计接口
+只适合解决“前端拿不到历史数据”或“全量列表成本过高”的问题。
+
+### 9.4 V2 后端需要完成的工作
+
+V2 的后端目标是把前端 V1 的 `spaceStats` 数据结构迁移为服务端聚合结果，同时补齐前端
+无法准确计算的趋势和成员贡献。
+
+当前落地状态（2026-06-26）：后端统计能力已提前完成第一版实现。已新增
+`backend/internal/spacestats/` 模块、`GET /api/kitchens/{kitchenID}/stats` 路由、
+`recipe_status_events` / `place_status_events` 状态事件表、`recipes.done_at` 和打卡点
+结构化价格字段。现有菜谱、打卡点和菜单接口 JSON 契约保持不变，前端后续可选择继续用
+V1 本地聚合，或切到该后端接口获取趋势、成员贡献和消费统计。
+
+| 工作包 | 涉及文件 | 具体任务 | 验收标准 |
+| --- | --- | --- | --- |
+| 新模块 | `backend/internal/spacestats/` | 新增 `model.go`、`repository.go`、`service.go`、`handler.go` | 已落地；模块职责独立，不污染现有业务响应 |
+| 路由接入 | `backend/internal/app/app.go`、`backend/internal/app/router.go` | 初始化 `spacestats.Service/Handler`；注册 `GET /api/kitchens/{kitchenID}/stats?window=30d` | 已落地；路由受现有 auth middleware 保护 |
+| 权限校验 | `spacestats.Service` | 复用空间成员校验口径，当前用户必须属于目标 `kitchenID` | 已落地；非成员访问返回鉴权 / 权限错误 |
+| 聚合查询 | `spacestats.Repository` | 分别聚合菜谱、打卡点、菜单安排、成员；V2 不再依赖前端全量列表 | 已落地；接口只返回统计结果，不返回完整列表 |
+| 趋势窗口 | `window=7d|30d|90d|all` | 标准化窗口参数；按 `created_at`、状态事件和 `submitted_at` 聚合趋势 | 已落地；非法窗口返回明确错误 |
+| 成员贡献 | repository + model | 聚合成员新增菜谱数、打卡点数、菜单提交数；JOIN `users` 和 `kitchen_members` 输出展示名 | 已落地；能显示成员维度贡献，不泄露非成员信息 |
+| 状态历史增强 | `backend/migrations/021_add_space_stats_support.sql` | 新增 `recipe_status_events` / `place_status_events`、`recipes.done_at` 和历史数据回填 | 已落地；趋势不再用最终状态倒推 |
+| 结构化价格 | `places.price_amount_cents` 等内部字段 | 从 `price` 文本提取金额、币种和类型，供消费统计使用 | 已落地；不改变现有打卡点 API 响应 |
+| 索引优化 | `backend/migrations/021_add_space_stats_support.sql` | 补 `recipes`、`places`、状态事件表相关统计索引 | 已落地；统计查询具备基础索引 |
+| 单测 | `backend/internal/spacestats/repository_test.go` | 覆盖聚合统计、趋势、成员贡献、价格统计和行动项 | 已落地；`go test ./internal/spacestats` 通过 |
+| 文档 | `backend/README.md` | 在接口列表补充 stats 路由和响应口径 | 已落地；前后端联调时有明确接口契约 |
+
+V2 响应建议继续贴近 V1：
+
+```json
+{
+  "stats": {
+    "updatedAt": "2026-06-25T21:44:21+08:00",
+    "source": "remote",
+    "window": "30d",
+    "overview": {},
+    "recipes": {},
+    "places": {},
+    "mealPlans": {},
+    "members": {},
+    "trends": {},
+    "actions": []
+  }
+}
+```
+
+### 9.5 V2 前端需要同步调整的工作
+
+| 工作包 | 涉及文件 | 具体任务 | 验收标准 |
+| --- | --- | --- | --- |
+| API 封装 | `utils/space-stats-api.js` | 新增 `getKitchenStats(kitchenId, { window })` | 接口错误可被页面捕获并降级 |
+| 数据源切换 | `pages/index/index.vue`、`utils/space-stats.js` | 优先使用后端 stats；失败时回退本地聚合；保留 `source: remote/cache` | 断网或接口失败时仍可展示缓存统计 |
+| 窗口选择 | `space-stats-sheet.vue` | 增加 `7天 / 30天 / 90天 / 全部` 切换 | 切换窗口后图表和指标同步变化 |
+| 趋势展示 | `space-stats-sheet.vue` | 展示迷你折线图或时间线，不影响 V1 静态指标 | 趋势为空时展示“暂无近期动态” |
+| 成员贡献 | `space-stats-sheet.vue` | 新增成员贡献分组，展示成员名、头像和贡献数字 | 多成员空间可读，单人空间不显得空 |
+
+### 9.6 建议实施顺序
+
+1. 先补 `utils/space-stats.js` 和纯函数验证，稳定统计结构。
+2. 再做 `space-stats-card.vue`，先把空间页入口跑通。
+3. 接 `space-stats-sheet.vue`，完成四个 Tab 的基础信息展示。
+4. 在 `index.vue` 接入刷新、筛选跳转和高分店铺详情跳转。
+5. 最后做“快速安排下一餐”和列表轻量计数，避免先动点菜模式造成主链路回归。
+6. V1 真机稳定后，再评估是否进入 V2 后端统计接口。
+
+### 9.7 暂缓项与原因
+
+| 暂缓项 | 暂缓原因 | 触发条件 |
+| --- | --- | --- |
+| 前端切换后端 stats 接口 | V1 前端可继续用本地聚合 | 需要趋势、成员贡献或减少全量列表依赖 |
+| 菜谱吃过趋势 UI | 后端已有 `doneAt` 和状态事件，前端还未接展示 | 接入后端 stats 后再展示 |
+| 消费金额统计 UI | 后端已有结构化金额字段，前端还未接展示 | 接入后端 stats 后再展示 |
+| 地图热力图 | 视觉和隐私审核成本较高 | 打卡点有足够定位数据且确认隐私说明 |
+| 独立统计页面 | V1 半屏信息量足够 | 指标和趋势复杂到半屏承载不下 |
+
+## 10. 数据口径与风险
+
+### 10.1 口径约束
 
 - 统计默认只看当前空间，不跨空间汇总。
 - V1 统计是“当前快照”，不是完整历史。
@@ -444,9 +568,10 @@ protected.Get("/kitchens/{kitchenID}/stats", spaceStatsHandler.Overview)
 - `want` 表示“想去”，`visited` 表示“去过”。
 - 打卡点外部评分 `rating` 来自高德等第三方，不能与用户重访评分 `revisitRating`
   混合计算。
-- `price` 当前为文本，只能展示，不做金额求和或平均。
+- `price` 仍作为原始文本展示；后端已额外维护内部结构化金额字段，后端 stats 可做
+  金额求和和平均，现有打卡点接口不暴露这些内部字段。
 
-### 空态策略
+### 10.2 空态策略
 
 | 场景 | 展示策略 |
 | --- | --- |
@@ -456,7 +581,7 @@ protected.Get("/kitchens/{kitchenID}/stats", spaceStatsHandler.Overview)
 | 同步失败但有缓存 | 展示缓存统计，标记”本地缓存 · 2 分钟前” + 提供”重新同步”入口 |
 | 同步失败且无缓存 | 展示错误提示和重试入口 |
 
-### 9.3 性能风险
+### 10.3 性能风险
 
 V1 前端聚合复杂度为 `O(n)`，当前阶段可接受。需要注意：
 
@@ -464,7 +589,7 @@ V1 前端聚合复杂度为 `O(n)`，当前阶段可接受。需要注意：
 - 推荐项和标签 Top 聚合需要限制结果数，例如最多 5 个。
 - 日期解析要兼容空字符串和非标准格式，失败时跳过。
 
-## 10. 分期计划
+## 11. 分期计划
 
 ### V1：空间概览卡 + 半屏洞察
 
@@ -479,12 +604,12 @@ V1 前端聚合复杂度为 `O(n)`，当前阶段可接受。需要注意：
 - **总览 Tab 直接露出"高分复访推荐 Top 3"**。
 - 支持统计项跳回美食库 / 打卡点筛选。
 
-不做：
+V1 前端不做：
 
-- 不新增后端接口。
-- 不做成员贡献。
-- 不做长期趋势图。
-- 不做消费金额统计。
+- V1 前端不强依赖后端 stats 接口。
+- 不展示成员贡献。
+- 不展示长期趋势图。
+- 不展示消费金额统计。
 
 ### V1.1：打卡点体验洞察增强
 
@@ -500,22 +625,22 @@ V1 前端聚合复杂度为 `O(n)`，当前阶段可接受。需要注意：
 
 - 打卡点增强字段在前端新增 / 编辑 / 状态切换链路中稳定落地。
 
-### V2：后端统计接口与趋势
+### V2：前端接入后端统计接口与趋势
 
 范围：
 
-- 新增 `/api/kitchens/{kitchenID}/stats`。
-- 支持 `window=7d|30d|90d|all`。
+- 接入已提前落地的 `/api/kitchens/{kitchenID}/stats`。
+- 支持前端切换 `window=7d|30d|90d|all`。
 - 支持新增趋势、打卡趋势、菜单安排趋势（**考虑迷你折线图或时间线卡片**）。
 - 支持成员贡献和最近动态。
 - **可选：地图热力图**，在"打卡库"中嵌入地图，标注"去过的店"。
 
-可能需要：
+后端已提前具备：
 
-- 新增状态事件表或补充 `doneAt` 字段。
-- 为 `recipes(kitchen_id, created_at)`、`places(kitchen_id, created_at)` 等查询补索引。
+- 状态事件表和 `doneAt` 字段。
+- `recipes`、`places`、状态事件表等统计索引。
 
-## 11. 验收标准
+## 12. 验收标准
 
 ### V1 产品验收
 
@@ -530,7 +655,7 @@ V1 前端聚合复杂度为 `O(n)`，当前阶段可接受。需要注意：
 
 ### V1 技术验收
 
-- 不新增后端接口和数据库迁移。
+- V1 前端不强依赖后端接口和数据库迁移。
 - 统计聚合逻辑有独立纯函数，便于单测和迁移。
 - `utils/space-stats.js` 覆盖空数据、部分字段缺失、日期异常、标签去重等边界。
 - **下拉刷新能正确触发 `recipe-store.js` / `place-store.js` 同步方法**，并在同步完成后自动重新聚合。
@@ -538,7 +663,7 @@ V1 前端聚合复杂度为 `O(n)`，当前阶段可接受。需要注意：
 - 微信小程序 375px 宽度下数字和文案不溢出。
 - 统计卡与现有空间页视觉风格一致，不影响邀请成员和成员列表操作。
 
-## 12. 推荐优先级
+## 13. 推荐优先级
 
 第一优先级：
 
@@ -566,41 +691,41 @@ V1 前端聚合复杂度为 `O(n)`，当前阶段可接受。需要注意：
 
 ---
 
-## 13. 用户体验优化要点总结
+## 14. 用户体验优化要点总结
 
 基于产品目标和用户需求，以下是关键的体验优化方向：
 
-### 13.1 数据时效性与透明度
+### 14.1 数据时效性与透明度
 
 - **问题**：前端聚合基于已缓存数据，多成员协作时可能陈旧。
 - **方案**：下拉刷新 + 明确的"更新时间"/"同步中"状态 + "本地缓存"弱提示。
 
-### 13.2 从数据展示到行动建议
+### 14.2 从数据展示到行动建议
 
 - **问题**："待探索"概念模糊，用户不知道该去哪个列表。
 - **方案**：拆分为"本周可选 X 道"和"周末可去 X 家"，点击分别跳转。
 
-### 13.3 高价值内容前置
+### 14.3 高价值内容前置
 
 - **问题**：`revisitRating`、`recommendedItems` 是最有价值的部分，但藏在详情深处。
 - **方案**：总览 Tab 直接露出"高分复访推荐 Top 3"，配图标 + 评分 + 推荐菜。
 
-### 13.4 空间活跃度可视化
+### 14.4 空间活跃度可视化
 
 - **问题**：静态数字堆砌，缺少"持续使用"的感知。
 - **方案**：V1 用近期动态文字，V2 考虑迷你折线图或时间线卡片。
 
-### 13.5 菜单安排联动
+### 14.5 菜单安排联动
 
 - **问题**：看到"已安排 5 天"后，下一步动作不明确。
 - **方案**："快速安排下一餐"按钮，从想吃池随机推荐 3 道菜，一键加入草稿。
 
-### 13.6 空态引导更温暖
+### 14.6 空态引导更温暖
 
 - **问题**：空空间只展示"添加入口"，缺少温度。
 - **方案**："添加第一道想吃的菜，开启你的美食空间" + 直接弹出添加面板。
 
-### 13.7 可视化增强（V1.1 / V2）
+### 14.7 可视化增强（V1.1 / V2）
 
 - 重访评分分布：轻量饼图或横向条。
 - 场景标签：标签云（气泡大小表示频次）。

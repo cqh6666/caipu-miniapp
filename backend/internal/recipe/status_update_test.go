@@ -30,11 +30,12 @@ func TestRepositoryUpdateStatusDoesNotTouchRecipeUpdatedAt(t *testing.T) {
 	var gotStatus string
 	var gotUpdatedBy int64
 	var gotUpdatedAt string
+	var gotDoneAt string
 	if err := db.QueryRow(`
-SELECT status, updated_by, updated_at
+SELECT status, updated_by, updated_at, done_at
 FROM recipes
 WHERE id = 'rec_status_1'
-`).Scan(&gotStatus, &gotUpdatedBy, &gotUpdatedAt); err != nil {
+`).Scan(&gotStatus, &gotUpdatedBy, &gotUpdatedAt, &gotDoneAt); err != nil {
 		t.Fatalf("query updated recipe error = %v", err)
 	}
 
@@ -46,6 +47,25 @@ WHERE id = 'rec_status_1'
 	}
 	if got, want := gotUpdatedAt, "2026-04-01T09:00:00+08:00"; got != want {
 		t.Fatalf("updated_at = %q, want %q", got, want)
+	}
+	if got, want := gotDoneAt, "2026-04-04T13:40:00+08:00"; got != want {
+		t.Fatalf("done_at = %q, want %q", got, want)
+	}
+
+	var fromStatus string
+	var toStatus string
+	if err := db.QueryRow(`
+SELECT from_status, to_status
+FROM recipe_status_events
+WHERE recipe_id = 'rec_status_1'
+`).Scan(&fromStatus, &toStatus); err != nil {
+		t.Fatalf("query status event error = %v", err)
+	}
+	if got, want := fromStatus, "wishlist"; got != want {
+		t.Fatalf("event from_status = %q, want %q", got, want)
+	}
+	if got, want := toStatus, "done"; got != want {
+		t.Fatalf("event to_status = %q, want %q", got, want)
 	}
 }
 
@@ -70,6 +90,9 @@ func TestServiceUpdateStatusKeepsRecipeUpdatedAtInResponse(t *testing.T) {
 	}
 	if got, want := item.UpdatedAt, "2026-04-01T09:00:00+08:00"; got != want {
 		t.Fatalf("UpdatedAt = %q, want %q", got, want)
+	}
+	if item.DoneAt == "" {
+		t.Fatalf("DoneAt is empty, want status transition time")
 	}
 }
 
@@ -134,9 +157,21 @@ CREATE TABLE recipes (
   updated_by INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT '',
+  done_at TEXT NOT NULL DEFAULT '',
   deleted_at TEXT,
   share_token TEXT NOT NULL DEFAULT '',
   share_token_created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE recipe_status_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kitchen_id INTEGER NOT NULL,
+  recipe_id TEXT NOT NULL,
+  from_status TEXT NOT NULL DEFAULT '',
+  to_status TEXT NOT NULL,
+  changed_by INTEGER NOT NULL DEFAULT 0,
+  changed_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'api'
 );
 `); err != nil {
 		db.Close()

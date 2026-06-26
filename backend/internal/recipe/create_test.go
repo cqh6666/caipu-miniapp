@@ -52,11 +52,12 @@ VALUES (1, '联调试吃厨房', 7, '2026-04-01T08:00:00+08:00', '2026-04-01T09:
 
 	var recipeUpdatedAt string
 	var imageURL string
+	var doneAt string
 	if err := db.QueryRow(`
-SELECT updated_at, image_url
+SELECT updated_at, image_url, done_at
 FROM recipes
 WHERE id = ?
-`, item.ID).Scan(&recipeUpdatedAt, &imageURL); err != nil {
+`, item.ID).Scan(&recipeUpdatedAt, &imageURL, &doneAt); err != nil {
 		t.Fatalf("query created recipe error = %v", err)
 	}
 	if got, want := recipeUpdatedAt, item.UpdatedAt; got != want {
@@ -64,6 +65,25 @@ WHERE id = ?
 	}
 	if got, want := imageURL, "https://cdn.example.com/recipe-cover.jpg"; got != want {
 		t.Fatalf("recipe image_url = %q, want %q", got, want)
+	}
+	if got := doneAt; got != "" {
+		t.Fatalf("recipe done_at = %q, want empty", got)
+	}
+
+	var eventToStatus string
+	var eventSource string
+	if err := db.QueryRow(`
+SELECT to_status, source
+FROM recipe_status_events
+WHERE recipe_id = ?
+`, item.ID).Scan(&eventToStatus, &eventSource); err != nil {
+		t.Fatalf("query recipe status event error = %v", err)
+	}
+	if got, want := eventToStatus, "wishlist"; got != want {
+		t.Fatalf("recipe status event to_status = %q, want %q", got, want)
+	}
+	if got, want := eventSource, "api"; got != want {
+		t.Fatalf("recipe status event source = %q, want %q", got, want)
 	}
 
 	var kitchenUpdatedAt string
@@ -128,9 +148,21 @@ CREATE TABLE recipes (
   updated_by INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT '',
+  done_at TEXT NOT NULL DEFAULT '',
   deleted_at TEXT,
   share_token TEXT NOT NULL DEFAULT '',
   share_token_created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE recipe_status_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kitchen_id INTEGER NOT NULL,
+  recipe_id TEXT NOT NULL,
+  from_status TEXT NOT NULL DEFAULT '',
+  to_status TEXT NOT NULL,
+  changed_by INTEGER NOT NULL DEFAULT 0,
+  changed_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'api'
 );
 `); err != nil {
 		db.Close()
