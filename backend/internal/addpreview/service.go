@@ -134,6 +134,9 @@ func (s *Service) previewRecipe(ctx context.Context, previewID string, text stri
 			ContentType: ContentTypeRecipe,
 			Source:      linkparse.DetectParsePlatform(text),
 			Message:     "暂时无法解析菜谱链接，可手动填写",
+			RecipeDraft: RecipeDraft{
+				Link: extractFirstURL(text),
+			},
 			Warnings: []Warning{
 				{Code: "recipe_parse_failed", Message: err.Error()},
 			},

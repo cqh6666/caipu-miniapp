@@ -57,6 +57,24 @@ func parseShareText(text string) ExtractedPlace {
 	return extracted
 }
 
+// sharePlatformLabels 收录分享口令里常见的来源平台标记。这类括号（如“来【小红书】瞅瞅”）
+// 用于标注内容来源，并不是地点名；抽取店名时必须跳过，否则平台名会被误当成地点，
+// 导致小红书/抖音等菜谱分享被错误分流到地点解析、返回空的 recipeDraft。
+var sharePlatformLabels = map[string]struct{}{
+	"小红书":      {},
+	"哔哩哔哩":     {},
+	"bilibili": {},
+	"b站":       {},
+	"抖音":       {},
+	"快手":       {},
+	"微博":       {},
+}
+
+func isSharePlatformLabel(value string) bool {
+	_, ok := sharePlatformLabels[strings.ToLower(strings.TrimSpace(value))]
+	return ok
+}
+
 func extractShareName(text string) string {
 	matches := bracketPattern.FindAllStringSubmatch(text, -1)
 	for _, match := range matches {
@@ -68,6 +86,9 @@ func extractShareName(text string) string {
 			continue
 		}
 		if strings.HasPrefix(value, "地址") || strings.HasPrefix(value, "电话") || strings.Contains(value, "地址：") || strings.Contains(value, "电话：") {
+			continue
+		}
+		if isSharePlatformLabel(value) {
 			continue
 		}
 		return value

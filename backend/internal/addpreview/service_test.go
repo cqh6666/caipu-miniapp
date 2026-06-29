@@ -20,6 +20,24 @@ func TestParseShareText(t *testing.T) {
 	}
 }
 
+func TestXiaohongshuRecipeShareNotMisclassifiedAsPlace(t *testing.T) {
+	text := "香到跺脚的土豆焖鸡🔥汤汁泡饭我能吃三碗 谁懂啊！今... http://xhslink.com/o/8SJC2AlZ1vE 拷走口令，来【小红书】瞅瞅~"
+
+	extracted := parseShareText(text)
+	if extracted.Name != "" {
+		t.Fatalf("Name = %q, want empty (platform label 【小红书】 must be skipped)", extracted.Name)
+	}
+	if got, want := extracted.SourceURL, "http://xhslink.com/o/8SJC2AlZ1vE"; got != want {
+		t.Fatalf("SourceURL = %q, want %q", got, want)
+	}
+	if looksLikePlaceShare(text, extracted) {
+		t.Fatal("xiaohongshu 菜谱口令被误判为地点分享")
+	}
+	if !looksLikeRecipeShare(text) {
+		t.Fatal("xiaohongshu 口令应被识别为菜谱分享")
+	}
+}
+
 func TestRankPOIsPrefersRestaurantCandidate(t *testing.T) {
 	extracted := ExtractedPlace{
 		Name:      "旺记碳烤肥牛·烤肉大排档（北滘悦然里店）",

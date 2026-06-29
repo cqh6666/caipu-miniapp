@@ -1,5 +1,27 @@
 # Project Changelog
 
+## 2026-06-29 (修复小红书菜谱口令被误判为地点分享)
+
+### Fixed
+
+- **修改时间**：2026-06-29
+- **变更背景**：用户反馈解析小红书分享口令后，返回的菜谱链接与菜名为空。经排查（含 SSH
+  到生产服务器确认 linkparse sidecar、AI 总结、AMAP 均正常运行）定位为前端/sidecar 均无问题，
+  而是 `add-link-previews` 接口的**内容分流误判**：口令结尾的来源标记 `【小红书】` 被
+  `extractShareName` 当成地点名，叠加口令里的 `xhslink.com` 短链，使 `looksLikePlaceShare`
+  判真，把本应走菜谱解析的小红书口令分流到了地点（place）分支，导致 `recipeDraft` 为空。
+- **核心改动**：
+  - `backend/internal/addpreview/share_parser.go`：新增 `sharePlatformLabels` 平台标记集合与
+    `isSharePlatformLabel`，`extractShareName` 跳过 `小红书 / 哔哩哔哩 / B站 / 抖音 / 快手 / 微博`
+    等来源标记括号，避免平台名被误当成地点名。
+  - `backend/internal/addpreview/service.go`：菜谱解析失败分支补充 `RecipeDraft.Link =
+    extractFirstURL(text)` 兜底，失败时至少回传原始链接。
+  - `backend/internal/addpreview/service_test.go`：新增
+    `TestXiaohongshuRecipeShareNotMisclassifiedAsPlace`，并保留 `TestParseShareText`（真实
+    美团/点评地点口令）验证地点识别未受影响。
+- **影响范围**：仅后端 `POST /api/kitchens/{kitchenID}/add-link-previews` 的内容类型分流；
+  小红书等菜谱口令现可正确进入菜谱解析链路。需重新部署后端方在生产生效。
+
 ## 2026-06-29 (剪贴板读取改为仅用户手势触发，合规整改)
 
 ### Changed
