@@ -1,5 +1,28 @@
 # Project Changelog
 
+## 2026-06-29 (剪贴板读取改为仅用户手势触发，合规整改)
+
+### Changed
+
+- **修改时间**：2026-06-29
+- **变更背景**：微信《用户隐私保护指引》审核反馈「读取你的剪切板接口」说明内容与使用场景
+  不符。排查发现首页"手动录入"表单在打开瞬间会静默调用 `uni.getClipboardData` 自动预填
+  分享链接，属于无明确用户手势的主动读取，真机会弹「正在使用你复制的内容」黄条，导致用途
+  说明与实际行为不一致。
+- **核心改动**：
+  - 移除 `pages/index/index.vue` 中 `handleRecipeManualEntry` 打开手动表单时的静默自动
+    读取（删除 `tryAutoPrefillDraftLinkFromClipboard` / `readClipboardText` 及
+    `draftClipboardPrefillRequestID` 等随之失效的辅助方法与状态）。
+  - 现在全程仅在用户主动点击识别面板的"粘贴链接"按钮（`add-recipe-preview-panel.vue` /
+    `add-link-preview-panel.vue` 的 `handlePasteLink`）时才读取剪贴板，行为与隐私指引文案
+    对齐。
+  - 清理由此产生的死引用（`extractSupportedDraftLink` 等导入、`lastDraftLinkPrefill` 状态、
+    永不触发的"已带入剪贴板"提示文案分支）。
+- **影响范围**：仅前端首页添加菜谱流程；手动表单不再自动带入剪贴板链接，用户可手动粘贴到
+  链接输入框或改用识别面板的"粘贴链接"按钮。
+- **配套动作**：需在小程序后台《用户隐私保护指引》将"读取剪切板"用途说明改为紧扣"识别菜谱
+  分享链接以快速导入"的场景化文案后重新提审。
+
 ## 2026-06-26 (空间统计后端能力提前落地)
 
 ### Added

@@ -683,7 +683,7 @@ import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, 
 import AddRecipeSheet from './components/add-recipe-sheet.vue'
 import AddRecipePreviewPanel from './components/add-recipe-preview-panel.vue'
 import DietAssistantSheet from './components/diet-assistant-sheet.vue'
-import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
+import { detectDraftLinkPlatform, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import InviteCodeSheet from './components/invite-code-sheet.vue'
 import InviteSheet from './components/invite-sheet.vue'
 import KitchenSection from './components/kitchen-section.vue'
@@ -719,7 +719,7 @@ import {
 	toISODate
 } from './meal-order'
 import { buildRecipeCard, buildRecipeCoverVersion, buildRecipeSearchText, extractRecipeImages } from './recipe-card'
-import { readLastDraftLinkPrefill, readRecentSearches, writeLastDraftLinkPrefill, writeRecentSearches } from './storage'
+import { readRecentSearches, writeRecentSearches } from './storage'
 
 const inviteShareFallbackImageUrl = '/static/invite-share-cover.png'
 
@@ -903,7 +903,6 @@ export default {
 			returnFocusTimer: null,
 			searchKeyword: '',
 			recentSearches: readRecentSearches(),
-			lastDraftLinkPrefill: readLastDraftLinkPrefill(),
 			isSearchFocused: false,
 			searchBlurTimer: null,
 			selectedRecipeId: '',
@@ -913,7 +912,6 @@ export default {
 			publicAppConfig: readCachedPublicAppConfig(),
 			publicAppConfigRequestID: 0,
 			draftLinkPrefillSource: '',
-			draftClipboardPrefillRequestID: 0,
 			showInviteSheet: false,
 			showInviteCodeSheet: false,
 			showProfileSheet: false,
@@ -1605,9 +1603,6 @@ export default {
 				return this.draftLinkPreviewError
 			}
 			if (this.draft.link.trim()) {
-				if (this.draftLinkPrefillSource === 'clipboard') {
-					return '已带入剪贴板分享内容，保存时会原样保留。'
-				}
 				return '已粘贴来源内容，系统会自动补标题。'
 			}
 			return ''
@@ -3397,42 +3392,6 @@ export default {
 			this.draftLinkPreviewError = ''
 			this.draftLinkPrefillSource = ''
 		},
-		readClipboardText() {
-			return new Promise((resolve) => {
-				uni.getClipboardData({
-					success: (result) => {
-						resolve(String(result?.data || '').trim())
-					},
-					fail: () => {
-						resolve('')
-					}
-				})
-			})
-		},
-		async tryAutoPrefillDraftLinkFromClipboard(requestID = 0) {
-			try {
-				const clipboardText = String(await this.readClipboardText() || '').trim()
-				const detectedLink = extractSupportedDraftLink(clipboardText)
-				if (!detectedLink) return false
-				if (!clipboardText || clipboardText === this.lastDraftLinkPrefill) return false
-				if (!this.showAddSheet || requestID !== this.draftClipboardPrefillRequestID) return false
-				if (String(this.draft.link || '').trim()) return false
-
-				this.draft.link = clipboardText
-				this.draftLinkPrefillSource = 'clipboard'
-				this.lastDraftLinkPrefill = clipboardText
-				writeLastDraftLinkPrefill(clipboardText)
-
-				const guessedTitle = guessDraftTitleFromShareText(clipboardText)
-				if (guessedTitle) {
-					this.applyDraftAutoTitle(guessedTitle)
-				}
-				this.scheduleDraftLinkPreview(clipboardText)
-				return true
-			} catch (_) {
-				return false
-			}
-		},
 		clearDraftLinkPreviewState() {
 			if (this.draftLinkPreviewTimer) {
 				clearTimeout(this.draftLinkPreviewTimer)
@@ -3675,8 +3634,6 @@ export default {
 			this.resetDraftAssistState()
 			this.draft = this.createDraftFromContext()
 			this.showAddSheet = true
-			this.draftClipboardPrefillRequestID += 1
-			this.tryAutoPrefillDraftLinkFromClipboard(this.draftClipboardPrefillRequestID)
 		},
 		handleRecipeParseResult(result) {
 			// 处理菜品解析结果
@@ -3736,7 +3693,6 @@ export default {
 		},
 		closeAddSheet() {
 			if (this.isSubmittingDraft) return
-			this.draftClipboardPrefillRequestID += 1
 			this.resetDraftAssistState()
 			this.showAddSheet = false
 			this.draft = this.createDraftFromContext()
