@@ -120,6 +120,17 @@ export function buildRecipeSearchText(recipe = {}) {
 		.toLowerCase()
 }
 
+export function buildRecipeParseBadge(recipe = {}) {
+	const parseStatus = String(recipe.parseStatus || '').trim()
+	if (parseStatus === 'pending' || parseStatus === 'processing') {
+		return { label: '解析中', tone: 'working' }
+	}
+	if (parseStatus === 'failed') {
+		return { label: '待重试', tone: 'warning' }
+	}
+	return null
+}
+
 export function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	const images = extractRecipeImages(recipe)
 	const remoteCover = images[0] || ''
@@ -127,6 +138,7 @@ export function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
 	const realSummary = pickFirstNonEmptySummary(recipe)
 	return {
 		...recipe,
+		parseBadge: buildRecipeParseBadge(recipe),
 		cover: cachedCover || remoteCover,
 		cachedCover,
 		remoteCover,

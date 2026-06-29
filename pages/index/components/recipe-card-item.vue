@@ -46,6 +46,13 @@
 				<view class="recipe-card__title-wrap">
 					<view v-if="!isLibraryMealOrderMode" class="recipe-card__meta-row">
 						<text class="recipe-card__eyebrow">{{ card.infoLine }}</text>
+						<view
+							v-if="card.parseBadge"
+							class="recipe-card__parse-badge"
+							:class="'recipe-card__parse-badge--' + card.parseBadge.tone"
+						>
+							<text class="recipe-card__parse-badge-text">{{ card.parseBadge.label }}</text>
+						</view>
 					</view>
 					<text class="recipe-card__title">{{ card.title }}</text>
 				</view>

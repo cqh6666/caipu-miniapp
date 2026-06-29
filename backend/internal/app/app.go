@@ -329,14 +329,17 @@ func New(cfg config.Config) (*App, error) {
 	serverHealthService := admin.NewServerHealthService(cfg, runtimeProvider)
 	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService, serverHealthService, aiRoutingService, aiAlertService)
 	adminAuthMiddleware := admin.NewAuthMiddleware(adminTokenManager)
-	recipeAutoParser := recipe.NewAutoParseWorker(
-		logger,
-		recipeRepo,
-		linkParseService,
-		cfg.RecipeAutoParseEnabled,
-		time.Duration(cfg.RecipeAutoParseInterval)*time.Second,
-		cfg.RecipeAutoParseBatchSize,
-	)
+	recipeAutoParser := recipe.NewAutoParseWorkerWithOptions(recipe.AutoParseWorkerOptions{
+		Logger:                   logger,
+		Repo:                     recipeRepo,
+		Parser:                   linkParseService,
+		Enabled:                  cfg.RecipeAutoParseEnabled,
+		Interval:                 time.Duration(cfg.RecipeAutoParseInterval) * time.Second,
+		BatchSize:                cfg.RecipeAutoParseBatchSize,
+		MaxAttempts:              cfg.RecipeAutoParseMaxAttempts,
+		RetryBaseDelay:           time.Duration(cfg.RecipeAutoParseRetryBaseSec) * time.Second,
+		StaleProcessingThreshold: time.Duration(cfg.RecipeAutoParseStaleSec) * time.Second,
+	})
 	recipeFlowchartWorker := recipe.NewFlowchartWorker(
 		logger,
 		recipeRepo,

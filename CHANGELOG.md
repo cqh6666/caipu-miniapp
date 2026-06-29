@@ -1,5 +1,111 @@
 # Project Changelog
 
+## 2026-06-29 (添加菜谱异步自动解析后端可靠性)
+
+### Added
+
+- **修改时间**：2026-06-29
+- **变更背景**：承接添加菜谱 preview 超时转后台方案，用户本轮要求只完成后端工作。此前
+  `AutoParseWorker` 已有 `pending/processing/done/failed` 队列，但缺少自动重试、退避、
+  `processing` 卡死回收和占位标题安全覆盖能力，模型资源繁忙或上游超时时容易直接进入
+  `failed`。
+- **核心改动**：
+  - 新增 `backend/migrations/022_add_recipe_auto_parse_retry.sql`，为 `recipes` 增加
+    `title_source`、`parse_attempts`、`parse_next_attempt_at`、`parse_last_error_type`、
+    `parse_processing_started_at`，并新增 `idx_recipes_parse_status_next_attempt`。
+  - `backend/internal/recipe/auto_parse_worker.go` 支持可重试错误自动退避：`timeout`、
+    `network`、`rate_limit`、`upstream` 默认最多尝试 `3` 次；`invalid_response` 最多自动
+    重试 `1` 次；每轮执行前回收超过阈值的 `processing` 任务。
+  - `backend/internal/recipe/repository.go` / `service.go` / `model.go` 接入新字段：
+    pending 查询会跳过未到 `parse_next_attempt_at` 的任务；进入 processing 时递增
+    `parse_attempts` 并记录开始时间；手动重试或换链接时重置重试状态；解析成功后清空
+    retry/stale 字段。
+  - 新增 `titleSource` 接口字段与 `title_source` 写库规则：`manual` 默认保护用户标题；
+    `placeholder` 且模型返回标题非空时，worker 可覆盖为模型标题并置为 `parsed`；用户编辑
+    标题时回到 `manual`。
+  - 新增后端配置项并写入 `backend/configs/example.env` / `backend/README.md`：
+    `RECIPE_AUTO_PARSE_MAX_ATTEMPTS`、`RECIPE_AUTO_PARSE_RETRY_BASE_SECONDS`、
+    `RECIPE_AUTO_PARSE_STALE_SECONDS`。
+  - 更新 `docs/add-recipe-async-timeout-design.md`，将后端 P1 重试、stale 回收和标题覆盖策略
+    标记为已落地，并说明前端若希望猜测标题被后台解析结果覆盖，需要传
+    `titleSource: 'placeholder'`。
+- **影响范围**：后端菜谱创建 / 更新 / 自动解析 worker / 菜谱列表和详情响应字段 / 数据库迁移 /
+  自动解析相关运行配置；不修改前端页面与小程序构建链路。
+- **兼容性/风险**：
+  - 存量菜谱迁移后 `title_source='manual'`，后台不会覆盖已有标题；存量 `failed` 菜谱仍需用户
+    手动重试，不会因升级突然批量重跑。
+  - 自动重试会增加少量后台调用，但有最大次数和退避控制；线上可通过新增环境变量调低尝试次数
+    或拉长退避。
+  - 前端当前若不传 `titleSource`，后端按 `manual` 保护标题；后续前端接入占位标题覆盖时需同步
+    传入 `placeholder`。
+- **验证情况**：
+  - 已执行 `go test ./internal/recipe`，通过。
+  - 已执行后端全量 `go test ./...`，通过。
+  - 已用临时 SQLite 顺序执行 `backend/migrations/001` 到 `022`，验证新列和
+    `idx_recipes_parse_status_next_attempt` 可创建。
+
+## 2026-06-29 (添加菜谱 Preview 超时转后台 P0 前端实现)
+
+### Added
+
+- **修改时间**：2026-06-29
+- **变更背景**：落地 `docs/add-recipe-async-timeout-design.md` 的 P0 前端兜底：菜谱 preview
+  解析过慢（超时）时不再只弹错误，而是用原始链接 + 猜测标题先建占位菜谱，交由后端既有
+  `parse_status=pending` 自动解析队列补全。仅实现前端，不动后端接口与数据库迁移。
+- **核心改动**：
+  - `utils/add-preview-api.js`：`previewAddLink` 超时由 `45s` 收紧到 `22s`（低于后端 `30s`，
+    确保超时兜底真正触发）；新增 `isPreviewTimeoutError(error)` 归一化超时判断。
+  - `pages/index/components/add-recipe-preview-panel.vue`：新增 `preview-timeout` 事件；解析
+    catch 分支识别超时后 emit `preview-timeout`（带原始文案）并关闭面板，不再只弹失败；
+    抽出 `stopParsing` 复用清理逻辑。
+  - `pages/index/index.vue`：绑定 `@preview-timeout="handleRecipePreviewTimeoutFallback"`，
+    新方法用 `extractSupportedDraftLink` + `guessDraftTitleFromShareText` 调
+    `createRecipeFromDraft` 建占位菜谱（`parsedContent` 留空、`parsedContentEdited=false`、
+    `titleSource=placeholder`），toast `模型繁忙，已转后台，稍后自动补全`，`15s` 后静默
+    刷新一次；提取不到可支持链接时 toast `解析超时，请手动填写` 且不建占位；创建失败
+    toast `后台保存失败，请稍后重试`。
+  - `utils/recipe-store.js`：创建 / 更新菜谱 payload 透传 `titleSource`，让后端能识别超时占位
+    标题并在后台解析成功后安全覆盖为模型标题。
+  - `pages/index/recipe-card.js` / `recipe-card-item.vue` / `recipe-card-item.scss`：新增
+    `buildRecipeParseBadge`，卡片标题上方信息行右侧展示「解析中」(`pending/processing`) /
+    「待重试」(`failed`) 徽标，不遮挡来源与图片数量角标。
+- **影响范围**：仅前端首页添加菜谱链路与菜谱卡片展示；地点添加链路不受影响（兜底只在菜谱
+  入口 `add-recipe-preview-panel` 启用）。
+- **兼容性/风险**：依赖 `POST /api/kitchens/{kitchenID}/recipes` 在链接支持且结构化内容为空时
+  自动置 `parse_status=pending`；本次后端已支持 `title_source=placeholder` 的标题覆盖保护。
+- **验证情况**：本次为前端改动，未执行小程序构建或真机验证；建议后续在微信开发者工具按
+  设计文档第 10 节验收（模拟 preview 超时、无链接不误建、徽标四态）。
+
+## 2026-06-29 (添加菜谱 Preview 超时转后台设计)
+
+### Added
+
+- **修改时间**：2026-06-29
+- **变更背景**：用户希望优化添加菜谱体验：当小红书 / B 站菜谱 preview 因模型资源或上游
+  链路超过约 20s 时，不再只让用户等待或弹错误，而是先保存菜谱，再由后台自动解析补全。
+- **核心改动**：
+  - 新增 `docs/add-recipe-async-timeout-design.md`，明确 P0 采用前端兜底方案：
+    `previewAddLink` 超时后由前端使用原始链接和 `guessDraftTitleFromShareText` 猜测标题，
+    调用 `createRecipeFromDraft` 创建菜谱，并 toast 提示“模型繁忙，已转后台，稍后自动补全”。
+  - 文档拆分前后端工作：前端补 preview timeout 分支、首页“解析中”徽标和延迟刷新；
+    后端 P0 复用现有 `recipes.parse_status=pending` 自动解析队列，不新增接口或迁移。
+  - 补充 P1 / P2 后端可靠性演进：自动解析重试退避、`processing` stale 回收、
+    `title_source` 标题覆盖保护和管理后台观测扩展。
+- **影响范围**：本次仅新增设计文档和变更记录，不修改前端页面、后端接口、数据库迁移或运行配置。
+- **兼容性/风险**：
+  - P0 方案依赖当前 `POST /api/kitchens/{kitchenID}/recipes` 在链接支持且结构化内容为空时
+    自动置为 `parse_status=pending` 的既有行为。
+  - 后续实现需避免地点分享误入菜谱兜底，并处理同一链接重复创建、猜测标题不准、
+    用户手动编辑被后台结果覆盖等风险。
+- **验证情况**：
+  - 已基于 `utils/add-preview-api.js`、`pages/index/draft-link.js`、
+    `pages/index/components/add-recipe-preview-panel.vue`、
+    `pages/index/components/add-link-preview-panel.vue`、`pages/index/recipe-card.js`、
+    `pages/index/components/recipe-card-item.vue`、`utils/recipe-store.js`、
+    `backend/internal/recipe/service.go` 与 `backend/internal/recipe/auto_parse_worker.go`
+    校准设计口径。
+  - 本次为文档新增，未执行前后端构建或单测。
+
 ## 2026-06-29 (修复小红书菜谱口令被误判为地点分享)
 
 ### Fixed

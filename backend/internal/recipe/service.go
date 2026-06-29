@@ -104,6 +104,7 @@ func (s *Service) ListByKitchenID(ctx context.Context, userID, kitchenID int64, 
 func (s *Service) CreateFromInput(ctx context.Context, userID, kitchenID int64, input CreateInput) (Recipe, error) {
 	return s.Create(ctx, userID, kitchenID, createRecipeRequest{
 		Title:               input.Title,
+		TitleSource:         input.TitleSource,
 		Ingredient:          input.Ingredient,
 		Summary:             input.Summary,
 		Link:                input.Link,
@@ -139,6 +140,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 	item.UpdatedBy = userID
 	item.CreatedAt = now
 	item.UpdatedAt = now
+	item.TitleSource = normalizeTitleSource(req.TitleSource)
 	item.ImageMetas = buildSubmittedImageMetas(item.ImageURLs, Recipe{}, s.upload)
 	item.ImageURLs = recipeImageURLsFromMetas(item.ImageMetas)
 	item.ImageURL = firstImageURL(item.ImageURLs)
@@ -186,6 +188,7 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 
 	next.ID = current.ID
 	next.KitchenID = current.KitchenID
+	next.TitleSource = resolveUpdateTitleSource(current, next, req)
 	next.PinnedAt = current.PinnedAt
 	next.FlowchartImageURL = current.FlowchartImageURL
 	next.FlowchartProvider = current.FlowchartProvider
@@ -229,6 +232,10 @@ func applyCreateParseState(item *Recipe, req createRecipeRequest, now string) {
 		item.ParseError = ""
 		item.ParseRequestedAt = now
 		item.ParseFinishedAt = ""
+		item.ParseAttempts = 0
+		item.ParseNextAttemptAt = ""
+		item.ParseLastErrorType = ""
+		item.ParseProcessingStartedAt = ""
 		return
 	}
 
@@ -237,6 +244,10 @@ func applyCreateParseState(item *Recipe, req createRecipeRequest, now string) {
 	item.ParseError = ""
 	item.ParseRequestedAt = ""
 	item.ParseFinishedAt = ""
+	item.ParseAttempts = 0
+	item.ParseNextAttemptAt = ""
+	item.ParseLastErrorType = ""
+	item.ParseProcessingStartedAt = ""
 }
 
 func applyUpdateParseState(item *Recipe, current Recipe, req updateRecipeRequest, now string) {
@@ -253,18 +264,30 @@ func applyUpdateParseState(item *Recipe, current Recipe, req updateRecipeRequest
 		item.ParseError = ""
 		item.ParseRequestedAt = now
 		item.ParseFinishedAt = ""
+		item.ParseAttempts = 0
+		item.ParseNextAttemptAt = ""
+		item.ParseLastErrorType = ""
+		item.ParseProcessingStartedAt = ""
 	case platform != "":
 		item.ParseStatus = current.ParseStatus
 		item.ParseSource = current.ParseSource
 		item.ParseError = current.ParseError
 		item.ParseRequestedAt = current.ParseRequestedAt
 		item.ParseFinishedAt = current.ParseFinishedAt
+		item.ParseAttempts = current.ParseAttempts
+		item.ParseNextAttemptAt = current.ParseNextAttemptAt
+		item.ParseLastErrorType = current.ParseLastErrorType
+		item.ParseProcessingStartedAt = current.ParseProcessingStartedAt
 	default:
 		item.ParseStatus = ParseStatusIdle
 		item.ParseSource = ""
 		item.ParseError = ""
 		item.ParseRequestedAt = ""
 		item.ParseFinishedAt = ""
+		item.ParseAttempts = 0
+		item.ParseNextAttemptAt = ""
+		item.ParseLastErrorType = ""
+		item.ParseProcessingStartedAt = ""
 	}
 }
 
@@ -409,6 +432,10 @@ func (s *Service) RequeueAutoParse(ctx context.Context, userID int64, recipeID s
 	current.ParseError = ""
 	current.ParseRequestedAt = now
 	current.ParseFinishedAt = ""
+	current.ParseAttempts = 0
+	current.ParseNextAttemptAt = ""
+	current.ParseLastErrorType = ""
+	current.ParseProcessingStartedAt = ""
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
 	return s.decorateRecipeRuntimeState(ctx, current), nil
@@ -578,6 +605,28 @@ func normalizeRecipeInput(
 		Note:          note,
 		ParsedContent: normalizedContent,
 	}, nil
+}
+
+func normalizeTitleSource(value string) string {
+	switch strings.TrimSpace(value) {
+	case TitleSourcePlaceholder:
+		return TitleSourcePlaceholder
+	case TitleSourceParsed:
+		return TitleSourceParsed
+	default:
+		return TitleSourceManual
+	}
+}
+
+func resolveUpdateTitleSource(current Recipe, next Recipe, req updateRecipeRequest) string {
+	if strings.TrimSpace(next.Title) != strings.TrimSpace(current.Title) {
+		return TitleSourceManual
+	}
+	requested := strings.TrimSpace(req.TitleSource)
+	if requested != "" {
+		return normalizeTitleSource(requested)
+	}
+	return normalizeTitleSource(current.TitleSource)
 }
 
 func normalizeImageURLs(imageURL string, imageURLs []string) ([]string, error) {

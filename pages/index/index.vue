@@ -497,6 +497,7 @@
 			@close="closeAddRecipePreviewPanel"
 			@manual-entry="handleRecipeManualEntry"
 			@parse-result="handleRecipeParseResult"
+			@preview-timeout="handleRecipePreviewTimeoutFallback"
 		></add-recipe-preview-panel>
 
 		<add-recipe-sheet
@@ -683,7 +684,7 @@ import { createEmptyDraft, MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, 
 import AddRecipeSheet from './components/add-recipe-sheet.vue'
 import AddRecipePreviewPanel from './components/add-recipe-preview-panel.vue'
 import DietAssistantSheet from './components/diet-assistant-sheet.vue'
-import { detectDraftLinkPlatform, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
+import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import InviteCodeSheet from './components/invite-code-sheet.vue'
 import InviteSheet from './components/invite-sheet.vue'
 import KitchenSection from './components/kitchen-section.vue'
@@ -983,6 +984,7 @@ export default {
 			recipeStatusFeedbackShowSparkles: false,
 			recipeStatusFeedbackTick: 0,
 			recipeStatusFeedbackTimer: null,
+			recipePreviewTimeoutRefreshTimer: null,
 			showRandomPickSheet: false,
 			randomPickRecipeId: '',
 			randomPickContextText: '',
@@ -1036,6 +1038,7 @@ export default {
 			this.toolbarBounceTimer = null
 		}
 		this.clearRecipeReturnFocus()
+		this.clearRecipePreviewTimeoutRefreshTimer()
 		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
@@ -3690,6 +3693,77 @@ export default {
 				// 解析失败或部分成功，直接打开空表单
 				this.handleRecipeManualEntry()
 			}
+		},
+		// handleRecipePreviewTimeoutFallback：preview 请求超时时由菜谱面板触发。
+		// 用「原始链接 + guessDraftTitleFromShareText 猜测标题」先建占位菜谱（parsedContent 留空，
+		// 让后端置 parse_status=pending 进自动解析队列），首页立即出现「解析中」徽标，稍后自动补全。
+		// 提取不到可支持链接则不建占位，回退手动填写，避免误存无链接菜谱。
+		async handleRecipePreviewTimeoutFallback(payload = {}) {
+			this.showAddRecipePreviewPanel = false
+
+			const rawText = String(payload?.text || '').trim()
+			const link = extractSupportedDraftLink(rawText)
+			if (!link) {
+				uni.showToast({
+					title: '解析超时，请手动填写',
+					icon: 'none',
+					duration: 2000
+				})
+				return
+			}
+
+			const guessedTitle = guessDraftTitleFromShareText(rawText)
+			const title = guessedTitle || '菜谱整理中'
+			const status = this.activeStatus === 'done' ? 'done' : 'wishlist'
+
+			try {
+				const recipe = await createRecipeFromDraft({
+					title,
+					titleSource: 'placeholder',
+					link,
+					mealType: this.activeMealType || 'breakfast',
+					status,
+					// 必须保持空内容，让后端 shouldQueueAutoParse 判定为需要自动解析；
+					// parsedContentEdited=false 避免被视作用户手动整理。
+					parsedContent: {
+						mainIngredients: [],
+						secondaryIngredients: [],
+						steps: []
+					},
+					parsedContentEdited: false
+				})
+
+				// createRecipeFromDraft 已写入本地缓存，这里同步到首页列表，让占位卡立即出现。
+				this.applyRecipes(getCachedRecipes())
+				if (recipe?.mealType) {
+					this.activeMealType = recipe.mealType
+				}
+
+				uni.showToast({
+					title: '模型繁忙，已转后台，稍后自动补全',
+					icon: 'none',
+					duration: 2200
+				})
+
+				// 15s 后静默刷新一次，尝试拿到后台 worker 已补全的内容；首页不做高频轮询。
+				this.clearRecipePreviewTimeoutRefreshTimer()
+				this.recipePreviewTimeoutRefreshTimer = setTimeout(() => {
+					this.recipePreviewTimeoutRefreshTimer = null
+					this.refreshRecipes({ silent: true })
+				}, 15000)
+			} catch (error) {
+				console.error('超时转后台占位菜谱创建失败:', error)
+				uni.showToast({
+					title: '后台保存失败，请稍后重试',
+					icon: 'none',
+					duration: 2000
+				})
+			}
+		},
+		clearRecipePreviewTimeoutRefreshTimer() {
+			if (!this.recipePreviewTimeoutRefreshTimer) return
+			clearTimeout(this.recipePreviewTimeoutRefreshTimer)
+			this.recipePreviewTimeoutRefreshTimer = null
 		},
 		closeAddSheet() {
 			if (this.isSubmittingDraft) return

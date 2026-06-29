@@ -9,34 +9,79 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 )
 
 const defaultAutoParseJobTimeout = 180 * time.Second
+const defaultAutoParseMaxAttempts = 3
+const defaultAutoParseRetryBaseDelay = 60 * time.Second
+const defaultAutoParseStaleProcessingThreshold = 10 * time.Minute
 
 type AutoParseWorker struct {
-	logger    *slog.Logger
-	repo      *Repository
-	parser    *linkparse.Service
-	enabled   bool
-	interval  time.Duration
-	batchSize int
+	logger                   *slog.Logger
+	repo                     *Repository
+	parser                   *linkparse.Service
+	enabled                  bool
+	interval                 time.Duration
+	batchSize                int
+	maxAttempts              int
+	retryBaseDelay           time.Duration
+	staleProcessingThreshold time.Duration
 
 	cancel func()
 	done   chan struct{}
 	once   sync.Once
 }
 
+type AutoParseWorkerOptions struct {
+	Logger                   *slog.Logger
+	Repo                     *Repository
+	Parser                   *linkparse.Service
+	Enabled                  bool
+	Interval                 time.Duration
+	BatchSize                int
+	MaxAttempts              int
+	RetryBaseDelay           time.Duration
+	StaleProcessingThreshold time.Duration
+}
+
 func NewAutoParseWorker(logger *slog.Logger, repo *Repository, parser *linkparse.Service, enabled bool, interval time.Duration, batchSize int) *AutoParseWorker {
+	return NewAutoParseWorkerWithOptions(AutoParseWorkerOptions{
+		Logger:    logger,
+		Repo:      repo,
+		Parser:    parser,
+		Enabled:   enabled,
+		Interval:  interval,
+		BatchSize: batchSize,
+	})
+}
+
+func NewAutoParseWorkerWithOptions(opts AutoParseWorkerOptions) *AutoParseWorker {
+	maxAttempts := opts.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = defaultAutoParseMaxAttempts
+	}
+	retryBaseDelay := opts.RetryBaseDelay
+	if retryBaseDelay <= 0 {
+		retryBaseDelay = defaultAutoParseRetryBaseDelay
+	}
+	staleThreshold := opts.StaleProcessingThreshold
+	if staleThreshold <= 0 {
+		staleThreshold = defaultAutoParseStaleProcessingThreshold
+	}
 	return &AutoParseWorker{
-		logger:    logger,
-		repo:      repo,
-		parser:    parser,
-		enabled:   enabled,
-		interval:  interval,
-		batchSize: batchSize,
-		done:      make(chan struct{}),
+		logger:                   opts.Logger,
+		repo:                     opts.Repo,
+		parser:                   opts.Parser,
+		enabled:                  opts.Enabled,
+		interval:                 opts.Interval,
+		batchSize:                opts.BatchSize,
+		maxAttempts:              maxAttempts,
+		retryBaseDelay:           retryBaseDelay,
+		staleProcessingThreshold: staleThreshold,
+		done:                     make(chan struct{}),
 	}
 }
 
@@ -84,6 +129,7 @@ func (w *AutoParseWorker) runBatch(parent context.Context) {
 	ctx, cancel := context.WithTimeout(parent, defaultAutoParseJobTimeout)
 	defer cancel()
 
+	w.requeueStaleProcessing(ctx)
 	w.enqueueLegacyCandidates(ctx)
 
 	items, err := w.repo.ListPendingAutoParse(ctx, w.batchSize)
@@ -96,6 +142,24 @@ func (w *AutoParseWorker) runBatch(parent context.Context) {
 		if err := w.processOne(parent, item); err != nil && !errors.Is(err, context.Canceled) {
 			w.logger.Error("process recipe auto-parse job failed", "recipeID", item.ID, "error", err)
 		}
+	}
+}
+
+func (w *AutoParseWorker) requeueStaleProcessing(ctx context.Context) {
+	if w == nil || w.repo == nil {
+		return
+	}
+
+	now := time.Now()
+	staleBefore := now.Add(-w.staleProcessingThreshold).Format(time.RFC3339)
+	requeuedAt := now.Format(time.RFC3339)
+	requeued, err := w.repo.RequeueStaleAutoParse(ctx, staleBefore, requeuedAt)
+	if err != nil {
+		w.logger.Error("requeue stale recipe auto-parse jobs failed", "error", err)
+		return
+	}
+	if requeued > 0 {
+		w.logger.Warn("requeued stale recipe auto-parse jobs", "count", requeued, "staleBefore", staleBefore)
 	}
 }
 
@@ -142,7 +206,8 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 		return errors.New("unsupported auto-parse link")
 	}
 
-	marked, err := w.repo.MarkAutoParseProcessing(ctx, item.ID, platform)
+	startedAt := time.Now()
+	marked, err := w.repo.MarkAutoParseProcessing(ctx, item.ID, platform, startedAt.Format(time.RFC3339))
 	if err != nil {
 		return err
 	}
@@ -161,7 +226,30 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	result, err := w.parser.ParseRecipeLink(ctx, item.Link)
 	if err != nil {
 		finishedAt := time.Now().Format(time.RFC3339)
-		if markErr := w.repo.MarkAutoParseFailed(ctx, item.ID, platform, err.Error(), finishedAt); markErr != nil {
+		errorType := classifyAutoParseError(err)
+		stateCtx, stateCancel := context.WithTimeout(parent, 10*time.Second)
+		defer stateCancel()
+		if w.shouldRetry(item, errorType) {
+			nextAttemptAt := w.nextAttemptAt(item).Format(time.RFC3339)
+			if markErr := w.repo.MarkAutoParseRetryPending(stateCtx, item.ID, platform, err.Error(), errorType, nextAttemptAt); markErr != nil {
+				w.logger.Error("mark recipe auto-parse retry state failed", "recipeID", item.ID, "error", markErr)
+			}
+			w.logger.Warn(
+				"recipe auto-parse will retry",
+				"recipeID",
+				item.ID,
+				"attempt",
+				nextAutoParseAttempt(item),
+				"maxAttempts",
+				w.maxAttempts,
+				"errorType",
+				errorType,
+				"nextAttemptAt",
+				nextAttemptAt,
+			)
+			return err
+		}
+		if markErr := w.repo.MarkAutoParseFailed(stateCtx, item.ID, platform, err.Error(), errorType, finishedAt); markErr != nil {
 			w.logger.Error("mark recipe auto-parse failed state failed", "recipeID", item.ID, "error", markErr)
 		}
 		return err
@@ -170,8 +258,11 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	finishedAt := time.Now().Format(time.RFC3339)
 	parseSource := buildAutoParseSource(result)
 	parseError := buildAutoParseResultMessage(result)
+	stateCtx, stateCancel := context.WithTimeout(parent, 10*time.Second)
+	defer stateCancel()
 
-	if err := w.repo.ApplyAutoParseResult(ctx, item.ID, parseSource, parseError, finishedAt, Recipe{
+	if err := w.repo.ApplyAutoParseResult(stateCtx, item.ID, parseSource, parseError, finishedAt, Recipe{
+		Title:      result.RecipeDraft.Title,
 		Ingredient: result.RecipeDraft.Ingredient,
 		Summary:    result.RecipeDraft.Summary,
 		ImageURL:   strings.TrimSpace(result.RecipeDraft.ImageURL),
@@ -182,7 +273,8 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 			Steps:                mapParsedSteps(result.RecipeDraft.ParsedContent.Steps),
 		},
 	}); err != nil {
-		if markErr := w.repo.MarkAutoParseFailed(ctx, item.ID, parseSource, err.Error(), finishedAt); markErr != nil {
+		errorType := classifyAutoParseError(err)
+		if markErr := w.repo.MarkAutoParseFailed(stateCtx, item.ID, parseSource, err.Error(), errorType, finishedAt); markErr != nil {
 			w.logger.Error("mark recipe auto-parse failure after apply error failed", "recipeID", item.ID, "error", markErr)
 		}
 		return err
@@ -190,6 +282,57 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 
 	w.logger.Info("recipe auto-parse completed", "recipeID", item.ID, "source", parseSource)
 	return nil
+}
+
+func (w *AutoParseWorker) shouldRetry(item Recipe, errorType string) bool {
+	if w == nil || w.maxAttempts <= 1 {
+		return false
+	}
+	if !isRetryableAutoParseError(errorType) {
+		return false
+	}
+	if strings.TrimSpace(errorType) == airouter.ErrorTypeInvalidResponse {
+		return nextAutoParseAttempt(item) < min(w.maxAttempts, 2)
+	}
+	return nextAutoParseAttempt(item) < w.maxAttempts
+}
+
+func nextAutoParseAttempt(item Recipe) int {
+	if item.ParseAttempts < 0 {
+		return 1
+	}
+	return item.ParseAttempts + 1
+}
+
+func (w *AutoParseWorker) nextAttemptAt(item Recipe) time.Time {
+	attempt := nextAutoParseAttempt(item)
+	delay := w.retryBaseDelay
+	if delay <= 0 {
+		delay = defaultAutoParseRetryBaseDelay
+	}
+	for i := 1; i < attempt; i++ {
+		delay *= 5
+	}
+	return time.Now().Add(delay)
+}
+
+func classifyAutoParseError(err error) string {
+	errorType := strings.TrimSpace(audit.ErrorTypeFromError(err))
+	if errorType == "" {
+		return airouter.ErrorTypeUnknown
+	}
+	return errorType
+}
+
+func isRetryableAutoParseError(errorType string) bool {
+	switch strings.TrimSpace(errorType) {
+	case airouter.ErrorTypeTimeout, airouter.ErrorTypeNetwork, airouter.ErrorTypeRateLimit, airouter.ErrorTypeUpstream:
+		return true
+	case airouter.ErrorTypeInvalidResponse:
+		return true
+	default:
+		return false
+	}
 }
 
 func buildAutoParseResultMessage(result linkparse.RecipeParseOutcome) string {

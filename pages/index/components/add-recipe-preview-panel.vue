@@ -97,7 +97,7 @@
 </template>
 
 <script>
-import { previewAddLink } from '../../../utils/add-preview-api'
+import { isPreviewTimeoutError, previewAddLink } from '../../../utils/add-preview-api'
 import { getCurrentKitchenId } from '../../../utils/auth'
 
 export default {
@@ -108,7 +108,7 @@ export default {
 			default: false
 		}
 	},
-	emits: ['close', 'manual-entry', 'parse-result'],
+	emits: ['close', 'manual-entry', 'parse-result', 'preview-timeout'],
 	data() {
 		return {
 			isParsing: false,
@@ -218,19 +218,30 @@ export default {
 				this.finishParsing(result || { status: 'failed', message: '解析结果为空' })
 			} catch (error) {
 				console.error('解析失败:', error)
+				// 解析请求超时：不再只弹失败，转交父级用「链接+猜测标题」建占位菜谱走后台补全。
+				// 仅菜谱入口启用此兜底，避免把内容误存（地点链路走 add-link-preview-panel，不走这里）。
+				if (isPreviewTimeoutError(error)) {
+					this.stopParsing()
+					this.$emit('preview-timeout', { text })
+					this.$emit('close')
+					return
+				}
 				this.finishParsing({
 					status: 'failed',
 					message: error.message || '解析失败，请手动填写'
 				})
 			}
 		},
-		finishParsing(result) {
+		stopParsing() {
 			clearInterval(this.parsingTimer)
 			this.parsingTimer = null
 
 			this.isParsing = false
 			this.parsingStage = 'extracting'
 			this.parsingDuration = 0
+		},
+		finishParsing(result) {
+			this.stopParsing()
 
 			if (result.status === 'failed') {
 				uni.showToast({

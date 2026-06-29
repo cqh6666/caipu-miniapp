@@ -19,12 +19,12 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filter ListFilter) ([]Recipe, error) {
 	query := `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE kitchen_id = ? AND deleted_at IS NULL
@@ -91,12 +91,12 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 
 func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE id = ? AND deleted_at IS NULL
@@ -180,13 +180,15 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-	SET title = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, meal_type = ?, status = ?, note = ?,
+	SET title = ?, title_source = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, meal_type = ?, status = ?, note = ?,
 	    ingredients_json = ?, steps_json = ?, flowchart_image_url = ?, flowchart_provider = ?, flowchart_model = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
 	    flowchart_status = ?, flowchart_error = ?, flowchart_requested_at = ?, flowchart_finished_at = ?,
 	    parse_status = ?, parse_source = ?, parse_error = ?,
-	    parse_requested_at = ?, parse_finished_at = ?, parsed_content_edited = ?, pinned_at = ?, done_at = ?, updated_by = ?, updated_at = ?
+	    parse_requested_at = ?, parse_finished_at = ?, parse_attempts = ?, parse_next_attempt_at = ?, parse_last_error_type = ?, parse_processing_started_at = ?,
+	    parsed_content_edited = ?, pinned_at = ?, done_at = ?, updated_by = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
+		normalizeTitleSource(item.TitleSource),
 		nullableString(item.Ingredient),
 		nonNullableTrimmedString(item.Summary),
 		nullableString(item.Link),
@@ -212,6 +214,10 @@ WHERE id = ? AND deleted_at IS NULL`,
 		strings.TrimSpace(item.ParseError),
 		nullableString(item.ParseRequestedAt),
 		nullableString(item.ParseFinishedAt),
+		item.ParseAttempts,
+		nonNullableTrimmedString(item.ParseNextAttemptAt),
+		nonNullableTrimmedString(item.ParseLastErrorType),
+		nonNullableTrimmedString(item.ParseProcessingStartedAt),
 		item.ParsedContentEdited,
 		nullableString(item.PinnedAt),
 		nonNullableTrimmedString(item.DoneAt),
@@ -423,15 +429,19 @@ WHERE id = ? AND deleted_at IS NULL`,
 
 func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE deleted_at IS NULL AND parse_status = ?
+	  AND (
+	    COALESCE(parse_next_attempt_at, '') = ''
+	    OR datetime(parse_next_attempt_at) <= datetime('now')
+	  )
 ORDER BY COALESCE(NULLIF(parse_requested_at, ''), created_at) ASC, id ASC
 LIMIT ?`
 
@@ -495,12 +505,12 @@ func (r *Repository) CountProcessingAutoParse(ctx context.Context) (int, error) 
 
 func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE deleted_at IS NULL
@@ -539,12 +549,12 @@ LIMIT ?`
 
 func (r *Repository) ListImageMirrorCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE deleted_at IS NULL
@@ -587,12 +597,12 @@ LIMIT ?`
 
 func (r *Repository) ListPendingFlowcharts(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE deleted_at IS NULL AND flowchart_status = ?
@@ -662,12 +672,12 @@ func (r *Repository) CountProcessingFlowcharts(ctx context.Context) (int, error)
 
 func (r *Repository) ListAutoFlowchartCandidates(ctx context.Context, limit int) ([]Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE deleted_at IS NULL
@@ -720,14 +730,17 @@ LIMIT ?`
 	return items, nil
 }
 
-func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource string) (bool, error) {
+func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource, startedAt string) (bool, error) {
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = ''
+SET parse_status = ?, parse_source = ?, parse_error = '', parse_processing_started_at = ?,
+    parse_finished_at = NULL, parse_attempts = COALESCE(parse_attempts, 0) + 1,
+    parse_next_attempt_at = '', parse_last_error_type = ''
 WHERE id = ? AND deleted_at IS NULL AND parse_status = ?`,
 		ParseStatusProcessing,
 		parseSource,
+		nonNullableTrimmedString(startedAt),
 		recipeID,
 		ParseStatusPending,
 	)
@@ -747,7 +760,9 @@ func (r *Repository) MarkAutoParsePending(ctx context.Context, recipeID, parseSo
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL, updated_at = ?
+SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
+    parse_attempts = 0, parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
+    updated_at = ?
 WHERE id = ? AND deleted_at IS NULL AND COALESCE(parse_status, '') = ''`,
 		ParseStatusPending,
 		parseSource,
@@ -765,6 +780,32 @@ WHERE id = ? AND deleted_at IS NULL AND COALESCE(parse_status, '') = ''`,
 	}
 
 	return rowsAffected > 0, nil
+}
+
+func (r *Repository) RequeueStaleAutoParse(ctx context.Context, staleBefore, requestedAt string) (int64, error) {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET parse_status = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
+    parse_next_attempt_at = '', parse_processing_started_at = ''
+WHERE deleted_at IS NULL
+  AND parse_status = ?
+  AND datetime(COALESCE(NULLIF(parse_processing_started_at, ''), NULLIF(parse_requested_at, ''), NULLIF(updated_at, ''), NULLIF(created_at, ''))) <= datetime(?)`,
+		ParseStatusPending,
+		nullableString(requestedAt),
+		ParseStatusProcessing,
+		staleBefore,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("requeue stale recipe auto parse jobs: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read stale auto parse rows: %w", err)
+	}
+
+	return rowsAffected, nil
 }
 
 func (r *Repository) MarkFlowchartProcessing(ctx context.Context, recipeID string) (bool, error) {
@@ -840,19 +881,41 @@ WHERE deleted_at IS NULL
 	return rowsAffected, nil
 }
 
-func (r *Repository) MarkAutoParseFailed(ctx context.Context, recipeID, parseSource, parseError, finishedAt string) error {
+func (r *Repository) MarkAutoParseFailed(ctx context.Context, recipeID, parseSource, parseError, errorType, finishedAt string) error {
 	if _, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?
+SET parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?,
+    parse_next_attempt_at = '', parse_last_error_type = ?, parse_processing_started_at = ''
 WHERE id = ? AND deleted_at IS NULL`,
 		ParseStatusFailed,
 		parseSource,
 		truncateString(strings.TrimSpace(parseError), 300),
 		finishedAt,
+		nonNullableTrimmedString(errorType),
 		recipeID,
 	); err != nil {
 		return fmt.Errorf("mark recipe auto parse failed: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Repository) MarkAutoParseRetryPending(ctx context.Context, recipeID, parseSource, parseError, errorType, nextAttemptAt string) error {
+	if _, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+SET parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = NULL, parse_next_attempt_at = ?,
+    parse_last_error_type = ?, parse_processing_started_at = ''
+WHERE id = ? AND deleted_at IS NULL`,
+		ParseStatusPending,
+		parseSource,
+		truncateString(strings.TrimSpace(parseError), 300),
+		nonNullableTrimmedString(nextAttemptAt),
+		nonNullableTrimmedString(errorType),
+		recipeID,
+	); err != nil {
+		return fmt.Errorf("mark recipe auto parse retry pending: %w", err)
 	}
 
 	return nil
@@ -914,9 +977,13 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, ingredients_json = ?, steps_json = ?,
-    parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?, parsed_content_edited = 0, updated_at = ?
+SET title = ?, title_source = ?, ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, ingredients_json = ?, steps_json = ?,
+    parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?,
+    parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
+    parsed_content_edited = 0, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
+		resolveAutoParseTitle(current, draft),
+		resolveAutoParseTitleSource(current, draft),
 		nullableString(ingredientValue),
 		nonNullableTrimmedString(summaryValue),
 		nullableString(imageURLValue),
@@ -974,6 +1041,7 @@ func (r *Repository) RequeueAutoParse(ctx context.Context, recipeID string, user
 		ctx,
 		`UPDATE recipes
 SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
+    parse_attempts = 0, parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
     updated_by = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		ParseStatusPending,
@@ -1130,6 +1198,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.ID,
 		&item.KitchenID,
 		&item.Title,
+		&item.TitleSource,
 		&item.Ingredient,
 		&item.Summary,
 		&item.Link,
@@ -1155,6 +1224,10 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.ParseError,
 		&item.ParseRequestedAt,
 		&item.ParseFinishedAt,
+		&item.ParseAttempts,
+		&item.ParseNextAttemptAt,
+		&item.ParseLastErrorType,
+		&item.ParseProcessingStartedAt,
 		&parsedContentEdited,
 		&item.PinnedAt,
 		&item.DoneAt,
@@ -1186,6 +1259,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 	item.ImageMetas = normalizeRecipeImageMetas(imageURLs, imageMetas)
 	item.ImageURLs = recipeImageURLsFromMetas(item.ImageMetas)
 	item.ImageURL = firstImageURL(item.ImageURLs)
+	item.TitleSource = normalizeTitleSource(item.TitleSource)
 	item.ParsedContentEdited = parsedContentEdited != 0
 	item.ParsedContent = normalizeParsedContent(parsedContent, item.MealType, item.Title, item.Ingredient)
 	item.FlowchartStale = strings.TrimSpace(item.FlowchartImageURL) != "" && strings.TrimSpace(item.FlowchartSourceHash) != buildFlowchartSourceHash(item)
@@ -1212,15 +1286,17 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO recipes (
-	id, kitchen_id, title, ingredient, summary, link, image_url, image_urls_json, image_meta_json, meal_type, status, note,
+	id, kitchen_id, title, title_source, ingredient, summary, link, image_url, image_urls_json, image_meta_json, meal_type, status, note,
 	ingredients_json, steps_json, flowchart_image_url, flowchart_provider, flowchart_model, flowchart_updated_at, flowchart_source_hash,
 	flowchart_status, flowchart_error, flowchart_requested_at, flowchart_finished_at,
-	parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at, parsed_content_edited,
+	parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
+	parse_attempts, parse_next_attempt_at, parse_last_error_type, parse_processing_started_at, parsed_content_edited,
 	pinned_at, done_at, created_by, updated_by, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
+		normalizeTitleSource(item.TitleSource),
 		nullableString(item.Ingredient),
 		nonNullableTrimmedString(item.Summary),
 		nullableString(item.Link),
@@ -1246,6 +1322,10 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 		strings.TrimSpace(item.ParseError),
 		nullableString(item.ParseRequestedAt),
 		nullableString(item.ParseFinishedAt),
+		item.ParseAttempts,
+		nonNullableTrimmedString(item.ParseNextAttemptAt),
+		nonNullableTrimmedString(item.ParseLastErrorType),
+		nonNullableTrimmedString(item.ParseProcessingStartedAt),
 		item.ParsedContentEdited,
 		nullableString(item.PinnedAt),
 		nonNullableTrimmedString(item.DoneAt),
@@ -1262,12 +1342,12 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 
 func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe, error) {
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 WHERE id = ? AND deleted_at IS NULL
@@ -1489,6 +1569,24 @@ func resolveAutoParseImages(current Recipe, draft Recipe) (string, []string, []R
 	return firstImageURL(imageURLs), imageURLs, imageMetas
 }
 
+func resolveAutoParseTitle(current Recipe, draft Recipe) string {
+	currentTitle := strings.TrimSpace(current.Title)
+	if normalizeTitleSource(current.TitleSource) != TitleSourcePlaceholder {
+		return currentTitle
+	}
+	if draftTitle := strings.TrimSpace(draft.Title); draftTitle != "" {
+		return draftTitle
+	}
+	return currentTitle
+}
+
+func resolveAutoParseTitleSource(current Recipe, draft Recipe) string {
+	if normalizeTitleSource(current.TitleSource) == TitleSourcePlaceholder && strings.TrimSpace(draft.Title) != "" {
+		return TitleSourceParsed
+	}
+	return normalizeTitleSource(current.TitleSource)
+}
+
 func mergeRecipeImageURLs(groups ...[]string) []string {
 	items := make([]string, 0, maxRecipeImages)
 	seen := make(map[string]struct{}, maxRecipeImages)
@@ -1594,12 +1692,12 @@ func (r *Repository) FindByShareToken(ctx context.Context, token string) (Recipe
 		return Recipe{}, sql.ErrNoRows
 	}
 	const query = `
-	SELECT id, kitchen_id, title, COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
+	SELECT id, kitchen_id, title, COALESCE(title_source, 'manual'), COALESCE(ingredient, ''), COALESCE(summary, ''), COALESCE(link, ''), COALESCE(image_url, ''), COALESCE(image_urls_json, '[]'), COALESCE(image_meta_json, '[]'),
 	       COALESCE(flowchart_image_url, ''), COALESCE(flowchart_provider, ''), COALESCE(flowchart_model, ''), COALESCE(flowchart_updated_at, ''), COALESCE(flowchart_source_hash, ''),
 	       COALESCE(flowchart_status, ''), COALESCE(flowchart_error, ''), COALESCE(flowchart_requested_at, ''), COALESCE(flowchart_finished_at, ''),
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
-	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
+	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
 	       created_by, updated_by, created_at, updated_at
 	FROM recipes
 	WHERE share_token = ? AND deleted_at IS NULL

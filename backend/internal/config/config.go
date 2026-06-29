@@ -82,6 +82,9 @@ type Config struct {
 	RecipeAutoParseEnabled         bool
 	RecipeAutoParseInterval        int
 	RecipeAutoParseBatchSize       int
+	RecipeAutoParseMaxAttempts     int
+	RecipeAutoParseRetryBaseSec    int
+	RecipeAutoParseStaleSec        int
 	RecipeFlowchartEnabled         bool
 	RecipeFlowchartAutoEnqueue     bool
 	RecipeFlowchartInterval        int
@@ -166,6 +169,9 @@ func Load() (Config, error) {
 		RecipeAutoParseEnabled:         getBool("RECIPE_AUTO_PARSE_ENABLED", true),
 		RecipeAutoParseInterval:        getInt("RECIPE_AUTO_PARSE_INTERVAL_SECONDS", 30),
 		RecipeAutoParseBatchSize:       getInt("RECIPE_AUTO_PARSE_BATCH_SIZE", 3),
+		RecipeAutoParseMaxAttempts:     getInt("RECIPE_AUTO_PARSE_MAX_ATTEMPTS", 3),
+		RecipeAutoParseRetryBaseSec:    getInt("RECIPE_AUTO_PARSE_RETRY_BASE_SECONDS", 60),
+		RecipeAutoParseStaleSec:        getInt("RECIPE_AUTO_PARSE_STALE_SECONDS", 600),
 		RecipeFlowchartEnabled:         getBool("RECIPE_FLOWCHART_ENABLED", true),
 		RecipeFlowchartAutoEnqueue:     getBool("RECIPE_FLOWCHART_AUTO_ENQUEUE_ENABLED", false),
 		RecipeFlowchartInterval:        getInt("RECIPE_FLOWCHART_INTERVAL_SECONDS", 5),
@@ -249,6 +255,18 @@ func Load() (Config, error) {
 
 	if cfg.RecipeAutoParseBatchSize <= 0 {
 		return Config{}, errors.New("RECIPE_AUTO_PARSE_BATCH_SIZE must be positive")
+	}
+
+	if cfg.RecipeAutoParseMaxAttempts <= 0 {
+		return Config{}, errors.New("RECIPE_AUTO_PARSE_MAX_ATTEMPTS must be positive")
+	}
+
+	if cfg.RecipeAutoParseRetryBaseSec <= 0 {
+		return Config{}, errors.New("RECIPE_AUTO_PARSE_RETRY_BASE_SECONDS must be positive")
+	}
+
+	if cfg.RecipeAutoParseStaleSec <= 0 {
+		return Config{}, errors.New("RECIPE_AUTO_PARSE_STALE_SECONDS must be positive")
 	}
 
 	if cfg.RecipeFlowchartInterval <= 0 {

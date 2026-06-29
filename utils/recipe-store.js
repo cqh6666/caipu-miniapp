@@ -390,6 +390,9 @@ function buildRecipePayload(recipe = {}) {
 	if (Object.prototype.hasOwnProperty.call(recipe, 'parsedContentEdited')) {
 		payload.parsedContentEdited = !!recipe.parsedContentEdited
 	}
+	if (Object.prototype.hasOwnProperty.call(recipe, 'titleSource')) {
+		payload.titleSource = String(recipe.titleSource || '').trim()
+	}
 
 	return payload
 }
