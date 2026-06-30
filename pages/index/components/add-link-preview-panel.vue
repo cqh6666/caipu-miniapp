@@ -43,7 +43,7 @@
 				</view>
 
 				<view class="capabilities">
-					<text class="capabilities__title">支持解析的内容与平台</text>
+					<text class="capabilities__title">支持解析的平台</text>
 					<view class="capabilities__list">
 						<view class="capability-card">
 							<view class="capability-card__icon capability-card__icon--place">
@@ -52,15 +52,6 @@
 							<view class="capability-card__content">
 								<text class="capability-card__title">打卡地</text>
 								<text class="capability-card__desc">大众点评 / 美团</text>
-							</view>
-						</view>
-						<view class="capability-card">
-							<view class="capability-card__icon capability-card__icon--recipe">
-								<up-icon name="grid-fill" size="28" color="#e67a3d"></up-icon>
-							</view>
-							<view class="capability-card__content">
-								<text class="capability-card__title">菜谱灵感</text>
-								<text class="capability-card__desc">小红书 / 抖音</text>
 							</view>
 						</view>
 					</view>
@@ -418,37 +409,35 @@ export default {
 
 .capabilities__list {
 	display: flex;
-	gap: 16rpx;
+	flex-direction: column;
+	gap: 12rpx;
 }
 
 .capability-card {
 	flex: 1;
 	display: flex;
 	align-items: center;
-	gap: 16rpx;
-	padding: 24rpx 20rpx;
+	gap: 20rpx;
+	padding: 22rpx 24rpx;
 	background: #ffffff;
-	border: 1px solid rgba(160, 135, 117, 0.12);
-	border-radius: 20rpx;
+	border: 1px solid rgba(160, 135, 117, 0.08);
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 14rpx rgba(124, 92, 60, 0.05);
 	box-sizing: border-box;
 	min-width: 0;
 }
 
 .capability-card__icon {
 	flex-shrink: 0;
-	width: 56rpx;
-	height: 56rpx;
+	width: 64rpx;
+	height: 64rpx;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	border-radius: 50%;
+	border-radius: 18rpx;
 
 	&--place {
-		background: rgba(124, 144, 112, 0.1);
-	}
-
-	&--recipe {
-		background: rgba(230, 122, 61, 0.1);
+		background: rgba(124, 144, 112, 0.14);
 	}
 }
 

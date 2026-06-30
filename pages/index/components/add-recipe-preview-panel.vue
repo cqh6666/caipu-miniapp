@@ -463,30 +463,31 @@ export default {
 	flex: 1;
 	display: flex;
 	align-items: center;
-	gap: 16rpx;
-	padding: 20rpx;
+	gap: 20rpx;
+	padding: 22rpx 24rpx;
 	background: #ffffff;
-	border: 1px solid rgba(160, 135, 117, 0.12);
-	border-radius: 20rpx;
+	border: 1px solid rgba(160, 135, 117, 0.08);
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 14rpx rgba(124, 92, 60, 0.05);
 	box-sizing: border-box;
 	min-width: 0;
 }
 
 .capability-card__icon {
 	flex-shrink: 0;
-	width: 56rpx;
-	height: 56rpx;
+	width: 64rpx;
+	height: 64rpx;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	border-radius: 50%;
+	border-radius: 18rpx;
 
 	&--xiaohongshu {
-		background: rgba(255, 36, 66, 0.1);
+		background: rgba(255, 36, 66, 0.14);
 	}
 
 	&--bilibili {
-		background: rgba(0, 161, 214, 0.1);
+		background: rgba(0, 161, 214, 0.14);
 	}
 }
 
