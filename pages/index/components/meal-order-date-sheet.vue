@@ -10,6 +10,10 @@
 		<view class="meal-order-sheet">
 			<view class="meal-order-sheet__header">
 				<view class="meal-order-sheet__heading">
+					<view class="meal-order-sheet__eyebrow">
+						<view class="meal-order-sheet__eyebrow-line"></view>
+						<text class="meal-order-sheet__eyebrow-text">安排菜单</text>
+					</view>
 					<text class="meal-order-sheet__title">哪天一起吃</text>
 					<text class="meal-order-sheet__subtitle">先挑个日子，再把想吃的菜慢慢放进这天的小菜单里。</text>
 				</view>

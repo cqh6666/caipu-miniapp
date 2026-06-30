@@ -10,6 +10,10 @@
 		<view class="meal-order-sheet meal-order-sheet--success">
 			<view class="meal-order-sheet__header">
 				<view class="meal-order-sheet__heading">
+					<view class="meal-order-sheet__eyebrow">
+						<view class="meal-order-sheet__eyebrow-line"></view>
+						<text class="meal-order-sheet__eyebrow-text">安排完成</text>
+					</view>
 					<text class="meal-order-sheet__title">这天吃什么已经安排好</text>
 					<text class="meal-order-sheet__subtitle">{{ dateText }} · 共 {{ dishCount }} 道</text>
 				</view>

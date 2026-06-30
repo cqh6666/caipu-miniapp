@@ -16,9 +16,11 @@
 				</view>
 				<view class="meal-order-mode-bar__actions page-header__mode-actions">
 					<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--accent" @tap="$emit('open-meal-order-date-sheet')">
+						<up-icon name="calendar" size="14" color="#765948"></up-icon>
 						<text class="meal-order-mode-bar__chip-text">改日期</text>
 					</view>
 					<view class="meal-order-mode-bar__chip meal-order-mode-bar__chip--ghost" @tap="$emit('exit-meal-order-mode')">
+						<up-icon name="arrow-left" size="14" color="#948476"></up-icon>
 						<text class="meal-order-mode-bar__chip-text">返回</text>
 					</view>
 				</view>

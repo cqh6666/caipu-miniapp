@@ -457,8 +457,8 @@
 }
 
 .meal-order-mode-bar__chip {
-	min-height: 42rpx;
-	padding: 0 14rpx;
+	min-height: 54rpx;
+	padding: 0 20rpx;
 	border-radius: 999rpx;
 	background: rgba(255, 255, 255, 0.88);
 	border: 1px solid var(--color-border-soft);
@@ -468,7 +468,7 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 6rpx;
+	gap: 8rpx;
 }
 
 .meal-order-mode-bar__chip:active {
@@ -493,7 +493,7 @@
 }
 
 .meal-order-mode-bar__chip-text {
-	font-size: 17rpx;
+	font-size: 21rpx;
 	font-weight: 600;
 	color: #7a6655;
 	line-height: 1;

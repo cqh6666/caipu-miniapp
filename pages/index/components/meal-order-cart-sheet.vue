@@ -10,6 +10,10 @@
 		<view class="meal-order-sheet">
 			<view class="meal-order-sheet__header">
 				<view class="meal-order-sheet__heading">
+					<view class="meal-order-sheet__eyebrow">
+						<view class="meal-order-sheet__eyebrow-line"></view>
+						<text class="meal-order-sheet__eyebrow-text">挑选菜品</text>
+					</view>
 					<text class="meal-order-sheet__title">这天的小菜单</text>
 					<text class="meal-order-sheet__subtitle">{{ dateText }} · 已选 {{ dishCount }} 道</text>
 				</view>
@@ -51,6 +55,9 @@
 					</view>
 				</view>
 				<view v-else class="soft-empty meal-order-cart-empty">
+					<view class="soft-empty__icon">
+						<up-icon name="grid-fill" size="26" color="#cdb49a"></up-icon>
+					</view>
 					<text class="soft-empty__text">还没选菜，先去美食库慢慢挑两道喜欢的吧。</text>
 				</view>
 			</scroll-view>
