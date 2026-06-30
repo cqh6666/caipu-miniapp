@@ -141,16 +141,33 @@ export default {
 		},
 		async handlePasteLink() {
 			const text = await this.readClipboardText()
-			if (text) {
-				this.startParsing(text)
+			if (!text) {
+				uni.showToast({
+					title: '没读到剪贴板内容，复制链接后再试',
+					icon: 'none',
+					duration: 2000
+				})
 				return
 			}
 
-			uni.showToast({
-				title: '未读取到剪贴板，请粘贴到输入框',
-				icon: 'none',
-				duration: 2000
-			})
+			if (!this.hasParseableHint(text)) {
+				uni.showToast({
+					title: '剪贴板里没找到链接，复制小红书 / B 站分享后再试',
+					icon: 'none',
+					duration: 2400
+				})
+				return
+			}
+
+			this.startParsing(text)
+		},
+		// 本地轻量预判：含 http(s) 链接或平台关键词才放行，避免空剪贴板 / 纯文字
+		// 也走一遍 loading 再被后端笼统驳回。含链接一律放行，交后端精判，防误杀。
+		hasParseableHint(text) {
+			const value = String(text || '').trim()
+			if (!value) return false
+			if (/https?:\/\//i.test(value)) return true
+			return /小红书|b\s*站|bilibili|b23\.tv|xhslink|xiaohongshu|抖音|快手|美团|大众点评|点评|douyin|kuaishou|dpurl/i.test(value)
 		},
 		readClipboardText() {
 			return new Promise((resolve) => {
@@ -169,8 +186,17 @@ export default {
 			const text = this.manualInputText.trim()
 			if (!text) {
 				uni.showToast({
-					title: '请输入菜谱链接',
+					title: '请粘贴菜谱链接',
 					icon: 'none'
+				})
+				return
+			}
+
+			if (!this.hasParseableHint(text)) {
+				uni.showToast({
+					title: '没识别到链接，请粘贴小红书 / B 站分享文案',
+					icon: 'none',
+					duration: 2400
 				})
 				return
 			}
