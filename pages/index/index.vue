@@ -322,10 +322,8 @@
 					:stats="spaceStats"
 					:has-kitchen="isKitchenConnected"
 					:is-syncing="isRefreshingSpaceStats"
-					:is-cache-snapshot="isSpaceStatsCacheSnapshot"
 					@open-stats="openSpaceStatsSheet"
 					@action="handleSpaceStatsAction"
-					@refresh="refreshSpaceStats({ silent: false })"
 				></space-stats-card>
 			</template>
 
@@ -625,10 +623,10 @@
 			:show="showSpaceStatsSheet"
 			:stats="spaceStats"
 			:is-refreshing="isRefreshingSpaceStats"
+			:sync-error-message="spaceStatsRemoteError"
 			@close="closeSpaceStatsSheet"
 			@refresh="refreshSpaceStats({ silent: false })"
 			@action="handleSpaceStatsAction"
-			@change-window="handleSpaceStatsWindowChange"
 		></space-stats-sheet>
 
 		<action-feedback
@@ -1030,10 +1028,11 @@ export default {
 			showSpaceStatsSheet: false,
 			isRefreshingSpaceStats: false,
 			spaceStatsSyncedAt: '',
-			spaceStatsSource: 'cache',
-			spaceStatsWindow: '30d',
+			spaceStatsWindow: 'all',
 			spaceStatsRemote: null,
-			spaceStatsRemoteKitchenId: 0
+			spaceStatsRemoteKitchenId: 0,
+			spaceStatsRemoteError: '',
+			spaceStatsAutoSyncKitchenId: 0
 		}
 	},
 	onLoad(options) {
@@ -1171,13 +1170,20 @@ export default {
 				mealOrderStore: this.mealOrderStore,
 				members: this.kitchenMembers,
 				now: Number.isNaN(syncedTime.getTime()) ? new Date() : syncedTime,
-				source: this.spaceStatsSource,
+				source: 'cache',
 				isSyncing: this.isRefreshingSpaceStats,
 				window: this.spaceStatsWindow
 			})
 		},
-		isSpaceStatsCacheSnapshot() {
-			return this.spaceStats?.source !== 'remote'
+		hasSpaceStatsContent() {
+			const overview = this.spaceStats?.overview || {}
+			return !!(
+				Number(overview.recipeTotal) ||
+				Number(overview.placeTotal) ||
+				Number(overview.submittedMealPlanDays) ||
+				Number(overview.wishlistRecipeTotal) ||
+				Number(overview.wantPlaceTotal)
+			)
 		},
 		kitchenConnectionLabel() {
 			return this.isKitchenConnected ? '已连接' : '未连接'
@@ -3178,6 +3184,8 @@ export default {
 					// 切换空间时清空上一空间的后端统计快照，避免串味（本地聚合会随新空间数据重新计算）。
 					this.spaceStatsRemote = null
 					this.spaceStatsRemoteKitchenId = 0
+					this.spaceStatsRemoteError = ''
+					this.spaceStatsAutoSyncKitchenId = 0
 				}
 				if (!nextKitchenId) {
 					this.mealOrderStoreLoadedKitchenId = 0
@@ -3220,7 +3228,6 @@ export default {
 					this.applyRecipes(recipes)
 					this.applyPlaces(places)
 					await this.applyPendingMealOrderAction(kitchenId)
-					this.spaceStatsSource = 'remote'
 					this.spaceStatsSyncedAt = new Date().toISOString()
 				} catch (error) {
 				this.syncErrorMessage = getFriendlySessionErrorMessage(error)
@@ -3229,7 +3236,6 @@ export default {
 					this.applyPlaces(getCachedPlaces())
 				this.kitchenMembers = []
 				this.kitchenMembersKitchenId = 0
-				this.spaceStatsSource = 'cache'
 				if (!silent) {
 					uni.showToast({
 						title: error?.message || '同步失败',
@@ -3265,10 +3271,21 @@ export default {
 		},
 		openSpaceStatsSheet() {
 			this.showSpaceStatsSheet = true
-			// 打开半屏时按需拉取后端 stats（趋势 / 成员贡献 / 评分分布），失败静默回退本地聚合。
-			if (!this.spaceStatsRemote && !this.isRefreshingSpaceStats && getAccessToken() && Number(this.currentKitchenId)) {
+			if (this.isRefreshingSpaceStats) return
+			if (!getAccessToken() || !Number(this.currentKitchenId)) {
+				this.spaceStatsRemoteError = '当前登录态或空间信息未就绪'
+				return
+			}
+			// 空态打开时先串起列表 / 菜单 / 后端 stats 同步，避免只展示旧的本地空快照。
+			if (!this.hasSpaceStatsContent && this.spaceStatsAutoSyncKitchenId !== Number(this.currentKitchenId)) {
+				this.spaceStatsAutoSyncKitchenId = Number(this.currentKitchenId)
+				this.refreshSpaceStats({ silent: true })
+				return
+			}
+			// 有本地数据时按需补拉后端 stats（趋势 / 成员贡献 / 评分分布），失败回退本地聚合并保留提示。
+			if (!this.spaceStatsRemote) {
 				this.isRefreshingSpaceStats = true
-				this.loadRemoteSpaceStats(this.spaceStatsWindow).finally(() => {
+				this.loadRemoteSpaceStats(this.spaceStatsWindow, { silent: true }).finally(() => {
 					this.isRefreshingSpaceStats = false
 				})
 			}
@@ -3276,13 +3293,15 @@ export default {
 		closeSpaceStatsSheet() {
 			this.showSpaceStatsSheet = false
 		},
-		async loadRemoteSpaceStats(window = this.spaceStatsWindow) {
+		async loadRemoteSpaceStats(window = this.spaceStatsWindow, options = {}) {
 			// 仅负责拉取后端 stats 并落地，不管理 isRefreshingSpaceStats（由调用方统一管理 loading）。
+			const { silent = true } = options
 			const kitchenId = Number(this.currentKitchenId) || 0
 			const normalized = normalizeStatsWindow(window)
 			if (!kitchenId || !getAccessToken()) {
 				this.spaceStatsRemote = null
 				this.spaceStatsRemoteKitchenId = 0
+				this.spaceStatsRemoteError = '当前登录态或空间信息未就绪'
 				return false
 			}
 			try {
@@ -3292,10 +3311,19 @@ export default {
 					this.spaceStatsRemote = remote
 					this.spaceStatsRemoteKitchenId = kitchenId
 					this.spaceStatsWindow = normalized
+					this.spaceStatsRemoteError = ''
 				}
 				return true
 			} catch (error) {
 				// 后端 stats 不可用：保留已有远端数据（窗口切换失败时不清空），无远端数据则走本地聚合。
+				this.spaceStatsRemoteError = error?.message || '后端统计暂不可用'
+				console.warn('[space-stats] remote stats unavailable', error)
+				if (!silent) {
+					uni.showToast({
+						title: '后端统计暂不可用，已显示本地聚合',
+						icon: 'none'
+					})
+				}
 				return false
 			}
 		},
@@ -3303,25 +3331,12 @@ export default {
 			const { silent = true } = options
 			if (this.isRefreshingSpaceStats) return
 			this.isRefreshingSpaceStats = true
+			this.spaceStatsRemoteError = ''
 			try {
-				// refreshRecipes 内部已串起 recipes / places / members 同步，并负责设置 spaceStatsSource / spaceStatsSyncedAt。
+				// refreshRecipes 内部已串起 recipes / places / members 同步，并负责设置 spaceStatsSyncedAt。
 				await this.refreshRecipes({ silent })
 				await this.loadMealOrderStore({ silent })
-				await this.loadRemoteSpaceStats(this.spaceStatsWindow)
-			} finally {
-				this.isRefreshingSpaceStats = false
-			}
-		},
-		async handleSpaceStatsWindowChange(window) {
-			const normalized = normalizeStatsWindow(window)
-			if (this.isRefreshingSpaceStats) return
-			if (normalized === this.spaceStatsWindow && this.spaceStatsRemote) return
-			this.isRefreshingSpaceStats = true
-			try {
-				const ok = await this.loadRemoteSpaceStats(normalized)
-				if (!ok) {
-					uni.showToast({ title: '该时间范围暂不可用', icon: 'none' })
-				}
+				await this.loadRemoteSpaceStats(this.spaceStatsWindow, { silent })
 			} finally {
 				this.isRefreshingSpaceStats = false
 			}

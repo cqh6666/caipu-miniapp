@@ -6,6 +6,14 @@ const RECENT_WINDOW_DAYS = 30
 const TOP_REVISIT_PLACE_LIMIT = 3
 const TOP_TAG_LIMIT = 5
 
+// 统计窗口 → 天数；all 表示不做时间过滤（统计全部）。
+const WINDOW_DAYS = { '7d': 7, '30d': 30, '90d': 90, all: Infinity }
+
+function windowToDays(window) {
+	const days = WINDOW_DAYS[String(window || '').trim().toLowerCase()]
+	return days === undefined ? RECENT_WINDOW_DAYS : days
+}
+
 function toTimestamp(value) {
 	if (!value) return 0
 	const time = new Date(value).getTime()
@@ -258,11 +266,12 @@ export function buildSpaceStats(options = {}) {
 
 	const imageCoveredTotal = recipes.filter((recipe) => Array.isArray(recipe?.imageUrls) && recipe.imageUrls.length).length
 	const locatedTotal = places.filter((place) => hasLocation(place)).length
+	const windowDays = windowToDays(options.window)
 	const recentActivity = {
-		newRecipeTotal: recipes.filter((recipe) => isWithinRecentWindow(recipe?.createdAt, nowTime)).length,
-		newPlaceTotal: places.filter((place) => isWithinRecentWindow(place?.createdAt, nowTime)).length,
-		visitedPlaceTotal: places.filter((place) => place?.status === 'visited' && isWithinRecentWindow(place?.visitedAt, nowTime)).length,
-		submittedMealPlanTotal: submitted.filter((record) => isWithinRecentWindow(record?.submittedAt, nowTime)).length
+		newRecipeTotal: recipes.filter((recipe) => isWithinRecentWindow(recipe?.createdAt, nowTime, windowDays)).length,
+		newPlaceTotal: places.filter((place) => isWithinRecentWindow(place?.createdAt, nowTime, windowDays)).length,
+		visitedPlaceTotal: places.filter((place) => place?.status === 'visited' && isWithinRecentWindow(place?.visitedAt, nowTime, windowDays)).length,
+		submittedMealPlanTotal: submitted.filter((record) => isWithinRecentWindow(record?.submittedAt, nowTime, windowDays)).length
 	}
 
 	return {
@@ -285,7 +294,7 @@ export function buildSpaceStats(options = {}) {
 			imageCoveredTotal,
 			imageCoverage: ratio(imageCoveredTotal, recipes.length),
 			parsedTotal: recipes.filter((recipe) => recipe?.parseStatus === 'done').length,
-			recentCreatedTotal: recipes.filter((recipe) => isWithinRecentWindow(recipe?.createdAt, nowTime)).length
+			recentCreatedTotal: recipes.filter((recipe) => isWithinRecentWindow(recipe?.createdAt, nowTime, windowDays)).length
 		},
 		places: {
 			byStatus: countByField(places, 'status', ['want', 'visited']),

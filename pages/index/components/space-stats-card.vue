@@ -7,22 +7,22 @@
 					这个空间已经沉淀了 {{ overview.recipeTotal || 0 }} 道菜和 {{ overview.placeTotal || 0 }} 个打卡点
 				</text>
 			</view>
-			<view v-if="isSyncing" class="space-stats-card__sync-badge">
-				<up-icon name="reload" size="14" color="#8a7d70" class="space-stats-card__sync-icon"></up-icon>
-				<text class="space-stats-card__sync-text">同步中</text>
-			</view>
-		</view>
-
-		<view v-if="isCacheSnapshot && !isSyncing" class="space-stats-card__cache-chip">
-			<text class="space-stats-card__cache-text">本地缓存 · {{ updatedAtLabel || '刚刚' }}</text>
-			<view
-				class="space-stats-card__cache-action"
-				hover-class="space-stats-card__cache-action--hover"
-				hover-start-time="0"
-				hover-stay-time="160"
-				@tap.stop="$emit('refresh')"
-			>
-				<text class="space-stats-card__cache-action-text">重新同步</text>
+			<view class="space-stats-card__header-actions">
+				<view v-if="isSyncing" class="space-stats-card__sync-badge">
+					<up-icon name="reload" size="14" color="#8a7d70" class="space-stats-card__sync-icon"></up-icon>
+					<text class="space-stats-card__sync-text">同步中</text>
+				</view>
+				<view
+					v-if="!isEmpty"
+					class="space-stats-card__view-btn"
+					hover-class="space-stats-card__view-btn--hover"
+					hover-start-time="0"
+					hover-stay-time="160"
+					@tap.stop="$emit('open-stats')"
+				>
+					<text class="space-stats-card__view-text">查看洞察</text>
+					<up-icon name="arrow-right" size="12" color="#bf715f"></up-icon>
+				</view>
 			</view>
 		</view>
 
@@ -33,7 +33,9 @@
 			title="添加第一道想吃的菜，开启你的美食空间"
 			primary-text="去添加"
 			primary-icon="plus"
+			secondary-text="查看洞察"
 			@primary="$emit('action', { actionType: 'open-add-recipe' })"
+			@secondary="$emit('open-stats')"
 		></library-empty-state>
 
 		<template v-else>
@@ -95,22 +97,10 @@
 				</view>
 			</view>
 		</template>
-
-		<view
-			class="space-stats-card__footer"
-			hover-class="space-stats-card__footer--hover"
-			hover-start-time="0"
-			hover-stay-time="160"
-			@tap="$emit('open-stats')"
-		>
-			<text class="space-stats-card__footer-text">查看洞察</text>
-			<up-icon name="arrow-right" size="14" color="#bf715f"></up-icon>
-		</view>
 	</view>
 </template>
 
 <script>
-import { formatRelativeUpdatedAt } from '../../../utils/space-stats'
 import LibraryEmptyState from './library-empty-state.vue'
 
 const ANIMATED_KEYS = ['recipeTotal', 'placeTotal', 'submittedMealPlanDays', 'memberTotal', 'wishlistRecipeTotal', 'wantPlaceTotal']
@@ -134,13 +124,9 @@ export default {
 		isSyncing: {
 			type: Boolean,
 			default: false
-		},
-		isCacheSnapshot: {
-			type: Boolean,
-			default: false
 		}
 	},
-	emits: ['open-stats', 'action', 'refresh'],
+	emits: ['open-stats', 'action'],
 	data() {
 		return {
 			animated: {
@@ -160,9 +146,6 @@ export default {
 		},
 		isEmpty() {
 			return !this.overview.recipeTotal && !this.overview.placeTotal && !this.overview.submittedMealPlanDays
-		},
-		updatedAtLabel() {
-			return formatRelativeUpdatedAt(this.stats?.updatedAt)
 		}
 	},
 	watch: {

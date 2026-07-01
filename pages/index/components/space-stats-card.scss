@@ -52,6 +52,13 @@
 	color: var(--text-muted);
 }
 
+.space-stats-card__header-actions {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 10rpx;
+}
+
 .space-stats-card__sync-badge {
 	flex-shrink: 0;
 	display: inline-flex;
@@ -61,6 +68,29 @@
 	padding: 0 14rpx;
 	border-radius: var(--radius-chip);
 	background: var(--bg-sunken);
+}
+
+.space-stats-card__view-btn {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 4rpx;
+	min-height: 48rpx;
+	padding: 0 16rpx 0 18rpx;
+	border-radius: var(--radius-chip);
+	background: rgba(191, 113, 95, 0.1);
+	transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.space-stats-card__view-btn--hover {
+	transform: scale(0.96);
+	background: rgba(191, 113, 95, 0.18);
+}
+
+.space-stats-card__view-text {
+	font-size: 23rpx;
+	font-weight: 600;
+	color: var(--brand-terracotta);
 }
 
 .space-stats-card__sync-icon {
@@ -80,41 +110,6 @@
 	font-size: 20rpx;
 	font-weight: 700;
 	color: var(--text-muted);
-}
-
-.space-stats-card__cache-chip {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12rpx;
-	min-height: 56rpx;
-	padding: 0 16rpx;
-	border-radius: 14rpx;
-	background: var(--bg-sunken);
-}
-
-.space-stats-card__cache-text {
-	font-size: 21rpx;
-	color: var(--text-muted);
-}
-
-.space-stats-card__cache-action {
-	min-height: 44rpx;
-	min-width: 88rpx;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 0 6rpx;
-}
-
-.space-stats-card__cache-action--hover {
-	opacity: 0.7;
-}
-
-.space-stats-card__cache-action-text {
-	font-size: 21rpx;
-	font-weight: 700;
-	color: var(--brand-terracotta);
 }
 
 .space-stats-card__empty {
@@ -146,9 +141,11 @@
 }
 
 .space-stats-card__cell-value {
-	font-size: 52rpx;
-	font-weight: 700;
-	line-height: 1.05;
+	font-family: Georgia, "Times New Roman", "Songti SC", STSong, serif;
+	font-size: 56rpx;
+	font-weight: 600;
+	line-height: 1.02;
+	letter-spacing: 0.5rpx;
 	color: var(--text-strong);
 	font-variant-numeric: tabular-nums;
 	font-feature-settings: "tnum" 1;
@@ -195,29 +192,12 @@
 }
 
 .space-stats-card__action-count {
-	font-size: 27rpx;
-	font-weight: 700;
-	color: var(--brand-terracotta);
-	font-variant-numeric: tabular-nums;
-}
-
-.space-stats-card__footer {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 8rpx;
-	min-height: 60rpx;
-	transition: opacity 0.15s ease;
-}
-
-.space-stats-card__footer--hover {
-	opacity: 0.7;
-}
-
-.space-stats-card__footer-text {
-	font-size: 25rpx;
+	font-family: Georgia, "Times New Roman", "Songti SC", STSong, serif;
+	font-size: 30rpx;
 	font-weight: 600;
 	color: var(--brand-terracotta);
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum" 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

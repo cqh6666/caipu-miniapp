@@ -43,25 +43,13 @@
 
 			<view class="space-stats-sheet__meta">
 				<text class="space-stats-sheet__updated-text">更新时间：{{ updatedLabel || '暂无同步记录' }}</text>
-				<view v-if="isCacheSnapshot" class="space-stats-sheet__source-chip">
+				<view v-if="syncErrorMessage" class="space-stats-sheet__source-chip space-stats-sheet__source-chip--warning">
+					<up-icon name="warning" size="12" color="#bf715f"></up-icon>
+					<text class="space-stats-sheet__source-text">后端暂不可用 · 本地聚合</text>
+				</view>
+				<view v-else-if="isCacheSnapshot" class="space-stats-sheet__source-chip">
 					<up-icon name="clock" size="12" color="#8a7d70"></up-icon>
 					<text class="space-stats-sheet__source-text">本地聚合</text>
-				</view>
-			</view>
-
-			<!-- 窗口切换（V2：影响趋势与近期动态口径；本地聚合固定近 30 天） -->
-			<view class="space-stats-sheet__window">
-				<view
-					v-for="option in windowOptions"
-					:key="option.value"
-					class="window-chip"
-					:class="{ 'window-chip--active': activeWindow === option.value }"
-					hover-class="window-chip--hover"
-					hover-start-time="0"
-					hover-stay-time="160"
-					@tap="handleWindowChange(option.value)"
-				>
-					<text class="window-chip__text">{{ option.label }}</text>
 				</view>
 			</view>
 
@@ -86,16 +74,6 @@
 			<scroll-view class="space-stats-sheet__scroll" scroll-y :show-scrollbar="false">
 				<!-- ============ 总览 ============ -->
 				<block v-if="activeTab === 'overview'">
-					<view class="stats-section">
-						<text class="stats-section__title">资产总量</text>
-						<view class="stats-section__grid">
-							<view v-for="cell in assetCells" :key="cell.key" class="stats-section__cell">
-								<text class="stats-section__cell-value">{{ cell.value }}</text>
-								<text class="stats-section__cell-label">{{ cell.label }}</text>
-							</view>
-						</view>
-					</view>
-
 					<view class="stats-section">
 						<text class="stats-section__title">高分复访推荐</text>
 						<view v-if="topRevisitPlaces.length" class="revisit-list">
@@ -138,30 +116,9 @@
 						</view>
 					</view>
 
-					<view class="stats-section">
-						<text class="stats-section__title">待行动</text>
-						<view v-if="actions.length" class="action-list">
-							<view
-								v-for="item in actions"
-								:key="item.key"
-								class="action-item"
-								hover-class="action-item--hover"
-								hover-start-time="0"
-								hover-stay-time="160"
-								@tap="$emit('action', { actionType: item.actionType })"
-							>
-								<text class="action-item__label">{{ item.label }}</text>
-								<up-icon name="arrow-right" size="14" color="#a08975"></up-icon>
-							</view>
-						</view>
-						<view v-else class="stats-empty-hint">
-							<text class="stats-empty-hint__text">暂时没有待行动的事项，空间状态很清爽。</text>
-						</view>
-					</view>
-
 					<!-- 近期动态 + 迷你趋势（V2 有 trends 时展示 sparkline） -->
-					<view class="stats-section">
-						<text class="stats-section__title">近期动态（{{ windowLabel }}）</text>
+					<view class="insight-card" :class="{ 'insight-card--last': !showContributors }">
+						<text class="insight-card__title">近期动态</text>
 						<text class="recent-activity-text">{{ recentActivityText }}</text>
 						<view v-if="hasTrends" class="trend-list">
 							<view v-for="trend in trendRows" :key="trend.key" class="trend-row">
@@ -180,8 +137,8 @@
 					</view>
 
 					<!-- 成员贡献（V2，多成员空间才展示） -->
-					<view v-if="showContributors" class="stats-section stats-section--last">
-						<text class="stats-section__title">成员贡献</text>
+					<view v-if="showContributors" class="insight-card insight-card--last">
+						<text class="insight-card__title">成员贡献</text>
 						<view class="contributor-list">
 							<view v-for="member in contributors" :key="member.userId" class="contributor-item">
 								<view class="contributor-item__avatar">
@@ -196,74 +153,75 @@
 							</view>
 						</view>
 					</view>
-					<view v-else class="stats-section stats-section--last"></view>
 				</block>
 
 				<!-- ============ 美食库 ============ -->
 				<block v-else-if="activeTab === 'recipes'">
-					<view class="stats-section">
-						<text class="stats-section__title">餐别结构</text>
-						<view class="dual-bar">
-							<view class="dual-bar__item">
-								<text class="dual-bar__value">{{ recipeStats.byMealType.breakfast || 0 }}</text>
-								<text class="dual-bar__label">早餐</text>
+					<view class="ratio-grid">
+						<view class="ratio-card">
+							<text class="ratio-card__label">想吃 / 吃过</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main ratio-card__main--sage">{{ recipeStats.byStatus.wishlist || 0 }}</text>
+								<text class="ratio-card__slash">/</text>
+								<text class="ratio-card__sub">{{ recipeStats.byStatus.done || 0 }}</text>
 							</view>
-							<view class="dual-bar__item">
-								<text class="dual-bar__value">{{ recipeStats.byMealType.main || 0 }}</text>
-								<text class="dual-bar__label">正餐</text>
+						</view>
+						<view class="ratio-card">
+							<text class="ratio-card__label">早餐 / 正餐</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main ratio-card__main--caramel">{{ recipeStats.byMealType.breakfast || 0 }}</text>
+								<text class="ratio-card__slash">/</text>
+								<text class="ratio-card__sub">{{ recipeStats.byMealType.main || 0 }}</text>
 							</view>
 						</view>
 					</view>
-					<view class="stats-section">
-						<text class="stats-section__title">想吃 / 吃过</text>
-						<view class="split-bar">
-							<view class="split-bar__segment split-bar__segment--want" :style="{ flexGrow: recipeStats.byStatus.wishlist || 0 }">
-								<text class="split-bar__text">想吃 {{ recipeStats.byStatus.wishlist || 0 }}</text>
+
+					<view class="insight-card insight-card--last">
+						<text class="insight-card__title">内容完整度</text>
+						<view class="progress-row">
+							<view class="progress-row__head">
+								<text class="progress-row__label">图片覆盖率</text>
+								<text class="progress-row__value progress-row__value--sage">{{ imageCoveragePct }}%</text>
 							</view>
-							<view class="split-bar__segment split-bar__segment--done" :style="{ flexGrow: recipeStats.byStatus.done || 0 }">
-								<text class="split-bar__text">吃过 {{ recipeStats.byStatus.done || 0 }}</text>
+							<view class="progress-track">
+								<view class="progress-fill progress-fill--sage" :style="{ width: imageCoveragePct + '%' }"></view>
 							</view>
 						</view>
-					</view>
-					<view class="stats-section stats-section--last">
-						<view class="health-toggle" @tap="showRecipeHealth = !showRecipeHealth">
-							<text class="health-toggle__title">数据完整度</text>
-							<up-icon :name="showRecipeHealth ? 'arrow-up' : 'arrow-down'" size="13" color="#a08975"></up-icon>
-						</view>
-						<view v-if="showRecipeHealth" class="health-body">
-							<view
-								v-if="recipeImageMissing > 0"
-								class="health-hint"
-								hover-class="health-hint--hover"
-								hover-start-time="0"
-								hover-stay-time="160"
-								@tap="$emit('action', { actionType: 'view-done-recipes' })"
-							>
-								<text class="health-hint__text">还有 {{ recipeImageMissing }} 道菜没有图片，去补全</text>
-								<up-icon name="arrow-right" size="13" color="#a08975"></up-icon>
+						<view class="progress-row">
+							<view class="progress-row__head">
+								<text class="progress-row__label">已智能解析</text>
+								<text class="progress-row__value progress-row__value--terracotta">{{ recipeStats.parsedTotal || 0 }} 道</text>
 							</view>
-							<text v-else class="health-ok">菜谱图片已全部补齐。</text>
-							<text class="health-note">已解析菜谱 {{ recipeStats.parsedTotal || 0 }} / {{ overview.recipeTotal || 0 }} 道</text>
+							<view class="progress-track">
+								<view class="progress-fill progress-fill--terracotta" :style="{ width: parsedPct + '%' }"></view>
+							</view>
 						</view>
 					</view>
 				</block>
 
 				<!-- ============ 打卡库 ============ -->
 				<block v-else-if="activeTab === 'places'">
-					<view class="stats-section">
-						<text class="stats-section__title">想去 / 去过</text>
-						<view class="split-bar">
-							<view class="split-bar__segment split-bar__segment--want" :style="{ flexGrow: placeStats.byStatus.want || 0 }">
-								<text class="split-bar__text">想去 {{ placeStats.byStatus.want || 0 }}</text>
+					<view class="ratio-grid">
+						<view class="ratio-card">
+							<text class="ratio-card__label">想去 / 去过</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main ratio-card__main--terracotta">{{ placeStats.byStatus.want || 0 }}</text>
+								<text class="ratio-card__slash">/</text>
+								<text class="ratio-card__sub">{{ placeStats.byStatus.visited || 0 }}</text>
 							</view>
-							<view class="split-bar__segment split-bar__segment--done" :style="{ flexGrow: placeStats.byStatus.visited || 0 }">
-								<text class="split-bar__text">去过 {{ placeStats.byStatus.visited || 0 }}</text>
+						</view>
+						<view class="ratio-card">
+							<text class="ratio-card__label">有定位比例</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main ratio-card__main--sage">{{ placeStats.locatedTotal || 0 }}</text>
+								<text class="ratio-card__slash">/</text>
+								<text class="ratio-card__sub">{{ overview.placeTotal || 0 }}</text>
 							</view>
 						</view>
 					</view>
 
-					<view class="stats-section">
-						<text class="stats-section__title">重访评分分布</text>
+					<view class="insight-card" :class="{ 'insight-card--last': !sceneTags.length && !recommendedTags.length }">
+						<text class="insight-card__title">重访意愿分布（已打卡 {{ ratedPlaceTotal }} 家）</text>
 						<view v-if="hasRevisitRatings" class="rating-dist">
 							<view v-for="row in revisitBars" :key="row.rating" class="rating-row">
 								<view class="rating-row__stars">
@@ -281,18 +239,12 @@
 						</view>
 					</view>
 
-					<view v-if="recommendedTags.length" class="stats-section">
-						<text class="stats-section__title">推荐项 Top</text>
-						<view class="tag-cloud">
-							<view v-for="tag in recommendedTags" :key="tag.label" class="tag-cloud__item">
-								<text class="tag-cloud__text">{{ tag.label }}</text>
-								<text class="tag-cloud__count">{{ tag.count }}</text>
-							</view>
-						</view>
-					</view>
-
-					<view v-if="sceneTags.length" class="stats-section">
-						<text class="stats-section__title">场景标签 Top</text>
+					<view
+						v-if="sceneTags.length"
+						class="insight-card"
+						:class="{ 'insight-card--last': !recommendedTags.length }"
+					>
+						<text class="insight-card__title">高频场景标签</text>
 						<view class="tag-cloud">
 							<view v-for="tag in sceneTags" :key="tag.label" class="tag-cloud__item tag-cloud__item--scene">
 								<text class="tag-cloud__text">{{ tag.label }}</text>
@@ -301,55 +253,38 @@
 						</view>
 					</view>
 
-					<view class="stats-section stats-section--last">
-						<view class="health-toggle" @tap="showPlaceHealth = !showPlaceHealth">
-							<text class="health-toggle__title">数据完整度</text>
-							<up-icon :name="showPlaceHealth ? 'arrow-up' : 'arrow-down'" size="13" color="#a08975"></up-icon>
-						</view>
-						<view v-if="showPlaceHealth" class="health-body">
-							<view
-								v-if="placeLocationMissing > 0"
-								class="health-hint"
-								hover-class="health-hint--hover"
-								hover-start-time="0"
-								hover-stay-time="160"
-								@tap="$emit('action', { actionType: 'view-missing-location-places' })"
-							>
-								<text class="health-hint__text">还有 {{ placeLocationMissing }} 个打卡点缺定位，去补全</text>
-								<up-icon name="arrow-right" size="13" color="#a08975"></up-icon>
+					<view v-if="recommendedTags.length" class="insight-card insight-card--last">
+						<text class="insight-card__title">常点推荐</text>
+						<view class="tag-cloud">
+							<view v-for="tag in recommendedTags" :key="tag.label" class="tag-cloud__item">
+								<text class="tag-cloud__text">{{ tag.label }}</text>
+								<text class="tag-cloud__count">{{ tag.count }}</text>
 							</view>
-							<text v-else class="health-ok">打卡点定位已全部补齐。</text>
-							<text class="health-note">POI 已匹配 {{ placeStats.poiMatchedTotal || 0 }} / {{ overview.placeTotal || 0 }} 个</text>
 						</view>
 					</view>
 				</block>
 
 				<!-- ============ 菜单安排 ============ -->
 				<block v-else>
-					<view class="stats-section">
-						<text class="stats-section__title">菜单概览</text>
-						<view class="stats-section__grid">
-							<view class="stats-section__cell">
-								<text class="stats-section__cell-value">{{ mealPlanStats.submittedDays || 0 }}</text>
-								<text class="stats-section__cell-label">已安排天数</text>
+					<view class="ratio-grid">
+						<view class="ratio-card">
+							<text class="ratio-card__label">已安排天数</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main">{{ mealPlanStats.submittedDays || 0 }}</text>
+								<text class="ratio-card__unit">天</text>
 							</view>
-							<view class="stats-section__cell">
-								<text class="stats-section__cell-value">{{ mealPlanStats.draftDays || 0 }}</text>
-								<text class="stats-section__cell-label">草稿天数</text>
-							</view>
-							<view class="stats-section__cell">
-								<text class="stats-section__cell-value">{{ averageDishText }}</text>
-								<text class="stats-section__cell-label">平均菜数</text>
-							</view>
-							<view class="stats-section__cell">
-								<text class="stats-section__cell-value">{{ (mealPlanStats.itemsByMealType.breakfast || 0) + (mealPlanStats.itemsByMealType.main || 0) }}</text>
-								<text class="stats-section__cell-label">累计菜品</text>
+						</view>
+						<view class="ratio-card">
+							<text class="ratio-card__label">草稿天数</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main ratio-card__main--terracotta">{{ mealPlanStats.draftDays || 0 }}</text>
+								<text class="ratio-card__unit">天</text>
 							</view>
 						</view>
 					</view>
 
-					<view class="stats-section">
-						<text class="stats-section__title">下一次安排</text>
+					<view class="insight-card">
+						<text class="insight-card__title">下一次安排</text>
 						<view
 							v-if="mealPlanStats.nextPlan"
 							class="next-plan"
@@ -370,16 +305,20 @@
 						</view>
 					</view>
 
-					<view class="stats-section stats-section--last">
-						<text class="stats-section__title">菜品来源</text>
-						<view class="dual-bar">
-							<view class="dual-bar__item">
-								<text class="dual-bar__value">{{ mealPlanStats.itemsByMealType.breakfast || 0 }}</text>
-								<text class="dual-bar__label">早餐</text>
+					<view class="ratio-grid ratio-grid--last">
+						<view class="ratio-card">
+							<text class="ratio-card__label">平均每餐</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main">{{ averageDishText }}</text>
+								<text class="ratio-card__unit">道菜</text>
 							</view>
-							<view class="dual-bar__item">
-								<text class="dual-bar__value">{{ mealPlanStats.itemsByMealType.main || 0 }}</text>
-								<text class="dual-bar__label">正餐</text>
+						</view>
+						<view class="ratio-card">
+							<text class="ratio-card__label">早餐 / 正餐</text>
+							<view class="ratio-card__value-row">
+								<text class="ratio-card__main ratio-card__main--caramel">{{ mealPlanStats.itemsByMealType.breakfast || 0 }}</text>
+								<text class="ratio-card__slash">/</text>
+								<text class="ratio-card__sub">{{ mealPlanStats.itemsByMealType.main || 0 }}</text>
 							</view>
 						</view>
 					</view>
@@ -392,12 +331,6 @@
 <script>
 import { formatRelativeUpdatedAt } from '../../../utils/space-stats'
 
-const WINDOW_LABELS = {
-	'7d': '近 7 天',
-	'30d': '近 30 天',
-	'90d': '近 90 天',
-	all: '全部'
-}
 const TREND_BAR_MAX_HEIGHT = 40
 const TREND_BAR_MIN_HEIGHT = 4
 
@@ -415,20 +348,16 @@ export default {
 		isRefreshing: {
 			type: Boolean,
 			default: false
+		},
+		syncErrorMessage: {
+			type: String,
+			default: ''
 		}
 	},
-	emits: ['close', 'refresh', 'action', 'change-window'],
+	emits: ['close', 'refresh', 'action'],
 	data() {
 		return {
 			activeTab: 'overview',
-			showRecipeHealth: false,
-			showPlaceHealth: false,
-			windowOptions: [
-				{ value: '7d', label: '7天' },
-				{ value: '30d', label: '30天' },
-				{ value: '90d', label: '90天' },
-				{ value: 'all', label: '全部' }
-			],
 			tabs: [
 				{ value: 'overview', label: '总览' },
 				{ value: 'recipes', label: '美食库' },
@@ -471,28 +400,11 @@ export default {
 				itemsByMealType: mealPlans.itemsByMealType || { breakfast: 0, main: 0 }
 			}
 		},
-		assetCells() {
-			return [
-				{ key: 'recipe', label: '菜品', value: this.overview.recipeTotal || 0 },
-				{ key: 'place', label: '打卡点', value: this.overview.placeTotal || 0 },
-				{ key: 'meal-plan', label: '菜单', value: this.overview.submittedMealPlanDays || 0 },
-				{ key: 'member', label: '成员', value: this.overview.memberTotal || 0 }
-			]
-		},
 		topRevisitPlaces() {
 			return Array.isArray(this.overview.topRevisitPlaces) ? this.overview.topRevisitPlaces : []
 		},
-		actions() {
-			return Array.isArray(this.stats?.actions) ? this.stats.actions : []
-		},
 		isCacheSnapshot() {
 			return this.stats?.source !== 'remote'
-		},
-		activeWindow() {
-			return this.stats?.window || '30d'
-		},
-		windowLabel() {
-			return WINDOW_LABELS[this.activeWindow] || '近 30 天'
 		},
 		updatedLabel() {
 			return formatRelativeUpdatedAt(this.stats?.updatedAt)
@@ -562,17 +474,24 @@ export default {
 		hasRevisitRatings() {
 			return this.revisitBars.some((row) => row.count > 0)
 		},
+		ratedPlaceTotal() {
+			return this.revisitBars.reduce((sum, row) => sum + (Number(row.count) || 0), 0)
+		},
 		recommendedTags() {
 			return this.placeStats.topRecommendedItems
 		},
 		sceneTags() {
 			return this.placeStats.topScenes
 		},
-		recipeImageMissing() {
-			return Math.max(0, (this.overview.recipeTotal || 0) - (this.recipeStats.imageCoveredTotal || 0))
+		imageCoveragePct() {
+			const total = Number(this.overview.recipeTotal) || 0
+			if (total <= 0) return 0
+			return Math.round(((this.recipeStats.imageCoveredTotal || 0) / total) * 100)
 		},
-		placeLocationMissing() {
-			return Math.max(0, (this.overview.placeTotal || 0) - (this.placeStats.locatedTotal || 0))
+		parsedPct() {
+			const total = Number(this.overview.recipeTotal) || 0
+			if (total <= 0) return 0
+			return Math.min(100, Math.round(((this.recipeStats.parsedTotal || 0) / total) * 100))
 		},
 		averageDishText() {
 			const value = Number(this.mealPlanStats.averageDishCount) || 0
@@ -587,10 +506,6 @@ export default {
 		handleRefresh() {
 			if (this.isRefreshing) return
 			this.$emit('refresh')
-		},
-		handleWindowChange(window) {
-			if (window === this.activeWindow) return
-			this.$emit('change-window', window)
 		},
 		memberInitial(member = {}) {
 			const name = member.nickname || `${member.userId || ''}`
