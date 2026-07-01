@@ -21,11 +21,11 @@ func TestRepositoryGetStatsAggregatesSpaceSignals(t *testing.T) {
 	if got, want := stats.Overview.RecipeTotal, 2; got != want {
 		t.Fatalf("Overview.RecipeTotal = %d, want %d", got, want)
 	}
-	if got, want := stats.Overview.WeeklyAvailableRecipes, 1; got != want {
-		t.Fatalf("Overview.WeeklyAvailableRecipes = %d, want %d", got, want)
+	if got, want := stats.Overview.WishlistRecipeTotal, 1; got != want {
+		t.Fatalf("Overview.WishlistRecipeTotal = %d, want %d", got, want)
 	}
-	if got, want := stats.Overview.WeekendAvailablePlaces, 1; got != want {
-		t.Fatalf("Overview.WeekendAvailablePlaces = %d, want %d", got, want)
+	if got, want := stats.Overview.WantPlaceTotal, 1; got != want {
+		t.Fatalf("Overview.WantPlaceTotal = %d, want %d", got, want)
 	}
 	if got, want := stats.Recipes.DoneTrendTotal, 1; got != want {
 		t.Fatalf("Recipes.DoneTrendTotal = %d, want %d", got, want)

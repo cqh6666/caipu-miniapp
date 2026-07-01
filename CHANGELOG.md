@@ -1,5 +1,23 @@
 # Project Changelog
 
+## 2026-07-01 (空间统计需求体验收敛 + 接口字段命名对齐)
+
+### Changed
+
+- **修改时间**：2026-07-01
+- **变更背景**：对 `docs/space-statistics-capability-design.md` 做交互体验评审后收敛需求，
+  其中"去掉本周/周末伪时效命名"导致前端文档字段与已落地后端接口出现命名偏差，需统一。
+- **接口契约变更**：`GET /api/kitchens/{kitchenID}/stats` 响应 `overview` 下字段改名，
+  前后端统一为"想吃/想去"语义，去除伪时效命名：
+  - `weeklyAvailableRecipes` → `wishlistRecipeTotal`
+  - `weekendAvailablePlaces` → `wantPlaceTotal`
+  - 涉及 `backend/internal/spacestats/model.go`、`repository.go`、`repository_test.go`；
+    该接口目前尚无前端消费方（前端 V1 仍本地聚合），改名零回归。
+- **设计文档收敛**（`docs/space-statistics-capability-design.md`）：移除"快速安排下一餐"
+  （随机推荐非有效行动建议）；新增 §5.5 指标分层原则（用户价值指标 vs 数据健康指标）；
+  半屏内改按钮刷新、下拉刷新仅留空间页主卡片；"本周可选/周末可去"统一为"想吃/想去"；
+  V1 范围收敛为"统计卡 + 单 Tab 总览 + 筛选跳转"，分组 Tab 与列表计数下沉 V1.1。
+
 ## 2026-06-29 (添加菜谱异步自动解析后端可靠性)
 
 ### Added

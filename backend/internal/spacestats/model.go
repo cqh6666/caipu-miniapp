@@ -19,8 +19,8 @@ type OverviewStats struct {
 	PlaceTotal               int               `json:"placeTotal"`
 	SubmittedMealPlanDays    int               `json:"submittedMealPlanDays"`
 	MemberTotal              int               `json:"memberTotal"`
-	WeeklyAvailableRecipes   int               `json:"weeklyAvailableRecipes"`
-	WeekendAvailablePlaces   int               `json:"weekendAvailablePlaces"`
+	WishlistRecipeTotal      int               `json:"wishlistRecipeTotal"`
+	WantPlaceTotal           int               `json:"wantPlaceTotal"`
 	TopRevisitPlaces         []TopRevisitPlace `json:"topRevisitPlaces"`
 	RecentCreatedRecipes     int               `json:"recentCreatedRecipes"`
 	RecentCreatedPlaces      int               `json:"recentCreatedPlaces"`
