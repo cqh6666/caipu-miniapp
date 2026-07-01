@@ -1,5 +1,62 @@
 # Project Changelog
 
+## 2026-07-01 (空间统计前端 V1.1 + V2：分组 Tab / 后端 stats 对接 / 云端验证)
+
+### Added
+
+- **修改时间**：2026-07-01
+- **变更背景**：在 V1 前端闭环基础上，按用户要求一次性补齐设计文档 V1.1 + V2 全部前端编码。
+- **V1.1（`space-stats-sheet.vue` / `index.vue`）**：
+  - 半屏由单 Tab 扩展为「总览 / 美食库 / 打卡库 / 菜单安排」分组 Tab，按 §5.5 指标分层
+    （用户价值指标默认露出，图片覆盖 / 定位 / POI 等数据健康指标折叠进「数据完整度」）。
+  - 打卡库新增重访评分分布（横向条）、推荐项 Top / 场景标签 Top（标签云）、缺项补全引导。
+  - 打卡点状态筛选补充「全部 / 想去 / 去过」计数（`placeStatusCount`），与美食库计数对齐。
+- **V2（`utils/space-stats-api.js` / `utils/space-stats.js` / 组件）**：
+  - 新增 `getKitchenStats(kitchenId,{window})` 封装 `GET /caipu-api/kitchens/{id}/stats`。
+  - `mapRemoteStatsToViewModel` 把后端响应归一为与 `buildSpaceStats` 同构的视图模型，组件无需感知数据源。
+  - `index.vue` 数据源切换：优先后端 stats（趋势 / 成员贡献 / 评分分布），失败静默回退本地聚合，
+    保留 `source: remote/cache`；空间切换清空远端快照。
+  - 半屏新增 `7d/30d/90d/all` 窗口切换、迷你趋势 bar、成员贡献分组。
+  - `buildSpaceStats` 输出扩展 `revisitRatingDistribution` / `itemsByMealType` / `members` / `trends` / `window`，
+    使本地聚合也能驱动 V1.1 分组 Tab。
+- **接口契约健壮性**：adapter 兼容后端字段改名过渡期——线上二进制（6/29 构建）overview 仍是
+  旧字段 `weeklyAvailableRecipes` / `weekendAvailablePlaces`，7/1 的 `wishlistRecipeTotal` /
+  `wantPlaceTotal` 改名尚未部署；adapter 对两种字段名都兼容，并忽略后端过时的 action label
+  （按稳定的 `target` 重新生成「想吃 N 道菜可选」等文案）。
+- **云端后端数据链路验证（`ssh my-cloud`，只读）**：后端 `/api/healthz` 200；migration 021 的
+  `recipe_status_events` / `place_status_events` / `recipes.done_at` / 结构化价格字段均已落地；
+  §9.3 所需列齐全；用 prod JWT 签测试 token 端到端调用 `/stats`，`7d/30d/90d/all` 正常、
+  非法 window 返回 40000；真实响应经本地 adapter 归一正确（想吃 34、成员贡献 3 位、趋势有数据点）。
+- **待办**：后端需重新部署以使 7/1 字段改名（`wishlistRecipeTotal` / `wantPlaceTotal`）在线上生效；
+  前端已兼容，不阻塞。
+
+## 2026-07-01 (空间统计前端 V1：概览卡 + 半屏总览单 Tab)
+
+### Added
+
+- **修改时间**：2026-07-01
+- **变更背景**：按 `docs/space-statistics-capability-design.md` §11 V1 范围落地前端闭环，
+  基于首页已同步的 `recipes` / `places` / `mealOrderStore` / `kitchenMembers` 本地聚合，
+  不新增后端接口与数据库迁移。
+- **新增文件**：
+  - `utils/space-stats.js`：`buildSpaceStats(...)` 纯函数聚合（概览 4 数字、想吃/想去、
+    高分复访 Top 3、待行动、近 30 天动态）+ `formatRelativeUpdatedAt`；覆盖空数据、
+    缺字段、异常日期、标签去重等边界。
+  - `styles/space-stats-tokens.scss`：Nature Distilled 语义色 / 圆角 / 阴影 token
+    （以 mixin 注入组件 scoped 样式，不污染全局）。
+  - `pages/index/components/space-stats-card.{vue,scss}`：2×2 数字格 + 想吃/想去行动条 +
+    同步/缓存/空态；数字 count-up 动效；事件 `open-stats / action / refresh`。
+  - `pages/index/components/space-stats-sheet.{vue,scss}`：半屏单 Tab 总览（资产总量 →
+    高分复访 Top 3 → 待行动 → 近期动态），顶部显式"刷新"按钮 + 更新时间，
+    半屏内不做下拉刷新。
+- **首页接线**（`pages/index/index.vue`）：新增 `spaceStats` / `isSpaceStatsCacheSnapshot`
+  computed，`openSpaceStatsSheet` / `closeSpaceStatsSheet` / `refreshSpaceStats` /
+  `handleSpaceStatsAction` 方法；空间页主卡片下拉刷新（`onPullDownRefresh`，
+  `pages.json` 开启 `enablePullDownRefresh`）；`refreshRecipes` 成功/失败路径维护
+  `spaceStatsSource` / `spaceStatsSyncedAt` 新鲜度标识；统计项跳转美食库/打卡点筛选与
+  店铺详情。
+- **范围说明**：分组 Tab、列表轻量计数（V1.1）、后端 stats 接口对接（V2）未包含。
+
 ## 2026-07-01 (空间统计需求体验收敛 + 接口字段命名对齐)
 
 ### Changed

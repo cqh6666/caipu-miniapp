@@ -1,0 +1,19 @@
+// 空间统计能力设计 §15.2 Design Token
+// Nature Distilled（自然萃取）色板：暖白木质 + 手作温度，仅供 space-stats 相关组件使用。
+// 通过 mixin 写在组件根节点的 scoped 样式里，不污染全局 :root，避免影响老页面。
+@mixin space-stats-tokens {
+	--bg-page: #fffaf3;
+	--bg-card: #ffffff;
+	--bg-sunken: #f8f4ee;
+	--line-soft: #ece2d5;
+	--text-strong: #2f2923;
+	--text-base: #41362d;
+	--text-muted: #8a7d70;
+	--brand-terracotta: #bf715f;
+	--brand-caramel: #f4a236;
+	--brand-sage: #8a9a5b;
+	--shadow-soft: 0 2rpx 8rpx rgba(60, 42, 30, 0.06);
+	--shadow-float: 0 8rpx 24rpx rgba(60, 42, 30, 0.1);
+	--radius-card: 20rpx;
+	--radius-chip: 999rpx;
+}

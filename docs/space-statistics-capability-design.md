@@ -957,40 +957,42 @@ count-up 每次进入 Tab 都重放（只在首次 + 刷新后）。
 - [x] 后端单测通过（`go test ./internal/spacestats`）
 - [x] 后端 `overview` 字段命名对齐前端（`wishlistRecipeTotal` / `wantPlaceTotal`） — 2026-07-01
 
-### 阶段 V1：空间概览卡 + 半屏总览（前端，⏳ 未开始）
+### 阶段 V1：空间概览卡 + 半屏总览（前端，⏳ 进行中）
 
 依据 §9.2 工作包 + §15 视觉 / 动效规范。建议顺序见 §9.6。
 
-- [ ] Design token 落地：语义色 / 圆角 / 阴影 / 间距变量（`styles/tokens.scss` 或 `uni.scss`，§15.2）
-- [ ] `utils/space-stats.js`：`buildSpaceStats(...)` 纯函数 + 空数据 / 缺字段 / 异常日期 / 去重边界用例
-- [ ] `space-stats-card.vue`：2×2 数字格、想吃 / 想去、同步状态，事件 `open-stats/action/refresh`（§15.8）
-- [ ] `space-stats-sheet.vue`（单 Tab 总览）：资产总量 → 高分复访 Top 3 → 待行动 → 近期动态 + 顶部刷新按钮
-- [ ] `index.vue` 接线：`spaceStats` computed、`showSpaceStatsSheet`、更新时间 / 同步状态
-- [ ] `refreshSpaceStats`：空间页主卡片下拉刷新 + 半屏顶部按钮刷新（半屏内不下拉刷新）
-- [ ] `handleSpaceStatsAction`：想吃 / 想去 / 去过点 / 高分店铺等筛选跳转（§7.3）
-- [ ] 动效：数字 count-up、Top 3 stagger、抽屉弹入回弹、骨架屏 shimmer（§15.5）
-- [ ] 空态 / 缓存态 / 同步失败态视觉（§15.6）
-- [ ] 无障碍：`prefers-reduced-motion` 降级、对比度 ≥ 4.5:1、375px 不溢出、可点区 ≥ 88rpx（§15.7）
-- [ ] 前端验证：纯函数用例 + SFC 解析 + `git diff --check` + 真机验证刷新 / 跳转
+- [x] Design token 落地：语义色 / 圆角 / 阴影 / 间距变量（`styles/space-stats-tokens.scss`，mixin 注入，§15.2） — 2026-07-01
+- [x] `utils/space-stats.js`：`buildSpaceStats(...)` 纯函数 + 空数据 / 缺字段 / 异常日期 / 去重边界用例 — 2026-07-01
+- [x] `space-stats-card.vue`：2×2 数字格、想吃 / 想去、同步状态，事件 `open-stats/action/refresh`（§15.8） — 2026-07-01
+- [x] `space-stats-sheet.vue`（单 Tab 总览）：资产总量 → 高分复访 Top 3 → 待行动 → 近期动态 + 顶部刷新按钮 — 2026-07-01
+- [x] `index.vue` 接线：`spaceStats` computed、`showSpaceStatsSheet`、更新时间 / 同步状态 — 2026-07-01
+- [x] `refreshSpaceStats`：空间页主卡片下拉刷新 + 半屏顶部按钮刷新（半屏内不下拉刷新） — 2026-07-01
+- [x] `handleSpaceStatsAction`：想吃 / 想去 / 去过点 / 高分店铺等筛选跳转（§7.3） — 2026-07-01
+- [x] 动效：数字 count-up、Top 3 stagger、抽屉弹入回弹、骨架屏 shimmer（§15.5） — 2026-07-01
+- [x] 空态 / 缓存态 / 同步失败态视觉（§15.6） — 2026-07-01
+- [x] 无障碍：`prefers-reduced-motion` 降级、对比度 ≥ 4.5:1、375px 不溢出、可点区 ≥ 88rpx（§15.7） — 2026-07-01
+- [ ] 前端验证：纯函数用例 + `git diff --check` 已通过；SFC 解析 / 真机验证刷新 / 跳转待微信开发者工具确认
 
-### 阶段 V1.1：分组 Tab + 打卡点体验洞察增强（⏳ 未开始）
+### 阶段 V1.1：分组 Tab + 打卡点体验洞察增强（⏳ 编码完成，待真机验证）
 
-- [ ] 美食库 / 打卡库 / 菜单安排分组 Tab（按 §5.5 指标分层，数据健康指标折叠）
-- [ ] 重访评分分布（轻量饼图或横向条）
-- [ ] 推荐项 Top / 场景标签 Top（标签云）
-- [ ] 缺定位 / 缺推荐项 / 缺重访评分的补全引导
-- [ ] 美食库 / 打卡点列表轻量计数
+- [x] 美食库 / 打卡库 / 菜单安排分组 Tab（按 §5.5 指标分层，数据健康指标折叠进「数据完整度」） — 2026-07-01
+- [x] 重访评分分布（横向条） — 2026-07-01
+- [x] 推荐项 Top / 场景标签 Top（标签云） — 2026-07-01
+- [x] 缺定位 / 缺图片补全引导（可点击跳转筛选） — 2026-07-01
+- [x] 美食库（既有）/ 打卡点（新增 `placeStatusCount`）列表轻量计数 — 2026-07-01
 
-### 阶段 V2：前端接入后端统计接口与趋势（后端已就绪，前端 ⏳ 未开始）
+### 阶段 V2：前端接入后端统计接口与趋势（⏳ 编码完成 + 云端链路验证通过，待真机）
 
 依据 §9.5。后端能力已在阶段 0 落地，本阶段主要是前端切换与新增展示。
 
-- [ ] `utils/space-stats-api.js`：`getKitchenStats(kitchenId, { window })`
-- [ ] 数据源切换：优先后端 stats，失败回退本地聚合，保留 `source: remote/cache`
-- [ ] 窗口切换：`7d / 30d / 90d / all`
-- [ ] 趋势展示：迷你折线图或时间线卡片
-- [ ] 成员贡献分组（成员名 / 头像 / 贡献数字）
-- [ ] （可选）打卡库地图热力图
+- [x] `utils/space-stats-api.js`：`getKitchenStats(kitchenId, { window })` + `mapRemoteStatsToViewModel` 归一 — 2026-07-01
+- [x] 数据源切换：优先后端 stats，失败回退本地聚合，保留 `source: remote/cache`；空间切换清空远端快照 — 2026-07-01
+- [x] 窗口切换：`7d / 30d / 90d / all`（半屏顶部 chip） — 2026-07-01
+- [x] 趋势展示：迷你 bar（新增菜谱 / 打卡 / 安排菜单） — 2026-07-01
+- [x] 成员贡献分组（成员名 / 头像 / 贡献数字，多成员才展示） — 2026-07-01
+- [ ] （可选）打卡库地图热力图（暂缓，§9.7）
+- [x] 云端后端数据链路验证：`/stats` 端到端（含多窗口 + 非法窗口）、migration 021 schema、真实响应经 adapter 归一 — 2026-07-01
+- [ ] **后端待重新部署**：线上二进制仍是 6/29 旧字段名，需部署 7/1 改名（前端 adapter 已兼容，不阻塞）
 
 ### 暂缓 / 待决项
 

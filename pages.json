@@ -11,7 +11,10 @@
 		{
 			"path": "pages/index/index",
 			"style": {
-				"navigationBarTitleText": "我们的数字空间"
+				"navigationBarTitleText": "我们的数字空间",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark",
+				"backgroundColor": "#fffaf3"
 			}
 		},
 		{

@@ -249,6 +249,9 @@
 									:color="activePlaceStatus === tab.value ? '#fffaf3' : tab.value === 'visited' ? '#75866f' : '#a08775'"
 								></up-icon>
 								<text class="status-pill__text">{{ tab.label }}</text>
+								<view class="status-pill__count">
+									<text class="status-pill__count-text">{{ placeStatusCount(tab.value) }}</text>
+								</view>
 							</view>
 						</view>
 					</view>
@@ -315,6 +318,15 @@
 					@leave-kitchen="confirmLeaveCurrentKitchen"
 				></kitchen-section>
 
+				<space-stats-card
+					:stats="spaceStats"
+					:has-kitchen="isKitchenConnected"
+					:is-syncing="isRefreshingSpaceStats"
+					:is-cache-snapshot="isSpaceStatsCacheSnapshot"
+					@open-stats="openSpaceStatsSheet"
+					@action="handleSpaceStatsAction"
+					@refresh="refreshSpaceStats({ silent: false })"
+				></space-stats-card>
 			</template>
 
 			<view v-if="!isLibraryMealOrderMode && activeSection !== 'kitchen'" class="app-footer-links">
@@ -609,6 +621,16 @@
 			@recipes-mutated="handleDietAssistantRecipesMutated"
 		></diet-assistant-sheet>
 
+		<space-stats-sheet
+			:show="showSpaceStatsSheet"
+			:stats="spaceStats"
+			:is-refreshing="isRefreshingSpaceStats"
+			@close="closeSpaceStatsSheet"
+			@refresh="refreshSpaceStats({ silent: false })"
+			@action="handleSpaceStatsAction"
+			@change-window="handleSpaceStatsWindowChange"
+		></space-stats-sheet>
+
 		<action-feedback
 			:visible="recipeStatusFeedbackVisible && activeSection === 'library'"
 			:feedback-key="recipeStatusFeedbackKey"
@@ -669,6 +691,8 @@ import {
 	toggleRecipeStatusById
 } from '../../utils/recipe-store'
 import { createKitchenInvite, formatInviteCode, leaveKitchen, listKitchenMembers, normalizeInviteCode, updateKitchen } from '../../utils/kitchen-api'
+import { buildSpaceStats } from '../../utils/space-stats'
+import { getKitchenStats, normalizeStatsWindow } from '../../utils/space-stats-api'
 import {
 	ensureSession,
 	getCurrentKitchenId,
@@ -703,6 +727,8 @@ import ProfileSheet from './components/profile-sheet.vue'
 import RandomPickSheet from './components/random-pick-sheet.vue'
 import PlaceCardItem from './components/place-card-item.vue'
 import RecipeCardItem from './components/recipe-card-item.vue'
+import SpaceStatsCard from './components/space-stats-card.vue'
+import SpaceStatsSheet from './components/space-stats-sheet.vue'
 import {
 	addDaysFromISODate,
 	buildMealOrderDishSummary,
@@ -858,7 +884,9 @@ export default {
 		PlaceExperienceSheet,
 		ProfileSheet,
 		RandomPickSheet,
-		RecipeCardItem
+		RecipeCardItem,
+		SpaceStatsCard,
+		SpaceStatsSheet
 	},
 	data() {
 		return {
@@ -998,7 +1026,14 @@ export default {
 			isSubmittingKitchenName: false,
 			isSubmittingProfile: false,
 			isLoadingKitchenMembers: false,
-			isPreparingInvite: false
+			isPreparingInvite: false,
+			showSpaceStatsSheet: false,
+			isRefreshingSpaceStats: false,
+			spaceStatsSyncedAt: '',
+			spaceStatsSource: 'cache',
+			spaceStatsWindow: '30d',
+			spaceStatsRemote: null,
+			spaceStatsRemoteKitchenId: 0
 		}
 	},
 	onLoad(options) {
@@ -1011,6 +1046,18 @@ export default {
 			this.refreshRecipes()
 			this.playPendingRecipeReturnFocus()
 		},
+	async onPullDownRefresh() {
+		// 空间页主卡片下拉刷新：串起数据同步 + 统计重新聚合（§11 V1）。
+		try {
+			if (this.activeSection === 'kitchen') {
+				await this.refreshSpaceStats({ silent: false })
+			} else {
+				await this.refreshRecipes({ silent: false })
+			}
+		} finally {
+			uni.stopPullDownRefresh()
+		}
+	},
 	onHide() {
 		if (!this.isSubmittingMealOrder) {
 			this.syncMealOrderDraft({ silent: true })
@@ -1109,6 +1156,28 @@ export default {
 		},
 		isKitchenConnected() {
 			return !!this.currentKitchenName
+		},
+		spaceStats() {
+			// V2：优先使用后端 stats（含趋势 / 成员贡献 / 消费统计）；不可用时回退本地聚合。
+			const remote = this.spaceStatsRemote
+			if (remote && Number(this.spaceStatsRemoteKitchenId) === Number(this.currentKitchenId)) {
+				return { ...remote, isSyncing: this.isRefreshingSpaceStats }
+			}
+			// 本地聚合：以「最近一次同步时间」作为统计快照基准时间，既用于近 30 天窗口聚合，也用于「更新时间」新鲜度展示。
+			const syncedTime = this.spaceStatsSyncedAt ? new Date(this.spaceStatsSyncedAt) : new Date()
+			return buildSpaceStats({
+				recipes: this.recipes,
+				places: this.places,
+				mealOrderStore: this.mealOrderStore,
+				members: this.kitchenMembers,
+				now: Number.isNaN(syncedTime.getTime()) ? new Date() : syncedTime,
+				source: this.spaceStatsSource,
+				isSyncing: this.isRefreshingSpaceStats,
+				window: this.spaceStatsWindow
+			})
+		},
+		isSpaceStatsCacheSnapshot() {
+			return this.spaceStats?.source !== 'remote'
 		},
 		kitchenConnectionLabel() {
 			return this.isKitchenConnected ? '已连接' : '未连接'
@@ -3106,6 +3175,9 @@ export default {
 					this.selectedPlaceId = ''
 					this.showPlaceDetailSheet = false
 					this.showPlaceEditSheet = false
+					// 切换空间时清空上一空间的后端统计快照，避免串味（本地聚合会随新空间数据重新计算）。
+					this.spaceStatsRemote = null
+					this.spaceStatsRemoteKitchenId = 0
 				}
 				if (!nextKitchenId) {
 					this.mealOrderStoreLoadedKitchenId = 0
@@ -3148,6 +3220,8 @@ export default {
 					this.applyRecipes(recipes)
 					this.applyPlaces(places)
 					await this.applyPendingMealOrderAction(kitchenId)
+					this.spaceStatsSource = 'remote'
+					this.spaceStatsSyncedAt = new Date().toISOString()
 				} catch (error) {
 				this.syncErrorMessage = getFriendlySessionErrorMessage(error)
 					this.applySession()
@@ -3155,6 +3229,7 @@ export default {
 					this.applyPlaces(getCachedPlaces())
 				this.kitchenMembers = []
 				this.kitchenMembersKitchenId = 0
+				this.spaceStatsSource = 'cache'
 				if (!silent) {
 					uni.showToast({
 						title: error?.message || '同步失败',
@@ -3186,6 +3261,126 @@ export default {
 					duration: 1560,
 					showSparkles: false
 				})
+			}
+		},
+		openSpaceStatsSheet() {
+			this.showSpaceStatsSheet = true
+			// 打开半屏时按需拉取后端 stats（趋势 / 成员贡献 / 评分分布），失败静默回退本地聚合。
+			if (!this.spaceStatsRemote && !this.isRefreshingSpaceStats && getAccessToken() && Number(this.currentKitchenId)) {
+				this.isRefreshingSpaceStats = true
+				this.loadRemoteSpaceStats(this.spaceStatsWindow).finally(() => {
+					this.isRefreshingSpaceStats = false
+				})
+			}
+		},
+		closeSpaceStatsSheet() {
+			this.showSpaceStatsSheet = false
+		},
+		async loadRemoteSpaceStats(window = this.spaceStatsWindow) {
+			// 仅负责拉取后端 stats 并落地，不管理 isRefreshingSpaceStats（由调用方统一管理 loading）。
+			const kitchenId = Number(this.currentKitchenId) || 0
+			const normalized = normalizeStatsWindow(window)
+			if (!kitchenId || !getAccessToken()) {
+				this.spaceStatsRemote = null
+				this.spaceStatsRemoteKitchenId = 0
+				return false
+			}
+			try {
+				const remote = await getKitchenStats(kitchenId, { window: normalized })
+				// 防止请求期间空间已切换。
+				if (Number(this.currentKitchenId) === kitchenId) {
+					this.spaceStatsRemote = remote
+					this.spaceStatsRemoteKitchenId = kitchenId
+					this.spaceStatsWindow = normalized
+				}
+				return true
+			} catch (error) {
+				// 后端 stats 不可用：保留已有远端数据（窗口切换失败时不清空），无远端数据则走本地聚合。
+				return false
+			}
+		},
+		async refreshSpaceStats(options = {}) {
+			const { silent = true } = options
+			if (this.isRefreshingSpaceStats) return
+			this.isRefreshingSpaceStats = true
+			try {
+				// refreshRecipes 内部已串起 recipes / places / members 同步，并负责设置 spaceStatsSource / spaceStatsSyncedAt。
+				await this.refreshRecipes({ silent })
+				await this.loadMealOrderStore({ silent })
+				await this.loadRemoteSpaceStats(this.spaceStatsWindow)
+			} finally {
+				this.isRefreshingSpaceStats = false
+			}
+		},
+		async handleSpaceStatsWindowChange(window) {
+			const normalized = normalizeStatsWindow(window)
+			if (this.isRefreshingSpaceStats) return
+			if (normalized === this.spaceStatsWindow && this.spaceStatsRemote) return
+			this.isRefreshingSpaceStats = true
+			try {
+				const ok = await this.loadRemoteSpaceStats(normalized)
+				if (!ok) {
+					uni.showToast({ title: '该时间范围暂不可用', icon: 'none' })
+				}
+			} finally {
+				this.isRefreshingSpaceStats = false
+			}
+		},
+		handleSpaceStatsAction(payload = {}) {
+			const actionType = payload?.actionType || ''
+			switch (actionType) {
+				case 'open-add-recipe':
+					this.closeSpaceStatsSheet()
+					this.activeSection = 'library'
+					this.switchAppMode('cook')
+					this.openAddSheet()
+					break
+				case 'view-wishlist-recipes':
+					this.closeSpaceStatsSheet()
+					this.activeSection = 'library'
+					this.switchAppMode('cook')
+					this.activeStatus = 'wishlist'
+					break
+				case 'view-done-recipes':
+					this.closeSpaceStatsSheet()
+					this.activeSection = 'library'
+					this.switchAppMode('cook')
+					this.activeStatus = 'done'
+					break
+				case 'view-want-places':
+					this.closeSpaceStatsSheet()
+					this.activeSection = 'library'
+					this.switchAppMode('explore')
+					this.activePlaceStatus = 'want'
+					break
+				case 'view-visited-places':
+					this.closeSpaceStatsSheet()
+					this.activeSection = 'library'
+					this.switchAppMode('explore')
+					this.activePlaceStatus = 'visited'
+					break
+				case 'view-missing-location-places':
+					this.closeSpaceStatsSheet()
+					this.activeSection = 'library'
+					this.switchAppMode('explore')
+					this.activePlaceStatus = 'all'
+					break
+				case 'view-draft-meal-plan':
+					this.closeSpaceStatsSheet()
+					this.activeSection = 'library'
+					this.switchAppMode('cook')
+					this.openMealOrderDateSheet()
+					break
+				case 'view-place-detail':
+					if (payload?.placeId) {
+						this.closeSpaceStatsSheet()
+						this.activeSection = 'library'
+						this.switchAppMode('explore')
+						this.handlePlaceOpen(payload.placeId)
+					}
+					break
+				default:
+					break
 			}
 		},
 		memberRoleLabel(role) {
@@ -3520,6 +3715,10 @@ export default {
 			const list = this.recipes.filter((recipe) => recipe.mealType === this.activeMealType)
 			if (status === 'all') return list.length
 			return list.filter((recipe) => recipe.status === status).length
+		},
+		placeStatusCount(status) {
+			if (status === 'all') return this.places.length
+			return this.places.filter((place) => place.status === status).length
 		},
 		resetLibraryFilters() {
 			this.activeStatus = 'all'
