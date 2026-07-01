@@ -1,5 +1,21 @@
 # Project Changelog
 
+## 2026-07-01 (空间洞察由半屏弹层改为独立页面)
+
+### Changed
+
+- **修改时间**：2026-07-01
+- **变更背景**：用户反馈半屏（`up-popup`）展示空间较小，希望“查看洞察”跳转到独立页面，浏览更从容。
+- **核心改动**：
+  - 新增页面 `pages/space-stats/index.vue`（`pages.json` 注册 `navigationBarTitleText: 空间洞察`），复用原半屏的四 Tab 内容与白卡样式（`@import` 复用 `pages/index/components/space-stats-sheet.scss`）。
+  - 新增 `utils/space-stats-bridge.js` 作为首页 ↔ 洞察页的内存桥：进入时传统计快照 + `kitchenId`（深拷贝，避免跨页响应式引用），页内动作（进店详情 / 看草稿）写回 `pendingAction`，由首页 `onShow` 消费执行页内切换。
+  - 洞察页自带刷新：`onLoad` 用快照秒开，随后静默 `getKitchenStats(kitchenId,{window:'all'})` 补齐后端数据（趋势 / 成员贡献 / 评分分布），失败保留快照并提示。
+  - 首页 `openSpaceStatsSheet` → `openSpaceStatsPage`：`navigateTo` 洞察页并同步刷新首页侧统计；移除 `<space-stats-sheet>` 使用、组件导入与注册、`showSpaceStatsSheet` 状态、`closeSpaceStatsSheet` 及各处调用。
+  - 删除 `pages/index/components/space-stats-sheet.vue`（样式 `.scss` 保留，供新页面复用）。
+- **影响范围**：仅前端小程序；点击“查看洞察”由弹半屏改为整页跳转，返回用原生返回；不改后端接口契约。
+- **兼容性或风险**：洞察页刷新只拉后端 stats，后端不可用时保留进入时的本地聚合快照（不再在页内做本地重聚合）；页内动作依赖首页 `onShow` 消费，返回首页后生效。
+- **验证情况**：`node --check utils/space-stats-bridge.js` 通过；页面跳转 / 刷新 / 动作回跳需在微信开发者工具复验。
+
 ## 2026-07-01 (空间概览卡 + 空间洞察半屏 UI 改版：衬线数字 / 白卡风格 / 去时间窗口)
 
 ### Changed

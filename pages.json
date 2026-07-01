@@ -58,6 +58,13 @@
 				"navigationStyle": "custom",
 				"navigationBarTitleText": "关于我们"
 			}
+		},
+		{
+			"path": "pages/space-stats/index",
+			"style": {
+				"navigationBarTitleText": "空间洞察",
+				"backgroundColor": "#fffaf3"
+			}
 		}
 	],
 	"globalStyle": {

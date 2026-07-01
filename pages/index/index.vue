@@ -322,7 +322,7 @@
 					:stats="spaceStats"
 					:has-kitchen="isKitchenConnected"
 					:is-syncing="isRefreshingSpaceStats"
-					@open-stats="openSpaceStatsSheet"
+					@open-stats="openSpaceStatsPage"
 					@action="handleSpaceStatsAction"
 				></space-stats-card>
 			</template>
@@ -619,16 +619,6 @@
 			@recipes-mutated="handleDietAssistantRecipesMutated"
 		></diet-assistant-sheet>
 
-		<space-stats-sheet
-			:show="showSpaceStatsSheet"
-			:stats="spaceStats"
-			:is-refreshing="isRefreshingSpaceStats"
-			:sync-error-message="spaceStatsRemoteError"
-			@close="closeSpaceStatsSheet"
-			@refresh="refreshSpaceStats({ silent: false })"
-			@action="handleSpaceStatsAction"
-		></space-stats-sheet>
-
 		<action-feedback
 			:visible="recipeStatusFeedbackVisible && activeSection === 'library'"
 			:feedback-key="recipeStatusFeedbackKey"
@@ -691,6 +681,7 @@ import {
 import { createKitchenInvite, formatInviteCode, leaveKitchen, listKitchenMembers, normalizeInviteCode, updateKitchen } from '../../utils/kitchen-api'
 import { buildSpaceStats } from '../../utils/space-stats'
 import { getKitchenStats, normalizeStatsWindow } from '../../utils/space-stats-api'
+import { setSpaceStatsContext, takePendingSpaceStatsAction } from '../../utils/space-stats-bridge'
 import {
 	ensureSession,
 	getCurrentKitchenId,
@@ -726,7 +717,6 @@ import RandomPickSheet from './components/random-pick-sheet.vue'
 import PlaceCardItem from './components/place-card-item.vue'
 import RecipeCardItem from './components/recipe-card-item.vue'
 import SpaceStatsCard from './components/space-stats-card.vue'
-import SpaceStatsSheet from './components/space-stats-sheet.vue'
 import {
 	addDaysFromISODate,
 	buildMealOrderDishSummary,
@@ -883,8 +873,7 @@ export default {
 		ProfileSheet,
 		RandomPickSheet,
 		RecipeCardItem,
-		SpaceStatsCard,
-		SpaceStatsSheet
+		SpaceStatsCard
 	},
 	data() {
 		return {
@@ -1025,7 +1014,6 @@ export default {
 			isSubmittingProfile: false,
 			isLoadingKitchenMembers: false,
 			isPreparingInvite: false,
-			showSpaceStatsSheet: false,
 			isRefreshingSpaceStats: false,
 			spaceStatsSyncedAt: '',
 			spaceStatsWindow: 'all',
@@ -1044,6 +1032,11 @@ export default {
 			this.refreshPublicAppConfig()
 			this.refreshRecipes()
 			this.playPendingRecipeReturnFocus()
+			// 从空间洞察页返回时，执行页内触发的动作（进店详情 / 看草稿等）。
+			const pendingStatsAction = takePendingSpaceStatsAction()
+			if (pendingStatsAction) {
+				this.$nextTick(() => this.handleSpaceStatsAction(pendingStatsAction))
+			}
 		},
 	async onPullDownRefresh() {
 		// 空间页主卡片下拉刷新：串起数据同步 + 统计重新聚合（§11 V1）。
@@ -3269,29 +3262,27 @@ export default {
 				})
 			}
 		},
-		openSpaceStatsSheet() {
-			this.showSpaceStatsSheet = true
-			if (this.isRefreshingSpaceStats) return
-			if (!getAccessToken() || !Number(this.currentKitchenId)) {
-				this.spaceStatsRemoteError = '当前登录态或空间信息未就绪'
-				return
+		openSpaceStatsPage() {
+			// 传给洞察页当前统计快照 + kitchenId（深拷贝，避免跨页响应式引用）。
+			let snapshot = {}
+			try {
+				snapshot = JSON.parse(JSON.stringify(this.spaceStats || {}))
+			} catch (error) {
+				snapshot = {}
 			}
-			// 空态打开时先串起列表 / 菜单 / 后端 stats 同步，避免只展示旧的本地空快照。
+			setSpaceStatsContext({ stats: snapshot, kitchenId: Number(this.currentKitchenId) || 0 })
+			uni.navigateTo({ url: '/pages/space-stats/index' })
+			// 后台补齐/刷新首页侧统计（卡片与下次进入洞察页时的快照），失败静默回退本地聚合。
+			if (!getAccessToken() || !Number(this.currentKitchenId) || this.isRefreshingSpaceStats) return
 			if (!this.hasSpaceStatsContent && this.spaceStatsAutoSyncKitchenId !== Number(this.currentKitchenId)) {
 				this.spaceStatsAutoSyncKitchenId = Number(this.currentKitchenId)
 				this.refreshSpaceStats({ silent: true })
-				return
-			}
-			// 有本地数据时按需补拉后端 stats（趋势 / 成员贡献 / 评分分布），失败回退本地聚合并保留提示。
-			if (!this.spaceStatsRemote) {
+			} else if (!this.spaceStatsRemote) {
 				this.isRefreshingSpaceStats = true
 				this.loadRemoteSpaceStats(this.spaceStatsWindow, { silent: true }).finally(() => {
 					this.isRefreshingSpaceStats = false
 				})
 			}
-		},
-		closeSpaceStatsSheet() {
-			this.showSpaceStatsSheet = false
 		},
 		async loadRemoteSpaceStats(window = this.spaceStatsWindow, options = {}) {
 			// 仅负责拉取后端 stats 并落地，不管理 isRefreshingSpaceStats（由调用方统一管理 loading）。
@@ -3345,50 +3336,42 @@ export default {
 			const actionType = payload?.actionType || ''
 			switch (actionType) {
 				case 'open-add-recipe':
-					this.closeSpaceStatsSheet()
 					this.activeSection = 'library'
 					this.switchAppMode('cook')
 					this.openAddSheet()
 					break
 				case 'view-wishlist-recipes':
-					this.closeSpaceStatsSheet()
 					this.activeSection = 'library'
 					this.switchAppMode('cook')
 					this.activeStatus = 'wishlist'
 					break
 				case 'view-done-recipes':
-					this.closeSpaceStatsSheet()
 					this.activeSection = 'library'
 					this.switchAppMode('cook')
 					this.activeStatus = 'done'
 					break
 				case 'view-want-places':
-					this.closeSpaceStatsSheet()
 					this.activeSection = 'library'
 					this.switchAppMode('explore')
 					this.activePlaceStatus = 'want'
 					break
 				case 'view-visited-places':
-					this.closeSpaceStatsSheet()
 					this.activeSection = 'library'
 					this.switchAppMode('explore')
 					this.activePlaceStatus = 'visited'
 					break
 				case 'view-missing-location-places':
-					this.closeSpaceStatsSheet()
 					this.activeSection = 'library'
 					this.switchAppMode('explore')
 					this.activePlaceStatus = 'all'
 					break
 				case 'view-draft-meal-plan':
-					this.closeSpaceStatsSheet()
 					this.activeSection = 'library'
 					this.switchAppMode('cook')
 					this.openMealOrderDateSheet()
 					break
 				case 'view-place-detail':
 					if (payload?.placeId) {
-						this.closeSpaceStatsSheet()
 						this.activeSection = 'library'
 						this.switchAppMode('explore')
 						this.handlePlaceOpen(payload.placeId)
