@@ -49,7 +49,7 @@
 
 		<scroll-view class="space-stats-sheet__scroll" scroll-y :show-scrollbar="false">
 			<!-- ============ 总览 ============ -->
-			<block v-if="activeTab === 'overview'">
+			<view v-if="isTabMounted('overview')" v-show="activeTab === 'overview'">
 				<view class="stats-section">
 					<text class="stats-section__title">高分复访推荐</text>
 					<view v-if="topRevisitPlaces.length" class="revisit-list">
@@ -129,25 +129,25 @@
 						</view>
 					</view>
 				</view>
-			</block>
+			</view>
 
 			<!-- ============ 美食库 ============ -->
-			<block v-else-if="activeTab === 'recipes'">
+			<view v-if="isTabMounted('recipes')" v-show="activeTab === 'recipes'">
 				<view class="ratio-grid">
 					<view class="ratio-card">
 						<text class="ratio-card__label">想吃 / 吃过</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main ratio-card__main--sage">{{ recipeStats.byStatus.wishlist || 0 }}</text>
+							<text class="ratio-card__main ratio-card__main--sage">{{ animatedInt('recipeWishlist') }}</text>
 							<text class="ratio-card__slash">/</text>
-							<text class="ratio-card__sub">{{ recipeStats.byStatus.done || 0 }}</text>
+							<text class="ratio-card__sub">{{ animatedInt('recipeDone') }}</text>
 						</view>
 					</view>
 					<view class="ratio-card">
 						<text class="ratio-card__label">早餐 / 正餐</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main ratio-card__main--caramel">{{ recipeStats.byMealType.breakfast || 0 }}</text>
+							<text class="ratio-card__main ratio-card__main--caramel">{{ animatedInt('recipeBreakfast') }}</text>
 							<text class="ratio-card__slash">/</text>
-							<text class="ratio-card__sub">{{ recipeStats.byMealType.main || 0 }}</text>
+							<text class="ratio-card__sub">{{ animatedInt('recipeMain') }}</text>
 						</view>
 					</view>
 				</view>
@@ -157,7 +157,7 @@
 					<view class="progress-row">
 						<view class="progress-row__head">
 							<text class="progress-row__label">图片覆盖率</text>
-							<text class="progress-row__value progress-row__value--sage">{{ imageCoveragePct }}%</text>
+							<text class="progress-row__value progress-row__value--sage">{{ animatedInt('imageCoveragePct') }}%</text>
 						</view>
 						<view class="progress-track">
 							<view class="progress-fill progress-fill--sage" :style="{ width: imageCoveragePct + '%' }"></view>
@@ -166,38 +166,38 @@
 					<view class="progress-row">
 						<view class="progress-row__head">
 							<text class="progress-row__label">已智能解析</text>
-							<text class="progress-row__value progress-row__value--terracotta">{{ recipeStats.parsedTotal || 0 }} 道</text>
+							<text class="progress-row__value progress-row__value--terracotta">{{ animatedInt('recipeParsedTotal') }} 道</text>
 						</view>
 						<view class="progress-track">
 							<view class="progress-fill progress-fill--terracotta" :style="{ width: parsedPct + '%' }"></view>
 						</view>
 					</view>
 				</view>
-			</block>
+			</view>
 
 			<!-- ============ 打卡库 ============ -->
-			<block v-else-if="activeTab === 'places'">
+			<view v-if="isTabMounted('places')" v-show="activeTab === 'places'">
 				<view class="ratio-grid">
 					<view class="ratio-card">
 						<text class="ratio-card__label">想去 / 去过</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main ratio-card__main--terracotta">{{ placeStats.byStatus.want || 0 }}</text>
+							<text class="ratio-card__main ratio-card__main--terracotta">{{ animatedInt('placeWant') }}</text>
 							<text class="ratio-card__slash">/</text>
-							<text class="ratio-card__sub">{{ placeStats.byStatus.visited || 0 }}</text>
+							<text class="ratio-card__sub">{{ animatedInt('placeVisited') }}</text>
 						</view>
 					</view>
 					<view class="ratio-card">
 						<text class="ratio-card__label">有定位比例</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main ratio-card__main--sage">{{ placeStats.locatedTotal || 0 }}</text>
+							<text class="ratio-card__main ratio-card__main--sage">{{ animatedInt('placeLocated') }}</text>
 							<text class="ratio-card__slash">/</text>
-							<text class="ratio-card__sub">{{ overview.placeTotal || 0 }}</text>
+							<text class="ratio-card__sub">{{ animatedInt('placeTotal') }}</text>
 						</view>
 					</view>
 				</view>
 
 				<view class="insight-card" :class="{ 'insight-card--last': !sceneTags.length && !recommendedTags.length }">
-					<text class="insight-card__title">重访意愿分布（已打卡 {{ ratedPlaceTotal }} 家）</text>
+					<text class="insight-card__title">重访意愿分布（已打卡 {{ animatedInt('ratedPlaceTotal') }} 家）</text>
 					<view v-if="hasRevisitRatings" class="rating-dist">
 						<view v-for="row in revisitBars" :key="row.rating" class="rating-row">
 							<view class="rating-row__stars">
@@ -238,22 +238,22 @@
 						</view>
 					</view>
 				</view>
-			</block>
+			</view>
 
 			<!-- ============ 菜单安排 ============ -->
-			<block v-else>
+			<view v-if="isTabMounted('mealPlans')" v-show="activeTab === 'mealPlans'">
 				<view class="ratio-grid">
 					<view class="ratio-card">
 						<text class="ratio-card__label">已安排天数</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main">{{ mealPlanStats.submittedDays || 0 }}</text>
+							<text class="ratio-card__main">{{ animatedInt('mealSubmittedDays') }}</text>
 							<text class="ratio-card__unit">天</text>
 						</view>
 					</view>
 					<view class="ratio-card">
 						<text class="ratio-card__label">草稿天数</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main ratio-card__main--terracotta">{{ mealPlanStats.draftDays || 0 }}</text>
+							<text class="ratio-card__main ratio-card__main--terracotta">{{ animatedInt('mealDraftDays') }}</text>
 							<text class="ratio-card__unit">天</text>
 						</view>
 					</view>
@@ -285,20 +285,20 @@
 					<view class="ratio-card">
 						<text class="ratio-card__label">平均每餐</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main">{{ averageDishText }}</text>
+							<text class="ratio-card__main">{{ animatedFixed('mealAverageDishCount', 1) }}</text>
 							<text class="ratio-card__unit">道菜</text>
 						</view>
 					</view>
 					<view class="ratio-card">
 						<text class="ratio-card__label">早餐 / 正餐</text>
 						<view class="ratio-card__value-row">
-							<text class="ratio-card__main ratio-card__main--caramel">{{ mealPlanStats.itemsByMealType.breakfast || 0 }}</text>
+							<text class="ratio-card__main ratio-card__main--caramel">{{ animatedInt('mealBreakfast') }}</text>
 							<text class="ratio-card__slash">/</text>
-							<text class="ratio-card__sub">{{ mealPlanStats.itemsByMealType.main || 0 }}</text>
+							<text class="ratio-card__sub">{{ animatedInt('mealMain') }}</text>
 						</view>
 					</view>
 				</view>
-			</block>
+			</view>
 		</scroll-view>
 	</view>
 </template>
@@ -311,6 +311,13 @@ import { takeSpaceStatsContext, setPendingSpaceStatsAction } from '../../utils/s
 const TREND_BAR_MAX_HEIGHT = 40
 const TREND_BAR_MIN_HEIGHT = 4
 const STATS_WINDOW = 'all'
+const COUNT_UP_DURATION_MS = 640
+const COUNT_UP_STEP_MS = 40
+const TAB_ANIMATED_KEYS = {
+	recipes: ['recipeWishlist', 'recipeDone', 'recipeBreakfast', 'recipeMain', 'imageCoveragePct', 'recipeParsedTotal'],
+	places: ['placeWant', 'placeVisited', 'placeLocated', 'placeTotal', 'ratedPlaceTotal'],
+	mealPlans: ['mealSubmittedDays', 'mealDraftDays', 'mealAverageDishCount', 'mealBreakfast', 'mealMain']
+}
 
 export default {
 	name: 'SpaceStatsPage',
@@ -321,6 +328,28 @@ export default {
 			isRefreshing: false,
 			syncErrorMessage: '',
 			activeTab: 'overview',
+			mountedTabs: {
+				overview: true
+			},
+			animatedNumbers: {
+				recipeWishlist: 0,
+				recipeDone: 0,
+				recipeBreakfast: 0,
+				recipeMain: 0,
+				imageCoveragePct: 0,
+				recipeParsedTotal: 0,
+				placeWant: 0,
+				placeVisited: 0,
+				placeLocated: 0,
+				placeTotal: 0,
+				ratedPlaceTotal: 0,
+				mealSubmittedDays: 0,
+				mealDraftDays: 0,
+				mealAverageDishCount: 0,
+				mealBreakfast: 0,
+				mealMain: 0
+			},
+			countUpTimers: {},
 			tabs: [
 				{ value: 'overview', label: '总览' },
 				{ value: 'recipes', label: '美食库' },
@@ -329,12 +358,30 @@ export default {
 			]
 		}
 	},
+	watch: {
+		activeTab: {
+			immediate: true,
+			handler(tab) {
+				this.markTabMounted(tab)
+				this.$nextTick(() => this.runCountUpForTab(tab))
+			}
+		},
+		stats() {
+			this.$nextTick(() => this.runCountUpForMountedTabs())
+		}
+	},
 	onLoad() {
 		const context = takeSpaceStatsContext() || {}
 		this.stats = context.stats && typeof context.stats === 'object' ? context.stats : {}
 		this.kitchenId = Number(context.kitchenId) || 0
 		// 进入时静默补拉后端 stats（趋势 / 成员贡献 / 评分分布），失败保留快照。
 		this.loadRemote({ silent: true })
+	},
+	beforeUnmount() {
+		this.clearCountUpTimers()
+	},
+	onUnload() {
+		this.clearCountUpTimers()
 	},
 	computed: {
 		overview() {
@@ -463,10 +510,6 @@ export default {
 			if (total <= 0) return 0
 			return Math.min(100, Math.round(((this.recipeStats.parsedTotal || 0) / total) * 100))
 		},
-		averageDishText() {
-			const value = Number(this.mealPlanStats.averageDishCount) || 0
-			return value ? value.toFixed(1) : '0'
-		},
 		nextPlanTitles() {
 			const titles = this.mealPlanStats.nextPlan?.titles
 			return Array.isArray(titles) && titles.length ? titles.join(' · ') : ''
@@ -475,6 +518,83 @@ export default {
 	methods: {
 		handleRefresh() {
 			this.loadRemote({ silent: false })
+		},
+		animatedInt(key) {
+			return String(Math.round(Number(this.animatedNumbers[key]) || 0))
+		},
+		animatedFixed(key, decimals = 1) {
+			const value = Number(this.animatedNumbers[key]) || 0
+			return value.toFixed(decimals)
+		},
+		getAnimatedTargets() {
+			return {
+				recipeWishlist: this.recipeStats.byStatus.wishlist || 0,
+				recipeDone: this.recipeStats.byStatus.done || 0,
+				recipeBreakfast: this.recipeStats.byMealType.breakfast || 0,
+				recipeMain: this.recipeStats.byMealType.main || 0,
+				imageCoveragePct: this.imageCoveragePct,
+				recipeParsedTotal: this.recipeStats.parsedTotal || 0,
+				placeWant: this.placeStats.byStatus.want || 0,
+				placeVisited: this.placeStats.byStatus.visited || 0,
+				placeLocated: this.placeStats.locatedTotal || 0,
+				placeTotal: this.overview.placeTotal || 0,
+				ratedPlaceTotal: this.ratedPlaceTotal,
+				mealSubmittedDays: this.mealPlanStats.submittedDays || 0,
+				mealDraftDays: this.mealPlanStats.draftDays || 0,
+				mealAverageDishCount: this.mealPlanStats.averageDishCount || 0,
+				mealBreakfast: this.mealPlanStats.itemsByMealType.breakfast || 0,
+				mealMain: this.mealPlanStats.itemsByMealType.main || 0
+			}
+		},
+		runCountUpForMountedTabs() {
+			Object.keys(TAB_ANIMATED_KEYS).forEach((tab) => {
+				if (this.mountedTabs[tab]) {
+					this.runCountUpForTab(tab)
+				}
+			})
+		},
+		runCountUpForTab(tab) {
+			const keys = TAB_ANIMATED_KEYS[tab] || []
+			if (!keys.length) return
+			const targets = this.getAnimatedTargets()
+			keys.forEach((key) => this.animateNumber(key, Number(targets[key]) || 0))
+		},
+		clearCountUpTimers(keys = Object.keys(this.countUpTimers)) {
+			keys.forEach((key) => {
+				if (this.countUpTimers[key]) {
+					clearInterval(this.countUpTimers[key])
+					delete this.countUpTimers[key]
+				}
+			})
+		},
+		animateNumber(key, target) {
+			this.clearCountUpTimers([key])
+			const start = Number(this.animatedNumbers[key]) || 0
+			if (start === target) {
+				this.animatedNumbers[key] = target
+				return
+			}
+
+			const totalSteps = Math.max(1, Math.round(COUNT_UP_DURATION_MS / COUNT_UP_STEP_MS))
+			let currentStep = 0
+			this.countUpTimers[key] = setInterval(() => {
+				currentStep += 1
+				const progress = Math.min(1, currentStep / totalSteps)
+				const eased = 1 - Math.pow(1 - progress, 3)
+				this.animatedNumbers[key] = start + (target - start) * eased
+
+				if (progress >= 1) {
+					this.clearCountUpTimers([key])
+					this.animatedNumbers[key] = target
+				}
+			}, COUNT_UP_STEP_MS)
+		},
+		markTabMounted(tab) {
+			if (!tab || this.mountedTabs[tab]) return
+			this.mountedTabs[tab] = true
+		},
+		isTabMounted(tab) {
+			return !!this.mountedTabs[tab]
 		},
 		async loadRemote(options = {}) {
 			const { silent = true } = options
