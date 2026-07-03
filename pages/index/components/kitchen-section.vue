@@ -67,6 +67,8 @@
 			</view>
 		</view>
 
+		<slot name="overview"></slot>
+
 		<view class="member-panel">
 			<view class="member-panel__header">
 				<view class="member-panel__heading">

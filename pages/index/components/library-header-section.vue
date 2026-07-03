@@ -33,8 +33,8 @@
 			:key="spotlightMotionKey"
 			:class="[spotlightMotionClass, { 'meal-order-spotlight--tap-pulse': tapPulseActive }]"
 			@tap="handleSpotlightTap"
-			@touchstart="$emit('spotlight-touchstart', $event)"
-			@touchend="$emit('spotlight-touchend', $event)"
+			@touchstart.stop="$emit('spotlight-touchstart', $event)"
+			@touchend.stop="$emit('spotlight-touchend', $event)"
 		>
 			<view class="meal-order-spotlight__date-card">
 				<text v-if="mealOrderSpotlightLeadText" class="meal-order-spotlight__lead">{{ mealOrderSpotlightLeadText }}</text>

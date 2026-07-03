@@ -11,6 +11,9 @@
 		<view
 			v-if="activeSection === 'library'"
 			class="library-shell"
+			@touchstart="handleAppModeTouchStart"
+			@touchend="handleAppModeTouchEnd"
+			@touchcancel="resetAppModeTouch"
 		>
 			<!-- Mode Switcher: 美食库 / 打卡点 -->
 			<view class="mode-switcher">
@@ -44,8 +47,12 @@
 			</view>
 
 			<!-- 美食库模式 -->
-			<view v-if="appMode === 'cook'" class="library-mode-content">
-			<library-header-section
+			<view
+				v-if="appMode === 'cook'"
+				class="library-mode-content"
+				:class="appModePaneMotionClass"
+			>
+				<library-header-section
 					:is-library-meal-order-mode="isLibraryMealOrderMode"
 					:library-header-title="libraryHeaderTitle"
 					:library-header-summary="libraryHeaderSummary"
@@ -208,7 +215,11 @@
 			</view>
 
 			<!-- 打卡点模式 -->
-			<view v-else class="explore-mode-content">
+			<view
+				v-else
+				class="explore-mode-content"
+				:class="appModePaneMotionClass"
+			>
 				<!-- 打卡点搜索 & 筛选 -->
 				<view class="toolbar">
 					<view class="toolbar__search-row">
@@ -316,15 +327,17 @@
 					@member-tap="handleMemberCardTap"
 					@open-invite-code-sheet="openInviteCodeSheet"
 					@leave-kitchen="confirmLeaveCurrentKitchen"
-				></kitchen-section>
-
-				<space-stats-card
-					:stats="spaceStats"
-					:has-kitchen="isKitchenConnected"
-					:is-syncing="isRefreshingSpaceStats"
-					@open-stats="openSpaceStatsPage"
-					@action="handleSpaceStatsAction"
-				></space-stats-card>
+				>
+					<template #overview>
+						<space-stats-card
+							:stats="spaceStats"
+							:has-kitchen="isKitchenConnected"
+							:is-syncing="isRefreshingSpaceStats"
+							@open-stats="openSpaceStatsPage"
+							@action="handleSpaceStatsAction"
+						></space-stats-card>
+					</template>
+				</kitchen-section>
 			</template>
 
 			<view v-if="!isLibraryMealOrderMode && activeSection !== 'kitchen'" class="app-footer-links">
@@ -737,6 +750,14 @@ import { buildRecipeCard, buildRecipeCoverVersion, buildRecipeSearchText, extrac
 import { readRecentSearches, writeRecentSearches } from './storage'
 
 const inviteShareFallbackImageUrl = '/static/invite-share-cover.png'
+const APP_MODE_SWIPE_MIN_DISTANCE = 64
+const APP_MODE_SWIPE_DOMINANCE_RATIO = 1.18
+
+function getGestureTouch(event = {}, preferChanged = false) {
+	const primary = preferChanged ? event?.changedTouches : event?.touches
+	const fallback = preferChanged ? event?.touches : event?.changedTouches
+	return primary?.[0] || fallback?.[0] || null
+}
 
 function createEmptyPlaceDraft(overrides = {}) {
 	return {
@@ -880,6 +901,11 @@ export default {
 			statusMap,
 			activeSection: 'library',
 			appMode: 'cook',
+			appModeTouchTracking: false,
+			appModeTouchStartX: 0,
+			appModeTouchStartY: 0,
+			appModeMotionDirection: '',
+			appModeMotionTimer: null,
 			activePlaceStatus: 'all',
 			placeSearchKeyword: '',
 			isPlaceSearchFocused: false,
@@ -1056,6 +1082,8 @@ export default {
 		}
 		this.clearMealOrderDraftSyncTimer()
 		this.clearMealOrderModeMotionTimer()
+		this.clearAppModeMotionTimer()
+		this.resetAppModeTouch()
 		this.clearRecipeStatusFeedback()
 		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
@@ -1068,6 +1096,8 @@ export default {
 		}
 		this.clearMealOrderDraftSyncTimer()
 		this.clearMealOrderModeMotionTimer()
+		this.clearAppModeMotionTimer()
+		this.resetAppModeTouch()
 		this.clearRecipeStatusFeedback()
 		this.closeRandomPickSheet()
 		this.clearDraftLinkPreviewState()
@@ -1095,6 +1125,11 @@ export default {
 		}
 	},
 		computed: {
+			appModePaneMotionClass() {
+				if (this.appModeMotionDirection === 'forward') return 'app-mode-pane--forward'
+				if (this.appModeMotionDirection === 'back') return 'app-mode-pane--back'
+				return ''
+			},
 			trimmedPlaceSearchKeyword() {
 				return String(this.placeSearchKeyword || '').trim()
 			},
@@ -1695,8 +1730,66 @@ export default {
 		}
 	},
 		methods: {
+			clearAppModeMotionTimer() {
+				if (this.appModeMotionTimer) {
+					clearTimeout(this.appModeMotionTimer)
+					this.appModeMotionTimer = null
+				}
+				this.appModeMotionDirection = ''
+			},
+			queueAppModeMotion(nextMode = 'cook') {
+				this.clearAppModeMotionTimer()
+				this.appModeMotionDirection = nextMode === 'explore' ? 'forward' : 'back'
+				this.appModeMotionTimer = setTimeout(() => {
+					this.appModeMotionDirection = ''
+					this.appModeMotionTimer = null
+				}, 260)
+			},
+			resetAppModeTouch() {
+				this.appModeTouchTracking = false
+				this.appModeTouchStartX = 0
+				this.appModeTouchStartY = 0
+			},
+			handleAppModeTouchStart(event) {
+				const touch = getGestureTouch(event)
+				if (
+					!touch ||
+					this.activeSection !== 'library' ||
+					this.isSearchFocused ||
+					this.isPlaceSearchFocused
+				) {
+					return
+				}
+				this.appModeTouchTracking = true
+				this.appModeTouchStartX = Number(touch.clientX || touch.pageX || 0)
+				this.appModeTouchStartY = Number(touch.clientY || touch.pageY || 0)
+			},
+			handleAppModeTouchEnd(event) {
+				if (!this.appModeTouchTracking) return
+				const touch = getGestureTouch(event, true)
+				const startX = Number(this.appModeTouchStartX || 0)
+				const startY = Number(this.appModeTouchStartY || 0)
+				this.resetAppModeTouch()
+				if (!touch || this.activeSection !== 'library') return
+
+				const endX = Number(touch.clientX || touch.pageX || 0)
+				const endY = Number(touch.clientY || touch.pageY || 0)
+				const diffX = endX - startX
+				const diffY = endY - startY
+				const distanceX = Math.abs(diffX)
+				const distanceY = Math.abs(diffY)
+				if (
+					distanceX < APP_MODE_SWIPE_MIN_DISTANCE ||
+					distanceX < distanceY * APP_MODE_SWIPE_DOMINANCE_RATIO
+				) {
+					return
+				}
+
+				this.switchAppMode(diffX < 0 ? 'explore' : 'cook')
+			},
 			switchAppMode(mode) {
 				if (this.appMode === mode) return
+				this.queueAppModeMotion(mode)
 				this.appMode = mode
 				if (mode === 'explore') {
 					this.refreshPlaces({ silent: true })
@@ -4287,6 +4380,42 @@ export default {
 
 	.library-shell {
 		display: block;
+	}
+
+	.library-mode-content,
+	.explore-mode-content {
+		transform-origin: center top;
+		will-change: transform, opacity;
+	}
+
+	.app-mode-pane--forward {
+		animation: app-mode-pane-forward 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+
+	.app-mode-pane--back {
+		animation: app-mode-pane-back 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+
+	@keyframes app-mode-pane-forward {
+		from {
+			opacity: 0.72;
+			transform: translateX(34rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+
+	@keyframes app-mode-pane-back {
+		from {
+			opacity: 0.72;
+			transform: translateX(-34rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
 	}
 
 	.mode-switcher {
