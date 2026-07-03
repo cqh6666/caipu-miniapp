@@ -1,20 +1,41 @@
 <template>
   <AppShell>
     <template #toolbar>
-      <div class="toolbar-cluster toolbar-cluster--status">
-        <button
-          v-if="latestTestSummary"
-          type="button"
-          class="test-result-chip"
-          @click="scrollToTestCard"
+      <div class="toolbar-cluster toolbar-cluster--publish">
+        <StatusTag
+          v-if="draftScene"
+          :tone="bottomBarState.tone"
+          :text="statusBarText"
+        />
+        <el-button
+          v-if="draftScene"
+          :loading="testingScene"
+          :disabled="!draftScene"
+          @click="handleTestScene"
         >
-          <StatusTag
-            :tone="latestTestSummary.tone"
-            :text="latestTestSummary.text"
-          />
-        </button>
-      </div>
-      <div class="toolbar-cluster toolbar-cluster--meta">
+          测试草稿
+        </el-button>
+        <el-button
+          v-if="draftScene && isDirty"
+          type="primary"
+          :loading="savingScene"
+          :disabled="savingScene"
+          @click="handleSaveScene"
+        >
+          保存并发布
+        </el-button>
+        <el-tooltip :content="discardTooltip" placement="bottom">
+          <span v-if="draftScene && isDirty" class="toolbar-discard-wrap">
+            <el-button
+              type="danger"
+              text
+              :disabled="!isDirty"
+              @click="handleDiscardDraft"
+            >
+              放弃草稿
+            </el-button>
+          </span>
+        </el-tooltip>
         <el-tooltip content="重新拉取远端配置" placement="bottom">
           <el-button
             circle
@@ -25,24 +46,18 @@
             <el-icon><Refresh /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip :content="discardTooltip" placement="bottom">
-          <span class="toolbar-discard-wrap">
-            <el-button
-              type="danger"
-              link
-              :disabled="!isDirty"
-              @click="handleDiscardDraft"
-            >
-              放弃草稿
-            </el-button>
-          </span>
-        </el-tooltip>
       </div>
     </template>
 
     <button type="button" class="skip-link" @click="focusMainEditor">
       跳到主编辑区
     </button>
+
+    <div
+      ref="topCtaSentinelRef"
+      class="routing-top-cta-sentinel"
+      aria-hidden="true"
+    ></div>
 
     <section
       id="ai-provider-scene-cards"
@@ -85,7 +100,10 @@
               </div>
               <h3>{{ item.title }}</h3>
             </div>
-            <StatusTag :tone="item.tone" :text="item.statusText" />
+            <StatusTag
+              :tone="item.aggregate.tone"
+              :text="item.aggregate.text"
+            />
           </div>
           <div class="routing-scene-card__meta">
             <span>策略：{{ displayAIRoutingStrategy(item.strategy) }}</span>
@@ -129,9 +147,7 @@
           <div class="routing-scene-card__footer">
             <span>最近修改：{{ formatDateTime(item.updatedAt) }}</span>
             <span class="routing-scene-card__channel">
-              线上链路：<code>{{
-                sceneEffectiveChannel(item.scene).label
-              }}</code>
+              线上：{{ savedSceneChannel(item.scene).label }}
             </span>
           </div>
         </button>
@@ -171,47 +187,6 @@
             场景策略
             <el-icon class="routing-breadcrumb__sep"><ArrowRight /></el-icon>
             正在编辑：<strong>{{ currentSceneTitle }}</strong>
-            <el-popover placement="bottom-start" :width="340" trigger="click">
-              <template #reference>
-                <button
-                  type="button"
-                  class="routing-breadcrumb__channel"
-                  :class="`routing-breadcrumb__channel--${currentChannel.tone}`"
-                >
-                  线上链路：<code>{{ currentChannel.label }}</code>
-                  <el-icon class="routing-breadcrumb__channel-icon"
-                    ><InfoFilled
-                  /></el-icon>
-                </button>
-              </template>
-              <div class="channel-popover">
-                <div class="channel-popover__title">
-                  当前状态：{{ currentChannel.reason }}
-                </div>
-                <table class="channel-popover__table">
-                  <thead>
-                    <tr>
-                      <th>草稿/正式</th>
-                      <th>新路由</th>
-                      <th>实际生效链路</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="(row, idx) in channelMatrix"
-                      :key="idx"
-                      :class="{ 'is-hit': row.hit }"
-                    >
-                      <td>{{ row.draft }}</td>
-                      <td>{{ row.toggle }}</td>
-                      <td>
-                        <code>{{ row.effect }}</code>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </el-popover>
           </span>
           <div class="routing-breadcrumb__actions">
             <el-popover
@@ -267,18 +242,69 @@
           aria-live="polite"
         >
           <div class="routing-status-strip__main">
-            <strong>{{ currentSceneTitle }}</strong>
-            <span
-              ><code>{{ currentChannel.label }}</code></span
-            >
-            <span>{{ currentChannel.reason }}</span>
+            <div>
+              <strong>{{ currentEffectHeadline }}</strong>
+              <p>{{ currentEffectDescription }}</p>
+            </div>
+            <div class="routing-status-strip__tags">
+              <StatusTag :tone="currentChannel.tone" :text="currentChannel.label" />
+              <StatusTag
+                :tone="alertStatusSummary.tone"
+                :text="alertStatusSummary.text"
+              />
+              <StatusTag
+                v-if="isDirty"
+                tone="warning"
+                :text="`${diffCount} 项未保存`"
+              />
+            </div>
           </div>
           <div class="routing-status-strip__actions">
-            <StatusTag
-              :tone="alertStatusSummary.tone"
-              :text="alertStatusSummary.text"
-            />
-            <el-popover placement="bottom-end" :width="340" trigger="click">
+            <el-popover
+              placement="bottom-end"
+              :width="mediumPopoverWidth"
+              trigger="click"
+            >
+              <template #reference>
+                <el-button link>查看原因</el-button>
+              </template>
+              <div class="channel-popover">
+                <div class="channel-popover__title">
+                  {{ currentSceneTitle }} 当前生效逻辑
+                </div>
+                <p class="channel-popover__text">
+                  {{ currentChannel.reason }}
+                </p>
+                <table class="channel-popover__table">
+                  <thead>
+                    <tr>
+                      <th>状态</th>
+                      <th>新路由</th>
+                      <th>用户可见结论</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(row, idx) in channelMatrix"
+                      :key="idx"
+                      :class="{ 'is-hit': row.hit }"
+                    >
+                      <td>{{ row.draft }}</td>
+                      <td>{{ row.toggle }}</td>
+                      <td>{{ row.effect }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="channel-popover__tech">
+                  技术标识：<code>{{ currentChannel.technicalLabel }}</code>
+                </div>
+              </div>
+            </el-popover>
+            <el-popover
+              placement="bottom-end"
+              :width="mediumPopoverWidth"
+              trigger="click"
+            >
               <template #reference>
                 <el-button link>告警配置</el-button>
               </template>
@@ -288,11 +314,12 @@
                   {{ alertStatusDescription }}
                 </p>
                 <div v-if="alertOverview" class="routing-alert-overview-meta">
+                  <span>作用域：当前场景 {{ currentSceneTitle }}</span>
                   <span>阈值：{{ alertOverview.failureThreshold }} 次</span>
                   <span>
                     最近告警：{{
-                      alertOverview.latestAlertedAt
-                        ? formatDateTime(alertOverview.latestAlertedAt)
+                      currentSceneLatestAlertedAt
+                        ? formatDateTime(currentSceneLatestAlertedAt)
                         : "暂无"
                     }}
                   </span>
@@ -341,8 +368,8 @@
                   :text="draftScene.enabled ? '新路由已启用' : '新路由未启用'"
                 />
                 <StatusTag
-                  :tone="draftScene.compatibilityMode ? 'warning' : 'success'"
-                  :text="draftScene.compatibilityMode ? '兼容模式' : '正式模式'"
+                  :tone="currentChannel.tone"
+                  :text="currentChannel.label"
                 />
               </div>
             </div>
@@ -376,7 +403,7 @@
                 /></span>
                 <el-input-number
                   v-model="draftScene.maxAttempts"
-                  :min="1"
+                  :min="minimumMaxAttempts"
                   :max="maxAttemptCeiling"
                 />
                 <small
@@ -387,7 +414,7 @@
                 >
                   {{
                     numericWarn.maxAttempts ||
-                    "建议 2–5 次；过大会让失败降级变慢"
+                    "建议 2-5 次；过大会让失败降级变慢"
                   }}
                 </small>
               </label>
@@ -406,7 +433,7 @@
                 >
                   {{
                     numericWarn.failureThreshold ||
-                    "连续失败达到该次数后触发熔断，建议 3–10"
+                    "连续失败达到该次数后触发熔断，建议 3-10"
                   }}
                 </small>
               </label>
@@ -559,9 +586,21 @@
               v-if="!draftScene.providers.length"
               mode="empty"
               title="当前还没有 Provider 节点"
-              description="先新增一个节点，再决定是否启用新路由。"
+              description="从常见模板开始，后续再补 Base URL、密钥和模型细节。"
               compact
             />
+            <div v-if="!draftScene.providers.length" class="provider-preset-grid">
+              <button
+                v-for="preset in providerPresetOptions"
+                :key="preset.key"
+                type="button"
+                class="provider-preset-card"
+                @click="handleAddProviderPreset(preset.key)"
+              >
+                <strong>{{ preset.title }}</strong>
+                <span>{{ preset.description }}</span>
+              </button>
+            </div>
 
             <div v-else class="provider-editor-list">
               <div
@@ -756,7 +795,7 @@
                     >
                       <label class="routing-field">
                         <span
-                          >Provider Name
+                          >节点名称
                           <HelpTip :content="helpTips.providerName"
                         /></span>
                         <el-input
@@ -1099,12 +1138,14 @@
           <div class="routing-panel__header">
             <div>
               <h3 class="routing-panel__title">最近测试结果</h3>
-              <div class="routing-panel__subtitle">{{ testScope }}</div>
+              <div class="routing-panel__subtitle">
+                {{ testScopeDescription }}
+              </div>
             </div>
             <div class="routing-panel__tags">
               <StatusTag
-                :tone="testResult.ok ? 'success' : 'warning'"
-                :text="testResult.ok ? '测试成功' : '需要关注'"
+                :tone="testResultSummary.tone"
+                :text="testResultSummary.text"
               />
               <StatusTag
                 tone="neutral"
@@ -1114,8 +1155,8 @@
           </div>
 
           <div class="routing-test-card__summary">
-            <span>结果：{{ testResult.message }}</span>
-            <span>最终节点：{{ testResult.finalProvider || "-" }}</span>
+            <span>结果：{{ displayRouteTestMessage(testResult.message) }}</span>
+            <span>最终节点：{{ providerDisplayName(testResult.finalProvider || "") }}</span>
             <span>最终模型：{{ testResult.finalModel || "-" }}</span>
           </div>
 
@@ -1167,8 +1208,8 @@
                 <template #default="{ row }">
                   {{
                     row.skippedByBreaker
-                      ? `breaker until ${formatDateTime(row.breakerOpenUntil)}`
-                      : row.errorMessage || "-"
+                      ? `熔断冷却至 ${formatDateTime(row.breakerOpenUntil)}`
+                      : displayRouteTestMessage(row.errorMessage || "-")
                   }}
                 </template>
               </el-table-column>
@@ -1186,14 +1227,21 @@
                 最近审计 <HelpTip :content="helpTips.audit" />
               </h2>
               <div class="page-subtitle">
-                {{ currentAuditGroup }} · 最近 5 条
+                {{ currentAuditGroup }} · 最近 {{ recentAudits.length }} 条
               </div>
             </div>
-            <el-button
-              :loading="auditsLoading"
-              @click="auditDrawerVisible = true"
-              >完整审计</el-button
-            >
+            <div class="audit-section__actions">
+              <el-segmented
+                v-model="recentAuditKindFilter"
+                :options="recentAuditKindOptions"
+                size="small"
+              />
+              <el-button
+                :loading="auditsLoading"
+                @click="auditDrawerVisible = true"
+                >完整审计</el-button
+              >
+            </div>
           </div>
 
           <PageState
@@ -1248,7 +1296,7 @@
                     </div>
                     <el-popover
                       placement="left-start"
-                      :width="680"
+                      :width="largePopoverWidth"
                       trigger="click"
                     >
                       <template #reference>
@@ -1606,7 +1654,11 @@
 
         <div
           class="routing-bottom-bar"
-          :class="`routing-bottom-bar--${bottomBarState.tone}`"
+          :class="[
+            `routing-bottom-bar--${bottomBarState.tone}`,
+            { 'routing-bottom-bar--tucked': !floatingBarVisible },
+          ]"
+          :aria-hidden="floatingBarVisible ? 'false' : 'true'"
           aria-live="polite"
         >
           <div class="routing-bottom-bar__status">
@@ -1618,7 +1670,7 @@
           <el-popover
             v-if="isDirty"
             placement="top"
-            :width="360"
+            :width="smallPopoverWidth"
             trigger="click"
           >
             <template #reference>
@@ -1645,36 +1697,27 @@
             </div>
           </el-popover>
           <div class="routing-bottom-bar__actions">
-            <el-tooltip content="刷新远端配置" placement="top">
-              <el-button
-                circle
-                :loading="pageRefreshing"
-                aria-label="刷新远端配置"
-                @click="refreshPage"
-                ><el-icon><Refresh /></el-icon
-              ></el-button>
-            </el-tooltip>
-            <el-tooltip :content="testActionTooltip" placement="top">
-              <el-button
-                circle
-                :loading="testingScene"
-                :disabled="!draftScene"
-                aria-label="测试当前草稿"
-                @click="handleTestScene"
-                ><el-icon><Promotion /></el-icon
-              ></el-button>
-            </el-tooltip>
-            <el-tooltip :content="saveActionTooltip" placement="top">
-              <el-button
-                circle
-                type="primary"
-                :loading="savingScene"
-                :disabled="!isDirty || savingScene"
-                aria-label="保存场景"
-                @click="handleSaveScene"
-                ><el-icon><Check /></el-icon
-              ></el-button>
-            </el-tooltip>
+            <el-button
+              :loading="testingScene"
+              :disabled="!draftScene"
+              @click="handleTestScene"
+              >测试草稿</el-button
+            >
+            <el-button
+              v-if="isDirty"
+              text
+              type="danger"
+              :disabled="!isDirty"
+              @click="handleDiscardDraft"
+              >放弃草稿</el-button
+            >
+            <el-button
+              type="primary"
+              :loading="savingScene"
+              :disabled="!isDirty || savingScene"
+              @click="handleSaveScene"
+              >保存并发布</el-button
+            >
           </div>
         </div>
       </section>
@@ -1699,7 +1742,6 @@ import {
   ArrowRight,
   Check,
   Clock,
-  InfoFilled,
   MoreFilled,
   Promotion,
   Rank,
@@ -1772,6 +1814,12 @@ const alertOverview = ref<AIRoutingAlertOverview | null>(null);
 const activeAnchorKey = ref<AnchorSectionKey>("scene-cards");
 const isMacLikePlatform = ref(false);
 
+// 顶部工具栏 CTA 是否已滚出视口：只有滚出后才浮现底部悬浮操作栏，
+// 避免顶部与底部同时出现两套完全相同的「测试草稿 / 保存并发布 / 放弃草稿」。
+const topCtaSentinelRef = ref<HTMLElement | null>(null);
+const floatingBarVisible = ref(false);
+let topCtaObserver: IntersectionObserver | null = null;
+
 const sceneLoading = ref(false);
 const sceneError = ref("");
 const pageRefreshing = ref(false);
@@ -1802,6 +1850,7 @@ const auditsLoading = ref(false);
 const recentAuditsLoading = ref(false);
 const auditsError = ref("");
 const recentAuditsError = ref("");
+const recentAuditKindFilter = ref<"all" | "changes" | "tests">("all");
 const auditAction = ref("");
 const auditOperator = ref("");
 const auditSettingKey = ref("");
@@ -1843,9 +1892,11 @@ type BlockingRiskItem = {
   description: string;
 };
 
+type ProviderPresetKey = "openai-text" | "openai-image";
+
 const helpTips = {
   sceneStrategy:
-    "调度策略决定多节点失败后如何切换；详细规则可点击线上链路查看。",
+    "调度策略决定多节点失败后如何切换；详细规则可在当前生效逻辑中查看。",
   maxAttempts: "建议 2-5 次。尝试次数越大，异常降级链路等待越久。",
   breaker: "连续失败触发熔断后，节点会在冷却时间内跳过。",
   requestOptions:
@@ -1933,13 +1984,49 @@ const imageOutputFormatOptions = [
   { label: "webp", value: "webp" },
 ];
 const auditPageSizeOptions = [20, 50, 100];
+const recentAuditKindOptions = [
+  { label: "全部", value: "all" },
+  { label: "配置变更", value: "changes" },
+  { label: "测试执行", value: "tests" },
+];
+const providerPresetOptions = computed(() => {
+  const options: Array<{
+    key: ProviderPresetKey;
+    title: string;
+    description: string;
+  }> = [
+    {
+      key: "openai-text",
+      title: "OpenAI 兼容文本节点",
+      description: "chat/completions、普通 JSON 响应、适合总结和标题清洗。",
+    },
+  ];
+  if (currentSceneKey.value === "flowchart") {
+    options.push({
+      key: "openai-image",
+      title: "OpenAI 图片生成节点",
+      description: "images/generations、b64_json 解析、适合步骤图生成。",
+    });
+  }
+  return options;
+});
 
 const currentAuditGroup = computed(() => `ai.routing.${currentSceneKey.value}`);
 const enabledProviderCount = computed(
   () => draftScene.value?.providers.filter((item) => item.enabled).length || 0,
 );
+const minimumMaxAttempts = computed(() =>
+  enabledProviderCount.value > 1 ? 2 : 1,
+);
 const maxAttemptCeiling = computed(() =>
-  Math.max(enabledProviderCount.value || 1, 1),
+  Math.max(enabledProviderCount.value || 1, minimumMaxAttempts.value),
+);
+const smallPopoverWidth = computed(() => (viewportWidth.value < 768 ? "90vw" : 360));
+const mediumPopoverWidth = computed(() =>
+  viewportWidth.value < 768 ? "90vw" : 380,
+);
+const largePopoverWidth = computed(() =>
+  viewportWidth.value < 768 ? "90vw" : 680,
 );
 const compatibilityHint = computed(() => {
   if (!draftScene.value?.compatibilityMode) {
@@ -2072,6 +2159,52 @@ function summarizeSceneAlertStatus(
   };
 }
 
+function sceneAggregateStatus(
+  scene: AIRoutingSceneKey,
+  health: SceneCardHealthSnapshot,
+) {
+  const summary = sceneSummaries.value.find((item) => item.scene === scene);
+  if (!summary || summary.providerCount === 0) {
+    return {
+      tone: "neutral" as const,
+      text: "未配置",
+    };
+  }
+  if (health.alertStatus.tone === "danger") {
+    return {
+      tone: "danger" as const,
+      text: "告警中",
+    };
+  }
+  if (health.configRisk.tone === "danger") {
+    return {
+      tone: "danger" as const,
+      text: "不可发布",
+    };
+  }
+  if (
+    health.alertStatus.tone === "warning" ||
+    health.configRisk.tone === "warning" ||
+    health.recentTest.tone === "warning" ||
+    summary.compatibilityMode
+  ) {
+    return {
+      tone: "warning" as const,
+      text: "需关注",
+    };
+  }
+  if (!summary.enabled) {
+    return {
+      tone: "neutral" as const,
+      text: "未启用",
+    };
+  }
+  return {
+    tone: "success" as const,
+    text: "运行正常",
+  };
+}
+
 const sceneCardHealthMap = computed<
   Partial<Record<AIRoutingSceneKey, SceneCardHealthSnapshot>>
 >(() => {
@@ -2097,6 +2230,8 @@ const sceneCardHealthMap = computed<
 const sceneCards = computed(() => {
   return sceneKeys.map((scene) => {
     const summary = sceneSummaries.value.find((item) => item.scene === scene);
+    const health =
+      sceneCardHealthMap.value[scene] || emptySceneCardHealthSnapshot();
     return {
       scene,
       title:
@@ -2113,20 +2248,8 @@ const sceneCards = computed(() => {
       updatedAt: summary?.updatedAt || "",
       source: summary?.source || "empty",
       compatibilityMode: summary?.compatibilityMode ?? true,
-      tone:
-        scene === currentSceneKey.value
-          ? "primary"
-          : summary?.compatibilityMode
-            ? "warning"
-            : summary?.enabled
-              ? "success"
-              : "neutral",
-      statusText: summary?.compatibilityMode
-        ? "兼容模式"
-        : summary?.enabled
-          ? "正式模式"
-          : "未启用",
-      health: sceneCardHealthMap.value[scene] || emptySceneCardHealthSnapshot(),
+      health,
+      aggregate: sceneAggregateStatus(scene, health),
     };
   });
 });
@@ -2138,12 +2261,28 @@ const currentSceneTitle = computed(() => {
   return card?.title || displayAIRoutingScene(currentSceneKey.value);
 });
 
+const currentSceneAlertItems = computed(() => {
+  return (
+    alertOverview.value?.items.filter(
+      (item) => item.scene === currentSceneKey.value,
+    ) || []
+  );
+});
+
+const currentSceneLatestAlertedAt = computed(() => {
+  const timestamps = currentSceneAlertItems.value
+    .map((item) => item.lastAlertedAt)
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right) - Date.parse(left));
+  return timestamps[0] || "";
+});
+
 const alertStatusSummary = computed(() => {
   const overview = alertOverview.value;
   if (!overview) {
     return {
       tone: "neutral" as const,
-      text: "告警状态加载中",
+      text: "当前场景告警加载中",
     };
   }
   if (!overview.enabled) {
@@ -2158,21 +2297,29 @@ const alertStatusSummary = computed(() => {
       text: "告警配置不完整",
     };
   }
-  if (overview.activeAlertCount > 0) {
+  const activeCount = currentSceneAlertItems.value.filter(
+    (item) => item.thresholdReached,
+  ).length;
+  if (activeCount > 0) {
     return {
       tone: "danger" as const,
-      text: `告警中 ${overview.activeAlertCount} 项`,
+      text: `当前场景告警 ${activeCount} 项`,
     };
   }
-  if (isWithinLast24Hours(overview.latestAlertedAt, overview.generatedAt)) {
+  if (
+    isWithinLast24Hours(
+      currentSceneLatestAlertedAt.value,
+      overview.generatedAt,
+    )
+  ) {
     return {
       tone: "warning" as const,
-      text: "24h 内有告警",
+      text: "当前场景 24h 内有告警",
     };
   }
   return {
     tone: "success" as const,
-    text: "最近无告警",
+    text: "当前场景无告警",
   };
 });
 
@@ -2187,13 +2334,21 @@ const alertStatusDescription = computed(() => {
   if (!overview.hasDeliveryConfig) {
     return "告警已启用，但 SMTP 或收件人配置不完整，当前不会形成有效投递。";
   }
-  if (overview.activeAlertCount > 0) {
-    return `当前有 ${overview.activeAlertCount} 个 Provider 处于告警中状态。`;
+  const activeCount = currentSceneAlertItems.value.filter(
+    (item) => item.thresholdReached,
+  ).length;
+  if (activeCount > 0) {
+    return `当前场景有 ${activeCount} 个 Provider 处于告警中状态。`;
   }
-  if (isWithinLast24Hours(overview.latestAlertedAt, overview.generatedAt)) {
-    return "最近 24 小时内触发过告警，建议结合调用日志继续复核。";
+  if (
+    isWithinLast24Hours(
+      currentSceneLatestAlertedAt.value,
+      overview.generatedAt,
+    )
+  ) {
+    return "当前场景最近 24 小时内触发过告警，建议结合调用日志继续复核。";
   }
-  return "阈值、SMTP 和收件人统一在配置中心维护，当前最近无告警。";
+  return "阈值、SMTP 和收件人统一在配置中心维护，当前场景最近无告警。";
 });
 
 const showAnchorDirectory = computed(() => {
@@ -2294,29 +2449,33 @@ function effectiveChannel(params: {
   const { scene, enabled, compatibilityMode, isDraftDirty } = params;
   if (isDraftDirty) {
     return {
-      label: `${scene}-draft`,
-      tone: "info" as const,
-      reason: "草稿未保存 · 线上保持不变，仅测试入口生效",
+      label: "草稿待发布",
+      technicalLabel: `${scene}-draft`,
+      tone: "primary" as const,
+      reason: "当前存在未保存草稿。测试入口会使用草稿，线上仍保持上次保存的配置。",
     };
   }
   if (compatibilityMode) {
     return {
-      label: `${scene}-compat`,
+      label: "旧单 Provider 兼容链路",
+      technicalLabel: `${scene}-compat`,
       tone: "warning" as const,
-      reason: "兼容模式 · 走旧单 Provider 链路",
+      reason: "运行时仍优先走旧单 Provider 配置。启用新路由并保存后才会切换。",
     };
   }
   if (!enabled) {
     return {
-      label: `${scene}-compat`,
+      label: "旧单 Provider 兼容链路",
+      technicalLabel: `${scene}-compat`,
       tone: "neutral" as const,
-      reason: "新路由未启用 · 回退兼容链路",
+      reason: "当前场景的新多节点路由未启用，线上回退旧单 Provider 配置。",
     };
   }
   return {
-    label: `${scene}-v2`,
+    label: "新多节点路由",
+    technicalLabel: `${scene}-v2`,
     tone: "success" as const,
-    reason: "线上走新多节点路由",
+    reason: "线上已使用保存后的多节点路由配置。",
   };
 }
 
@@ -2335,29 +2494,58 @@ function sceneEffectiveChannel(scene: AIRoutingSceneKey) {
   return effectiveChannel({ scene, enabled, compatibilityMode, isDraftDirty });
 }
 
+function savedSceneChannel(scene: AIRoutingSceneKey) {
+  const summary = sceneSummaries.value.find((item) => item.scene === scene);
+  const savedScene =
+    scene === currentSceneKey.value ? remoteScene.value : sceneDetailMap.value[scene];
+  const enabled = savedScene?.enabled ?? summary?.enabled ?? false;
+  const compatibilityMode =
+    savedScene?.compatibilityMode ?? summary?.compatibilityMode ?? true;
+  return effectiveChannel({ scene, enabled, compatibilityMode });
+}
+
 const currentChannel = computed(() =>
   sceneEffectiveChannel(currentSceneKey.value),
 );
 
+const currentEffectHeadline = computed(() => {
+  if (isDirty.value) {
+    return `线上仍在使用：${savedSceneChannel(currentSceneKey.value).label}`;
+  }
+  return `线上正在使用：${currentChannel.value.label}`;
+});
+
+const currentEffectDescription = computed(() => {
+  if (isDirty.value) {
+    return "你的草稿尚未发布。测试会读取当前草稿，保存并发布后才会影响线上。";
+  }
+  return currentChannel.value.reason;
+});
+
 const channelMatrix = computed(() => [
   {
-    draft: "正式",
+    draft: "已保存",
     toggle: "开",
-    effect: `${currentSceneKey.value}-v2`,
+    effect: "线上使用新多节点路由",
     hit:
       !isDirty.value &&
       draftScene.value?.enabled &&
       !draftScene.value?.compatibilityMode,
   },
   {
-    draft: "正式",
+    draft: "已保存",
     toggle: "关",
-    effect: `${currentSceneKey.value}-compat`,
+    effect: "线上使用旧单 Provider 兼容链路",
     hit:
       !isDirty.value &&
       (!draftScene.value?.enabled || draftScene.value?.compatibilityMode),
   },
-  { draft: "草稿", toggle: "—", effect: "仅测试入口生效", hit: isDirty.value },
+  {
+    draft: "草稿未发布",
+    toggle: "不改变线上",
+    effect: "仅测试入口使用草稿",
+    hit: isDirty.value,
+  },
 ]);
 
 const numericWarn = computed(() => {
@@ -2374,7 +2562,8 @@ const numericWarn = computed(() => {
   if (!scene) return warn;
   const ma = Number(scene.maxAttempts) || 0;
   if (ma > 5) warn.maxAttempts = `当前 ${ma} 次偏大，失败降级会变慢`;
-  else if (ma < 2) warn.maxAttempts = "至少 2 次才能触发节点切换";
+  else if (enabledProviderCount.value > 1 && ma < 2)
+    warn.maxAttempts = "至少 2 次才能触发节点切换";
   const ft = Number(scene.breaker?.failureThreshold) || 0;
   if (ft < 3) warn.failureThreshold = "阈值过低容易误熔断";
   else if (ft > 10) warn.failureThreshold = "阈值过高将延迟熔断保护";
@@ -2421,9 +2610,45 @@ const latestTestSummary = computed(() => {
     0,
   );
   return {
-    tone: testResult.value.ok ? "success" : "warning",
-    text: `${scopePrefix}${testResult.value.ok ? "测试通过" : "测试异常"} · ${target}${latency ? ` · ${formatDuration(latency)}` : ""}`,
+    tone: testResultSummary.value.tone,
+    text: `${scopePrefix}${testResultSummary.value.shortText} · ${target}${latency ? ` · ${formatDuration(latency)}` : ""}`,
   };
+});
+
+const testResultSummary = computed(() => {
+  if (!testResult.value) {
+    return {
+      tone: "neutral" as const,
+      text: "未测试",
+      shortText: "未测试",
+    };
+  }
+  if (allEnabledProvidersCooling.value) {
+    return {
+      tone: "warning" as const,
+      text: "所有节点冷却中",
+      shortText: "测试需关注",
+    };
+  }
+  if (testResult.value.ok) {
+    return {
+      tone: "success" as const,
+      text: "测试成功",
+      shortText: "测试通过",
+    };
+  }
+  return {
+    tone: "warning" as const,
+    text: "需要关注",
+    shortText: "测试异常",
+  };
+});
+
+const testScopeDescription = computed(() => {
+  if (testScope.value.includes("单节点")) {
+    return `${testScope.value}。结果只代表当前节点草稿，不代表线上当前行为。`;
+  }
+  return "测试对象：当前草稿。该结果不代表线上当前行为，保存并发布后才会影响线上。";
 });
 
 const providerValidationErrors = computed<
@@ -2448,9 +2673,9 @@ const providerValidationErrors = computed<
     if (!id) errors.id = "内部 Provider ID 缺失，请重新新增节点";
     else if ((idCounts.get(id) || 0) > 1)
       errors.id = "内部 Provider ID 重复，请重新新增节点";
-    if (!name) errors.name = "Provider Name 不能为空";
+    if (!name) errors.name = "节点名称不能为空";
     else if ((nameCounts.get(name) || 0) > 1)
-      errors.name = "Provider Name 在当前场景内重复";
+      errors.name = "节点名称在当前场景内重复";
     if (!isValidHttpUrl(provider.baseURL))
       errors.baseURL = "Base URL 必须是合法的 http(s) 地址";
     if (!provider.model.trim()) errors.model = "Model 不能为空";
@@ -2469,7 +2694,29 @@ const blockingValidationCount = computed(() => {
   );
 });
 
-const recentAudits = computed(() => recentAuditItems.value);
+const sceneBlockingValidationMessages = computed(() => {
+  const messages: string[] = [];
+  const scene = draftScene.value;
+  if (!scene) return messages;
+  if (
+    scene.enabled &&
+    enabledProviderCount.value > 1 &&
+    Number(scene.maxAttempts || 0) < 2
+  ) {
+    messages.push("当前启用多个节点，最大尝试次数至少为 2 才能触发失败切换。");
+  }
+  return messages;
+});
+
+const recentAudits = computed(() => {
+  if (recentAuditKindFilter.value === "tests") {
+    return recentAuditItems.value.filter((item) => item.action === "test");
+  }
+  if (recentAuditKindFilter.value === "changes") {
+    return recentAuditItems.value.filter((item) => item.action !== "test");
+  }
+  return recentAuditItems.value;
+});
 
 const providerNameById = computed(() => {
   const map = new Map<string, string>();
@@ -2732,6 +2979,18 @@ const blockingRiskItems = computed<BlockingRiskItem[]>(() => {
       description: `当前仅有 ${enabledProviderCount.value} 个启用节点，测试和保存时会按该值截断。`,
     });
   }
+  if (
+    scene.enabled &&
+    enabledProviderCount.value > 1 &&
+    Number(scene.maxAttempts || 0) < 2
+  ) {
+    items.push({
+      key: "max-attempts-too-low",
+      tone: "danger",
+      title: "最大尝试次数无法触发切换",
+      description: "当前启用多个节点，至少需要 2 次尝试才能在失败后切到备用节点。",
+    });
+  }
   if (allEnabledProvidersCooling.value) {
     items.push({
       key: "all-provider-cooling",
@@ -2839,12 +3098,17 @@ function setAnchorSectionRef(key: AnchorSectionKey, element: Element | null) {
   anchorSectionRefs[key] = element instanceof HTMLElement ? element : null;
 }
 
+function scrollElementToViewport(element: HTMLElement, offset = 96) {
+  const top = element.getBoundingClientRect().top + window.scrollY - offset;
+  window.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
+}
+
 function scrollToAnchorSection(key: AnchorSectionKey) {
   const element = anchorSectionRefs[key];
   if (!element) {
     return;
   }
-  element.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollElementToViewport(element);
   activeAnchorKey.value = key;
 }
 
@@ -2971,6 +3235,16 @@ onMounted(async () => {
   window.addEventListener("resize", updateActiveAnchorSection, {
     passive: true,
   });
+  if (typeof IntersectionObserver !== "undefined" && topCtaSentinelRef.value) {
+    topCtaObserver = new IntersectionObserver(
+      ([entry]) => {
+        // 哨兵位于顶部工具栏正下方：一旦它离开视口，说明顶部 CTA 也已滚走。
+        floatingBarVisible.value = !entry.isIntersecting;
+      },
+      { threshold: 0 },
+    );
+    topCtaObserver.observe(topCtaSentinelRef.value);
+  }
   const queryScene = readQueryString(route.query, "scene");
   if (sceneKeys.includes(queryScene as AIRoutingSceneKey)) {
     currentSceneKey.value = queryScene as AIRoutingSceneKey;
@@ -2983,6 +3257,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown);
   window.removeEventListener("scroll", updateActiveAnchorSection);
   window.removeEventListener("resize", updateActiveAnchorSection);
+  topCtaObserver?.disconnect();
+  topCtaObserver = null;
   stopTestingTimer();
 });
 
@@ -3193,7 +3469,7 @@ async function loadRecentAudits() {
     const query = new URLSearchParams();
     query.set("group", currentAuditGroup.value);
     query.set("page", "1");
-    query.set("pageSize", "5");
+    query.set("pageSize", "12");
     const response = await adminApi.listSettingAudits(query);
     recentAuditItems.value = response.result.items;
   } catch (error) {
@@ -3455,6 +3731,28 @@ function handleAddProvider() {
   setProviderSecretEditor(provider, true);
 }
 
+function handleAddProviderPreset(key: ProviderPresetKey) {
+  if (!draftScene.value) {
+    return;
+  }
+  const provider = createProvider(draftScene.value.scene);
+  if (key === "openai-image") {
+    provider.name = buildUniqueProviderName("图片生成节点");
+    provider.model = "gpt-image-1";
+    provider.endpointMode = "images_generations";
+    provider.responseFormat = "b64_json";
+    provider.extra = normalizeProviderExtra(provider);
+  } else {
+    provider.name = buildUniqueProviderName("OpenAI 兼容节点");
+    provider.model = draftScene.value.scene === "title" ? "gpt-4.1-mini" : "gpt-4.1";
+    provider.endpointMode = "chat_completions";
+    provider.responseFormat = "auto";
+    provider.extra = normalizeProviderExtra(provider);
+  }
+  draftScene.value.providers.push(provider);
+  setProviderSecretEditor(provider, true);
+}
+
 async function handleRemoveProvider(index: number) {
   if (!draftScene.value) {
     return;
@@ -3663,13 +3961,15 @@ function stopTestingTimer() {
 }
 
 function validateBeforeAction(actionLabel: string) {
-  if (!blockingValidationCount.value) {
+  if (!blockingValidationCount.value && !sceneBlockingValidationMessages.value.length) {
     return true;
   }
-  touchAllProviderFields();
-  ElMessage.warning(
-    `${actionLabel}前请先修正 ${blockingValidationCount.value} 个 Provider 字段问题`,
-  );
+  if (blockingValidationCount.value) {
+    touchAllProviderFields();
+  }
+  const total =
+    blockingValidationCount.value + sceneBlockingValidationMessages.value.length;
+  ElMessage.warning(`${actionLabel}前请先修正 ${total} 个配置问题`);
   return false;
 }
 
@@ -3721,12 +4021,16 @@ function auditBusinessAction(record: SettingAuditRecord): AuditBusinessAction {
   if (record.action === "test") {
     const text =
       `${record.newValueMasked} ${record.oldValueMasked}`.toLowerCase();
+    const message = displayRouteTestMessage(
+      record.newValueMasked || record.oldValueMasked,
+    );
     const timeout = text.includes("timeout") || text.includes("deadline");
     const failed =
       timeout ||
       text.includes("fail") ||
       text.includes("error") ||
-      text.includes("refused");
+      text.includes("refused") ||
+      text.includes("cooling down");
     if (timeout)
       return {
         label: "测试超时",
@@ -3737,12 +4041,12 @@ function auditBusinessAction(record: SettingAuditRecord): AuditBusinessAction {
       return {
         label: "测试异常",
         tone: "warning",
-        description: record.newValueMasked || "测试未通过，请查看错误摘要。",
+        description: message || "测试未通过，请查看错误摘要。",
       };
     return {
       label: "测试通过",
       tone: "success",
-      description: record.newValueMasked || "当前草稿路由测试通过。",
+      description: message || "当前草稿路由测试通过。",
     };
   }
 
@@ -3923,8 +4227,48 @@ function isProviderAuditRecord(record: SettingAuditRecord) {
 
 function providerDisplayName(providerId: string) {
   const id = String(providerId || "").trim();
-  if (!id) return "未知 Provider";
+  if (!id) return "-";
   return providerNameById.value.get(id) || id;
+}
+
+function displayRouteTestMessage(message?: string) {
+  const text = String(message || "").trim();
+  if (!text || text === "-") return "-";
+  const lower = text.toLowerCase();
+  const errorTypeMap: Record<string, string> = {
+    timeout: "请求超时",
+    network: "网络异常",
+    rate_limit: "上游限流",
+    auth: "鉴权失败",
+    upstream: "上游异常",
+    invalid_response: "响应格式异常",
+  };
+  if (errorTypeMap[lower]) {
+    return errorTypeMap[lower];
+  }
+  if (lower.includes("all providers are cooling down")) {
+    return "所有启用节点都在熔断冷却中";
+  }
+  if (lower.includes("route test succeeded")) {
+    return "路由测试通过";
+  }
+  const okVia = text.match(/^ok via\s+(.+)$/i);
+  if (okVia) {
+    return `测试通过，经由 ${providerDisplayName(okVia[1])}`;
+  }
+  if (lower.includes("context deadline exceeded")) {
+    return "请求超时，请检查节点响应速度或超时配置";
+  }
+  if (lower.includes("connection refused")) {
+    return "连接被拒绝，请检查 Base URL 或网络连通性";
+  }
+  if (lower.includes("unauthorized") || lower.includes("invalid api key")) {
+    return "鉴权失败，请检查 API Key";
+  }
+  if (lower.includes("cooling down")) {
+    return "节点处于熔断冷却中";
+  }
+  return text;
 }
 
 function providerNameFromAuditRecord(record: SettingAuditRecord) {
@@ -3953,7 +4297,10 @@ function auditTargetTitle(target: SettingAuditRecord | string) {
 
 function auditFallbackSummary(record: SettingAuditRecord) {
   if (record.action === "test") {
-    return record.newValueMasked || record.oldValueMasked || "测试记录已写入";
+    const summary = displayRouteTestMessage(
+      record.newValueMasked || record.oldValueMasked,
+    );
+    return summary === "-" ? "测试记录已写入" : summary;
   }
   if (record.action === "save" || record.action === "update") {
     return "配置已更新，点击查看变化获取完整对比。";
@@ -4565,7 +4912,9 @@ async function runSceneTest(scope: string, scene: AIRoutingSceneConfig | null) {
     if (response.result.ok) {
       ElMessage.success("路由测试通过");
     } else {
-      ElMessage.warning(response.result.message || "路由测试失败");
+      ElMessage.warning(
+        displayRouteTestMessage(response.result.message) || "路由测试失败",
+      );
     }
   } catch (error) {
     ElMessage.error(extractMessage(error));
@@ -4584,7 +4933,7 @@ function recordProviderTestState(result: AIRoutingTestResult) {
       ok,
       text: ok
         ? `通过 · ${formatDuration(attempt.latencyMs)}`
-        : `${attempt.errorType || displayCallStatus(attempt.status)} · ${formatDuration(attempt.latencyMs)}`,
+        : `${displayRouteTestMessage(attempt.errorType || attempt.errorMessage || displayCallStatus(attempt.status))} · ${formatDuration(attempt.latencyMs)}`,
       latencyMs: attempt.latencyMs,
       errorType: attempt.errorType,
       testedAt,
@@ -4753,13 +5102,17 @@ function buildDuplicateProviderId(seed: string) {
 
 function scrollToTestCard() {
   nextTick(() => {
-    testCardRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (testCardRef.value) {
+      scrollElementToViewport(testCardRef.value);
+    }
   });
 }
 
 function focusMainEditor() {
   nextTick(() => {
-    mainEditorRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (mainEditorRef.value) {
+      scrollElementToViewport(mainEditorRef.value);
+    }
     mainEditorRef.value?.focus();
   });
 }
@@ -4821,6 +5174,11 @@ function extractMessage(error: unknown) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.toolbar-cluster--publish {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .toolbar-discard-wrap {
@@ -5082,26 +5440,48 @@ function extractMessage(error: unknown) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 12px 16px;
+  gap: 16px;
+  padding: 16px 18px;
   margin: -4px 0 16px;
   border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(248, 250, 252, 0.88);
+  background: linear-gradient(180deg, #ffffff, rgba(248, 250, 252, 0.92));
   color: var(--color-text-subtle, #64748b);
   font-size: 13px;
 }
 
-.routing-status-strip__main,
+.routing-status-strip__main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
 .routing-status-strip__actions {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
 .routing-status-strip__main strong {
+  display: block;
   color: var(--color-text, #1f2937);
+  font-size: 15px;
+}
+
+.routing-status-strip__main p {
+  margin: 4px 0 0;
+  color: var(--color-text-subtle, #64748b);
+  line-height: 1.6;
+}
+
+.routing-status-strip__tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .routing-status-strip code {
@@ -5158,6 +5538,18 @@ function extractMessage(error: unknown) {
   margin-bottom: 10px;
   color: var(--color-text-subtle, #64748b);
   font-size: 12px;
+}
+
+.channel-popover__tech {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+}
+
+.channel-popover__tech code {
+  font-family: var(--font-mono);
 }
 
 .routing-breadcrumb__channel {
@@ -5490,6 +5882,48 @@ function extractMessage(error: unknown) {
   overflow-anchor: none;
 }
 
+.provider-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.provider-preset-card {
+  display: grid;
+  gap: 6px;
+  min-height: 92px;
+  padding: 14px 16px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 14px;
+  background: rgba(239, 246, 255, 0.52);
+  color: var(--color-text, #1f2937);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.provider-preset-card strong {
+  font-size: 14px;
+}
+
+.provider-preset-card span {
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.provider-preset-card:hover,
+.provider-preset-card:focus-visible {
+  border-color: rgba(37, 99, 235, 0.34);
+  background: rgba(239, 246, 255, 0.86);
+  outline: none;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+}
+
 .provider-editor-card {
   overflow-anchor: none;
   padding: 16px 18px 18px;
@@ -5815,6 +6249,14 @@ function extractMessage(error: unknown) {
   margin-bottom: 16px;
   color: var(--color-text-subtle);
   font-size: 13px;
+}
+
+.audit-section__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .test-result-chip {
@@ -6492,6 +6934,28 @@ function extractMessage(error: unknown) {
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
   transform: translateX(-50%);
   backdrop-filter: blur(14px);
+  transition:
+    transform 220ms ease,
+    opacity 220ms ease;
+}
+
+/* 顶部 CTA 仍在视口内时，底部悬浮栏收起，避免两套相同操作同时出现。 */
+.routing-bottom-bar--tucked {
+  transform: translate(-50%, calc(100% + 40px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.routing-top-cta-sentinel {
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .routing-bottom-bar {
+    transition: none;
+  }
 }
 
 .routing-bottom-bar__status,
@@ -6505,6 +6969,15 @@ function extractMessage(error: unknown) {
   color: var(--color-text, #1f2937);
   font-size: 13px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.routing-bottom-bar__actions {
+  flex-wrap: nowrap;
+}
+
+.routing-bottom-bar__actions :deep(.el-button) {
+  margin-left: 0;
   white-space: nowrap;
 }
 
@@ -6678,7 +7151,8 @@ function extractMessage(error: unknown) {
   .routing-scene-grid,
   .routing-form-grid,
   .provider-editor-grid,
-  .routing-checkbox-grid {
+  .routing-checkbox-grid,
+  .provider-preset-grid {
     grid-template-columns: 1fr;
   }
 
@@ -6694,6 +7168,7 @@ function extractMessage(error: unknown) {
   .provider-editor-card__header,
   .routing-panel__header,
   .routing-status-strip,
+  .routing-status-strip__main,
   .provider-editor-secret,
   .provider-editor-secret__header {
     flex-direction: column;
@@ -6705,7 +7180,18 @@ function extractMessage(error: unknown) {
     right: 12px;
     bottom: max(12px, env(safe-area-inset-bottom));
     transform: none;
+    flex-direction: column;
+    align-items: stretch;
     justify-content: space-between;
+  }
+
+  .routing-bottom-bar__status,
+  .routing-bottom-bar__actions {
+    justify-content: space-between;
+  }
+
+  .routing-bottom-bar__actions {
+    flex-wrap: wrap;
   }
 
   .audit-diff-grid {

@@ -1,5 +1,36 @@
 # Project Changelog
 
+## 2026-07-03 (Admin Web AI Provider 管理页 UX 收敛)
+
+### Changed
+
+- **修改时间**：2026-07-03 18:39:45 +0800
+- **变更背景**：根据 `docs/admin-ai-provider-ux-review-2026-07-03.md` 第三轮评审，
+  `admin-web` 的 `AI Provider` 页面功能已较完整，但存在状态重复、线上生效链路难以一眼判断、
+  保存发布动作弱化、测试/审计反馈噪音过高等问题，需要在不改后端契约的前提下做信息收敛。
+- **核心改动**：
+  - `admin-web/src/pages/AIProvidersPage.vue` 将顶部工具栏升级为草稿测试、保存并发布、放弃草稿和刷新
+    的统一动作组；底部悬浮栏改为文字按钮与默认可见草稿摘要，避免保存动作只靠圆形图标猜测。
+  - 场景卡从“正式模式/兼容模式”单标签改为聚合结论态（未配置 / 需关注 / 告警中 / 运行正常），
+    主编辑区新增“一句话线上生效结论”，把 `summary-v2`、`title-compat` 等内部标识降级到说明弹层。
+  - 告警状态按当前场景统计并在文案中标注作用域；测试结果区显式说明“测试对象：当前草稿”，
+    并把 `route test succeeded`、`ok via ...`、`all providers are cooling down` 等原始英文消息映射为中文。
+  - 最近审计增加“全部 / 配置变更 / 测试执行”筛选，默认多拉取最近 12 条后本地分组，降低测试记录淹没配置变更的概率。
+  - 新增空 Provider 场景的常见节点模板入口；多启用节点下 `maxAttempts < 2` 会在风险区提示并在保存/测试前拦截。
+  - 弹层宽度改为响应式，页面内部定位滚动从 `scrollIntoView` 改为显式 `window.scrollTo`。
+  - （补充 20:35）底部悬浮操作栏改为仅在顶部工具栏 CTA 滚出视口后才浮现（`IntersectionObserver` 观察顶部哨兵，
+    `.routing-bottom-bar--tucked` 平滑收起），消除顶部与底部同时出现两套相同「测试草稿 / 保存并发布 / 放弃草稿」的重复。
+  - （补充 20:35）修复左侧「场景策略」面板 `position: sticky` 因祖先 `.layout-card { overflow: hidden }` 建立滚动容器
+    而失效的问题：`admin-web/src/style.css` 将其改为 `overflow: clip`（同样裁剪但不困住 sticky），滚动长 Provider 列表时左栏跟随。
+- **影响范围**：仅影响 `admin-web` 的 `AI Provider` 管理页展示、前端校验、测试/审计文案和本地构建产物；
+  不修改后端 API、数据库、AI 路由保存 payload 结构或小程序端页面。
+- **兼容性或风险**：真实 AI Provider 页面需要后台登录态才能完整目视复验；本地仅验证未登录重定向路径。
+  审计筛选基于现有 `action` 字段做前端分组，不改变服务端审计查询接口。
+- **验证情况**：已执行 `npm --prefix admin-web run build` 与
+  `git diff --check -- admin-web/src/pages/AIProvidersPage.vue`，均通过；本地启动 Go 后端和 Vite dev server 后，
+  访问 `/admin/ai-providers` 未登录态可正常跳转登录页且新标签页无控制台 warn/error；已将本地构建产物上传并激活到
+  `my-cloud`，`curl -I https://www.gxm1227.top/admin/` 返回 HTTP 200。
+
 ## 2026-07-03 (AI Provider 正文总结兼容默认流式网关)
 
 ### Fixed
