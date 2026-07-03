@@ -1,5 +1,28 @@
 # Project Changelog
 
+## 2026-07-03 (AI Provider 正文总结兼容默认流式网关)
+
+### Fixed
+
+- **修改时间**：2026-07-03 17:44:28 +0800
+- **变更背景**：后台 `AI Provider -> 正文总结` 测试接入 `https://x666.me/v1`
+  的 `grok-4.20-fast` 时，连通性正常但测试反馈 `invalid chat completion response`。
+  实测该网关在未显式声明 `stream:false` 时会返回 SSE `chat.completion.chunk`
+  数据流，而后端当前按非流式 JSON 响应解析。
+- **核心改动**：`backend/internal/airouter/service.go` 对文本类
+  `chat/completions` 请求始终显式发送 `stream` 字段，默认值为 `false`，
+  避免 OpenAI-compatible 网关把省略字段解释为流式输出；新增单元测试覆盖
+  `summary` 场景请求体必须包含 `stream:false`。
+- **影响范围**：后端 AI 多 Provider 路由的 `summary / title / flowchart`
+  文本类 `chat/completions` 请求；不影响 `images/generations` 生图链路或
+  admin-web 页面交互。
+- **兼容性或风险**：若某节点在后台配置里显式开启 `requestOptions.stream=true`，
+  请求仍会发送 `stream:true`，但当前后端仍主要按非流式响应解析；正文总结默认
+  测试与生产解析建议保持 `stream:false`。
+- **验证情况**：已执行 `go test ./internal/airouter`；并用 `grok-4.20-fast`
+  实测确认未带 `stream:false` 时返回 SSE，显式带 `stream:false` 后返回标准
+  `chat.completion` JSON。
+
 ## 2026-07-03 (空间洞察分组数字动效与小程序渲染修复)
 
 ### Fixed

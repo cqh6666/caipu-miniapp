@@ -240,6 +240,60 @@ func TestRouteChatRouteTestSkipsProviderAlerts(t *testing.T) {
 	}
 }
 
+func TestRouteChatSendsExplicitStreamFalseForSummary(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body error = %v", err)
+		}
+		stream, ok := payload["stream"].(bool)
+		if !ok {
+			t.Fatalf("request stream = %#v, want explicit false", payload["stream"])
+		}
+		if stream {
+			t.Fatal("request stream = true, want false")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"西红柿炒鸡蛋\",\"ingredient\":\"鸡蛋 番茄\",\"summary\":\"家常快手菜\",\"mainIngredients\":[\"番茄\"],\"secondaryIngredients\":[\"鸡蛋\"],\"steps\":[{\"title\":\"备料\",\"detail\":\"切番茄，打蛋。\"}],\"note\":\"\"}"}}]}`))
+	}))
+	defer server.Close()
+
+	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+		return SceneConfig{}
+	}, nil, nil)
+
+	_, err := service.routeChat(context.Background(), SceneConfig{
+		Scene:       SceneSummary,
+		Enabled:     true,
+		Strategy:    StrategyPriorityFailover,
+		MaxAttempts: 1,
+		RetryOn:     DefaultRetryOn(),
+		Breaker:     DefaultBreakerConfig(),
+		Providers: []ProviderConfig{
+			{
+				ID:             "summary-main",
+				Name:           "正文总结",
+				Adapter:        AdapterOpenAICompatible,
+				Enabled:        true,
+				Priority:       10,
+				BaseURL:        server.URL,
+				Model:          "grok-4.20-fast",
+				TimeoutSeconds: 5,
+				Scene:          SceneSummary,
+				EndpointMode:   EndpointModeChatCompletions,
+			},
+		},
+	}, buildSceneTestInput(SceneSummary))
+	if err != nil {
+		t.Fatalf("routeChat() error = %v", err)
+	}
+}
+
 func TestRouteChatSendsThinkingOptions(t *testing.T) {
 	t.Parallel()
 

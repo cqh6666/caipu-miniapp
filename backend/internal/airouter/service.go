@@ -1020,9 +1020,7 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 			maxTokens = *input.MaxTokens
 		}
 
-		if provider.Scene == SceneTitle || input.Stream != nil || config.RequestOptions.Stream {
-			request.Stream = &stream
-		}
+		request.Stream = &stream
 		if provider.Scene == SceneTitle || input.Temperature != nil || config.RequestOptions.Temperature != 0 {
 			request.Temperature = &temperature
 		}
