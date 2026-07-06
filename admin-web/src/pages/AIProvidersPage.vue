@@ -2517,13 +2517,6 @@ function summarizeSceneIssue(
       detail: "线上仍走旧单 Provider，保存并启用后切换",
     };
   }
-  if (health.recentTest.tone === "warning") {
-    return {
-      tone: "warning",
-      title: "最近测试异常",
-      detail: "发布前建议重新测试草稿",
-    };
-  }
   return null;
 }
 
@@ -2550,15 +2543,22 @@ function sceneAggregateStatus(
       text: "不可发布",
     };
   }
-  if (
-    health.alertStatus.tone === "warning" ||
-    health.configRisk.tone === "warning" ||
-    health.recentTest.tone === "warning" ||
-    summary.compatibilityMode
-  ) {
+  if (health.alertStatus.tone === "warning") {
+    return {
+      tone: "warning" as const,
+      text: "待复核",
+    };
+  }
+  if (health.configRisk.tone === "warning") {
     return {
       tone: "warning" as const,
       text: "需关注",
+    };
+  }
+  if (summary.compatibilityMode) {
+    return {
+      tone: "warning" as const,
+      text: "兼容模式",
     };
   }
   if (!summary.enabled) {

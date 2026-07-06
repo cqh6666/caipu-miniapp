@@ -1,5 +1,22 @@
 # Project Changelog
 
+## 2026-07-06 (Admin Web AI Provider 归档后场景卡状态文案修正)
+
+### Fixed
+
+- **修改时间**：2026-07-06 11:18:11 +0800
+- **变更背景**：用户在线上验证 AI Provider 告警归档后，发现对应场景卡仍显示笼统的“需关注”状态，
+  容易误解为归档未生效或仍存在红色当前告警。
+- **核心改动**：`admin-web/src/pages/AIProvidersPage.vue` 调整场景卡聚合状态规则：场景卡主状态只由
+  当前告警生命周期、发布阻断风险、缺密钥和兼容模式驱动；“最近测试异常”不再单独把场景卡顶成“需关注”。
+  黄色告警生命周期状态统一显示为“待复核”，兼容模式显示为“兼容模式”，避免所有非绿色状态都混成“需关注”。
+- **影响范围**：仅影响 `admin-web` 的 `AI Provider` 场景卡状态标签与问题摘要展示；
+  不修改后端 API、数据库、告警状态计算、AI 路由配置或小程序端。
+- **兼容性或风险**：若同场景仍存在未归档的 `stale / pending_verify / muted` 告警，场景卡仍会显示“待复核”；
+  归档所有待复核项后，且无配置风险/兼容模式时，才会回到“运行正常”。
+- **验证情况**：已执行 `npm --prefix admin-web run build` 与
+  `git diff --check -- admin-web/src/pages/AIProvidersPage.vue`，均通过；Vite 仍提示既有大 chunk warning。
+
 ## 2026-07-06 (AI Provider 告警状态生命周期：文档收口 + 全链路实现)
 
 ### Added
