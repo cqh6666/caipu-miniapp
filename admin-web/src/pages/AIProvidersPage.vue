@@ -114,34 +114,21 @@
             >
             <span>来源：{{ displaySettingSource(item.source) }}</span>
           </div>
-          <div class="routing-scene-card__health">
-            <div class="routing-scene-card__health-row">
-              <span class="routing-scene-card__health-label">最近测试</span>
-              <StatusTag
-                :tone="item.health.recentTest.tone"
-                :text="item.health.recentTest.text"
-              />
-              <span class="routing-scene-card__health-time">
-                {{
-                  item.health.recentTest.testedAt
-                    ? formatDateTime(item.health.recentTest.testedAt)
-                    : "未记录时间"
-                }}
-              </span>
-            </div>
-            <div class="routing-scene-card__health-row">
-              <span class="routing-scene-card__health-label">配置风险</span>
-              <StatusTag
-                :tone="item.health.configRisk.tone"
-                :text="item.health.configRisk.text"
-              />
-            </div>
-            <div class="routing-scene-card__health-row">
-              <span class="routing-scene-card__health-label">告警状态</span>
-              <StatusTag
-                :tone="item.health.alertStatus.tone"
-                :text="item.health.alertStatus.text"
-              />
+          <div
+            v-if="item.issue"
+            class="routing-scene-card__issue"
+            :class="`routing-scene-card__issue--${item.issue.tone}`"
+          >
+            <el-icon class="routing-scene-card__issue-icon"><Warning /></el-icon>
+            <div class="routing-scene-card__issue-body">
+              <span class="routing-scene-card__issue-title">{{
+                item.issue.title
+              }}</span>
+              <span
+                v-if="item.issue.detail"
+                class="routing-scene-card__issue-detail"
+                >{{ item.issue.detail }}</span
+              >
             </div>
           </div>
           <div class="routing-scene-card__footer">
@@ -313,6 +300,47 @@
                 <p class="channel-popover__text">
                   {{ alertStatusDescription }}
                 </p>
+                <div
+                  v-if="currentSceneActiveAlertItems.length"
+                  class="routing-alert-nodes"
+                >
+                  <div class="routing-alert-nodes__caption">正在告警的节点</div>
+                  <div
+                    v-for="node in currentSceneActiveAlertItems"
+                    :key="node.providerId"
+                    class="routing-alert-node"
+                  >
+                    <div class="routing-alert-node__head">
+                      <span class="routing-alert-node__name">{{
+                        node.providerName
+                      }}</span>
+                      <span class="routing-alert-node__model">{{
+                        node.model || "未指定模型"
+                      }}</span>
+                    </div>
+                    <div class="routing-alert-node__meta">
+                      连续失败 {{ node.consecutiveFailures }} 次<template
+                        v-if="displayAlertErrorType(node.lastErrorType)"
+                      >
+                        · 类型：{{ displayAlertErrorType(node.lastErrorType) }}</template
+                      ><template v-if="node.lastFailedAt">
+                        · {{ formatRelativeFromNow(node.lastFailedAt) }}</template
+                      >
+                    </div>
+                    <div
+                      v-if="node.lastErrorMessage"
+                      class="routing-alert-node__error"
+                    >
+                      最后错误：{{ node.lastErrorMessage }}
+                    </div>
+                    <div
+                      v-if="node.lastRequestId"
+                      class="routing-alert-node__reqid"
+                    >
+                      reqId：{{ node.lastRequestId }}
+                    </div>
+                  </div>
+                </div>
                 <div v-if="alertOverview" class="routing-alert-overview-meta">
                   <span>作用域：当前场景 {{ currentSceneTitle }}</span>
                   <span>阈值：{{ alertOverview.failureThreshold }} 次</span>
@@ -2110,6 +2138,60 @@ function parseTimeValue(value: string) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+// 告警节点的错误类型 → 中文（未命中回退原值，避免误译遮蔽后端新类型）。
+const alertErrorTypeLabelMap: Record<string, string> = {
+  timeout: "请求超时",
+  failed: "调用失败",
+  http_status: "网关状态异常",
+  http_error: "网关错误",
+  connection: "连接失败",
+  network: "网络异常",
+  rate_limit: "触发限流",
+  invalid_response: "响应异常",
+};
+
+function displayAlertErrorType(value?: string) {
+  const key = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (!key) {
+    return "";
+  }
+  return alertErrorTypeLabelMap[key] || value || "";
+}
+
+// 相对时间（如「12 分钟前」）；参考时间默认取告警概览生成时刻，跨度过大回退绝对时间。
+function formatRelativeFromNow(
+  value: string,
+  reference = alertOverview.value?.generatedAt,
+) {
+  const target = parseTimeValue(value);
+  if (target === null) {
+    return "";
+  }
+  const referenceTime = parseTimeValue(reference || "") ?? Date.now();
+  const diff = referenceTime - target;
+  if (diff < 0) {
+    return formatDateTime(value);
+  }
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) {
+    return "刚刚";
+  }
+  if (minutes < 60) {
+    return `${minutes} 分钟前`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} 小时前`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 30) {
+    return `${days} 天前`;
+  }
+  return formatDateTime(value);
+}
+
 function isWithinLast24Hours(
   value: string,
   reference = alertOverview.value?.generatedAt,
@@ -2157,6 +2239,99 @@ function summarizeSceneAlertStatus(
     tone: "success",
     text: "无告警",
   };
+}
+
+// 指定场景当前处于告警中（连续失败超阈值）的节点，按连续失败次数降序，供卡片摘要与主编辑区明细复用。
+function sceneActiveAlertItems(scene: AIRoutingSceneKey) {
+  const overview = alertOverview.value;
+  if (!overview) {
+    return [];
+  }
+  return overview.items
+    .filter((item) => item.scene === scene && item.thresholdReached)
+    .sort((left, right) => right.consecutiveFailures - left.consecutiveFailures);
+}
+
+type SceneCardIssue = {
+  tone: "danger" | "warning";
+  title: string;
+  detail: string;
+};
+
+// 场景卡「一句话问题摘要」：运行正常/未配置返回 null（卡片保持干净），
+// 仅在需处置时给出 who + what。优先级与 sceneAggregateStatus 对齐，避免结论态与摘要打架。
+function summarizeSceneIssue(
+  scene: AIRoutingSceneKey,
+  health: SceneCardHealthSnapshot,
+  summary?: AIRoutingSceneSummary,
+): SceneCardIssue | null {
+  if (!summary || summary.providerCount === 0) {
+    return null;
+  }
+  if (health.alertStatus.tone === "danger") {
+    const items = sceneActiveAlertItems(scene);
+    const top = items[0];
+    if (top) {
+      const parts: string[] = [];
+      const errorType = displayAlertErrorType(top.lastErrorType);
+      if (errorType) {
+        parts.push(errorType);
+      }
+      const relative = formatRelativeFromNow(top.lastFailedAt);
+      if (relative) {
+        parts.push(relative);
+      }
+      if (items.length > 1) {
+        parts.push(`共 ${items.length} 个节点告警`);
+      }
+      return {
+        tone: "danger",
+        title: `${top.providerName} 连续失败 ${top.consecutiveFailures} 次`,
+        detail: parts.join(" · "),
+      };
+    }
+    return {
+      tone: "danger",
+      title: "节点告警中",
+      detail: "有启用节点连续失败超阈值",
+    };
+  }
+  if (health.configRisk.tone === "danger") {
+    return {
+      tone: "danger",
+      title: "无启用节点",
+      detail: "至少启用 1 个节点才能发布",
+    };
+  }
+  if (health.configRisk.tone === "warning") {
+    return {
+      tone: "warning",
+      title: "启用节点缺密钥",
+      detail: "有启用节点未配置可用密钥",
+    };
+  }
+  if (health.alertStatus.tone === "warning") {
+    return {
+      tone: "warning",
+      title: "24h 内有过告警",
+      detail: "当前已恢复，建议复核调用日志",
+    };
+  }
+  if (summary.compatibilityMode) {
+    return {
+      tone: "warning",
+      title: "兼容模式待切换",
+      detail: "线上仍走旧单 Provider，保存并启用后切换",
+    };
+  }
+  if (health.recentTest.tone === "warning") {
+    return {
+      tone: "warning",
+      title: "最近测试异常",
+      detail: "发布前建议重新测试草稿",
+    };
+  }
+  return null;
 }
 
 function sceneAggregateStatus(
@@ -2250,6 +2425,7 @@ const sceneCards = computed(() => {
       compatibilityMode: summary?.compatibilityMode ?? true,
       health,
       aggregate: sceneAggregateStatus(scene, health),
+      issue: summarizeSceneIssue(scene, health, summary),
     };
   });
 });
@@ -2268,6 +2444,11 @@ const currentSceneAlertItems = computed(() => {
     ) || []
   );
 });
+
+// 当前场景正处于告警中的节点明细（供主编辑区「告警配置」弹层展示「为何告警」）。
+const currentSceneActiveAlertItems = computed(() =>
+  sceneActiveAlertItems(currentSceneKey.value),
+);
 
 const currentSceneLatestAlertedAt = computed(() => {
   const timestamps = currentSceneAlertItems.value
@@ -5330,33 +5511,47 @@ function extractMessage(error: unknown) {
   font-size: 13px;
 }
 
-.routing-scene-card__health {
-  display: grid;
+.routing-scene-card__issue {
+  display: flex;
+  align-items: flex-start;
   gap: 10px;
   margin-top: 14px;
   padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(248, 250, 252, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  background: rgba(255, 251, 235, 0.82);
+  color: #92400e;
 }
 
-.routing-scene-card__health-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+.routing-scene-card__issue--danger {
+  border-color: rgba(239, 68, 68, 0.24);
+  background: rgba(254, 242, 242, 0.86);
+  color: #991b1b;
 }
 
-.routing-scene-card__health-label {
-  min-width: 56px;
-  color: var(--color-text-subtle, #64748b);
-  font-size: 12px;
+.routing-scene-card__issue-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  font-size: 16px;
+}
+
+.routing-scene-card__issue-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.routing-scene-card__issue-title {
+  color: inherit;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1.45;
 }
 
-.routing-scene-card__health-time {
-  color: var(--color-text-subtle, #94a3b8);
+.routing-scene-card__issue-detail {
+  color: color-mix(in srgb, currentColor 72%, transparent);
   font-size: 12px;
+  line-height: 1.5;
 }
 
 .routing-scene-card__footer {
@@ -5538,6 +5733,70 @@ function extractMessage(error: unknown) {
   margin-bottom: 10px;
   color: var(--color-text-subtle, #64748b);
   font-size: 12px;
+}
+
+.routing-alert-nodes {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.routing-alert-nodes__caption {
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.routing-alert-node {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(239, 68, 68, 0.12);
+}
+
+.routing-alert-node__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.routing-alert-node__name {
+  min-width: 0;
+  color: var(--color-text, #1f2937);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.routing-alert-node__model {
+  flex: 0 1 auto;
+  max-width: 52%;
+  color: var(--color-text-subtle, #64748b);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.routing-alert-node__meta,
+.routing-alert-node__error,
+.routing-alert-node__reqid {
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.routing-alert-node__error {
+  color: #991b1b;
 }
 
 .channel-popover__tech {

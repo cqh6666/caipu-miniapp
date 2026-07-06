@@ -1,5 +1,28 @@
 # Project Changelog
 
+## 2026-07-06 (Admin Web AI Provider 场景卡告警摘要补强)
+
+### Changed
+
+- **修改时间**：2026-07-06 09:57:02 +0800
+- **变更背景**：`admin-web` 的 `AI Provider` 场景卡在第三轮 UX 收敛后仍需要进一步减少
+  健康状态明细堆叠，并让“为何告警”在当前场景内更容易定位到具体节点。
+- **核心改动**：
+  - `admin-web/src/pages/AIProvidersPage.vue` 将场景卡内“最近测试 / 配置风险 / 告警状态”
+    三行明细收敛为仅在需处置时展示的一句话问题摘要。
+  - 告警摘要优先展示当前场景中连续失败次数最高的节点、失败次数、错误类型和相对失败时间；
+    多节点告警时补充告警节点数量。
+  - “告警配置”弹层新增当前场景正在告警的节点列表，展示 Provider 名称、模型、连续失败次数、
+    错误类型、最后错误和 requestId，便于从页面直接定位问题。
+  - 补充问题摘要与告警节点列表的局部样式，并清理已不再使用的场景卡健康快照样式。
+- **影响范围**：仅影响 `admin-web` 的 `AI Provider` 管理页展示与前端告警摘要文案；
+  不修改后端 API、数据库、AI 路由保存 payload、小程序页面或部署脚本。
+- **兼容性或风险**：告警明细依赖现有 `AIRoutingAlertOverview` 返回字段；未知后端错误类型会原样展示，
+  避免因前端未覆盖枚举而隐藏真实错误。
+- **验证情况**：已执行 `npm --prefix admin-web run build` 与
+  `git diff --check -- admin-web/src/pages/AIProvidersPage.vue`，均通过；Vite 仍提示既有
+  大 chunk 体积 warning，不影响本次构建产物生成。
+
 ## 2026-07-03 (Admin Web AI Provider 管理页 UX 收敛)
 
 ### Changed
