@@ -809,6 +809,101 @@ func (s *Service) trackProviderAlert(ctx context.Context, config SceneConfig, pr
 	s.alertTracker.RecordFailure(ctx, event)
 }
 
+// ResolveProviderStatuses 遍历各场景当前生效配置，给出每个 Provider 的启用/在生效路由状态。
+// 由 aialert.Service 通过 ProviderStatusResolver 接口调用，避免包级循环依赖。
+func (s *Service) ResolveProviderStatuses(ctx context.Context) (map[string]aialert.ProviderRuntimeStatus, error) {
+	result := make(map[string]aialert.ProviderRuntimeStatus)
+	if s == nil {
+		return result, nil
+	}
+	for _, scene := range AllScenes() {
+		config, err := s.GetScene(ctx, scene)
+		if err != nil {
+			return nil, err
+		}
+		sceneEffective := config.Enabled && len(enabledProviders(config.Providers)) > 0
+		for _, provider := range config.Providers {
+			result[provider.ID] = aialert.ProviderRuntimeStatus{
+				Enabled:          provider.Enabled,
+				InEffectiveRoute: sceneEffective && provider.Enabled,
+				Scene:            string(scene),
+				ProviderName:     provider.Name,
+				Model:            provider.Model,
+			}
+		}
+	}
+	return result, nil
+}
+
+// RetestProvider 定位 Provider 所属场景，构造单节点配置执行一次真实复测。
+// 使用 route_test 输入以跳过自动告警追踪，由 aialert 显式落状态。
+func (s *Service) RetestProvider(ctx context.Context, providerID string) (aialert.ProviderRetestOutcome, bool, error) {
+	providerID = strings.TrimSpace(providerID)
+	if s == nil || providerID == "" {
+		return aialert.ProviderRetestOutcome{}, false, nil
+	}
+	for _, scene := range AllScenes() {
+		config, err := s.GetScene(ctx, scene)
+		if err != nil {
+			return aialert.ProviderRetestOutcome{}, false, err
+		}
+		for _, provider := range config.Providers {
+			if provider.ID != providerID {
+				continue
+			}
+			single := config
+			single.Enabled = true
+			forced := provider
+			forced.Enabled = true
+			single.Providers = []ProviderConfig{forced}
+			single.MaxAttempts = 1
+			// 复测是显式动作，清掉熔断避免被跳过。
+			s.breaker.markSuccess(scene, providerID)
+
+			input := s.sceneTestInput(scene)
+			input.ContentKind = "route_test"
+			result, routeErr := s.routeChat(ctx, single, input)
+
+			outcome := aialert.ProviderRetestOutcome{
+				OK:        routeErr == nil,
+				Model:     firstNonEmpty(result.Model, provider.Model),
+				RequestID: common.RequestID(ctx),
+			}
+			if routeErr == nil {
+				outcome.Message = "复测成功"
+				if n := len(result.Attempts); n > 0 {
+					outcome.HTTPStatus = result.Attempts[n-1].HTTPStatus
+				}
+				return outcome, true, nil
+			}
+			outcome.Message = routeErr.Error()
+			outcome.ErrorType = routeErrorType(routeErr)
+			outcome.ErrorMessage = errorMessage(routeErr)
+			if n := len(result.Attempts); n > 0 {
+				last := result.Attempts[n-1]
+				outcome.HTTPStatus = last.HTTPStatus
+				if strings.TrimSpace(last.ErrorType) != "" {
+					outcome.ErrorType = last.ErrorType
+				}
+				if strings.TrimSpace(last.ErrorMessage) != "" {
+					outcome.ErrorMessage = last.ErrorMessage
+				}
+			}
+			return outcome, true, nil
+		}
+	}
+	return aialert.ProviderRetestOutcome{}, false, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func sceneUsesCompatibility(config SceneConfig) bool {
 	return !config.Enabled || len(enabledProviders(config.Providers)) == 0
 }

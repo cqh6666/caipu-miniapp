@@ -85,6 +85,9 @@ func New(cfg config.Config) (*App, error) {
 		aiAlertService,
 	)
 	aiRoutingService.SetTestInputBuilder(buildAIRoutingTestInputBuilder())
+	// 反向注入：aialert 通过接口消费 airouter 的运行时状态与复测能力（打破循环依赖）。
+	aiAlertService.SetProviderStatusResolver(aiRoutingService)
+	aiAlertService.SetProviderRetester(aiRoutingService)
 	var appSettingsService *appsettings.Service
 
 	inviteRepo := invite.NewRepository(dbConn)

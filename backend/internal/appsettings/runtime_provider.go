@@ -119,14 +119,15 @@ func (p *RuntimeProvider) TitleAI(ctx context.Context) TitleAIConfig {
 
 func (p *RuntimeProvider) AIProviderAlert(ctx context.Context) aialert.Config {
 	return aialert.Config{
-		Enabled:          p.getBool(ctx, "ai.provider_alert.enabled", false),
-		FailureThreshold: p.getInt(ctx, "ai.provider_alert.failure_threshold", 3),
-		SMTPHost:         p.getString(ctx, "ai.provider_alert.smtp_host"),
-		SMTPPort:         p.getInt(ctx, "ai.provider_alert.smtp_port", 587),
-		SMTPUsername:     p.getString(ctx, "ai.provider_alert.smtp_username"),
-		SMTPPassword:     p.getString(ctx, "ai.provider_alert.smtp_password"),
-		FromEmail:        p.getString(ctx, "ai.provider_alert.from_email"),
-		ToEmails:         p.getString(ctx, "ai.provider_alert.to_emails"),
+		Enabled:           p.getBool(ctx, "ai.provider_alert.enabled", false),
+		FailureThreshold:  p.getInt(ctx, "ai.provider_alert.failure_threshold", 3),
+		ActiveWindowHours: p.getInt(ctx, "ai.provider_alert.active_window_hours", 72),
+		SMTPHost:          p.getString(ctx, "ai.provider_alert.smtp_host"),
+		SMTPPort:          p.getInt(ctx, "ai.provider_alert.smtp_port", 587),
+		SMTPUsername:      p.getString(ctx, "ai.provider_alert.smtp_username"),
+		SMTPPassword:      p.getString(ctx, "ai.provider_alert.smtp_password"),
+		FromEmail:         p.getString(ctx, "ai.provider_alert.from_email"),
+		ToEmails:          p.getString(ctx, "ai.provider_alert.to_emails"),
 	}
 }
 
@@ -789,6 +790,7 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 			Fields: []runtimeFieldDefinition{
 				{Group: "ai.provider_alert", Key: "enabled", Label: "Enabled", Description: "是否启用连续异常邮件告警。", ValueType: "bool", DefaultValue: strconv.FormatBool(cfg.AIAlertEnabled)},
 				{Group: "ai.provider_alert", Key: "failure_threshold", Label: "Failure Threshold", Description: "同一 Provider 连续异常达到该次数后触发一次告警。", ValueType: "int", DefaultValue: strconv.Itoa(cfg.AIAlertFailureThreshold)},
+				{Group: "ai.provider_alert", Key: "active_window_hours", Label: "Active Window Hours", Description: "最后失败超过该小时数后，告警自动从红色降级为黄色“待复测（已过期）”。默认 72。", ValueType: "int", DefaultValue: strconv.Itoa(72)},
 				{Group: "ai.provider_alert", Key: "smtp_host", Label: "SMTP Host", Description: "SMTP 主机，QQ 邮箱默认 smtp.qq.com。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIAlertSMTPHost)},
 				{Group: "ai.provider_alert", Key: "smtp_port", Label: "SMTP Port", Description: "SMTP 端口，推荐 587（STARTTLS）或 465（SSL）。", ValueType: "int", DefaultValue: strconv.Itoa(cfg.AIAlertSMTPPort)},
 				{Group: "ai.provider_alert", Key: "smtp_username", Label: "SMTP Username", Description: "发件邮箱账号。", ValueType: "string", DefaultValue: strings.TrimSpace(cfg.AIAlertSMTPUsername)},

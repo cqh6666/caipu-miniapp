@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -145,6 +146,9 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 func TestServiceOverviewBuildsSortedSummary(t *testing.T) {
 	t.Parallel()
 
+	// 最近失败落在活跃窗口内，保证达到阈值的节点判定为 active（无 resolver 时按“仍在路由”兜底）。
+	recentFailedAt := time.Now().UTC().Add(-30 * time.Minute).Format(time.RFC3339)
+
 	db := openAlertTestDB(t)
 	repo := NewRepository(db)
 	service := NewService(repo, staticConfigProvider{
@@ -169,7 +173,7 @@ func TestServiceOverviewBuildsSortedSummary(t *testing.T) {
 		LastErrorType:       "timeout",
 		LastErrorMessage:    "request timeout",
 		LastRequestID:       "req-b",
-		LastFailedAt:        "2026-04-25T09:00:00Z",
+		LastFailedAt:        recentFailedAt,
 		LastRecoveredAt:     "",
 		LastAlertedAt:       "2026-04-25T09:05:00Z",
 		UpdatedAt:           "2026-04-25T09:06:00Z",
@@ -184,7 +188,7 @@ func TestServiceOverviewBuildsSortedSummary(t *testing.T) {
 		LastErrorType:       "upstream",
 		LastErrorMessage:    "upstream unavailable",
 		LastRequestID:       "req-a",
-		LastFailedAt:        "2026-04-25T09:07:00Z",
+		LastFailedAt:        recentFailedAt,
 		LastRecoveredAt:     "",
 		LastAlertedAt:       "2026-04-25T09:12:00Z",
 		UpdatedAt:           "2026-04-25T09:03:00Z",
@@ -199,7 +203,7 @@ func TestServiceOverviewBuildsSortedSummary(t *testing.T) {
 		LastErrorType:       "network",
 		LastErrorMessage:    "connection refused",
 		LastRequestID:       "req-c",
-		LastFailedAt:        "2026-04-25T09:08:00Z",
+		LastFailedAt:        recentFailedAt,
 		LastRecoveredAt:     "",
 		LastAlertedAt:       "2026-04-25T09:01:00Z",
 		UpdatedAt:           "2026-04-25T09:10:00Z",
@@ -319,7 +323,23 @@ CREATE TABLE ai_provider_alert_states (
 	last_recovered_at TEXT NOT NULL DEFAULT '',
 	last_alerted_at TEXT NOT NULL DEFAULT '',
 	last_alerted_failure_count INTEGER NOT NULL DEFAULT 0,
+	archived_at TEXT NOT NULL DEFAULT '',
+	archived_by TEXT NOT NULL DEFAULT '',
+	archive_reason TEXT NOT NULL DEFAULT '',
+	muted_until TEXT NOT NULL DEFAULT '',
+	muted_by TEXT NOT NULL DEFAULT '',
+	mute_reason TEXT NOT NULL DEFAULT '',
+	last_config_changed_at TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE ai_provider_alert_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	provider_id TEXT NOT NULL,
+	scene TEXT NOT NULL DEFAULT '',
+	event_type TEXT NOT NULL,
+	reason TEXT NOT NULL DEFAULT '',
+	operator_subject TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
 );
 CREATE TABLE ai_call_logs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,

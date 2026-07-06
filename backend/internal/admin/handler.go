@@ -14,8 +14,13 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type AIAlertOverviewProvider interface {
+type AIAlertService interface {
 	Overview(ctx context.Context) (aialert.Overview, error)
+	Retest(ctx context.Context, providerID, subject string) (aialert.MutationResult, error)
+	Archive(ctx context.Context, providerID, subject, reason string) (aialert.MutationResult, error)
+	Mute(ctx context.Context, providerID, subject string, durationHours int, reason string) (aialert.MutationResult, error)
+	Unmute(ctx context.Context, providerID, subject string) (aialert.MutationResult, error)
+	NoteSceneConfigChanged(ctx context.Context, subject, scene string) error
 }
 
 type Handler struct {
@@ -25,7 +30,16 @@ type Handler struct {
 	appSettingsSvc *appsettings.Service
 	serverHealth   *ServerHealthService
 	aiRouting      *airouter.Service
-	aiAlert        AIAlertOverviewProvider
+	aiAlert        AIAlertService
+}
+
+type alertArchiveRequest struct {
+	Reason string `json:"reason"`
+}
+
+type alertMuteRequest struct {
+	DurationHours int    `json:"durationHours"`
+	Reason        string `json:"reason"`
 }
 
 type loginRequest struct {
@@ -45,7 +59,7 @@ func NewHandler(
 	appSettingsService *appsettings.Service,
 	serverHealthService *ServerHealthService,
 	aiRoutingService *airouter.Service,
-	aiAlertService AIAlertOverviewProvider,
+	aiAlertService AIAlertService,
 ) *Handler {
 	return &Handler{
 		auth:           auth,
@@ -374,6 +388,10 @@ func (h *Handler) UpdateAIRoutingScene(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, err)
 		return
 	}
+	// 配置保存后，对该场景下已有告警的节点标记「配置变更」，供 pending_verify 判定。
+	if h.aiAlert != nil {
+		_ = h.aiAlert.NoteSceneConfigChanged(r.Context(), subject, string(scene))
+	}
 	common.WriteData(w, http.StatusOK, map[string]any{
 		"scene": config,
 	})
@@ -422,6 +440,95 @@ func (h *Handler) GetAIRoutingAlertsOverview(w http.ResponseWriter, r *http.Requ
 	common.WriteData(w, http.StatusOK, map[string]any{
 		"overview": overview,
 	})
+}
+
+func (h *Handler) RetestAIRoutingAlert(w http.ResponseWriter, r *http.Request) {
+	subject, providerID, ok := h.alertActionContext(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.aiAlert.Retest(r.Context(), providerID, subject)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"result": result,
+	})
+}
+
+func (h *Handler) ArchiveAIRoutingAlert(w http.ResponseWriter, r *http.Request) {
+	subject, providerID, ok := h.alertActionContext(w, r)
+	if !ok {
+		return
+	}
+	var req alertArchiveRequest
+	if err := common.DecodeJSONAllowEmpty(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	result, err := h.aiAlert.Archive(r.Context(), providerID, subject, req.Reason)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"result": result,
+	})
+}
+
+func (h *Handler) MuteAIRoutingAlert(w http.ResponseWriter, r *http.Request) {
+	subject, providerID, ok := h.alertActionContext(w, r)
+	if !ok {
+		return
+	}
+	var req alertMuteRequest
+	if err := common.DecodeJSONAllowEmpty(r, &req); err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	result, err := h.aiAlert.Mute(r.Context(), providerID, subject, req.DurationHours, req.Reason)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"result": result,
+	})
+}
+
+func (h *Handler) UnmuteAIRoutingAlert(w http.ResponseWriter, r *http.Request) {
+	subject, providerID, ok := h.alertActionContext(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.aiAlert.Unmute(r.Context(), providerID, subject)
+	if err != nil {
+		common.WriteError(w, err)
+		return
+	}
+	common.WriteData(w, http.StatusOK, map[string]any{
+		"result": result,
+	})
+}
+
+// alertActionContext 校验告警动作接口的公共前置：登录态 + providerId 路径参数。
+func (h *Handler) alertActionContext(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	if h.aiAlert == nil {
+		common.WriteError(w, common.ErrInternal)
+		return "", "", false
+	}
+	subject, err := h.auth.CurrentSubject(r.Context())
+	if err != nil {
+		common.WriteError(w, err)
+		return "", "", false
+	}
+	providerID := strings.TrimSpace(chi.URLParam(r, "providerId"))
+	if providerID == "" {
+		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "providerId is required", http.StatusBadRequest))
+		return "", "", false
+	}
+	return subject, providerID, true
 }
 
 func (h *Handler) buildBilibiliGroup(ctx context.Context) (appsettings.RuntimeSettingGroupView, error) {

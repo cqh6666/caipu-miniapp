@@ -289,69 +289,184 @@
             </el-popover>
             <el-popover
               placement="bottom-end"
-              :width="mediumPopoverWidth"
+              :width="largePopoverWidth"
               trigger="click"
             >
               <template #reference>
                 <el-button link>告警配置</el-button>
               </template>
-              <div class="channel-popover">
-                <div class="channel-popover__title">连续异常邮件告警</div>
+              <div class="channel-popover routing-alert-panel" aria-live="polite">
+                <div class="channel-popover__title">
+                  连续异常告警 · {{ currentSceneTitle }}
+                </div>
                 <p class="channel-popover__text">
                   {{ alertStatusDescription }}
                 </p>
-                <div
-                  v-if="currentSceneActiveAlertItems.length"
-                  class="routing-alert-nodes"
-                >
-                  <div class="routing-alert-nodes__caption">正在告警的节点</div>
-                  <div
-                    v-for="node in currentSceneActiveAlertItems"
-                    :key="node.providerId"
-                    class="routing-alert-node"
-                  >
-                    <div class="routing-alert-node__head">
-                      <span class="routing-alert-node__name">{{
-                        node.providerName
-                      }}</span>
-                      <span class="routing-alert-node__model">{{
-                        node.model || "未指定模型"
-                      }}</span>
-                    </div>
-                    <div class="routing-alert-node__meta">
-                      连续失败 {{ node.consecutiveFailures }} 次<template
-                        v-if="displayAlertErrorType(node.lastErrorType)"
-                      >
-                        · 类型：{{ displayAlertErrorType(node.lastErrorType) }}</template
-                      ><template v-if="node.lastFailedAt">
-                        · {{ formatRelativeFromNow(node.lastFailedAt) }}</template
-                      >
-                    </div>
-                    <div
-                      v-if="node.lastErrorMessage"
-                      class="routing-alert-node__error"
-                    >
-                      最后错误：{{ node.lastErrorMessage }}
-                    </div>
-                    <div
-                      v-if="node.lastRequestId"
-                      class="routing-alert-node__reqid"
-                    >
-                      reqId：{{ node.lastRequestId }}
-                    </div>
-                  </div>
-                </div>
                 <div v-if="alertOverview" class="routing-alert-overview-meta">
-                  <span>作用域：当前场景 {{ currentSceneTitle }}</span>
                   <span>阈值：{{ alertOverview.failureThreshold }} 次</span>
+                  <span>活跃窗口：{{ alertOverview.activeWindowHours }}h</span>
                   <span>
-                    最近告警：{{
-                      currentSceneLatestAlertedAt
-                        ? formatDateTime(currentSceneLatestAlertedAt)
-                        : "暂无"
+                    投递：{{
+                      alertOverview.hasDeliveryConfig ? "可用" : "不完整"
                     }}
                   </span>
                 </div>
+
+                <template v-if="hasCurrentSceneAlertNodes">
+                  <div
+                    v-for="section in currentSceneAlertSections"
+                    v-show="section.items.length"
+                    :key="section.key"
+                    class="routing-alert-section"
+                  >
+                    <div class="routing-alert-section__head">
+                      <span class="routing-alert-section__title">
+                        {{ section.title }}
+                        <em>{{ section.items.length }}</em>
+                      </span>
+                      <div
+                        v-if="section.key !== 'recovered'"
+                        class="routing-alert-section__bulk"
+                      >
+                        <el-button
+                          link
+                          size="small"
+                          @click="handleBatchRetest(section.items)"
+                          >批量复测</el-button
+                        >
+                        <el-button
+                          v-if="section.key === 'review'"
+                          link
+                          size="small"
+                          @click="handleBatchArchive(section.items)"
+                          >批量归档</el-button
+                        >
+                      </div>
+                    </div>
+                    <div class="routing-alert-section__hint">
+                      {{ section.hint }}
+                    </div>
+                    <div
+                      v-for="node in section.items"
+                      :key="node.providerId"
+                      class="routing-alert-node"
+                      :class="`routing-alert-node--${resolveAlertStatus(node)}`"
+                    >
+                      <div class="routing-alert-node__head">
+                        <span class="routing-alert-node__name">{{
+                          node.providerName
+                        }}</span>
+                        <StatusTag
+                          :tone="alertStatusTone(resolveAlertStatus(node))"
+                          :text="alertStatusLabel(resolveAlertStatus(node))"
+                        />
+                        <span class="routing-alert-node__model">{{
+                          node.model || "未指定模型"
+                        }}</span>
+                      </div>
+                      <div class="routing-alert-node__meta">
+                        <template v-if="node.consecutiveFailures"
+                          >连续失败 {{ node.consecutiveFailures }} 次</template
+                        ><template v-if="displayAlertErrorType(node.lastErrorType)">
+                          · 类型：{{
+                            displayAlertErrorType(node.lastErrorType)
+                          }}</template
+                        ><template v-if="node.lastFailedAt">
+                          ·
+                          <span :title="formatDateTime(node.lastFailedAt)">{{
+                            formatRelativeFromNow(node.lastFailedAt)
+                          }}</span></template
+                        >
+                      </div>
+                      <div
+                        v-if="node.statusReason"
+                        class="routing-alert-node__reason"
+                      >
+                        {{ node.statusReason }}
+                      </div>
+                      <div
+                        v-if="
+                          resolveAlertStatus(node) === 'active' &&
+                          activeWindowCountdown(node)
+                        "
+                        class="routing-alert-node__countdown"
+                      >
+                        {{ activeWindowCountdown(node) }}
+                      </div>
+                      <div
+                        v-if="
+                          node.lastRecoveredAt &&
+                          resolveAlertStatus(node) === 'recovered'
+                        "
+                        class="routing-alert-node__recovered"
+                      >
+                        恢复于 {{ formatDateTime(node.lastRecoveredAt) }}
+                      </div>
+                      <div
+                        v-if="node.lastErrorMessage"
+                        class="routing-alert-node__error"
+                      >
+                        最后错误：{{ node.lastErrorMessage }}
+                      </div>
+                      <div
+                        v-if="node.lastRequestId"
+                        class="routing-alert-node__reqid"
+                      >
+                        reqId：{{ node.lastRequestId }}
+                        <el-button
+                          link
+                          size="small"
+                          @click="copyRequestId(node.lastRequestId)"
+                          >复制</el-button
+                        >
+                      </div>
+                      <div class="routing-alert-node__actions">
+                        <el-button
+                          v-if="node.canRetest"
+                          type="primary"
+                          size="small"
+                          :loading="isAlertActionPending(node.providerId)"
+                          @click="handleAlertRetest(node)"
+                          >复测并恢复</el-button
+                        >
+                        <el-button
+                          v-if="node.canUnmute"
+                          size="small"
+                          :disabled="isAlertActionPending(node.providerId)"
+                          @click="handleAlertUnmute(node)"
+                          >解除静默</el-button
+                        >
+                        <el-button
+                          v-if="node.canMute"
+                          size="small"
+                          :disabled="isAlertActionPending(node.providerId)"
+                          @click="handleAlertMute(node)"
+                          >静默 24h</el-button
+                        >
+                        <el-button
+                          v-if="node.canArchive"
+                          size="small"
+                          :disabled="isAlertActionPending(node.providerId)"
+                          @click="handleAlertArchive(node)"
+                          >归档</el-button
+                        >
+                        <el-button
+                          link
+                          size="small"
+                          @click="goAlertProviderLogs(node)"
+                          >查看日志</el-button
+                        >
+                      </div>
+                    </div>
+                  </div>
+                  <p class="routing-alert-retest-hint">
+                    复测会对该节点发起一次真实上游调用，可能产生额度/费用。
+                  </p>
+                </template>
+                <p v-else class="routing-alert-empty">
+                  当前场景无告警，运行正常。
+                </p>
+
                 <el-button type="primary" link @click="goAlertConfig"
                   >前往配置 <el-icon><ArrowRight /></el-icon
                 ></el-button>
@@ -1785,6 +1900,8 @@ import * as adminApi from "@/api/admin";
 import { useResponsive } from "@/composables/useResponsive";
 import type {
   AIRoutingAlertOverview,
+  AIRoutingAlertOverviewItem,
+  AIRoutingAlertStatus,
   AIRoutingProviderEndpointMode,
   AIRoutingProviderConfig,
   AIRoutingProviderResponseFormat,
@@ -2207,6 +2324,53 @@ function isWithinLast24Hours(
   );
 }
 
+// alertStatus 兼容口径：优先用后端 alertStatus，回退旧 thresholdReached。
+function resolveAlertStatus(
+  item: AIRoutingAlertOverviewItem,
+): AIRoutingAlertStatus {
+  return item.alertStatus || (item.thresholdReached ? "active" : "normal");
+}
+
+const alertStatusLabelMap: Record<AIRoutingAlertStatus, string> = {
+  normal: "正常",
+  active: "告警中",
+  stale: "待复测（已过期）",
+  pending_verify: "待复测（配置变更）",
+  muted: "已静默",
+  archived: "已归档",
+  recovered: "已恢复",
+};
+
+function alertStatusLabel(status: AIRoutingAlertStatus) {
+  return alertStatusLabelMap[status] || status;
+}
+
+function alertStatusTone(
+  status: AIRoutingAlertStatus,
+): "success" | "warning" | "danger" | "neutral" {
+  switch (status) {
+    case "active":
+      return "danger";
+    case "stale":
+    case "pending_verify":
+    case "muted":
+      return "warning";
+    case "archived":
+      return "neutral";
+    case "recovered":
+      return "success";
+    default:
+      return "success";
+  }
+}
+
+// 是否属于「待复核」黄色区（过期 / 配置变更 / 静默）。
+function isReviewStatus(status: AIRoutingAlertStatus) {
+  return (
+    status === "stale" || status === "pending_verify" || status === "muted"
+  );
+}
+
 function summarizeSceneAlertStatus(
   scene: AIRoutingSceneKey,
 ): SceneCardHealthSnapshot["alertStatus"] {
@@ -2218,21 +2382,25 @@ function summarizeSceneAlertStatus(
     };
   }
   const sceneItems = overview.items.filter((item) => item.scene === scene);
-  const activeCount = sceneItems.filter((item) => item.thresholdReached).length;
+  const activeCount = sceneItems.filter(
+    (item) => resolveAlertStatus(item) === "active",
+  ).length;
+  const reviewCount = sceneItems.filter((item) =>
+    isReviewStatus(resolveAlertStatus(item)),
+  ).length;
   if (activeCount > 0) {
     return {
       tone: "danger",
-      text: `告警中 ${activeCount} 个`,
+      text:
+        reviewCount > 0
+          ? `告警中 ${activeCount} · 待复核 ${reviewCount}`
+          : `告警中 ${activeCount}`,
     };
   }
-  if (
-    sceneItems.some((item) =>
-      isWithinLast24Hours(item.lastAlertedAt, overview.generatedAt),
-    )
-  ) {
+  if (reviewCount > 0) {
     return {
       tone: "warning",
-      text: "24h 内有告警",
+      text: `待复核 ${reviewCount}`,
     };
   }
   return {
@@ -2241,14 +2409,30 @@ function summarizeSceneAlertStatus(
   };
 }
 
-// 指定场景当前处于告警中（连续失败超阈值）的节点，按连续失败次数降序，供卡片摘要与主编辑区明细复用。
+// 指定场景当前处于 active 告警的节点，按连续失败次数降序，供卡片摘要与主编辑区明细复用。
 function sceneActiveAlertItems(scene: AIRoutingSceneKey) {
   const overview = alertOverview.value;
   if (!overview) {
     return [];
   }
   return overview.items
-    .filter((item) => item.scene === scene && item.thresholdReached)
+    .filter(
+      (item) => item.scene === scene && resolveAlertStatus(item) === "active",
+    )
+    .sort((left, right) => right.consecutiveFailures - left.consecutiveFailures);
+}
+
+// 指定场景的「待复核」节点（stale / pending_verify / muted）。
+function sceneReviewAlertItems(scene: AIRoutingSceneKey) {
+  const overview = alertOverview.value;
+  if (!overview) {
+    return [];
+  }
+  return overview.items
+    .filter(
+      (item) =>
+        item.scene === scene && isReviewStatus(resolveAlertStatus(item)),
+    )
     .sort((left, right) => right.consecutiveFailures - left.consecutiveFailures);
 }
 
@@ -2270,6 +2454,7 @@ function summarizeSceneIssue(
   }
   if (health.alertStatus.tone === "danger") {
     const items = sceneActiveAlertItems(scene);
+    const reviewCount = sceneReviewAlertItems(scene).length;
     const top = items[0];
     if (top) {
       const parts: string[] = [];
@@ -2283,6 +2468,9 @@ function summarizeSceneIssue(
       }
       if (items.length > 1) {
         parts.push(`共 ${items.length} 个节点告警`);
+      }
+      if (reviewCount > 0) {
+        parts.push(`另有 ${reviewCount} 个待复核`);
       }
       return {
         tone: "danger",
@@ -2311,10 +2499,15 @@ function summarizeSceneIssue(
     };
   }
   if (health.alertStatus.tone === "warning") {
+    const reviewItems = sceneReviewAlertItems(scene);
+    const top = reviewItems[0];
+    const relative = top ? formatRelativeFromNow(top.lastFailedAt) : "";
     return {
       tone: "warning",
-      title: "24h 内有过告警",
-      detail: "当前已恢复，建议复核调用日志",
+      title: `${reviewItems.length} 个待复核`,
+      detail: relative
+        ? `最近失败 ${relative} · 建议复测或归档`
+        : "建议复测确认或归档，历史告警不计入红色",
     };
   }
   if (summary.compatibilityMode) {
@@ -2437,25 +2630,34 @@ const currentSceneTitle = computed(() => {
   return card?.title || displayAIRoutingScene(currentSceneKey.value);
 });
 
-const currentSceneAlertItems = computed(() => {
-  return (
-    alertOverview.value?.items.filter(
-      (item) => item.scene === currentSceneKey.value,
-    ) || []
-  );
-});
-
-// 当前场景正处于告警中的节点明细（供主编辑区「告警配置」弹层展示「为何告警」）。
+// 当前场景正处于 active 告警的节点明细（供主编辑区「告警配置」弹层展示「当前告警」）。
 const currentSceneActiveAlertItems = computed(() =>
   sceneActiveAlertItems(currentSceneKey.value),
 );
 
-const currentSceneLatestAlertedAt = computed(() => {
-  const timestamps = currentSceneAlertItems.value
-    .map((item) => item.lastAlertedAt)
-    .filter(Boolean)
-    .sort((left, right) => Date.parse(right) - Date.parse(left));
-  return timestamps[0] || "";
+// 当前场景「待复核」节点（stale / pending_verify / muted）。
+const currentSceneReviewAlertItems = computed(() =>
+  sceneReviewAlertItems(currentSceneKey.value),
+);
+
+// 当前场景 24h 内「最近恢复」节点。
+const currentSceneRecoveredItems = computed(() => {
+  const overview = alertOverview.value;
+  if (!overview) {
+    return [];
+  }
+  return overview.items
+    .filter(
+      (item) =>
+        item.scene === currentSceneKey.value &&
+        resolveAlertStatus(item) === "recovered" &&
+        isWithinLast24Hours(item.lastRecoveredAt, overview.generatedAt),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.lastRecoveredAt || "") -
+        Date.parse(left.lastRecoveredAt || ""),
+    );
 });
 
 const alertStatusSummary = computed(() => {
@@ -2478,24 +2680,21 @@ const alertStatusSummary = computed(() => {
       text: "告警配置不完整",
     };
   }
-  const activeCount = currentSceneAlertItems.value.filter(
-    (item) => item.thresholdReached,
-  ).length;
+  const activeCount = currentSceneActiveAlertItems.value.length;
+  const reviewCount = currentSceneReviewAlertItems.value.length;
   if (activeCount > 0) {
     return {
       tone: "danger" as const,
-      text: `当前场景告警 ${activeCount} 项`,
+      text:
+        reviewCount > 0
+          ? `告警中 ${activeCount} · 待复核 ${reviewCount}`
+          : `当前场景告警 ${activeCount} 项`,
     };
   }
-  if (
-    isWithinLast24Hours(
-      currentSceneLatestAlertedAt.value,
-      overview.generatedAt,
-    )
-  ) {
+  if (reviewCount > 0) {
     return {
       tone: "warning" as const,
-      text: "当前场景 24h 内有告警",
+      text: `当前场景待复核 ${reviewCount} 项`,
     };
   }
   return {
@@ -2515,21 +2714,17 @@ const alertStatusDescription = computed(() => {
   if (!overview.hasDeliveryConfig) {
     return "告警已启用，但 SMTP 或收件人配置不完整，当前不会形成有效投递。";
   }
-  const activeCount = currentSceneAlertItems.value.filter(
-    (item) => item.thresholdReached,
-  ).length;
+  const activeCount = currentSceneActiveAlertItems.value.length;
+  const reviewCount = currentSceneReviewAlertItems.value.length;
   if (activeCount > 0) {
-    return `当前场景有 ${activeCount} 个 Provider 处于告警中状态。`;
+    const suffix =
+      reviewCount > 0 ? `，另有 ${reviewCount} 个待复核（黄色）` : "";
+    return `当前场景有 ${activeCount} 个 Provider 处于告警中（红色）${suffix}。`;
   }
-  if (
-    isWithinLast24Hours(
-      currentSceneLatestAlertedAt.value,
-      overview.generatedAt,
-    )
-  ) {
-    return "当前场景最近 24 小时内触发过告警，建议结合调用日志继续复核。";
+  if (reviewCount > 0) {
+    return `当前场景有 ${reviewCount} 个 Provider 待复核（历史过期 / 配置变更 / 已静默），不计入红色告警。`;
   }
-  return "阈值、SMTP 和收件人统一在配置中心维护，当前场景最近无告警。";
+  return "阈值、活跃窗口、SMTP 和收件人统一在配置中心维护，当前场景最近无告警。";
 });
 
 const showAnchorDirectory = computed(() => {
@@ -2619,6 +2814,211 @@ function goAlertConfig() {
     query: { group: "ai.provider_alert" },
     hash: "#ai-provider-alert",
   });
+}
+
+// 正在执行处置动作（复测/归档/静默）的节点，用于按钮 loading 与禁用。
+const pendingAlertActions = ref<Record<string, boolean>>({});
+
+function isAlertActionPending(providerId: string) {
+  return !!pendingAlertActions.value[providerId];
+}
+
+function setAlertActionPending(providerId: string, pending: boolean) {
+  const next = { ...pendingAlertActions.value };
+  if (pending) {
+    next[providerId] = true;
+  } else {
+    delete next[providerId];
+  }
+  pendingAlertActions.value = next;
+}
+
+// 处置结果统一以返回的 overview 就地刷新，避免额外一轮请求。
+async function runAlertAction(
+  providerId: string,
+  action: () => Promise<{
+    result: import("@/types").AIRoutingAlertMutationResult;
+  }>,
+) {
+  setAlertActionPending(providerId, true);
+  try {
+    const { result } = await action();
+    if (result.overview) {
+      alertOverview.value = result.overview;
+    }
+    if (result.ok) {
+      ElMessage.success(result.message || "操作成功");
+    } else {
+      ElMessage.warning(result.message || "操作已完成");
+    }
+    return result;
+  } catch (error) {
+    ElMessage.error(extractMessage(error));
+    return null;
+  } finally {
+    setAlertActionPending(providerId, false);
+  }
+}
+
+async function handleAlertRetest(item: AIRoutingAlertOverviewItem) {
+  if (!item.canRetest || isAlertActionPending(item.providerId)) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将对「${item.providerName}」发起一次真实上游调用以复测，可能产生额度/费用。确认继续？`,
+      "复测并恢复",
+      { confirmButtonText: "复测", cancelButtonText: "取消", type: "warning" },
+    );
+  } catch {
+    return;
+  }
+  await runAlertAction(item.providerId, () =>
+    adminApi.retestAIRoutingAlert(item.providerId),
+  );
+}
+
+async function handleAlertArchive(item: AIRoutingAlertOverviewItem) {
+  if (!item.canArchive || isAlertActionPending(item.providerId)) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认归档「${item.providerName}」的告警？归档后不再计入当前状态，新失败会自动重新触发。`,
+      "确认归档",
+      { confirmButtonText: "归档", cancelButtonText: "取消", type: "warning" },
+    );
+  } catch {
+    return;
+  }
+  await runAlertAction(item.providerId, () =>
+    adminApi.archiveAIRoutingAlert(item.providerId, "后台手动归档"),
+  );
+}
+
+async function handleAlertMute(item: AIRoutingAlertOverviewItem) {
+  if (!item.canMute || isAlertActionPending(item.providerId)) {
+    return;
+  }
+  await runAlertAction(item.providerId, () =>
+    adminApi.muteAIRoutingAlert(item.providerId, 24, "后台手动静默"),
+  );
+}
+
+async function handleAlertUnmute(item: AIRoutingAlertOverviewItem) {
+  if (!item.canUnmute || isAlertActionPending(item.providerId)) {
+    return;
+  }
+  await runAlertAction(item.providerId, () =>
+    adminApi.unmuteAIRoutingAlert(item.providerId),
+  );
+}
+
+async function handleBatchRetest(items: AIRoutingAlertOverviewItem[]) {
+  const retestable = items.filter((item) => item.canRetest);
+  if (!retestable.length) {
+    ElMessage.info("没有可复测的节点");
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将对 ${retestable.length} 个节点各发起一次真实调用，可能产生额度/费用。确认继续？`,
+      "批量复测",
+      { confirmButtonText: "复测", cancelButtonText: "取消", type: "warning" },
+    );
+  } catch {
+    return;
+  }
+  for (const item of retestable) {
+    await runAlertAction(item.providerId, () =>
+      adminApi.retestAIRoutingAlert(item.providerId),
+    );
+  }
+}
+
+async function handleBatchArchive(items: AIRoutingAlertOverviewItem[]) {
+  const archivable = items.filter((item) => item.canArchive);
+  if (!archivable.length) {
+    ElMessage.info("没有可归档的节点");
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认归档 ${archivable.length} 个待复核节点？新失败仍会自动重新触发告警。`,
+      "批量归档",
+      { confirmButtonText: "归档", cancelButtonText: "取消", type: "warning" },
+    );
+  } catch {
+    return;
+  }
+  for (const item of archivable) {
+    await runAlertAction(item.providerId, () =>
+      adminApi.archiveAIRoutingAlert(item.providerId, "批量归档"),
+    );
+  }
+}
+
+function goAlertProviderLogs(item: AIRoutingAlertOverviewItem) {
+  router.push({
+    path: "/ai-calls",
+    query: { provider: item.providerId },
+  });
+}
+
+// active 节点“还有 N 小时降级为待复测”的提示。
+function activeWindowCountdown(item: AIRoutingAlertOverviewItem) {
+  if (!item.activeUntil) {
+    return "";
+  }
+  const until = Date.parse(item.activeUntil);
+  if (!Number.isFinite(until)) {
+    return "";
+  }
+  const reference =
+    Date.parse(alertOverview.value?.generatedAt || "") || Date.now();
+  const diffHours = Math.round((until - reference) / (60 * 60 * 1000));
+  if (diffHours <= 0) {
+    return "即将降级为待复测";
+  }
+  return `还有约 ${diffHours} 小时降级为待复测`;
+}
+
+// 告警弹层三段式：当前告警 / 待复核 / 最近恢复。
+const currentSceneAlertSections = computed(() => [
+  {
+    key: "active" as const,
+    title: "当前告警",
+    hint: "红色：仍在失败且在线上路由中，需立即处理",
+    items: currentSceneActiveAlertItems.value,
+  },
+  {
+    key: "review" as const,
+    title: "待复核",
+    hint: "黄色：历史过期 / 配置变更 / 已静默，不计入红色",
+    items: currentSceneReviewAlertItems.value,
+  },
+  {
+    key: "recovered" as const,
+    title: "最近恢复",
+    hint: "24 小时内复测或真实调用已恢复",
+    items: currentSceneRecoveredItems.value,
+  },
+]);
+
+const hasCurrentSceneAlertNodes = computed(() =>
+  currentSceneAlertSections.value.some((section) => section.items.length > 0),
+);
+
+async function copyRequestId(requestId: string) {
+  if (!requestId) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(requestId);
+    ElMessage.success("已复制 requestId");
+  } catch {
+    ElMessage.warning("复制失败，请手动选择复制");
+  }
 }
 
 function effectiveChannel(params: {
@@ -5763,8 +6163,8 @@ function extractMessage(error: unknown) {
 .routing-alert-node__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .routing-alert-node__name {
@@ -5797,6 +6197,115 @@ function extractMessage(error: unknown) {
 
 .routing-alert-node__error {
   color: #991b1b;
+}
+
+.routing-alert-panel {
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+.routing-alert-section {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.routing-alert-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.routing-alert-section__title {
+  color: var(--color-text, #1f2937);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.routing-alert-section__title em {
+  margin-left: 4px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--color-text-subtle, #64748b);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.routing-alert-section__hint {
+  margin: 2px 0 6px;
+  color: var(--color-text-subtle, #94a3b8);
+  font-size: 11px;
+}
+
+.routing-alert-section__bulk {
+  display: flex;
+  gap: 4px;
+}
+
+.routing-alert-node__reason {
+  color: var(--color-text-subtle, #64748b);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.routing-alert-node__countdown {
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.routing-alert-node__recovered {
+  color: #047857;
+  font-size: 12px;
+}
+
+.routing-alert-node__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* 按状态给节点卡不同色边，颜色 + 图标标签双通道，不只靠颜色。 */
+.routing-alert-node--active {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.routing-alert-node--stale,
+.routing-alert-node--pending_verify,
+.routing-alert-node--muted {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: rgba(255, 251, 235, 0.72);
+}
+
+.routing-alert-node--archived {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(248, 250, 252, 0.82);
+}
+
+.routing-alert-node--recovered {
+  border-color: rgba(16, 185, 129, 0.24);
+  background: rgba(236, 253, 245, 0.72);
+}
+
+.routing-alert-empty {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(236, 253, 245, 0.6);
+  color: #047857;
+  font-size: 12px;
+  text-align: center;
+}
+
+.routing-alert-retest-hint {
+  margin: 4px 0 10px;
+  color: var(--color-text-subtle, #94a3b8);
+  font-size: 11px;
 }
 
 .channel-popover__tech {

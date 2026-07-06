@@ -1,5 +1,68 @@
 # Project Changelog
 
+## 2026-07-06 (AI Provider 告警状态生命周期：文档收口 + 全链路实现)
+
+### Added
+
+- **修改时间**：2026-07-06 15:55:00 +0800
+- **变更背景**：承接同日《告警状态交互优化需求文档》，先完成一轮产品交互评审收口，再落地前后端实现，
+  把“当前需要处理的红色告警”和“历史/过期/静默的可追溯记录”彻底拆开。
+- **文档收口**：重写 `docs/admin-ai-provider-alert-state-ux-design-2026-07-06.md`：状态与颜色一一映射
+  （`muted` 统一黄色 + 静音角标，不再与 `archived` 共用灰色）；补齐状态机缺口（`pending_verify` 入边、
+  `muted → archived`、手动解除静默、`recovered → normal`）；`pending_verify` 触发收敛为“仅对已有告警节点”；
+  `stale` 展示名改为“待复测（已过期）”避免“已解决”错觉；新增批量处置、复测成本提示、空态、活跃窗口倒计时、
+  日志跳转带上下文等交互细则；明确告警状态为 per-Provider 粒度（Provider 归属唯一场景）。
+- **后端接口契约**：
+  - `GET /api/admin/ai-routing/alerts/overview` 的 `items[]` 新增 `alertStatus`（`normal/active/stale/pending_verify/muted/archived/recovered`）、
+    `statusReason`、`activeUntil`、`mutedUntil`、`archivedAt`、`isProviderEnabled`、`isInEffectiveRoute`、
+    `canRetest/canArchive/canMute/canUnmute` 等字段；概览新增 `activeWindowHours` 与各状态计数
+    （`staleAlertCount/pendingVerifyCount/mutedAlertCount/archivedAlertCount/recoveredCount/reviewAlertCount`）。
+    旧字段 `thresholdReached` 过渡期保留。
+  - 新增管理接口：`POST /ai-routing/alerts/{providerId}/retest|archive|mute|unmute`，统一返回
+    `{ ok, message, overview }`。
+  - 新增运行时配置 `ai.provider_alert.active_window_hours`（默认 72h），控制红色→黄色（待复测）的降级窗口。
+- **数据库迁移**：`backend/migrations/023_add_ai_provider_alert_lifecycle.sql` 为
+  `ai_provider_alert_states` 增加 `archived_*/muted_*/last_config_changed_at` 字段，并新增
+  `ai_provider_alert_events` 处置事件表（`retest_succeeded/retest_failed/archived/muted/unmuted/config_changed`）。
+
+### Changed
+
+- **后端状态计算**：`aialert` 在 `Overview` 阶段按活跃窗口 + Provider 运行时存在性（由 `airouter`
+  经 `ProviderStatusResolver` 反向注入）推导 `alertStatus`；`airouter` 实现单节点 `RetestProvider`
+  （`route_test` 输入跳过自动追踪，由 `aialert` 显式落状态）。`app.go` 用 setter 注入打破包级循环依赖。
+  保存场景配置后由 admin handler 调用 `NoteSceneConfigChanged`，对该场景已有告警节点标记配置变更。
+- **前端交互**：`admin-web/src/pages/AIProvidersPage.vue` 改用 `alertStatus` 分层（红=active、黄=待复核、
+  灰=已归档、绿=正常/已恢复）；场景卡在有红色时并列展示“告警中 N · 待复核 M”；“告警配置”弹层重构为
+  三段式（当前告警 / 待复核 / 最近恢复）+ 节点处置动作（复测并恢复 / 静默 24h / 解除静默 / 归档 / 查看日志）
+  + 批量复测/归档 + 复测真实调用成本提示 + 空态；`requestId` 可复制；`types.ts`/`api/admin.ts` 同步扩展。
+- **行为语义**：新失败自动解除归档并重新计数；真实成功/复测成功清零计数并解除归档与静默；静默期不计入红色告警。
+
+### 影响范围与验证
+
+- **影响范围**：后端 `aialert/airouter/admin/appsettings/common`、迁移、管理路由；`admin-web` 类型/API/AI Provider 页；产品文档。不影响小程序端与部署脚本。
+- **兼容性/风险**：无 resolver 时按“仍在路由”兜底以保持旧行为；复测会触发真实上游调用（前端已加成本二次确认）；
+  Provider 删除后仅保留“归档 / 查看日志”。多实例部署以数据库为准。
+- **验证情况**：`cd backend && go build ./... && go test ./...` 全通过（新增 `aialert` 生命周期/状态计算/动作单测、
+  更新 admin/airouter 测试桩）；全量迁移 SQL 对临时 SQLite 库应用通过，确认 023 新列与事件表可创建；
+  `admin-web` `vite build` 通过（仍有既有大 chunk warning）。
+  未做浏览器端联调（需后端 + 登录态 + 告警数据种子，成本较高）。
+
+## 2026-07-06 (Admin Web AI Provider 告警状态交互优化需求文档)
+
+### Added
+
+- **修改时间**：2026-07-06 10:12:37 +0800
+- **变更背景**：后台 `AI Provider` 告警状态当前以连续失败计数作为红色告警依据，
+  已触发告警的 Provider 若长期没有真实业务成功调用，页面会持续显示“告警中”，容易把历史失败误判为当前故障。
+- **核心改动**：新增
+  `docs/admin-ai-provider-alert-state-ux-design-2026-07-06.md`，定义“当前告警 / 历史告警 /
+  待复测 / 已恢复 / 已归档 / 已静默”的产品状态模型、场景卡与告警弹层交互、后端 overview
+  字段扩展、归档/静默/复测接口建议、数据模型建议与分阶段落地计划。
+- **影响范围**：仅新增产品需求文档与项目变更记录；未修改前后端运行时代码、接口实现、数据库迁移或部署脚本。
+- **兼容性或风险**：文档中的接口和数据字段为后续实现建议，实际落地前需结合后端调用频率、复测成本、
+  Provider 删除后的历史快照保留策略继续细化。
+- **验证情况**：已执行 Markdown 文档创建与变更范围检查；无需运行构建。
+
 ## 2026-07-06 (Admin Web AI Provider 场景卡告警摘要补强)
 
 ### Changed

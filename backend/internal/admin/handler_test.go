@@ -116,3 +116,23 @@ type stubAlertOverviewProvider struct {
 func (p stubAlertOverviewProvider) Overview(context.Context) (aialert.Overview, error) {
 	return p.overview, p.err
 }
+
+func (p stubAlertOverviewProvider) Retest(context.Context, string, string) (aialert.MutationResult, error) {
+	return aialert.MutationResult{Overview: p.overview}, p.err
+}
+
+func (p stubAlertOverviewProvider) Archive(context.Context, string, string, string) (aialert.MutationResult, error) {
+	return aialert.MutationResult{Overview: p.overview}, p.err
+}
+
+func (p stubAlertOverviewProvider) Mute(context.Context, string, string, int, string) (aialert.MutationResult, error) {
+	return aialert.MutationResult{Overview: p.overview}, p.err
+}
+
+func (p stubAlertOverviewProvider) Unmute(context.Context, string, string) (aialert.MutationResult, error) {
+	return aialert.MutationResult{Overview: p.overview}, p.err
+}
+
+func (p stubAlertOverviewProvider) NoteSceneConfigChanged(context.Context, string, string) error {
+	return p.err
+}

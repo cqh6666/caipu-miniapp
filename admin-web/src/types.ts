@@ -259,6 +259,15 @@ export interface AIRoutingTestResult {
   attempts: AIRoutingAttemptResult[];
 }
 
+export type AIRoutingAlertStatus =
+  | "normal"
+  | "active"
+  | "stale"
+  | "pending_verify"
+  | "muted"
+  | "archived"
+  | "recovered";
+
 export interface AIRoutingAlertOverviewItem {
   providerId: string;
   providerName: string;
@@ -273,6 +282,21 @@ export interface AIRoutingAlertOverviewItem {
   lastRecoveredAt: string;
   lastAlertedAt: string;
   updatedAt: string;
+  alertStatus: AIRoutingAlertStatus;
+  statusReason: string;
+  activeUntil?: string;
+  mutedUntil?: string;
+  muteReason?: string;
+  archivedAt?: string;
+  archivedBy?: string;
+  archiveReason?: string;
+  lastConfigChangedAt?: string;
+  isProviderEnabled: boolean;
+  isInEffectiveRoute: boolean;
+  canRetest: boolean;
+  canArchive: boolean;
+  canMute: boolean;
+  canUnmute: boolean;
   thresholdReached: boolean;
 }
 
@@ -280,10 +304,23 @@ export interface AIRoutingAlertOverview {
   generatedAt: string;
   enabled: boolean;
   failureThreshold: number;
+  activeWindowHours: number;
   hasDeliveryConfig: boolean;
   activeAlertCount: number;
+  staleAlertCount: number;
+  pendingVerifyCount: number;
+  mutedAlertCount: number;
+  archivedAlertCount: number;
+  recoveredCount: number;
+  reviewAlertCount: number;
   latestAlertedAt: string;
   items: AIRoutingAlertOverviewItem[];
+}
+
+export interface AIRoutingAlertMutationResult {
+  ok: boolean;
+  message: string;
+  overview: AIRoutingAlertOverview;
 }
 
 export interface SceneCardHealthSnapshot {

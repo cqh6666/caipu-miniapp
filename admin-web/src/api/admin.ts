@@ -1,5 +1,6 @@
 import { request } from "./http";
 import type {
+  AIRoutingAlertMutationResult,
   AIRoutingAlertOverview,
   AIRoutingSceneConfig,
   AIRoutingSceneSummary,
@@ -149,5 +150,43 @@ export function testAIRoutingScene(
 export function getAIRoutingAlertsOverview() {
   return request<{ overview: AIRoutingAlertOverview }>(
     "/admin/ai-routing/alerts/overview",
+  );
+}
+
+export function retestAIRoutingAlert(providerId: string) {
+  return request<{ result: AIRoutingAlertMutationResult }>(
+    `/admin/ai-routing/alerts/${encodeURIComponent(providerId)}/retest`,
+    { method: "POST" },
+  );
+}
+
+export function archiveAIRoutingAlert(providerId: string, reason?: string) {
+  return request<{ result: AIRoutingAlertMutationResult }>(
+    `/admin/ai-routing/alerts/${encodeURIComponent(providerId)}/archive`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason: reason || "" }),
+    },
+  );
+}
+
+export function muteAIRoutingAlert(
+  providerId: string,
+  durationHours = 24,
+  reason?: string,
+) {
+  return request<{ result: AIRoutingAlertMutationResult }>(
+    `/admin/ai-routing/alerts/${encodeURIComponent(providerId)}/mute`,
+    {
+      method: "POST",
+      body: JSON.stringify({ durationHours, reason: reason || "" }),
+    },
+  );
+}
+
+export function unmuteAIRoutingAlert(providerId: string) {
+  return request<{ result: AIRoutingAlertMutationResult }>(
+    `/admin/ai-routing/alerts/${encodeURIComponent(providerId)}/unmute`,
+    { method: "POST" },
   );
 }
