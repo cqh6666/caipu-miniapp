@@ -1,0 +1,184 @@
+
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.route-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.route-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-fade-enter-active,
+  .route-fade-leave-active {
+    transition: none;
+  }
+
+  * {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}
+
+/* ==================== Responsive ==================== */
+
+@media (max-width: 1440px) {
+  .metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-grid--triple {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .server-health-summary-card__stats,
+  .server-health-resource-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  .layout-card {
+    grid-template-columns: 224px minmax(0, 1fr);
+  }
+
+  .dashboard-grid--primary,
+  .dashboard-grid--triple {
+    grid-template-columns: 1fr;
+  }
+
+  .setting-row {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-toolbar__row {
+    flex-direction: column;
+  }
+
+  .filter-toolbar__content {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filter-toolbar__content .el-input,
+  .filter-toolbar__content .el-select,
+  .filter-toolbar__content .el-date-editor {
+    width: 100%;
+  }
+
+  .server-health-hero-card__body,
+  .server-health-summary-card__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 992px) {
+  .layout-shell {
+    padding: 14px;
+  }
+
+  .layout-card {
+    display: block;
+  }
+
+  .layout-main {
+    padding: 22px;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .page-header,
+  .layout-topbar,
+  .filter-toolbar,
+  .setting-card__header,
+  .metric-card__header,
+  .detail-panel__header,
+  .json-viewer__header,
+  .subsection-header,
+  .health-check-card__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .filter-toolbar__actions,
+  .setting-card__header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .layout-topbar__actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 960px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+
+  .login-side {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .layout-main,
+  .chart-card,
+  .table-card,
+  .setting-card,
+  .detail-panel,
+  .audit-section,
+  .json-viewer {
+    padding: 18px;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-toolbar__content {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-toolbar__content .el-input,
+  .filter-toolbar__content .el-select,
+  .filter-toolbar__content .el-date-editor,
+  .filter-toolbar__actions .el-button {
+    width: 100%;
+  }
+
+  .layout-topbar__actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .layout-topbar__heading {
+    width: 100%;
+  }
+
+  .server-health-summary-card__stats,
+  .server-health-signal-list,
+  .server-health-resource-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-trigger__meta {
+    display: none;
+  }
+
+  .account-trigger {
+    padding: 5px;
+  }
+}

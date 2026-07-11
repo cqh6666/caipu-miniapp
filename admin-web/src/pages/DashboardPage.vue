@@ -434,7 +434,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type FunctionalComponent } from 'vue'
+import { computed, h, nextTick, onMounted, reactive, ref, watch, type FunctionalComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, Refresh, Warning } from '@element-plus/icons-vue'
@@ -449,10 +449,11 @@ import {
   type TooltipComponentOption
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { use, init, type ComposeOption, type ECharts } from 'echarts/core'
+import { use, type ComposeOption } from 'echarts/core'
 import type { BarSeriesOption, LineSeriesOption } from 'echarts/charts'
 import AppShell from '@/components/AppShell.vue'
 import { useLastRefreshed } from '@/composables/useLastRefreshed'
+import { useDashboardCharts, type DashboardChartKey } from '@/composables/useDashboardCharts'
 import HealthRing from '@/components/HealthRing.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import PageState from '@/components/PageState.vue'
@@ -523,14 +524,14 @@ function maxTotal(items: Array<{ total?: number | null }> | undefined | null): n
 const countFormatter = new Intl.NumberFormat('zh-CN')
 const maxSceneTotal = computed(() => maxTotal(overview.value?.byScene))
 
-const chartRef = ref<HTMLDivElement | null>(null)
-const chart = ref<ECharts | null>(null)
-const sceneChartRef = ref<HTMLDivElement | null>(null)
-const providerChartRef = ref<HTMLDivElement | null>(null)
-const modelChartRef = ref<HTMLDivElement | null>(null)
-const sceneChart = ref<ECharts | null>(null)
-const providerChart = ref<ECharts | null>(null)
-const modelChart = ref<ECharts | null>(null)
+const {
+  chartRef,
+  dispose: disposeDashboardChart,
+  modelChartRef,
+  providerChartRef,
+  render: renderDashboardChart,
+  sceneChartRef
+} = useDashboardCharts()
 type DistViewMode = 'chart' | 'table' | 'rank'
 const distViewMode = reactive<{ scene: DistViewMode; provider: DistViewMode; model: DistViewMode }>({
   scene: 'rank',
@@ -874,9 +875,6 @@ function renderChart() {
   if (!chartRef.value || !trends.value.length) {
     return
   }
-  if (!chart.value) {
-    chart.value = init(chartRef.value)
-  }
 
   const option: DashboardChartOption = {
     tooltip: { trigger: 'axis' },
@@ -937,7 +935,7 @@ function renderChart() {
     ]
   }
 
-  chart.value.setOption(option, true)
+  renderDashboardChart('trend', option, chartRef.value)
 }
 
 type DistributionItem = { name: string; total?: number | null; successRate?: number | null }
@@ -948,15 +946,12 @@ function distChartHeight(count: number): string {
 }
 
 function renderDistributionChart(
-  instanceRef: typeof sceneChart,
+  key: DashboardChartKey,
   container: HTMLDivElement | null,
   items: DistributionItem[] | undefined | null,
   nameFormatter?: (name: string) => string
 ) {
   if (!container || !items || !items.length) return
-  if (!instanceRef.value) {
-    instanceRef.value = init(container)
-  }
   const sorted = [...items].sort((a, b) => {
     const aUnknown = isUnknownDistributionName(a.name) || a.name === '未指定'
     const bUnknown = isUnknownDistributionName(b.name) || b.name === '未指定'
@@ -1035,34 +1030,25 @@ function renderDistributionChart(
     ]
   }
 
-  instanceRef.value.setOption(option, true)
-  instanceRef.value.resize()
-  requestAnimationFrame(() => {
-    instanceRef.value?.resize()
-  })
+  renderDashboardChart(key, option, container)
 }
 
 async function renderDistributionCharts() {
   await nextTick()
-  const pairs: Array<[DistViewMode, typeof sceneChart, HTMLDivElement | null, DistributionItem[] | undefined, ((n: string) => string) | undefined, string]> = [
-    [distViewMode.scene, sceneChart, sceneChartRef.value, overview.value?.byScene, displayScene, 'scene'],
-    [distViewMode.provider, providerChart, providerChartRef.value, providerChartItems.value, undefined, 'provider'],
-    [distViewMode.model, modelChart, modelChartRef.value, modelChartItems.value, undefined, 'model']
+  const pairs: Array<[DistViewMode, DashboardChartKey, HTMLDivElement | null, DistributionItem[] | undefined, ((n: string) => string) | undefined]> = [
+    [distViewMode.scene, 'scene', sceneChartRef.value, overview.value?.byScene, displayScene],
+    [distViewMode.provider, 'provider', providerChartRef.value, providerChartItems.value, undefined],
+    [distViewMode.model, 'model', modelChartRef.value, modelChartItems.value, undefined]
   ]
-  for (const [mode, instanceRef, container, items, fmt, label] of pairs) {
+  for (const [mode, key, container, items, fmt] of pairs) {
     try {
       if (mode === 'chart' && items?.length && container) {
-        if (instanceRef.value && instanceRef.value.getDom() !== container) {
-          instanceRef.value.dispose()
-          instanceRef.value = null
-        }
-        renderDistributionChart(instanceRef, container, items, fmt)
-      } else if (instanceRef.value) {
-        instanceRef.value.dispose()
-        instanceRef.value = null
+        renderDistributionChart(key, container, items, fmt)
+      } else {
+        disposeDashboardChart(key)
       }
     } catch (err) {
-      console.warn(`[dashboard] render distribution chart "${label}" failed`, err)
+      console.warn(`[dashboard] render distribution chart "${key}" failed`, err)
     }
   }
 }
@@ -1074,13 +1060,6 @@ watch(
   },
   { deep: true, flush: 'post' }
 )
-
-function handleResize() {
-  chart.value?.resize()
-  sceneChart.value?.resize()
-  providerChart.value?.resize()
-  modelChart.value?.resize()
-}
 
 async function handleWindowChange() {
   await Promise.all([loadOverview(true), loadTrends(true)])
@@ -1144,16 +1123,7 @@ function openServerHealthPage() {
 }
 
 onMounted(async () => {
-  window.addEventListener('resize', handleResize)
   await Promise.all([loadOverview(), loadServerHealth(), loadTrends()])
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
-  chart.value?.dispose()
-  sceneChart.value?.dispose()
-  providerChart.value?.dispose()
-  modelChart.value?.dispose()
 })
 </script>
 

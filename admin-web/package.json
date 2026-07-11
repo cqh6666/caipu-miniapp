@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test:ai-provider-utils": "esbuild tests/ai-provider-utils.check.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=/tmp/caipu-admin-ai-provider-utils-test.mjs && node /tmp/caipu-admin-ai-provider-utils-test.mjs",
+    "test:frontend-refactor": "esbuild tests/frontend-refactor.check.ts --bundle --platform=node --format=esm --outfile=/tmp/caipu-miniapp-frontend-refactor-test.mjs && node /tmp/caipu-miniapp-frontend-refactor-test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

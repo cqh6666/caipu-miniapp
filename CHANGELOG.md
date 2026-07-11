@@ -1,5 +1,38 @@
 # Project Changelog
 
+## 2026-07-11 (前端大文件拆分 A～E 全量收口)
+
+### Added
+
+- **修改时间**：2026-07-11 16:20:05 +0800
+- **变更背景**：小程序首页、菜谱详情页与 Admin Web AI Provider 管理页已增长为数千行页面级单体，多个业务域、
+  异步状态和展示规则集中在同一 SFC，后续功能迭代与回归范围难以控制，需要先建立可持续执行的拆分看板，
+  再按可独立验证的工作包逐步落地。
+- **核心改动**：
+  - Admin AI Provider：新增告警、审计、草稿和校验规则模块，新增 `useAIRoutingDraft.ts`，并拆出场景卡、
+    告警生命周期、Provider 编辑、测试结果和审计视图组件；`AIProvidersPage.vue` 由 7,991 行降至 3,276 行。
+  - 小程序首页：新增菜谱库、地点库、菜单同步、空间成员和智能添加五个业务模块，拆出
+    `library-pane.vue` / `place-pane.vue`，统一搜索失焦与菜单同步计时器所有权；二次审计后将五个业务域的
+    methods/computed 全部下沉，首页由 5,490 行降至 1,100 行。
+  - 菜谱详情：新增编辑、异步任务、图片和分享四个模块，拆出只读提示、Hero、做法、流程图和编辑器组件；
+    二次审计后由编辑器拥有本地草稿和关闭确认，由三个 controller 分别拥有轮询、图片和分享流程，详情页由
+    5,491 行降至 1,587 行。微信运行时冒烟发现并修复拆分遗漏的 `toPositiveInteger` 引用。
+  - 次级收口：Dashboard 新增 `useDashboardCharts.ts` 管理 ECharts 生命周期；Admin 全局样式拆为
+    `tokens/base/shell/components/responsive` 五层，`style.css` 仅保留稳定导入；复核三个次级大组件后暂不机械拆分。
+  - 新增 AI Provider 与小程序重构规则检查脚本，并将 A～E 状态、文件体量、D3 结论和验收结果回写到
+    `docs/frontend-large-file-refactor-todo-2026-07-11.md`。
+- **影响范围**：Admin AI Provider、Dashboard 和全局样式组织；小程序首页、地点详情入口、菜谱详情内部组织；
+  不修改后端 API、数据库、持久化结构或业务字段契约。
+- **兼容性/风险**：保留旧告警字段、未知枚举、密钥保留/清空、多节点失败切换、公开只读和旧菜谱状态回退。
+  Admin 登录态下的保存、告警动作与审计筛选尚未人工复验，因为当前 Browser 运行时无可用实例；
+  微信开发者工具仍显示既有基础库 timeout、废弃属性和 WXSS 选择器警告。
+- **验证情况**：`test:ai-provider-utils`、`test:frontend-refactor`、TypeScript、Vite build、全部新增 JS 语法、
+  首页/详情及子组件 SFC 编译、`git diff --check` 均通过；HBuilderX 5.07 微信小程序编译成功，
+  微信开发者工具自动预览成功，并完成美食库、打卡点、地点详情和私有菜谱详情关键冒烟。
+  Vite 保留既有 `element-plus` 大 chunk warning。
+  16:20 二次所有权审计后再次执行上述自动化门禁；同时修复模块对象闭合和 import 位置错误，HBuilderX 明确输出
+  “项目 caipu-miniapp 编译成功”，微信开发者工具自动预览再次成功。
+
 ## 2026-07-06 (Admin Web AI Provider 归档后场景卡状态文案修正)
 
 ### Fixed
