@@ -576,12 +576,25 @@ import type { AIRoutingProviderConfig, AIRoutingSceneConfig } from "@/types";
 import { getProviderSecretStatus, type ProviderValidationError } from "@/utils/ai-provider-validation";
 
 type SelectOption = { label: string; value: string };
-type ProviderPresetOption = { key: string; label: string; description: string };
+type ProviderPresetOption = { key: string; title: string; description: string };
 type ProviderTestState = { ok: boolean; text: string; latencyMs?: number; errorType?: string; testedAt: string };
+type ProviderHelpTips = {
+  providerName: string;
+  baseURL: string;
+  endpoint: string;
+  responseFormat: string;
+  thinkingType: string;
+  reasoningEffort: string;
+  imageSize: string;
+  imageBackground: string;
+  imageCompression: string;
+  apiKey: string;
+};
 
 const props = defineProps<{
   draftScene: AIRoutingSceneConfig;
   enabledProviderCount: number;
+  helpTips: ProviderHelpTips;
   providerPresetOptions: ProviderPresetOption[];
   draggingProviderIndex: number | null;
   dragOverProviderIndex: number | null;
@@ -627,6 +640,7 @@ const emit = defineEmits<{
 const {
   draftScene,
   enabledProviderCount,
+  helpTips,
   providerPresetOptions,
   draggingProviderIndex,
   dragOverProviderIndex,

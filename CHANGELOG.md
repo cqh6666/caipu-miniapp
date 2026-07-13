@@ -1,5 +1,26 @@
 # Project Changelog
 
+## 2026-07-13 (Admin Web AI Provider 节点编辑区空白修复)
+
+### Fixed
+
+- **修改时间**：2026-07-13 14:04:29 +0800
+- **变更背景**：7 月 11 日将 Provider 编辑区拆为 `ProviderEditor.vue` 后，子组件模板继续读取
+  `helpTips.providerName` 等说明文案，但父页面未通过组件契约传入 `helpTips`。线上有已配置节点且首节点展开时，
+  Vue 渲染抛出 `Cannot read properties of undefined (reading 'providerName')`，导致右侧节点编辑区只剩空白卡片。
+- **核心改动**：`AIProvidersPage.vue` 显式向 `ProviderEditor` 传入 `helpTips`；子组件补齐必填
+  `ProviderHelpTips` prop，并修正 Provider 预设项 `title` 类型；新增 Vite SSR 组件渲染检查，覆盖“已有节点且
+  首节点展开”的真实触发条件，并纳入 `test:frontend-refactor`。
+- **影响范围**：仅影响 `admin-web` 的 AI Provider 节点编辑区和前端回归测试；不修改后端 API、数据库、
+  已保存的 AI 路由配置或小程序端。
+- **兼容性或风险**：组件说明文案仍由父页面统一维护，Provider 配置读写契约不变；生产构建保留既有
+  Element Plus 大 chunk 警告。
+- **验证情况**：本地 `npm run typecheck`、`npm run test:ai-provider-utils`、
+  `npm run test:frontend-refactor` 与 `npm run build` 均通过；本地构建产物已通过
+  `scripts/upload-admin-web-dist.sh` 发布到 `my-cloud`，发布版本 `20260713-140308`，公开入口返回 HTTP 200。
+  登录态线上复验确认正文总结右侧完整展示 `3/7` 个启用节点、7 个节点摘要与首节点编辑字段，控制台不再出现
+  `providerName` TypeError；仍保留既有 Element Plus `ElOnlyChild` 与 checkbox 弃用警告。
+
 ## 2026-07-11 (前端大文件拆分 A～E 全量收口)
 
 ### Added

@@ -482,6 +482,7 @@
             <ProviderEditor
               :draft-scene="draftScene"
               :enabled-provider-count="enabledProviderCount"
+              :help-tips="helpTips"
               :provider-preset-options="providerPresetOptions"
               :dragging-provider-index="draggingProviderIndex"
               :drag-over-provider-index="dragOverProviderIndex"
