@@ -567,7 +567,7 @@
 </template>
 
 <script setup lang="ts">
-import { toRefs } from "vue";
+import { computed, toRefs } from "vue";
 import { ArrowDown, ArrowRight, MoreFilled, Promotion, Rank, Refresh } from "@element-plus/icons-vue";
 import HelpTip from "@/components/HelpTip.vue";
 import PageState from "@/components/PageState.vue";
@@ -578,6 +578,43 @@ import { getProviderSecretStatus, type ProviderValidationError } from "@/utils/a
 type SelectOption = { label: string; value: string };
 type ProviderPresetOption = { key: string; title: string; description: string };
 type ProviderTestState = { ok: boolean; text: string; latencyMs?: number; errorType?: string; testedAt: string };
+type ProviderSelectOptions = {
+  endpointModes: SelectOption[];
+  responseFormats: SelectOption[];
+  thinkingTypes: SelectOption[];
+  reasoningEfforts: SelectOption[];
+  imageSizes: SelectOption[];
+  imageQualities: SelectOption[];
+  imageBackgrounds: SelectOption[];
+  imageOutputFormats: SelectOption[];
+};
+type ProviderEditorContract = {
+  draggingProviderIndex: number | null;
+  dragOverProviderIndex: number | null;
+  getProviderLocalKey: (provider: AIRoutingProviderConfig) => string;
+  isProviderCollapsed: (provider: AIRoutingProviderConfig) => boolean;
+  firstProviderError: (provider: AIRoutingProviderConfig) => string;
+  getProviderTestState: (provider: AIRoutingProviderConfig) => ProviderTestState | undefined;
+  providerFieldError: (provider: AIRoutingProviderConfig, field: keyof ProviderValidationError) => string;
+  isImageGenerationProvider: (provider: AIRoutingProviderConfig) => boolean;
+  providerThinkingLabel: (provider: AIRoutingProviderConfig) => string;
+  shouldShowProviderSecretEditor: (provider: AIRoutingProviderConfig) => boolean;
+  add: () => void;
+  addPreset: (key: string) => void;
+  dragOver: (index: number) => void;
+  drop: (index: number) => void;
+  dragStart: (index: number, event: DragEvent) => void;
+  dragEnd: () => void;
+  toggleCollapse: (provider: AIRoutingProviderConfig) => void;
+  testSingle: (index: number) => void;
+  menu: (command: string, index: number) => void;
+  touchField: (provider: AIRoutingProviderConfig, field: keyof ProviderValidationError) => void;
+  endpointChange: (provider: AIRoutingProviderConfig) => void;
+  thinkingChange: (provider: AIRoutingProviderConfig) => void;
+  toggleSecret: (provider: AIRoutingProviderConfig) => void;
+  clearSecret: (provider: AIRoutingProviderConfig) => void;
+  apiKeyInput: (provider: AIRoutingProviderConfig, value: string) => void;
+};
 type ProviderHelpTips = {
   providerName: string;
   baseURL: string;
@@ -596,45 +633,11 @@ const props = defineProps<{
   enabledProviderCount: number;
   helpTips: ProviderHelpTips;
   providerPresetOptions: ProviderPresetOption[];
-  draggingProviderIndex: number | null;
-  dragOverProviderIndex: number | null;
   singleTestProviderId: string;
   testingScene: boolean;
   savingScene: boolean;
-  providerEndpointModeOptions: SelectOption[];
-  providerResponseFormatOptions: SelectOption[];
-  thinkingTypeOptions: SelectOption[];
-  reasoningEffortOptions: SelectOption[];
-  imageSizeOptions: SelectOption[];
-  imageQualityOptions: SelectOption[];
-  imageBackgroundOptions: SelectOption[];
-  imageOutputFormatOptions: SelectOption[];
-  getProviderLocalKey: (provider: AIRoutingProviderConfig) => string;
-  isProviderCollapsed: (provider: AIRoutingProviderConfig) => boolean;
-  firstProviderError: (provider: AIRoutingProviderConfig) => string;
-  getProviderTestState: (provider: AIRoutingProviderConfig) => ProviderTestState | undefined;
-  providerFieldError: (provider: AIRoutingProviderConfig, field: keyof ProviderValidationError) => string;
-  isImageGenerationProvider: (provider: AIRoutingProviderConfig) => boolean;
-  providerThinkingLabel: (provider: AIRoutingProviderConfig) => string;
-  shouldShowProviderSecretEditor: (provider: AIRoutingProviderConfig) => boolean;
-}>();
-
-const emit = defineEmits<{
-  add: [];
-  "add-preset": [key: string];
-  "drag-over": [index: number];
-  drop: [index: number];
-  "drag-start": [index: number, event: DragEvent];
-  "drag-end": [];
-  "toggle-collapse": [provider: AIRoutingProviderConfig];
-  "test-single": [index: number];
-  menu: [command: string, index: number];
-  "touch-field": [provider: AIRoutingProviderConfig, field: keyof ProviderValidationError];
-  "endpoint-change": [provider: AIRoutingProviderConfig];
-  "thinking-change": [provider: AIRoutingProviderConfig];
-  "toggle-secret": [provider: AIRoutingProviderConfig];
-  "clear-secret": [provider: AIRoutingProviderConfig];
-  "api-key-input": [provider: AIRoutingProviderConfig, value: string];
+  selectOptions: ProviderSelectOptions;
+  editor: ProviderEditorContract;
 }>();
 
 const {
@@ -642,44 +645,42 @@ const {
   enabledProviderCount,
   helpTips,
   providerPresetOptions,
-  draggingProviderIndex,
-  dragOverProviderIndex,
   singleTestProviderId,
   testingScene,
   savingScene,
-  providerEndpointModeOptions,
-  providerResponseFormatOptions,
-  thinkingTypeOptions,
-  reasoningEffortOptions,
-  imageSizeOptions,
-  imageQualityOptions,
-  imageBackgroundOptions,
-  imageOutputFormatOptions,
 } = toRefs(props);
-const {
-  getProviderLocalKey,
-  isProviderCollapsed,
-  firstProviderError,
-  getProviderTestState,
-  providerFieldError,
-  isImageGenerationProvider,
-  providerThinkingLabel,
-  shouldShowProviderSecretEditor,
-} = props;
+const draggingProviderIndex = computed(() => props.editor.draggingProviderIndex);
+const dragOverProviderIndex = computed(() => props.editor.dragOverProviderIndex);
+const providerEndpointModeOptions = computed(() => props.selectOptions.endpointModes);
+const providerResponseFormatOptions = computed(() => props.selectOptions.responseFormats);
+const thinkingTypeOptions = computed(() => props.selectOptions.thinkingTypes);
+const reasoningEffortOptions = computed(() => props.selectOptions.reasoningEfforts);
+const imageSizeOptions = computed(() => props.selectOptions.imageSizes);
+const imageQualityOptions = computed(() => props.selectOptions.imageQualities);
+const imageBackgroundOptions = computed(() => props.selectOptions.imageBackgrounds);
+const imageOutputFormatOptions = computed(() => props.selectOptions.imageOutputFormats);
 
-function handleAddProvider() { emit("add"); }
-function handleAddProviderPreset(key: string) { emit("add-preset", key); }
-function handleProviderDragOver(index: number) { emit("drag-over", index); }
-function handleProviderDrop(index: number) { emit("drop", index); }
-function handleProviderDragStart(index: number, event: DragEvent) { emit("drag-start", index, event); }
-function handleProviderDragEnd() { emit("drag-end"); }
-function toggleProviderCollapsed(provider: AIRoutingProviderConfig) { emit("toggle-collapse", provider); }
-function handleTestSingleProvider(index: number) { emit("test-single", index); }
-function handleProviderMenuCommand(command: string, index: number) { emit("menu", String(command), index); }
-function touchProviderField(provider: AIRoutingProviderConfig, field: keyof ProviderValidationError) { emit("touch-field", provider, field); }
-function handleEndpointModeChange(provider: AIRoutingProviderConfig) { emit("endpoint-change", provider); }
-function handleThinkingTypeChange(provider: AIRoutingProviderConfig) { emit("thinking-change", provider); }
-function toggleProviderSecretEditor(provider: AIRoutingProviderConfig) { emit("toggle-secret", provider); }
-function handleClearProviderApiKey(provider: AIRoutingProviderConfig) { emit("clear-secret", provider); }
-function handleProviderApiKeyInput(provider: AIRoutingProviderConfig, value: string) { emit("api-key-input", provider, value); }
+function getProviderLocalKey(provider: AIRoutingProviderConfig) { return props.editor.getProviderLocalKey(provider); }
+function isProviderCollapsed(provider: AIRoutingProviderConfig) { return props.editor.isProviderCollapsed(provider); }
+function firstProviderError(provider: AIRoutingProviderConfig) { return props.editor.firstProviderError(provider); }
+function getProviderTestState(provider: AIRoutingProviderConfig) { return props.editor.getProviderTestState(provider); }
+function providerFieldError(provider: AIRoutingProviderConfig, field: keyof ProviderValidationError) { return props.editor.providerFieldError(provider, field); }
+function isImageGenerationProvider(provider: AIRoutingProviderConfig) { return props.editor.isImageGenerationProvider(provider); }
+function providerThinkingLabel(provider: AIRoutingProviderConfig) { return props.editor.providerThinkingLabel(provider); }
+function shouldShowProviderSecretEditor(provider: AIRoutingProviderConfig) { return props.editor.shouldShowProviderSecretEditor(provider); }
+function handleAddProvider() { props.editor.add(); }
+function handleAddProviderPreset(key: string) { props.editor.addPreset(key); }
+function handleProviderDragOver(index: number) { props.editor.dragOver(index); }
+function handleProviderDrop(index: number) { props.editor.drop(index); }
+function handleProviderDragStart(index: number, event: DragEvent) { props.editor.dragStart(index, event); }
+function handleProviderDragEnd() { props.editor.dragEnd(); }
+function toggleProviderCollapsed(provider: AIRoutingProviderConfig) { props.editor.toggleCollapse(provider); }
+function handleTestSingleProvider(index: number) { props.editor.testSingle(index); }
+function handleProviderMenuCommand(command: string, index: number) { props.editor.menu(String(command), index); }
+function touchProviderField(provider: AIRoutingProviderConfig, field: keyof ProviderValidationError) { props.editor.touchField(provider, field); }
+function handleEndpointModeChange(provider: AIRoutingProviderConfig) { props.editor.endpointChange(provider); }
+function handleThinkingTypeChange(provider: AIRoutingProviderConfig) { props.editor.thinkingChange(provider); }
+function toggleProviderSecretEditor(provider: AIRoutingProviderConfig) { props.editor.toggleSecret(provider); }
+function handleClearProviderApiKey(provider: AIRoutingProviderConfig) { props.editor.clearSecret(provider); }
+function handleProviderApiKeyInput(provider: AIRoutingProviderConfig, value: string) { props.editor.apiKeyInput(provider, value); }
 </script>

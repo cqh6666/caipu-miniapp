@@ -1,4 +1,5 @@
 import { getCurrentKitchenId } from '../../utils/auth'
+import { defineIndexPageModule } from './page-module'
 import { listMealPlanStore, saveMealPlanDraft, submitMealPlan as submitMealPlanRequest } from '../../utils/meal-plan-api'
 import {
 	addDaysFromISODate,
@@ -684,3 +685,20 @@ export const mealOrderComputed = {
 		return this.isSyncing ? '正在同步这份菜单。' : '按餐别整理，想吃和吃过更清楚'
 	}
 }
+
+export const mealOrderModule = defineIndexPageModule({
+	name: 'meal-order',
+	requires: [
+		'mealOrderStore', 'mealOrderDate', 'isSubmittingMealOrder',
+		'syncMealOrderDraft', 'clearMealOrderDraftSyncTimer', 'clearMealOrderModeMotionTimer'
+	],
+	methods: mealOrderMethods,
+	computed: mealOrderComputed,
+	lifecycle: {
+		deactivate() {
+			if (!this.isSubmittingMealOrder) this.syncMealOrderDraft({ silent: true })
+			this.clearMealOrderDraftSyncTimer()
+			this.clearMealOrderModeMotionTimer()
+		}
+	}
+})

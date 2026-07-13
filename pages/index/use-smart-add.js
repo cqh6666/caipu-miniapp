@@ -4,6 +4,7 @@ import { createRecipeFromDraft, getCachedRecipes } from '../../utils/recipe-stor
 import { createEmptyDraft } from './constants'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import { formatMealOrderDateText } from './meal-order'
+import { defineIndexPageModule } from './page-module'
 
 export function normalizePreviewImageList(source = {}) {
 	const values = source.images || source.imageUrls || source.imageURL || source.imageUrl || []
@@ -549,3 +550,25 @@ export const smartAddComputed = {
 		return ''
 	}
 }
+
+export const smartAddModule = defineIndexPageModule({
+	name: 'smart-add',
+	requires: [
+		'draft', 'draftLinkPreviewRequestID', 'clearDraftLinkPreviewState',
+		'clearRecipePreviewTimeoutRefreshTimer'
+	],
+	methods: {
+		...smartAddPlaceMethods,
+		...smartAddDraftMethods,
+		...smartAddRecipeMethods
+	},
+	computed: smartAddComputed,
+	lifecycle: {
+		deactivate() {
+			this.clearDraftLinkPreviewState()
+		},
+		dispose() {
+			this.clearRecipePreviewTimeoutRefreshTimer()
+		}
+	}
+})

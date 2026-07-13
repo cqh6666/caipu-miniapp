@@ -15,6 +15,7 @@ import {
 import { getAccessToken } from '../../utils/session-storage'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import { appConfig } from '../../utils/app-config'
+import { defineIndexPageModule } from './page-module'
 
 const inviteShareFallbackImageUrl = '/static/invite-share-cover.png'
 
@@ -722,3 +723,20 @@ export const kitchenSpaceComputed = {
 		return '邀请成员后，大家会看到同一份菜单。'
 	}
 }
+
+export const kitchenSpaceModule = defineIndexPageModule({
+	name: 'kitchen-space',
+	requires: [
+		'currentKitchenId', 'currentKitchenName', 'currentKitchenRole', 'kitchenMembers',
+		'refreshRecipes', 'loadMealOrderStore'
+	],
+	methods: {
+		...kitchenSpaceMethods,
+		...kitchenInviteMethods
+	},
+	computed: {
+		...kitchenSpaceComputed,
+		...kitchenMemberComputed,
+		...kitchenInviteComputed
+	}
+})

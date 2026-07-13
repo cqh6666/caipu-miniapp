@@ -216,14 +216,11 @@ import {
 } from '../../utils/recipe-store'
 import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
 import {
-	buildStepCompletedStorageKey,
 	buildStepCompletionKeyList,
 	cloneStepDraftList,
-	createCompletedStepStoragePayload,
 	createEmptyDraft,
 	createIngredientDraftList,
-	highlightStepDetailText,
-	normalizeCompletedStepKeyMap
+	highlightStepDetailText
 } from './use-recipe-edit'
 import {
 	ACTIVE_FLOWCHART_STATUSES,
@@ -250,6 +247,11 @@ import {
 	createRecipeShareController,
 	FLOWCHART_VIEWER_STORAGE_KEY
 } from './use-recipe-share'
+import {
+	createActionFeedbackController,
+	createRecipeLoadController,
+	createStepCompletionController
+} from './use-recipe-detail-state'
 
 export default {
 	components: {
@@ -276,17 +278,19 @@ export default {
 			isGeneratingFlowchart: false,
 			isPinSubmitting: false,
 			heroImageIndex: 0,
-			recipeAsyncJobsController: null,
-			recipeImageController: null,
-			recipeShareController: null,
+				recipeAsyncJobsController: null,
+				recipeImageController: null,
+				recipeShareController: null,
+				recipeLoadController: null,
+				stepCompletionController: null,
+				actionFeedbackController: null,
 			statusEstimateSyncedAt: 0,
 			statusEstimateNow: 0,
 			actionFeedbackVisible: false,
 			actionFeedbackTone: '',
 			actionFeedbackTitle: '',
 			actionFeedbackDescription: '',
-			actionFeedbackTick: 0,
-			actionFeedbackTimer: null,
+				actionFeedbackTick: 0,
 			hasResolvedInitialRecipeLoad: false,
 			cachedRecipeImageMap: {},
 			recipeImageFallbackMap: {},
@@ -698,6 +702,7 @@ export default {
 	onUnload() {
 		this.stopParsePolling()
 		this.clearActionFeedback()
+		this.recipeLoadController?.cancel()
 	},
 	onBackPress() {
 		if (!this.showEditSheet) return false
@@ -742,94 +747,66 @@ export default {
 		return this.buildRecipeShareConfig({ channel: 'favorite' })
 	},
 	methods: {
-		clearActionFeedbackTimer() {
-			if (!this.actionFeedbackTimer) return
-			clearTimeout(this.actionFeedbackTimer)
-			this.actionFeedbackTimer = null
+		getActionFeedbackController() {
+			if (!this.actionFeedbackController) {
+				this.actionFeedbackController = createActionFeedbackController({
+					onState: (state) => {
+						if (Object.prototype.hasOwnProperty.call(state, 'visible')) this.actionFeedbackVisible = state.visible
+						if (Object.prototype.hasOwnProperty.call(state, 'tone')) this.actionFeedbackTone = state.tone
+						if (Object.prototype.hasOwnProperty.call(state, 'title')) this.actionFeedbackTitle = state.title
+						if (Object.prototype.hasOwnProperty.call(state, 'description')) this.actionFeedbackDescription = state.description
+						if (Object.prototype.hasOwnProperty.call(state, 'tick')) this.actionFeedbackTick = state.tick
+					}
+				})
+			}
+			return this.actionFeedbackController
 		},
 		clearActionFeedback() {
-			this.clearActionFeedbackTimer()
-			this.actionFeedbackVisible = false
-			this.actionFeedbackTone = ''
-			this.actionFeedbackTitle = ''
-			this.actionFeedbackDescription = ''
+			this.getActionFeedbackController().clear()
 		},
 		showActionFeedback(options = {}) {
-			const title = String(options?.title || '').trim()
-			if (!title) return
-			this.clearActionFeedbackTimer()
-			this.actionFeedbackTone = String(options?.tone || 'done').trim() || 'done'
-			this.actionFeedbackTitle = title
-			this.actionFeedbackDescription = String(options?.description || '').trim()
-			this.actionFeedbackVisible = true
-			this.actionFeedbackTick += 1
-			this.actionFeedbackTimer = setTimeout(() => {
-				this.actionFeedbackVisible = false
-				this.actionFeedbackTimer = null
-			}, Math.max(1200, Number(options?.duration) || 1680))
+			this.getActionFeedbackController().show(options)
+		},
+		getRecipeLoadController() {
+			if (!this.recipeLoadController) {
+				this.recipeLoadController = createRecipeLoadController({
+					getCachedRecipe: getCachedRecipeById,
+					getRecipe: getRecipeById,
+					getPublicRecipe: fetchPublicRecipeByShareToken,
+					ensurePrivateAccess: () => this.ensureShareTokenIfNeeded(),
+					onRecipe: (recipe) => this.applyRecipe(recipe),
+					onPublicMeta: (view) => {
+						this.recipeId = view.recipe.id || this.recipeId
+						this.publicKitchenName = view.kitchenName || ''
+						this.publicCreatorName = view.creatorName || ''
+						this.publicViewLoadFailed = false
+					},
+					onMissing: ({ publicView }) => {
+						this.recipe = null
+						if (publicView) this.publicViewLoadFailed = true
+					},
+					onError: (error, { publicView }) => {
+						this.recipe = null
+						if (publicView) {
+							this.publicViewLoadFailed = true
+							return
+						}
+						uni.showToast({ title: error?.message || '加载失败', icon: 'none' })
+					},
+					onState: (state) => {
+						if (Object.prototype.hasOwnProperty.call(state, 'loading')) this.isLoadingRecipe = state.loading
+						if (Object.prototype.hasOwnProperty.call(state, 'resolved')) this.hasResolvedInitialRecipeLoad = state.resolved
+					}
+				})
+			}
+			return this.recipeLoadController
 		},
 		async loadRecipe() {
-			// P2-D 分享路径升级：公开只读模式优先走 share_token 公开接口
-			// 不进缓存（避免污染同 id 的私有缓存）、不触发 ensureSession
-			if (this.isPublicView && this.publicViewToken) {
-				try {
-					this.isLoadingRecipe = true
-					const view = await fetchPublicRecipeByShareToken(this.publicViewToken)
-					if (!view || !view.recipe) {
-						this.recipe = null
-						this.publicViewLoadFailed = true
-						this.hasResolvedInitialRecipeLoad = true
-						return
-					}
-					this.recipeId = view.recipe.id || this.recipeId
-					this.publicKitchenName = view.kitchenName || ''
-					this.publicCreatorName = view.creatorName || ''
-					this.publicViewLoadFailed = false
-					this.applyRecipe(view.recipe)
-					this.hasResolvedInitialRecipeLoad = true
-				} catch (error) {
-					this.recipe = null
-					this.publicViewLoadFailed = true
-					this.hasResolvedInitialRecipeLoad = true
-				} finally {
-					this.isLoadingRecipe = false
-				}
-				return
-			}
-
-			if (!this.recipeId) {
-				this.recipe = null
-				this.hasResolvedInitialRecipeLoad = true
-				return
-			}
-
-			// P2 修复：进页就立刻 fire ensure share_token（与缓存读取并行）
-			// 缩短「打开详情秒分享」窗口，applyRecipe 末尾的 ensure 作为兜底
-			this.ensureShareTokenIfNeeded()
-
-			const cachedRecipe = getCachedRecipeById(this.recipeId)
-			if (cachedRecipe) {
-				this.applyRecipe(cachedRecipe)
-				this.hasResolvedInitialRecipeLoad = true
-			}
-
-			try {
-				this.isLoadingRecipe = true
-				const recipe = await getRecipeById(this.recipeId, { preferCache: !cachedRecipe })
-				this.applyRecipe(recipe)
-				this.hasResolvedInitialRecipeLoad = true
-			} catch (error) {
-				if (!cachedRecipe) {
-					this.recipe = null
-					uni.showToast({
-						title: error?.message || '加载失败',
-						icon: 'none'
-					})
-				}
-			} finally {
-				this.isLoadingRecipe = false
-				this.hasResolvedInitialRecipeLoad = true
-			}
+			return this.getRecipeLoadController().load({
+				recipeId: this.recipeId,
+				publicViewToken: this.publicViewToken,
+				isPublicView: this.isPublicView
+			})
 		},
 		buildFlowchartImageCacheVersion(recipe = this.recipe) {
 			return createFlowchartImageCacheEntry(recipe, buildImageCacheKey).version
@@ -1235,6 +1212,20 @@ export default {
 		buildCurrentStepCompletionKeys() {
 			return buildStepCompletionKeyList(this.parsedSteps)
 		},
+		getStepCompletionController() {
+			if (!this.stepCompletionController) {
+				this.stepCompletionController = createStepCompletionController({
+					storage: uni,
+					onChange: (completed) => {
+						this.completedStepKeyMap = completed
+					},
+					onError: (error) => {
+						console.warn('[recipe-detail] step completion storage failed:', error)
+					}
+				})
+			}
+			return this.stepCompletionController
+		},
 		getStepCompletionKey(index) {
 			const stepKeys = this.buildCurrentStepCompletionKeys()
 			return stepKeys[index] || ''
@@ -1245,18 +1236,12 @@ export default {
 			return !!(stepKey && this.completedStepKeyMap[stepKey])
 		},
 		toggleStepCompleted(index) {
-			if (typeof index !== 'number' || index < 0) return
-			const stepKey = this.getStepCompletionKey(index)
-			if (!stepKey) return
-			// 触发 Vue 响应式更新：使用 $set 或对象重建（这里直接重建以兼容 Vue 3 / 2.x）
-			const next = { ...this.completedStepKeyMap }
-			if (next[stepKey]) {
-				delete next[stepKey]
-			} else {
-				next[stepKey] = true
-			}
-			this.completedStepKeyMap = next
-			this.persistCompletedSteps()
+			const changed = this.getStepCompletionController().toggle(
+				this.recipeId,
+				this.buildCurrentStepCompletionKeys(),
+				index
+			)
+			if (!changed) return
 			if (typeof uni.vibrateShort === 'function') {
 				uni.vibrateShort({ type: 'light' })
 			}
@@ -1270,40 +1255,18 @@ export default {
 				confirmColor: '#b4664c',
 				success: ({ confirm }) => {
 					if (!confirm) return
-					this.completedStepKeyMap = {}
-					this.persistCompletedSteps()
+					this.getStepCompletionController().reset(this.recipeId)
 				}
 			})
 		},
 		loadCompletedSteps() {
-			const key = buildStepCompletedStorageKey(this.recipeId)
-			if (!key) {
-				this.completedStepKeyMap = {}
-				return
-			}
-			const currentStepKeys = this.buildCurrentStepCompletionKeys()
-			try {
-				const raw = uni.getStorageSync(key)
-				this.completedStepKeyMap = normalizeCompletedStepKeyMap(raw, currentStepKeys)
-			} catch (error) {
-				// 存储读失败不致命，回退到空状态
-				this.completedStepKeyMap = {}
-			}
+			this.getStepCompletionController().load(
+				this.recipeId,
+				this.buildCurrentStepCompletionKeys()
+			)
 		},
 		persistCompletedSteps() {
-			const key = buildStepCompletedStorageKey(this.recipeId)
-			if (!key) return
-			try {
-				if (Object.keys(this.completedStepKeyMap).length === 0) {
-					uni.removeStorageSync(key)
-				} else {
-					uni.setStorageSync(key, createCompletedStepStoragePayload(this.completedStepKeyMap))
-				}
-			} catch (error) {
-				// 存储写失败不致命，仅记录到 console（生产环境无影响）
-				// eslint-disable-next-line no-console
-				console.warn('[recipe-detail] persistCompletedSteps failed:', error)
-			}
+			this.getStepCompletionController().persist(this.recipeId)
 		},
 		async handleGenerateFlowchart() {
 			// P1 修复：公开只读模式禁止生成流程图（防御性兜底，模板已 v-if 隐藏 CTA）

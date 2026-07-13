@@ -8,6 +8,7 @@ import {
 	updatePlaceById,
 	updatePlaceStatusById
 } from '../../utils/place-store'
+import { defineIndexPageModule } from './page-module'
 
 export function createEmptyPlaceDraft(overrides = {}) {
 	return {
@@ -511,3 +512,10 @@ export const placeLibraryComputed = {
 			return !!String(this.placeDraft.name || '').trim()
 		}
 }
+
+export const placeLibraryModule = defineIndexPageModule({
+	name: 'place-library',
+	requires: ['places', 'activePlaceStatus', 'placeSearchKeyword', 'placeDraft'],
+	methods: placeLibraryMethods,
+	computed: placeLibraryComputed
+})

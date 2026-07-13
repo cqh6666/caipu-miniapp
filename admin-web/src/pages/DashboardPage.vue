@@ -207,216 +207,45 @@
     </div>
 
     <div class="dashboard-grid dashboard-grid--triple" style="margin-top: 20px">
-      <div class="page-card table-card distribution-card">
-        <div class="subsection-header">
-          <div class="distribution-card__header-main">
-            <h3 class="subsection-title">按场景分布</h3>
-            <div class="subsection-subtitle">任务热点与成功率排行。</div>
-          </div>
-          <div class="distribution-header-actions">
-            <el-radio-group v-model="distViewMode.scene" size="small" class="distribution-view-switch">
-              <el-radio-button value="rank">排行</el-radio-button>
-              <el-radio-button value="chart">图表</el-radio-button>
-            </el-radio-group>
-            <StatusTag tone="neutral" :text="`${sceneRankItems.length} 个场景`" />
-          </div>
-        </div>
-        <PageState
-          v-if="!sceneRankItems.length"
-          mode="empty"
-          title="暂无场景分布"
-          description="当前时间窗口内还没有场景级任务数据。"
-          compact
-        />
-        <div
-          v-else-if="distViewMode.scene === 'chart'"
-          ref="sceneChartRef"
-          class="distribution-chart"
-          :style="{ height: distChartHeight(overview?.byScene?.length || 0) }"
-        ></div>
-        <div v-else class="distribution-rank-list">
-          <div class="distribution-rank-header">
-            <span class="distribution-rank-header__index">#</span>
-            <span>场景</span>
-            <span>任务量</span>
-            <span>成功率</span>
-          </div>
-          <div
-            v-for="item in sceneRankItems"
-            :key="item.key"
-            class="distribution-rank-row"
-          >
-            <span class="distribution-rank-index">{{ item.rankLabel }}</span>
-            <div class="distribution-rank-name" :title="item.label">
-              <span class="distribution-rank-name__text">{{ item.shortLabel }}</span>
-            </div>
-            <div class="distribution-rank-metric distribution-rank-metric--total">
-              <strong class="distribution-rank-metric__value">{{ item.totalText }}</strong>
-              <div class="distribution-rank-meter distribution-rank-meter--total">
-                <div class="distribution-rank-meter__fill distribution-rank-meter__fill--total" :style="{ width: `${item.totalPercent}%` }"></div>
-              </div>
-            </div>
-            <div class="distribution-rank-metric distribution-rank-metric--rate">
-              <div class="distribution-rank-meter distribution-rank-meter--rate">
-                <div
-                  class="distribution-rank-meter__fill"
-                  :class="`distribution-rank-meter__fill--${item.tone}`"
-                  :style="{ width: `${item.ratePercent}%` }"
-                ></div>
-              </div>
-              <div class="distribution-rank-rate-meta">
-                <strong class="distribution-rank-metric__value">{{ item.rateText }}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="page-card table-card distribution-card">
-        <div class="subsection-header">
-          <div class="distribution-card__header-main">
-            <h3 class="subsection-title">Provider 热点</h3>
-            <div class="subsection-subtitle">调用热点与成功率排行。</div>
-          </div>
-          <div class="distribution-header-actions">
-            <el-radio-group v-model="distViewMode.provider" size="small" class="distribution-view-switch">
-              <el-radio-button value="rank">排行</el-radio-button>
-              <el-radio-button value="chart">图表</el-radio-button>
-            </el-radio-group>
-            <StatusTag tone="neutral" :text="`${providerRankItems.length} 个节点`" />
-          </div>
-        </div>
-        <PageState
-          v-if="!providerRankItems.length"
-          mode="empty"
-          title="暂无 Provider 数据"
-          description="当前时间窗口内还没有调用侧热点分布。"
-          compact
-        />
-        <div
-          v-else-if="distViewMode.provider === 'chart'"
-          ref="providerChartRef"
-          class="distribution-chart"
-          :style="{ height: distChartHeight(providerRankItems.length || 0) }"
-        ></div>
-        <div v-else class="distribution-rank-list">
-          <div class="distribution-rank-header">
-            <span class="distribution-rank-header__index">#</span>
-            <span>Provider</span>
-            <span>调用量</span>
-            <span>成功率</span>
-          </div>
-          <div
-            v-for="item in providerRankItems"
-            :key="item.key"
-            class="distribution-rank-row"
-          >
-            <span class="distribution-rank-index">{{ item.rankLabel }}</span>
-            <div class="distribution-rank-name" :title="item.label">
-              <span class="distribution-rank-name__text">{{ item.shortLabel }}</span>
-            </div>
-            <div class="distribution-rank-metric distribution-rank-metric--total">
-              <strong class="distribution-rank-metric__value">{{ item.totalText }}</strong>
-              <div class="distribution-rank-meter distribution-rank-meter--total">
-                <div class="distribution-rank-meter__fill distribution-rank-meter__fill--total" :style="{ width: `${item.totalPercent}%` }"></div>
-              </div>
-            </div>
-            <div class="distribution-rank-metric distribution-rank-metric--rate">
-              <div class="distribution-rank-meter distribution-rank-meter--rate">
-                <div
-                  class="distribution-rank-meter__fill"
-                  :class="`distribution-rank-meter__fill--${item.tone}`"
-                  :style="{ width: `${item.ratePercent}%` }"
-                ></div>
-              </div>
-              <div class="distribution-rank-rate-meta">
-                <strong class="distribution-rank-metric__value">{{ item.rateText }}</strong>
-                <el-icon
-                  v-if="item.showAlert"
-                  class="distribution-rank-alert"
-                  :class="`distribution-rank-alert--${item.tone}`"
-                  :title="item.alertText"
-                >
-                  <Warning />
-                </el-icon>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="page-card table-card distribution-card">
-        <div class="subsection-header">
-          <div class="distribution-card__header-main">
-            <h3 class="subsection-title">Model 热点</h3>
-            <div class="subsection-subtitle">模型热点与成功率排行。</div>
-          </div>
-          <div class="distribution-header-actions">
-            <el-radio-group v-model="distViewMode.model" size="small" class="distribution-view-switch">
-              <el-radio-button value="rank">排行</el-radio-button>
-              <el-radio-button value="chart">图表</el-radio-button>
-            </el-radio-group>
-            <StatusTag tone="neutral" :text="`${modelRankItems.length} 个模型`" />
-          </div>
-        </div>
-        <PageState
-          v-if="!modelRankItems.length"
-          mode="empty"
-          title="暂无 Model 数据"
-          description="当前时间窗口内还没有模型侧热点分布。"
-          compact
-        />
-        <div
-          v-else-if="distViewMode.model === 'chart'"
-          ref="modelChartRef"
-          class="distribution-chart"
-          :style="{ height: distChartHeight(modelRankItems.length || 0) }"
-        ></div>
-        <div v-else class="distribution-rank-list">
-          <div class="distribution-rank-header">
-            <span class="distribution-rank-header__index">#</span>
-            <span>Model</span>
-            <span>调用量</span>
-            <span>成功率</span>
-          </div>
-          <div
-            v-for="item in modelRankItems"
-            :key="item.key"
-            class="distribution-rank-row"
-          >
-            <span class="distribution-rank-index">{{ item.rankLabel }}</span>
-            <div class="distribution-rank-name" :title="item.label">
-              <span class="distribution-rank-name__text">{{ item.shortLabel }}</span>
-            </div>
-            <div class="distribution-rank-metric distribution-rank-metric--total">
-              <strong class="distribution-rank-metric__value">{{ item.totalText }}</strong>
-              <div class="distribution-rank-meter distribution-rank-meter--total">
-                <div class="distribution-rank-meter__fill distribution-rank-meter__fill--total" :style="{ width: `${item.totalPercent}%` }"></div>
-              </div>
-            </div>
-            <div class="distribution-rank-metric distribution-rank-metric--rate">
-              <div class="distribution-rank-meter distribution-rank-meter--rate">
-                <div
-                  class="distribution-rank-meter__fill"
-                  :class="`distribution-rank-meter__fill--${item.tone}`"
-                  :style="{ width: `${item.ratePercent}%` }"
-                ></div>
-              </div>
-              <div class="distribution-rank-rate-meta">
-                <strong class="distribution-rank-metric__value">{{ item.rateText }}</strong>
-                <el-icon
-                  v-if="item.showAlert"
-                  class="distribution-rank-alert"
-                  :class="`distribution-rank-alert--${item.tone}`"
-                  :title="item.alertText"
-                >
-                  <Warning />
-                </el-icon>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <DistributionPanel
+        ref="sceneDistributionPanelRef"
+        v-model="distViewMode.scene"
+        title="按场景分布"
+        subtitle="任务热点与成功率排行。"
+        count-unit="个场景"
+        empty-title="暂无场景分布"
+        empty-description="当前时间窗口内还没有场景级任务数据。"
+        name-column="场景"
+        total-column="任务量"
+        :chart-height="distChartHeight(sceneRankItems.length)"
+        :items="sceneRankItems"
+      />
+      <DistributionPanel
+        ref="providerDistributionPanelRef"
+        v-model="distViewMode.provider"
+        title="Provider 热点"
+        subtitle="调用热点与成功率排行。"
+        count-unit="个节点"
+        empty-title="暂无 Provider 数据"
+        empty-description="当前时间窗口内还没有调用侧热点分布。"
+        name-column="Provider"
+        total-column="调用量"
+        :chart-height="distChartHeight(providerRankItems.length)"
+        :items="providerRankItems"
+      />
+      <DistributionPanel
+        ref="modelDistributionPanelRef"
+        v-model="distViewMode.model"
+        title="Model 热点"
+        subtitle="模型热点与成功率排行。"
+        count-unit="个模型"
+        empty-title="暂无 Model 数据"
+        empty-description="当前时间窗口内还没有模型侧热点分布。"
+        name-column="Model"
+        total-column="调用量"
+        :chart-height="distChartHeight(modelRankItems.length)"
+        :items="modelRankItems"
+      />
     </div>
 
     <JobDetailDrawer
@@ -434,10 +263,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, nextTick, onMounted, reactive, ref, watch, type FunctionalComponent } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, Refresh, Warning } from '@element-plus/icons-vue'
+import { ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { BarChart, LineChart } from 'echarts/charts'
 import {
   AxisPointerComponent,
@@ -459,6 +288,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import PageState from '@/components/PageState.vue'
 import JobDetailDrawer from '@/components/JobDetailDrawer.vue'
 import CallDetailDrawer from '@/components/CallDetailDrawer.vue'
+import DistributionPanel from '@/components/dashboard/DistributionPanel.vue'
 import * as adminApi from '@/api/admin'
 import type { CallLogRecord, DashboardOverview, ServerHealthOverview, TrendBucket } from '@/types'
 import {
@@ -476,6 +306,13 @@ import {
   type StatusTone
 } from '@/utils/admin-display'
 import { buildRouteQuery } from '@/utils/route-query'
+import {
+  buildDistributionRankItems,
+  middleEllipsis,
+  normalizeDistributionItems,
+  type DistributionItem,
+  type DistViewMode
+} from '@/utils/dashboard-distribution'
 
 type DashboardChartOption = ComposeOption<
   GridComponentOption | TooltipComponentOption | LegendComponentOption | LineSeriesOption | BarSeriesOption
@@ -487,57 +324,20 @@ const { display: lastRefreshed, mark: markRefreshed } = useLastRefreshed('dashbo
 
 const overviewWindow = ref<number>(168)
 
-const RateCell: FunctionalComponent<{ rate: number | undefined | null }> = (props) => {
-  const rate = props.rate ?? 0
-  const percent = Math.max(Math.min(rate * 100, 100), 0)
-  const tone = toneForSuccessRate(rate)
-  return h('div', { class: 'rate-cell' }, [
-    h('div', { class: 'rate-cell__bar' }, [
-      h('div', {
-        class: `rate-cell__fill rate-cell__fill--${tone}`,
-        style: { width: `${percent}%` }
-      })
-    ]),
-    h('span', { class: 'rate-cell__value' }, formatPercent(rate))
-  ])
-}
-RateCell.props = ['rate']
-
-const TotalCell: FunctionalComponent<{ total: number | undefined | null; max: number }> = (props) => {
-  const total = props.total ?? 0
-  const max = Math.max(props.max, 1)
-  const percent = Math.max(Math.min((total / max) * 100, 100), 0)
-  return h('div', { class: 'total-cell' }, [
-    h('div', { class: 'total-cell__bar' }, [
-      h('div', { class: 'total-cell__fill', style: { width: `${percent}%` } })
-    ]),
-    h('span', { class: 'total-cell__value' }, `${total}`)
-  ])
-}
-TotalCell.props = ['total', 'max']
-
-function maxTotal(items: Array<{ total?: number | null }> | undefined | null): number {
-  if (!items || !items.length) return 1
-  return items.reduce((acc, item) => Math.max(acc, item?.total ?? 0), 0) || 1
-}
-
-const countFormatter = new Intl.NumberFormat('zh-CN')
-const maxSceneTotal = computed(() => maxTotal(overview.value?.byScene))
-
 const {
   chartRef,
   dispose: disposeDashboardChart,
-  modelChartRef,
-  providerChartRef,
-  render: renderDashboardChart,
-  sceneChartRef
+  render: renderDashboardChart
 } = useDashboardCharts()
-type DistViewMode = 'chart' | 'table' | 'rank'
 const distViewMode = reactive<{ scene: DistViewMode; provider: DistViewMode; model: DistViewMode }>({
   scene: 'rank',
   provider: 'rank',
   model: 'rank'
 })
+type DistributionPanelInstance = { chartElement: HTMLDivElement | null }
+const sceneDistributionPanelRef = ref<DistributionPanelInstance | null>(null)
+const providerDistributionPanelRef = ref<DistributionPanelInstance | null>(null)
+const modelDistributionPanelRef = ref<DistributionPanelInstance | null>(null)
 const router = useRouter()
 const overview = ref<DashboardOverview | null>(null)
 const serverHealth = ref<ServerHealthOverview | null>(null)
@@ -573,120 +373,6 @@ interface MetricItem {
   statusText: string
   note: string
   pending: boolean
-}
-
-interface DistributionRankItem {
-  key: string
-  label: string
-  shortLabel: string
-  total: number
-  totalText: string
-  totalPercent: number
-  successRate: number
-  rateText: string
-  ratePercent: number
-  tone: StatusTone
-  rankLabel: string
-  showAlert: boolean
-  alertText: string
-  isUnknown: boolean
-}
-
-interface DistributionRankBuildOptions {
-  labelFormatter?: (value: string) => string
-  showAlert?: boolean
-}
-
-function isUnknownDistributionName(value?: string) {
-  const normalized = String(value || '').trim()
-  return !normalized || normalized === '(empty)'
-}
-
-function normalizeDistributionName(value?: string) {
-  if (isUnknownDistributionName(value)) {
-    return '未指定'
-  }
-  return String(value || '').trim()
-}
-
-function middleEllipsis(value: string, head = 10, tail = 8) {
-  if (value.length <= head + tail + 1) {
-    return value
-  }
-  return `${value.slice(0, head)}…${value.slice(-tail)}`
-}
-
-function formatCount(value?: number | null) {
-  return countFormatter.format(Math.max(Math.round(value ?? 0), 0))
-}
-
-function buildDistributionRankItems(
-  items: DistributionItem[] | undefined | null,
-  options: DistributionRankBuildOptions = {}
-): DistributionRankItem[] {
-  if (!items?.length) {
-    return []
-  }
-  const { labelFormatter, showAlert = true } = options
-
-  const normalized = items.map((item) => {
-    const total = Math.max(item.total ?? 0, 0)
-    const successRate = Math.max(Math.min(item.successRate ?? 0, 1), 0)
-    const normalizedName = normalizeDistributionName(item.name)
-    const label = labelFormatter ? labelFormatter(normalizedName) : normalizedName
-    return {
-      key: `${label}:${total}:${successRate}`,
-      label,
-      total,
-      successRate,
-      isUnknown: isUnknownDistributionName(item.name)
-    }
-  }).sort((a, b) => {
-    if (a.isUnknown !== b.isUnknown) {
-      return a.isUnknown ? 1 : -1
-    }
-    if (b.total !== a.total) {
-      return b.total - a.total
-    }
-    return a.label.localeCompare(b.label, 'zh-CN')
-  })
-
-  const rankedMax = normalized.filter((item) => !item.isUnknown).reduce((acc, item) => Math.max(acc, item.total), 0)
-  const max = rankedMax || normalized.reduce((acc, item) => Math.max(acc, item.total), 0) || 1
-  let rank = 0
-
-  return normalized.map((item) => {
-    const tone = toneForSuccessRate(item.successRate)
-    if (!item.isUnknown) {
-      rank += 1
-    }
-    return {
-      key: item.key,
-      label: item.label,
-      shortLabel: middleEllipsis(item.label),
-      total: item.total,
-      totalText: formatCount(item.total),
-      totalPercent: Math.max(Math.min((item.total / max) * 100, 100), 0),
-      successRate: item.successRate,
-      rateText: formatPercent(item.successRate, 0),
-      ratePercent: Math.max(Math.min(item.successRate * 100, 100), 0),
-      tone,
-      rankLabel: item.isUnknown ? '—' : String(rank),
-      showAlert: showAlert && tone !== 'success',
-      alertText: tone === 'warning' ? '成功率低于 95%，建议关注。' : '成功率低于 85%，建议优先排查。',
-      isUnknown: item.isUnknown
-    }
-  })
-}
-
-function normalizeDistributionItems(items: DistributionItem[] | undefined | null): DistributionItem[] {
-  if (!items?.length) {
-    return []
-  }
-  return items.map((item) => ({
-    ...item,
-    name: normalizeDistributionName(item.name)
-  }))
 }
 
 const sceneRankItems = computed(() => buildDistributionRankItems(overview.value?.byScene, {
@@ -938,8 +624,6 @@ function renderChart() {
   renderDashboardChart('trend', option, chartRef.value)
 }
 
-type DistributionItem = { name: string; total?: number | null; successRate?: number | null }
-
 function distChartHeight(count: number): string {
   const rows = Math.max(count, 1)
   return `${Math.max(rows * 36 + 48, 160)}px`
@@ -1036,9 +720,9 @@ function renderDistributionChart(
 async function renderDistributionCharts() {
   await nextTick()
   const pairs: Array<[DistViewMode, DashboardChartKey, HTMLDivElement | null, DistributionItem[] | undefined, ((n: string) => string) | undefined]> = [
-    [distViewMode.scene, 'scene', sceneChartRef.value, overview.value?.byScene, displayScene],
-    [distViewMode.provider, 'provider', providerChartRef.value, providerChartItems.value, undefined],
-    [distViewMode.model, 'model', modelChartRef.value, modelChartItems.value, undefined]
+    [distViewMode.scene, 'scene', sceneDistributionPanelRef.value?.chartElement ?? null, overview.value?.byScene, displayScene],
+    [distViewMode.provider, 'provider', providerDistributionPanelRef.value?.chartElement ?? null, providerChartItems.value, undefined],
+    [distViewMode.model, 'model', modelDistributionPanelRef.value?.chartElement ?? null, modelChartItems.value, undefined]
   ]
   for (const [mode, key, container, items, fmt] of pairs) {
     try {
@@ -1128,40 +812,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.rate-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.rate-cell__bar {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: 6px;
-  border-radius: 999px;
-  background: #eef2f7;
-  overflow: hidden;
-}
-
-.rate-cell__fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.22s ease;
-}
-
-.rate-cell__fill--success {
-  background: linear-gradient(90deg, #22c55e, #16a34a);
-}
-
-.rate-cell__fill--warning {
-  background: linear-gradient(90deg, #f59e0b, #d97706);
-}
-
-.rate-cell__fill--danger {
-  background: linear-gradient(90deg, #f87171, #dc2626);
-}
-
 .subsection-actions {
   display: inline-flex;
   align-items: center;
@@ -1194,227 +844,4 @@ onMounted(async () => {
   color: var(--color-text-subtle);
 }
 
-.rate-cell__fill--primary {
-  background: linear-gradient(90deg, #3b82f6, #2563eb);
-}
-
-.rate-cell__fill--neutral {
-  background: #cbd5e1;
-}
-
-.rate-cell__value {
-  min-width: 48px;
-  color: var(--color-text);
-  font-weight: 700;
-  font-size: 12px;
-  text-align: right;
-}
-
-.total-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.total-cell__bar {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: 6px;
-  border-radius: 999px;
-  background: #eef2f7;
-  overflow: hidden;
-}
-
-.total-cell__fill {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #93c5fd, #3b82f6);
-  transition: width 0.22s ease;
-}
-
-.total-cell__value {
-  min-width: 32px;
-  color: var(--color-text);
-  font-weight: 700;
-  font-size: 12px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.distribution-header-actions {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.distribution-card__header-main {
-  min-width: 0;
-}
-
-.distribution-view-switch {
-  display: inline-flex;
-  flex-wrap: nowrap;
-}
-
-.distribution-view-switch :deep(.el-radio-button__inner) {
-  min-width: 52px;
-  padding-inline: 12px;
-}
-
-.distribution-card {
-  display: flex;
-  min-height: 100%;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.distribution-chart {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 160px;
-  overflow: hidden;
-}
-
-.distribution-rank-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.distribution-rank-header,
-.distribution-rank-row {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1.25fr) minmax(92px, 0.88fr) minmax(118px, 0.95fr);
-  gap: 12px;
-  align-items: center;
-}
-
-.distribution-rank-header {
-  padding: 4px 0 8px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-  font-size: 12px;
-  color: var(--color-text-subtle);
-}
-
-.distribution-rank-header__index,
-.distribution-rank-index {
-  text-align: center;
-}
-
-.distribution-rank-row {
-  padding: 12px 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.distribution-rank-row:first-of-type {
-  border-top: none;
-}
-
-.distribution-rank-index {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-subtle);
-}
-
-.distribution-rank-name {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-
-.distribution-rank-name__text {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.distribution-rank-metric {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.distribution-rank-metric__value {
-  color: var(--color-text);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.distribution-rank-meter {
-  position: relative;
-  width: 100%;
-  height: 6px;
-  border-radius: 999px;
-  background: #eef2f7;
-  overflow: hidden;
-}
-
-.distribution-rank-meter__fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.22s ease;
-}
-
-.distribution-rank-meter__fill--total {
-  background: linear-gradient(90deg, #93c5fd, #3b82f6);
-}
-
-.distribution-rank-meter__fill--success {
-  background: linear-gradient(90deg, #22c55e, #16a34a);
-}
-
-.distribution-rank-meter__fill--warning {
-  background: linear-gradient(90deg, #f59e0b, #d97706);
-}
-
-.distribution-rank-meter__fill--danger {
-  background: linear-gradient(90deg, #f87171, #dc2626);
-}
-
-.distribution-rank-meter__fill--neutral,
-.distribution-rank-meter__fill--primary {
-  background: #cbd5e1;
-}
-
-.distribution-rank-rate-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.distribution-rank-alert {
-  font-size: 14px;
-}
-
-.distribution-rank-alert--warning {
-  color: #d97706;
-}
-
-.distribution-rank-alert--danger {
-  color: #dc2626;
-}
-
-@media (max-width: 1280px) {
-  .distribution-rank-header,
-  .distribution-rank-row {
-    grid-template-columns: 24px minmax(0, 1.1fr) minmax(78px, 0.8fr) minmax(96px, 0.9fr);
-    gap: 10px;
-  }
-}
-
-@media (max-width: 1200px) {
-  .distribution-header-actions {
-    align-items: flex-start;
-  }
-}
 </style>

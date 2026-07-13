@@ -269,210 +269,19 @@
         <div class="routing-editor-grid">
           <div
             :ref="(el) => setAnchorSectionRef('scene-strategy', el)"
-            class="page-card routing-panel routing-panel--strategy routing-anchor-section"
+            class="routing-anchor-section"
           >
-            <div class="routing-panel__header">
-              <div>
-                <h3 class="routing-panel__title">
-                  场景策略 <HelpTip :content="helpTips.sceneStrategy" />
-                </h3>
-                <div class="routing-panel__subtitle">
-                  路由开关、尝试次数、熔断与请求参数。
-                </div>
-              </div>
-              <div class="routing-panel__tags">
-                <StatusTag
-                  :tone="draftScene.enabled ? 'primary' : 'neutral'"
-                  :text="draftScene.enabled ? '新路由已启用' : '新路由未启用'"
-                />
-                <StatusTag
-                  :tone="currentChannel.tone"
-                  :text="currentChannel.label"
-                />
-              </div>
-            </div>
-
-            <div class="routing-form-grid">
-              <label class="routing-field">
-                <span>启用新路由</span>
-                <el-switch
-                  v-model="draftScene.enabled"
-                  inline-prompt
-                  active-text="开"
-                  inactive-text="关"
-                />
-              </label>
-              <label class="routing-field">
-                <span
-                  >调度策略 <HelpTip :content="helpTips.sceneStrategy"
-                /></span>
-                <el-select v-model="draftScene.strategy">
-                  <el-option
-                    v-for="item in aiRoutingStrategyOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </el-select>
-              </label>
-              <label class="routing-field routing-field--with-hint">
-                <span
-                  >最大尝试次数 <HelpTip :content="helpTips.maxAttempts"
-                /></span>
-                <el-input-number
-                  v-model="draftScene.maxAttempts"
-                  :min="minimumMaxAttempts"
-                  :max="maxAttemptCeiling"
-                />
-                <small
-                  class="routing-field__hint"
-                  :class="{
-                    'routing-field__hint--warn': numericWarn.maxAttempts,
-                  }"
-                >
-                  {{
-                    numericWarn.maxAttempts ||
-                    "建议 2-5 次；过大会让失败降级变慢"
-                  }}
-                </small>
-              </label>
-              <label class="routing-field routing-field--with-hint">
-                <span>熔断阈值 <HelpTip :content="helpTips.breaker" /></span>
-                <el-input-number
-                  v-model="draftScene.breaker.failureThreshold"
-                  :min="1"
-                  :max="10"
-                />
-                <small
-                  class="routing-field__hint"
-                  :class="{
-                    'routing-field__hint--warn': numericWarn.failureThreshold,
-                  }"
-                >
-                  {{
-                    numericWarn.failureThreshold ||
-                    "连续失败达到该次数后触发熔断，建议 3-10"
-                  }}
-                </small>
-              </label>
-              <label class="routing-field routing-field--with-hint">
-                <span
-                  >冷却时间（秒） <HelpTip :content="helpTips.breaker"
-                /></span>
-                <el-input-number
-                  v-model="draftScene.breaker.cooldownSeconds"
-                  :min="5"
-                  :max="600"
-                />
-                <small
-                  class="routing-field__hint"
-                  :class="{
-                    'routing-field__hint--warn': numericWarn.cooldownSeconds,
-                  }"
-                >
-                  {{
-                    numericWarn.cooldownSeconds ||
-                    "熔断冷却时长，低于 30s 容易抖动"
-                  }}
-                </small>
-              </label>
-              <div class="routing-field routing-field--meta">
-                <span>最近修改</span>
-                <strong>{{ formatDateTime(draftScene.updatedAt) }}</strong>
-                <small
-                  >修改人：{{ draftScene.updatedBySubject || "暂无" }}</small
-                >
-              </div>
-            </div>
-
-            <div class="routing-timeline-hint" aria-label="重试与熔断时序示意">
-              <div class="routing-timeline-hint__track">
-                <span
-                  v-for="i in timelineSegments.attempts"
-                  :key="`att-${i}`"
-                  class="routing-timeline-hint__seg routing-timeline-hint__seg--attempt"
-                >
-                  试 {{ i }}
-                </span>
-                <span
-                  class="routing-timeline-hint__seg routing-timeline-hint__seg--breaker"
-                >
-                  连续失败 {{ draftScene.breaker.failureThreshold }} 次
-                </span>
-                <span
-                  class="routing-timeline-hint__seg routing-timeline-hint__seg--cooldown"
-                >
-                  冷却 {{ draftScene.breaker.cooldownSeconds }}s
-                </span>
-              </div>
-              <div class="routing-timeline-hint__caption">
-                预计首轮最长 ≈ <strong>{{ expectedFirstRoundSeconds }}s</strong>
-                <span class="routing-timeline-hint__hint"
-                  >（最大尝试次数 × 启用节点最大超时）</span
-                >
-              </div>
-            </div>
-
-            <div class="routing-checkbox-block">
-              <div class="routing-checkbox-block__title">
-                允许切换到下一个节点的错误类型
-              </div>
-              <el-checkbox-group
-                v-model="draftScene.retryOn"
-                class="routing-checkbox-grid"
-              >
-                <el-checkbox
-                  v-for="item in retryOptions"
-                  :key="item.value"
-                  :label="item.value"
-                >
-                  {{ item.label }}
-                </el-checkbox>
-              </el-checkbox-group>
-            </div>
-
-            <div class="routing-request-block">
-              <div>
-                <div class="routing-checkbox-block__title">
-                  场景级请求参数 <HelpTip :content="helpTips.requestOptions" />
-                </div>
-              </div>
-
-              <div
-                v-if="draftScene.scene === 'title'"
-                class="routing-form-grid routing-form-grid--request"
-              >
-                <label class="routing-field">
-                  <span>Stream</span>
-                  <el-switch
-                    v-model="draftScene.requestOptions.stream"
-                    inline-prompt
-                    active-text="开"
-                    inactive-text="关"
-                  />
-                </label>
-                <label class="routing-field">
-                  <span>Temperature</span>
-                  <el-input-number
-                    v-model="draftScene.requestOptions.temperature"
-                    :min="0"
-                    :max="2"
-                    :step="0.1"
-                  />
-                </label>
-                <label class="routing-field">
-                  <span>Max Tokens</span>
-                  <el-input-number
-                    v-model="draftScene.requestOptions.maxTokens"
-                    :min="1"
-                    :max="512"
-                  />
-                </label>
-              </div>
-              <div v-else class="routing-request-block__note">
-                当前场景默认沿用业务层固定 prompt 参数，无需额外请求选项。
-              </div>
-            </div>
+            <SceneStrategyPanel
+              :draft-scene="draftScene"
+              :current-channel="currentChannel"
+              :help-tips="helpTips"
+              :minimum-max-attempts="minimumMaxAttempts"
+              :max-attempt-ceiling="maxAttemptCeiling"
+              :numeric-warn="numericWarn"
+              :timeline-segments="timelineSegments"
+              :expected-first-round-seconds="expectedFirstRoundSeconds"
+              :retry-options="retryOptions"
+            />
           </div>
 
           <div
@@ -484,42 +293,11 @@
               :enabled-provider-count="enabledProviderCount"
               :help-tips="helpTips"
               :provider-preset-options="providerPresetOptions"
-              :dragging-provider-index="draggingProviderIndex"
-              :drag-over-provider-index="dragOverProviderIndex"
               :single-test-provider-id="singleTestProviderId"
               :testing-scene="testingScene"
               :saving-scene="savingScene"
-              :provider-endpoint-mode-options="providerEndpointModeOptions"
-              :provider-response-format-options="providerResponseFormatOptions"
-              :thinking-type-options="thinkingTypeOptions"
-              :reasoning-effort-options="reasoningEffortOptions"
-              :image-size-options="imageSizeOptions"
-              :image-quality-options="imageQualityOptions"
-              :image-background-options="imageBackgroundOptions"
-              :image-output-format-options="imageOutputFormatOptions"
-              :get-provider-local-key="getProviderLocalKey"
-              :is-provider-collapsed="isProviderCollapsed"
-              :first-provider-error="firstProviderError"
-              :get-provider-test-state="getProviderTestState"
-              :provider-field-error="providerFieldError"
-              :is-image-generation-provider="isImageGenerationProvider"
-              :provider-thinking-label="providerThinkingLabel"
-              :should-show-provider-secret-editor="shouldShowProviderSecretEditor"
-              @add="handleAddProvider"
-              @add-preset="handleAddProviderPreset"
-              @drag-over="handleProviderDragOver"
-              @drop="handleProviderDrop"
-              @drag-start="handleProviderDragStart"
-              @drag-end="handleProviderDragEnd"
-              @toggle-collapse="toggleProviderCollapsed"
-              @test-single="handleTestSingleProvider"
-              @menu="handleProviderMenuCommand"
-              @touch-field="touchProviderField"
-              @endpoint-change="handleEndpointModeChange"
-              @thinking-change="handleThinkingTypeChange"
-              @toggle-secret="toggleProviderSecretEditor"
-              @clear-secret="handleClearProviderApiKey"
-              @api-key-input="handleProviderApiKeyInput"
+              :select-options="providerSelectOptions"
+              :editor="providerEditorContract"
             />
           </div>
         </div>
@@ -683,7 +461,6 @@ import {
   Warning,
 } from "@element-plus/icons-vue";
 import AppShell from "@/components/AppShell.vue";
-import HelpTip from "@/components/HelpTip.vue";
 import PageState from "@/components/PageState.vue";
 import StatusTag from "@/components/StatusTag.vue";
 import AlertLifecyclePanel from "@/components/ai-providers/AlertLifecyclePanel.vue";
@@ -691,13 +468,16 @@ import AuditDrawer from "@/components/ai-providers/AuditDrawer.vue";
 import AuditTimeline from "@/components/ai-providers/AuditTimeline.vue";
 import ProviderEditor from "@/components/ai-providers/ProviderEditor.vue";
 import RouteTestResult from "@/components/ai-providers/RouteTestResult.vue";
+import SaveSceneConfirmContent from "@/components/ai-providers/SaveSceneConfirmContent.vue";
 import SceneOverviewCards from "@/components/ai-providers/SceneOverviewCards.vue";
+import SceneStrategyPanel from "@/components/ai-providers/SceneStrategyPanel.vue";
 import * as adminApi from "@/api/admin";
 import { useResponsive } from "@/composables/useResponsive";
 import { useAIRoutingDraft } from "@/composables/useAIRoutingDraft";
+import { useAIRoutingAlerts } from "@/composables/useAIRoutingAlerts";
+import { useAIProviderEditor } from "@/composables/useAIProviderEditor";
 import type {
   AIRoutingAlertOverview,
-  AIRoutingAlertOverviewItem,
   AIRoutingProviderEndpointMode,
   AIRoutingProviderConfig,
   AIRoutingProviderResponseFormat,
@@ -715,7 +495,6 @@ import {
   type DateRangeValue,
 } from "@/utils/route-query";
 import {
-  aiRoutingStrategyOptions,
   auditActionOptions,
   displayAIRoutingScene,
   displayAIRoutingStrategy,
@@ -726,10 +505,6 @@ import {
   formatDuration,
 } from "@/utils/admin-display";
 import {
-  findSceneActiveAlertItems,
-  findSceneReviewAlertItems,
-  isWithinLast24Hours,
-  resolveAlertStatus,
   sceneAggregateStatus,
   summarizeSceneAlertStatus,
   summarizeSceneIssue,
@@ -746,8 +521,8 @@ import {
   normalizeProviderExtra,
   normalizeReasoningEffort,
   normalizeThinkingType,
-  type SceneDiffItem,
 } from "@/utils/ai-provider-draft";
+import { buildSaveSceneConfirmModel } from "@/utils/ai-provider-save-confirm";
 import {
   buildProviderValidationErrors,
   buildSceneBlockingValidationMessages,
@@ -809,8 +584,6 @@ const sceneOverviewRef = ref<InstanceType<typeof SceneOverviewCards> | null>(
   null,
 );
 const routeSceneOverride = ref<AIRoutingSceneKey | null>(null);
-const draggingProviderIndex = ref<number | null>(null);
-const dragOverProviderIndex = ref<number | null>(null);
 const shouldFocusSceneAfterChange = ref(false);
 const anchorSectionRefs: Partial<Record<AnchorSectionKey, HTMLElement | null>> =
   {};
@@ -835,24 +608,9 @@ const auditTimeRange = ref<DateRangeValue>([]);
 const auditPageSize = ref(20);
 const auditPage = ref(1);
 const auditDrawerVisible = ref(false);
-const providerSecretEditorState = ref<Record<string, boolean>>({});
-const collapsedProviderKeys = ref<Set<string>>(new Set());
-const providerTouchedState = ref<Record<string, boolean>>({});
-const providerLastTestState = ref<Record<string, ProviderTestState>>({});
 const testingStartedAt = ref<number | null>(null);
 const testingElapsedSeconds = ref(0);
 let testingTimer: ReturnType<typeof window.setInterval> | null = null;
-
-const providerLocalKeys = new WeakMap<AIRoutingProviderConfig, string>();
-let providerLocalKeyCounter = 0;
-
-type ProviderTestState = {
-  ok: boolean;
-  text: string;
-  latencyMs?: number;
-  errorType?: string;
-  testedAt: string;
-};
 
 type BlockingRiskItem = {
   key: string;
@@ -952,6 +710,16 @@ const imageOutputFormatOptions = [
   { label: "jpeg", value: "jpeg" },
   { label: "webp", value: "webp" },
 ];
+const providerSelectOptions = {
+  endpointModes: providerEndpointModeOptions,
+  responseFormats: providerResponseFormatOptions,
+  thinkingTypes: thinkingTypeOptions,
+  reasoningEfforts: reasoningEffortOptions,
+  imageSizes: imageSizeOptions,
+  imageQualities: imageQualityOptions,
+  imageBackgrounds: imageBackgroundOptions,
+  imageOutputFormats: imageOutputFormatOptions,
+};
 const auditPageSizeOptions = [20, 50, 100];
 const recentAuditKindOptions = [
   { label: "全部", value: "all" },
@@ -1137,101 +905,27 @@ const currentSceneTitle = computed(() => {
   return card?.title || displayAIRoutingScene(currentSceneKey.value);
 });
 
-// 当前场景正处于 active 告警的节点明细（供主编辑区「告警配置」弹层展示「当前告警」）。
-const currentSceneActiveAlertItems = computed(() =>
-  findSceneActiveAlertItems(currentSceneKey.value, alertOverview.value),
-);
-
-// 当前场景「待复核」节点（stale / pending_verify / muted）。
-const currentSceneReviewAlertItems = computed(() =>
-  findSceneReviewAlertItems(currentSceneKey.value, alertOverview.value),
-);
-
-// 当前场景 24h 内「最近恢复」节点。
-const currentSceneRecoveredItems = computed(() => {
-  const overview = alertOverview.value;
-  if (!overview) {
-    return [];
-  }
-  return overview.items
-    .filter(
-      (item) =>
-        item.scene === currentSceneKey.value &&
-        resolveAlertStatus(item) === "recovered" &&
-        isWithinLast24Hours(item.lastRecoveredAt, overview.generatedAt),
-    )
-    .sort(
-      (left, right) =>
-        Date.parse(right.lastRecoveredAt || "") -
-        Date.parse(left.lastRecoveredAt || ""),
-    );
-});
-
-const alertStatusSummary = computed(() => {
-  const overview = alertOverview.value;
-  if (!overview) {
-    return {
-      tone: "neutral" as const,
-      text: "当前场景告警加载中",
-    };
-  }
-  if (!overview.enabled) {
-    return {
-      tone: "neutral" as const,
-      text: "告警未启用",
-    };
-  }
-  if (!overview.hasDeliveryConfig) {
-    return {
-      tone: "warning" as const,
-      text: "告警配置不完整",
-    };
-  }
-  const activeCount = currentSceneActiveAlertItems.value.length;
-  const reviewCount = currentSceneReviewAlertItems.value.length;
-  if (activeCount > 0) {
-    return {
-      tone: "danger" as const,
-      text:
-        reviewCount > 0
-          ? `告警中 ${activeCount} · 待复核 ${reviewCount}`
-          : `当前场景告警 ${activeCount} 项`,
-    };
-  }
-  if (reviewCount > 0) {
-    return {
-      tone: "warning" as const,
-      text: `当前场景待复核 ${reviewCount} 项`,
-    };
-  }
-  return {
-    tone: "success" as const,
-    text: "当前场景无告警",
-  };
-});
-
-const alertStatusDescription = computed(() => {
-  const overview = alertOverview.value;
-  if (!overview) {
-    return "正在拉取最近告警概览。";
-  }
-  if (!overview.enabled) {
-    return "当前未启用连续异常邮件告警，可在配置中心开启。";
-  }
-  if (!overview.hasDeliveryConfig) {
-    return "告警已启用，但 SMTP 或收件人配置不完整，当前不会形成有效投递。";
-  }
-  const activeCount = currentSceneActiveAlertItems.value.length;
-  const reviewCount = currentSceneReviewAlertItems.value.length;
-  if (activeCount > 0) {
-    const suffix =
-      reviewCount > 0 ? `，另有 ${reviewCount} 个待复核（黄色）` : "";
-    return `当前场景有 ${activeCount} 个 Provider 处于告警中（红色）${suffix}。`;
-  }
-  if (reviewCount > 0) {
-    return `当前场景有 ${reviewCount} 个 Provider 待复核（历史过期 / 配置变更 / 已静默），不计入红色告警。`;
-  }
-  return "阈值、活跃窗口、SMTP 和收件人统一在配置中心维护，当前场景最近无告警。";
+const {
+  alertStatusDescription,
+  alertStatusSummary,
+  copyRequestId,
+  currentSceneAlertSections,
+  goAlertConfig,
+  goAlertProviderLogs,
+  handleAlertArchive,
+  handleAlertMute,
+  handleAlertRetest,
+  handleAlertUnmute,
+  handleBatchArchive,
+  handleBatchRetest,
+  hasCurrentSceneAlertNodes,
+  pendingAlertActions,
+} = useAIRoutingAlerts({
+  currentSceneKey,
+  alertOverview,
+  router,
+  extractMessage,
+  api: adminApi,
 });
 
 const showAnchorDirectory = computed(() => {
@@ -1280,235 +974,6 @@ const saveActionTooltip = computed(() => `保存场景 · ${shortcutText("save")
 const testActionTooltip = computed(
   () => `测试当前草稿 · ${shortcutText("test")}`,
 );
-
-function isImageGenerationProvider(provider: AIRoutingProviderConfig) {
-  return (provider.endpointMode || "chat_completions") === "images_generations";
-}
-
-function handleEndpointModeChange(provider: AIRoutingProviderConfig) {
-  if (!isImageGenerationProvider(provider)) {
-    provider.responseFormat = "auto";
-    provider.extra = normalizeProviderExtra(provider);
-  } else if (!provider.responseFormat) {
-    provider.responseFormat = "auto";
-    provider.extra = normalizeProviderExtra(provider);
-  } else {
-    provider.extra = normalizeProviderExtra(provider);
-  }
-}
-
-function handleThinkingTypeChange(provider: AIRoutingProviderConfig) {
-  if (provider.extra.thinking_type === "disabled") {
-    provider.extra.reasoning_effort = "";
-  }
-  provider.extra = normalizeProviderExtra(provider);
-}
-
-function providerThinkingLabel(provider: AIRoutingProviderConfig) {
-  if (isImageGenerationProvider(provider)) {
-    return "";
-  }
-  const thinkingType = String(provider.extra?.thinking_type || "").trim();
-  if (!thinkingType || thinkingType === "auto") {
-    return "";
-  }
-  return `thinking ${thinkingType}`;
-}
-
-function goAlertConfig() {
-  router.push({
-    path: "/settings",
-    query: { group: "ai.provider_alert" },
-    hash: "#ai-provider-alert",
-  });
-}
-
-// 正在执行处置动作（复测/归档/静默）的节点，用于按钮 loading 与禁用。
-const pendingAlertActions = ref<Record<string, boolean>>({});
-
-function isAlertActionPending(providerId: string) {
-  return !!pendingAlertActions.value[providerId];
-}
-
-function setAlertActionPending(providerId: string, pending: boolean) {
-  const next = { ...pendingAlertActions.value };
-  if (pending) {
-    next[providerId] = true;
-  } else {
-    delete next[providerId];
-  }
-  pendingAlertActions.value = next;
-}
-
-// 处置结果统一以返回的 overview 就地刷新，避免额外一轮请求。
-async function runAlertAction(
-  providerId: string,
-  action: () => Promise<{
-    result: import("@/types").AIRoutingAlertMutationResult;
-  }>,
-) {
-  setAlertActionPending(providerId, true);
-  try {
-    const { result } = await action();
-    if (result.overview) {
-      alertOverview.value = result.overview;
-    }
-    if (result.ok) {
-      ElMessage.success(result.message || "操作成功");
-    } else {
-      ElMessage.warning(result.message || "操作已完成");
-    }
-    return result;
-  } catch (error) {
-    ElMessage.error(extractMessage(error));
-    return null;
-  } finally {
-    setAlertActionPending(providerId, false);
-  }
-}
-
-async function handleAlertRetest(item: AIRoutingAlertOverviewItem) {
-  if (!item.canRetest || isAlertActionPending(item.providerId)) {
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      `将对「${item.providerName}」发起一次真实上游调用以复测，可能产生额度/费用。确认继续？`,
-      "复测并恢复",
-      { confirmButtonText: "复测", cancelButtonText: "取消", type: "warning" },
-    );
-  } catch {
-    return;
-  }
-  await runAlertAction(item.providerId, () =>
-    adminApi.retestAIRoutingAlert(item.providerId),
-  );
-}
-
-async function handleAlertArchive(item: AIRoutingAlertOverviewItem) {
-  if (!item.canArchive || isAlertActionPending(item.providerId)) {
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确认归档「${item.providerName}」的告警？归档后不再计入当前状态，新失败会自动重新触发。`,
-      "确认归档",
-      { confirmButtonText: "归档", cancelButtonText: "取消", type: "warning" },
-    );
-  } catch {
-    return;
-  }
-  await runAlertAction(item.providerId, () =>
-    adminApi.archiveAIRoutingAlert(item.providerId, "后台手动归档"),
-  );
-}
-
-async function handleAlertMute(item: AIRoutingAlertOverviewItem) {
-  if (!item.canMute || isAlertActionPending(item.providerId)) {
-    return;
-  }
-  await runAlertAction(item.providerId, () =>
-    adminApi.muteAIRoutingAlert(item.providerId, 24, "后台手动静默"),
-  );
-}
-
-async function handleAlertUnmute(item: AIRoutingAlertOverviewItem) {
-  if (!item.canUnmute || isAlertActionPending(item.providerId)) {
-    return;
-  }
-  await runAlertAction(item.providerId, () =>
-    adminApi.unmuteAIRoutingAlert(item.providerId),
-  );
-}
-
-async function handleBatchRetest(items: AIRoutingAlertOverviewItem[]) {
-  const retestable = items.filter((item) => item.canRetest);
-  if (!retestable.length) {
-    ElMessage.info("没有可复测的节点");
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      `将对 ${retestable.length} 个节点各发起一次真实调用，可能产生额度/费用。确认继续？`,
-      "批量复测",
-      { confirmButtonText: "复测", cancelButtonText: "取消", type: "warning" },
-    );
-  } catch {
-    return;
-  }
-  for (const item of retestable) {
-    await runAlertAction(item.providerId, () =>
-      adminApi.retestAIRoutingAlert(item.providerId),
-    );
-  }
-}
-
-async function handleBatchArchive(items: AIRoutingAlertOverviewItem[]) {
-  const archivable = items.filter((item) => item.canArchive);
-  if (!archivable.length) {
-    ElMessage.info("没有可归档的节点");
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确认归档 ${archivable.length} 个待复核节点？新失败仍会自动重新触发告警。`,
-      "批量归档",
-      { confirmButtonText: "归档", cancelButtonText: "取消", type: "warning" },
-    );
-  } catch {
-    return;
-  }
-  for (const item of archivable) {
-    await runAlertAction(item.providerId, () =>
-      adminApi.archiveAIRoutingAlert(item.providerId, "批量归档"),
-    );
-  }
-}
-
-function goAlertProviderLogs(item: AIRoutingAlertOverviewItem) {
-  router.push({
-    path: "/ai-calls",
-    query: { provider: item.providerId },
-  });
-}
-
-// 告警弹层三段式：当前告警 / 待复核 / 最近恢复。
-const currentSceneAlertSections = computed(() => [
-  {
-    key: "active" as const,
-    title: "当前告警",
-    hint: "红色：仍在失败且在线上路由中，需立即处理",
-    items: currentSceneActiveAlertItems.value,
-  },
-  {
-    key: "review" as const,
-    title: "待复核",
-    hint: "黄色：历史过期 / 配置变更 / 已静默，不计入红色",
-    items: currentSceneReviewAlertItems.value,
-  },
-  {
-    key: "recovered" as const,
-    title: "最近恢复",
-    hint: "24 小时内复测或真实调用已恢复",
-    items: currentSceneRecoveredItems.value,
-  },
-]);
-
-const hasCurrentSceneAlertNodes = computed(() =>
-  currentSceneAlertSections.value.some((section) => section.items.length > 0),
-);
-
-async function copyRequestId(requestId: string) {
-  if (!requestId) {
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(requestId);
-    ElMessage.success("已复制 requestId");
-  } catch {
-    ElMessage.warning("复制失败，请手动选择复制");
-  }
-}
 
 function effectiveChannel(params: {
   scene: AIRoutingSceneKey;
@@ -1770,6 +1235,68 @@ const {
   currentScene: () => currentSceneKey.value,
   providerName: (providerId) => providerNameById.value.get(providerId) || "",
 });
+
+const {
+  dragOverProviderIndex,
+  draggingProviderIndex,
+  firstProviderError,
+  getProviderLocalKey,
+  getProviderTestState,
+  handleClearProviderApiKey,
+  handleEndpointModeChange,
+  handleProviderApiKeyInput,
+  handleProviderDragEnd,
+  handleProviderDragOver,
+  handleProviderDragStart,
+  handleProviderDrop,
+  handleThinkingTypeChange,
+  isImageGenerationProvider,
+  isProviderCollapsed,
+  providerFieldError,
+  providerThinkingLabel,
+  recordProviderTestState,
+  resetProviderUIState,
+  setProviderSecretEditor,
+  shouldShowProviderSecretEditor,
+  toggleProviderCollapsed,
+  toggleProviderSecretEditor,
+  touchAllProviderFields,
+  touchProviderField,
+} = useAIProviderEditor({
+  draftScene,
+  validationErrors: providerValidationErrors,
+  formatDuration,
+  formatTestMessage: displayRouteTestMessage,
+  displayCallStatus,
+});
+
+const providerEditorContract = computed(() => ({
+  draggingProviderIndex: draggingProviderIndex.value,
+  dragOverProviderIndex: dragOverProviderIndex.value,
+  getProviderLocalKey,
+  isProviderCollapsed,
+  firstProviderError,
+  getProviderTestState,
+  providerFieldError,
+  isImageGenerationProvider,
+  providerThinkingLabel,
+  shouldShowProviderSecretEditor,
+  add: handleAddProvider,
+  addPreset: handleAddProviderPreset,
+  dragOver: handleProviderDragOver,
+  drop: handleProviderDrop,
+  dragStart: handleProviderDragStart,
+  dragEnd: handleProviderDragEnd,
+  toggleCollapse: toggleProviderCollapsed,
+  testSingle: handleTestSingleProvider,
+  menu: handleProviderMenuCommand,
+  touchField: touchProviderField,
+  endpointChange: handleEndpointModeChange,
+  thinkingChange: handleThinkingTypeChange,
+  toggleSecret: toggleProviderSecretEditor,
+  clearSecret: handleClearProviderApiKey,
+  apiKeyInput: handleProviderApiKeyInput,
+}));
 
 const bottomBarState = computed(() => {
   if (testingScene.value) {
@@ -2510,96 +2037,6 @@ function moveProvider(index: number, offset: number) {
   items.splice(target, 0, current);
 }
 
-function handleProviderDragStart(index: number, event: DragEvent) {
-  draggingProviderIndex.value = index;
-  dragOverProviderIndex.value = index;
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", String(index));
-  }
-}
-
-function handleProviderDragOver(index: number) {
-  if (
-    draggingProviderIndex.value === null ||
-    draggingProviderIndex.value === index
-  ) {
-    return;
-  }
-  dragOverProviderIndex.value = index;
-}
-
-function handleProviderDrop(index: number) {
-  if (!draftScene.value || draggingProviderIndex.value === null) {
-    handleProviderDragEnd();
-    return;
-  }
-  const sourceIndex = draggingProviderIndex.value;
-  if (sourceIndex !== index) {
-    const items = draftScene.value.providers;
-    const [current] = items.splice(sourceIndex, 1);
-    items.splice(index, 0, current);
-  }
-  handleProviderDragEnd();
-}
-
-function handleProviderDragEnd() {
-  draggingProviderIndex.value = null;
-  dragOverProviderIndex.value = null;
-}
-
-function handleProviderApiKeyInput(
-  provider: AIRoutingProviderConfig,
-  value: string,
-) {
-  provider.apiKey = value;
-  if (value.trim()) {
-    provider.clearApiKey = false;
-    setProviderSecretEditor(provider, true);
-  }
-}
-
-function touchProviderField(
-  provider: AIRoutingProviderConfig,
-  field: keyof ProviderValidationError,
-) {
-  providerTouchedState.value = {
-    ...providerTouchedState.value,
-    [`${getProviderLocalKey(provider)}:${field}`]: true,
-  };
-}
-
-function providerFieldError(
-  provider: AIRoutingProviderConfig,
-  field: keyof ProviderValidationError,
-) {
-  const key = getProviderLocalKey(provider);
-  if (
-    !providerTouchedState.value[`${key}:${field}`] &&
-    !providerTouchedState.value[`${key}:__all`]
-  ) {
-    return "";
-  }
-  return providerValidationErrors.value[key]?.[field] || "";
-}
-
-function touchAllProviderFields() {
-  const next = { ...providerTouchedState.value };
-  draftScene.value?.providers.forEach((provider) => {
-    next[`${getProviderLocalKey(provider)}:__all`] = true;
-  });
-  providerTouchedState.value = next;
-}
-
-function getProviderTestState(provider: AIRoutingProviderConfig) {
-  return providerLastTestState.value[provider.id.trim()];
-}
-
-function firstProviderError(provider: AIRoutingProviderConfig) {
-  const errors = providerValidationErrors.value[getProviderLocalKey(provider)];
-  return errors ? Object.values(errors)[0] || "" : "";
-}
-
 function startTestingTimer() {
   testingStartedAt.value = Date.now();
   testingElapsedSeconds.value = 0;
@@ -2633,29 +2070,6 @@ function validateBeforeAction(actionLabel: string) {
   return false;
 }
 
-async function handleClearProviderApiKey(provider: AIRoutingProviderConfig) {
-  if (provider.clearApiKey) {
-    provider.clearApiKey = false;
-    ElMessage.info("已撤销清空密钥");
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      "清空后需要保存当前场景才会真正移除旧密钥，是否继续？",
-      "确认清空密钥",
-      {
-        type: "warning",
-      },
-    );
-  } catch {
-    return;
-  }
-  provider.apiKey = "";
-  provider.clearApiKey = true;
-  setProviderSecretEditor(provider, false);
-  ElMessage.warning("已标记为清空密钥，保存后生效");
-}
-
 async function handleSaveScene() {
   await saveCurrentScene();
 }
@@ -2670,7 +2084,7 @@ async function saveCurrentScene(successMessage = "场景配置已保存") {
   if (isDirty.value) {
     try {
       await ElMessageBox.confirm(
-        buildSaveConfirmVNode(),
+        h(SaveSceneConfirmContent, { model: saveConfirmModel.value }),
         `发布「${currentSceneTitle.value}」配置变更`,
         {
           type: "warning",
@@ -2709,255 +2123,16 @@ async function saveCurrentScene(successMessage = "场景配置已保存") {
   }
 }
 
-type SaveConfirmDiffKind =
-  | "added"
-  | "removed"
-  | "changed"
-  | "secret"
-  | "warning";
-
-type SaveConfirmDiffRow = {
-  kind: SaveConfirmDiffKind;
-  tag: string;
-  title: string;
-  description: string;
-  before?: string;
-  after?: string;
-  beforeLabel?: string;
-  afterLabel?: string;
-};
-
-function providerSnapshotTitle(value: unknown, fallback: string) {
-  if (!value || typeof value !== "object") return providerDisplayName(fallback);
-  const item = value as Record<string, unknown>;
-  const name = String(item.name || "").trim();
-  const id = String(item.id || fallback).trim();
-  return name || providerDisplayName(id);
-}
-
-function diffFieldLabel(path: string) {
-  const labels: Record<string, string> = {
-    enabled: "启用状态",
-    strategy: "调度策略",
-    maxAttempts: "最大尝试次数",
-    retryOn: "重试条件",
-    breaker: "熔断策略",
-    requestOptions: "请求参数",
-    order: "Provider 顺序",
-    name: "展示名称",
-    adapter: "适配器",
-    baseURL: "Base URL",
-    model: "Model",
-    timeoutSeconds: "超时时间",
-    endpointMode: "接口模式",
-    responseFormat: "响应格式",
-    apiKey: "密钥",
-    clearApiKey: "密钥清空标记",
-  };
-  return labels[path] || path;
-}
-
-function saveConfirmDiffKind(item: SceneDiffItem): SaveConfirmDiffKind {
-  if (item.path === "added") return "added";
-  if (item.path === "removed") return "removed";
-  if (item.path === "apiKey" || item.path === "clearApiKey") return "secret";
-  if (item.scope === "providers" && item.path === "order") return "warning";
-  return "changed";
-}
-
-function saveConfirmDiffTag(kind: SaveConfirmDiffKind) {
-  const tags: Record<SaveConfirmDiffKind, string> = {
-    added: "新增",
-    removed: "删除",
-    changed: "修改",
-    secret: "密钥",
-    warning: "顺序",
-  };
-  return tags[kind];
-}
-
-function secretStateLabel(value: unknown) {
-  if (value === null || value === undefined || value === "" || value === false)
-    return "未录入";
-  const text = String(value);
-  if (text === "空" || text === "false") return "未录入";
-  if (text === "true") return "已录入";
-  return text.replace(/^\[|\]$/g, "");
-}
-
-function formatSaveConfirmDiffItem(item: SceneDiffItem): SaveConfirmDiffRow {
-  const kind = saveConfirmDiffKind(item);
-  const providerId = item.scope.startsWith("provider:")
-    ? item.scope.replace("provider:", "")
-    : "";
-  if (kind === "added") {
-    const title = providerSnapshotTitle(item.to, providerId);
-    return {
-      kind,
-      tag: saveConfirmDiffTag(kind),
-      title,
-      description: "Provider 将新增。",
-    };
-  }
-  if (kind === "removed") {
-    const title = providerSnapshotTitle(item.from, providerId);
-    return {
-      kind,
-      tag: saveConfirmDiffTag(kind),
-      title,
-      description: "Provider 将移除。",
-    };
-  }
-  if (item.scope === "providers" && item.path === "order") {
-    return {
-      kind,
-      tag: saveConfirmDiffTag(kind),
-      title: "Provider 顺序",
-      description: "调度顺序将调整。",
-      before: formatDiffValue(item.from),
-      after: formatDiffValue(item.to),
-    };
-  }
-  const field = diffFieldLabel(item.path);
-  if (providerId) {
-    const title = providerSnapshotTitle(item.to || item.from, providerId);
-    if (kind === "secret") {
-      return {
-        kind,
-        tag: saveConfirmDiffTag(kind),
-        title,
-        description: "密钥将更新，内容已脱敏。",
-        before: secretStateLabel(item.from),
-        after: secretStateLabel(item.to),
-        beforeLabel: "当前",
-        afterLabel: "发布后",
-      };
-    }
-    return {
-      kind,
-      tag: saveConfirmDiffTag(kind),
-      title,
-      description: `${field} 将更新。`,
-      before: formatDiffValue(item.from),
-      after: formatDiffValue(item.to),
-      beforeLabel: "当前",
-      afterLabel: "发布后",
-    };
-  }
-  return {
-    kind,
-    tag: saveConfirmDiffTag(kind),
-    title: `场景${field}`,
-    description: "配置将更新。",
-    before: formatDiffValue(item.from),
-    after: formatDiffValue(item.to),
-    beforeLabel: "当前",
-    afterLabel: "发布后",
-  };
-}
-
-function saveConfirmTestChipText() {
-  if (testingScene.value) return `测试中 · ${testingElapsedSeconds.value}s`;
-  if (!testResult.value) return "未测试";
-  return testResult.value.ok ? "测试通过" : "测试异常";
-}
-
-function saveConfirmTestChipKind(): SaveConfirmDiffKind {
-  if (testingScene.value) return "changed";
-  if (!testResult.value) return "warning";
-  return testResult.value.ok ? "added" : "removed";
-}
-
-function saveConfirmNoticeText() {
-  if (testingScene.value) return "测试仍在进行，建议等待结果后发布。";
-  if (!testResult.value) return "当前草稿未测试，建议先测试。";
-  return testResult.value.ok
-    ? "最近测试通过，可以发布。"
-    : "最近测试异常，建议先排查后发布。";
-}
-
-function buildSaveConfirmVNode() {
-  const rows = sceneDiff.value.slice(0, 5).map(formatSaveConfirmDiffItem);
-  const moreCount = Math.max(sceneDiff.value.length - rows.length, 0);
-  const testKind = saveConfirmTestChipKind();
-  return h("div", { class: "save-confirm", role: "document" }, [
-    h("div", { class: "save-confirm__chips", "aria-label": "保存影响摘要" }, [
-      h(
-        "span",
-        { class: "save-confirm-chip save-confirm-chip--changed" },
-        `${diffCount.value} 项变更`,
-      ),
-      h(
-        "span",
-        { class: "save-confirm-chip save-confirm-chip--warning" },
-        "线上生效",
-      ),
-      h(
-        "span",
-        { class: `save-confirm-chip save-confirm-chip--${testKind}` },
-        saveConfirmTestChipText(),
-      ),
-    ]),
-    h(
-      "p",
-      { class: "save-confirm__lead" },
-      `保存后立即更新线上「${currentSceneTitle.value}」。`,
-    ),
-    h(
-      "div",
-      {
-        class: `save-confirm__notice save-confirm__notice--${testKind}`,
-        role: testKind === "added" ? "status" : "alert",
-      },
-      saveConfirmNoticeText(),
-    ),
-    h("div", { class: "save-confirm__section-title" }, "变更摘要"),
-    h(
-      "div",
-      { class: "save-confirm__list" },
-      rows.map((row) =>
-        h("div", { class: `save-confirm-row save-confirm-row--${row.kind}` }, [
-          h(
-            "span",
-            {
-              class: `save-confirm-row__tag save-confirm-row__tag--${row.kind}`,
-            },
-            row.tag,
-          ),
-          h("div", { class: "save-confirm-row__content" }, [
-            h("strong", row.title),
-            h("span", row.description),
-            row.before !== undefined || row.after !== undefined
-              ? h("div", { class: "save-confirm-row__values" }, [
-                  h(
-                    "span",
-                    { class: "save-confirm-row__value-pill" },
-                    `${row.beforeLabel || "当前"}：${row.before || "空"}`,
-                  ),
-                  h("span", { class: "save-confirm-row__arrow" }, "→"),
-                  h(
-                    "span",
-                    {
-                      class:
-                        "save-confirm-row__value-pill save-confirm-row__value-pill--new",
-                    },
-                    `${row.afterLabel || "发布后"}：${row.after || "空"}`,
-                  ),
-                ])
-              : null,
-          ]),
-        ]),
-      ),
-    ),
-    moreCount > 0
-      ? h(
-          "div",
-          { class: "save-confirm__more" },
-          `另有 ${moreCount} 项改动，可在底部「草稿摘要」查看。`,
-        )
-      : null,
-  ]);
-}
+const saveConfirmModel = computed(() =>
+  buildSaveSceneConfirmModel({
+    sceneTitle: currentSceneTitle.value,
+    diffItems: sceneDiff.value,
+    testing: testingScene.value,
+    testingElapsedSeconds: testingElapsedSeconds.value,
+    testPassed: testResult.value?.ok,
+    providerName: providerDisplayName,
+  }),
+);
 
 async function handleTestScene() {
   if (testingScene.value) {
@@ -3030,101 +2205,6 @@ async function runSceneTest(scope: string, scene: AIRoutingSceneConfig | null) {
   } finally {
     testingScene.value = false;
     stopTestingTimer();
-  }
-}
-
-function recordProviderTestState(result: AIRoutingTestResult) {
-  const testedAt = new Date().toISOString();
-  const next = { ...providerLastTestState.value };
-  result.attempts.forEach((attempt) => {
-    const ok = attempt.status === "success";
-    next[attempt.providerId] = {
-      ok,
-      text: ok
-        ? `通过 · ${formatDuration(attempt.latencyMs)}`
-        : `${displayRouteTestMessage(attempt.errorType || attempt.errorMessage || displayCallStatus(attempt.status))} · ${formatDuration(attempt.latencyMs)}`,
-      latencyMs: attempt.latencyMs,
-      errorType: attempt.errorType,
-      testedAt,
-    };
-  });
-  providerLastTestState.value = next;
-}
-
-function getProviderLocalKey(provider: AIRoutingProviderConfig) {
-  const existing = providerLocalKeys.get(provider);
-  if (existing) {
-    return existing;
-  }
-  const key = `provider-local-${(providerLocalKeyCounter += 1)}`;
-  providerLocalKeys.set(provider, key);
-  return key;
-}
-
-function setProviderSecretEditor(
-  provider: AIRoutingProviderConfig,
-  open: boolean,
-) {
-  providerSecretEditorState.value = {
-    ...providerSecretEditorState.value,
-    [getProviderLocalKey(provider)]: open,
-  };
-}
-
-function preserveViewportAfterUpdate(update: () => void) {
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
-  update();
-  nextTick(() => {
-    window.scrollTo(scrollX, scrollY);
-  });
-}
-
-function toggleProviderSecretEditor(provider: AIRoutingProviderConfig) {
-  preserveViewportAfterUpdate(() => {
-    if (provider.clearApiKey) {
-      provider.clearApiKey = false;
-    }
-    setProviderSecretEditor(
-      provider,
-      !shouldShowProviderSecretEditor(provider),
-    );
-  });
-}
-
-function shouldShowProviderSecretEditor(provider: AIRoutingProviderConfig) {
-  return (
-    !provider.hasAPIKey ||
-    !!provider.apiKey?.trim() ||
-    !!providerSecretEditorState.value[getProviderLocalKey(provider)]
-  );
-}
-
-function isProviderCollapsed(provider: AIRoutingProviderConfig) {
-  return collapsedProviderKeys.value.has(getProviderLocalKey(provider));
-}
-
-function toggleProviderCollapsed(provider: AIRoutingProviderConfig) {
-  preserveViewportAfterUpdate(() => {
-    const key = getProviderLocalKey(provider);
-    const next = new Set(collapsedProviderKeys.value);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    collapsedProviderKeys.value = next;
-  });
-}
-
-function resetProviderUIState() {
-  providerSecretEditorState.value = {};
-  handleProviderDragEnd();
-  if (draftScene.value && draftScene.value.providers.length > 3) {
-    const keys = new Set<string>();
-    draftScene.value.providers.forEach((p, idx) => {
-      if (idx > 0) keys.add(getProviderLocalKey(p));
-    });
-    collapsedProviderKeys.value = keys;
-  } else {
-    collapsedProviderKeys.value = new Set();
   }
 }
 

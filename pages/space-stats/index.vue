@@ -304,6 +304,7 @@
 </template>
 
 <script>
+import { createCountUpController } from '../../utils/count-up'
 import { formatRelativeUpdatedAt } from '../../utils/space-stats'
 import { getKitchenStats } from '../../utils/space-stats-api'
 import { takeSpaceStatsContext, setPendingSpaceStatsAction } from '../../utils/space-stats-bridge'
@@ -311,8 +312,6 @@ import { takeSpaceStatsContext, setPendingSpaceStatsAction } from '../../utils/s
 const TREND_BAR_MAX_HEIGHT = 40
 const TREND_BAR_MIN_HEIGHT = 4
 const STATS_WINDOW = 'all'
-const COUNT_UP_DURATION_MS = 640
-const COUNT_UP_STEP_MS = 40
 const TAB_ANIMATED_KEYS = {
 	recipes: ['recipeWishlist', 'recipeDone', 'recipeBreakfast', 'recipeMain', 'imageCoveragePct', 'recipeParsedTotal'],
 	places: ['placeWant', 'placeVisited', 'placeLocated', 'placeTotal', 'ratedPlaceTotal'],
@@ -349,7 +348,7 @@ export default {
 				mealBreakfast: 0,
 				mealMain: 0
 			},
-			countUpTimers: {},
+			countUpController: null,
 			tabs: [
 				{ value: 'overview', label: '总览' },
 				{ value: 'recipes', label: '美食库' },
@@ -378,10 +377,10 @@ export default {
 		this.loadRemote({ silent: true })
 	},
 	beforeUnmount() {
-		this.clearCountUpTimers()
+		this.countUpController?.clear()
 	},
 	onUnload() {
-		this.clearCountUpTimers()
+		this.countUpController?.clear()
 	},
 	computed: {
 		overview() {
@@ -516,6 +515,17 @@ export default {
 		}
 	},
 	methods: {
+		getCountUpController() {
+			if (!this.countUpController) {
+				this.countUpController = createCountUpController({
+					read: (key) => this.animatedNumbers[key],
+					write: (key, value) => {
+						this.animatedNumbers[key] = value
+					}
+				})
+			}
+			return this.countUpController
+		},
 		handleRefresh() {
 			this.loadRemote({ silent: false })
 		},
@@ -559,35 +569,8 @@ export default {
 			const targets = this.getAnimatedTargets()
 			keys.forEach((key) => this.animateNumber(key, Number(targets[key]) || 0))
 		},
-		clearCountUpTimers(keys = Object.keys(this.countUpTimers)) {
-			keys.forEach((key) => {
-				if (this.countUpTimers[key]) {
-					clearInterval(this.countUpTimers[key])
-					delete this.countUpTimers[key]
-				}
-			})
-		},
 		animateNumber(key, target) {
-			this.clearCountUpTimers([key])
-			const start = Number(this.animatedNumbers[key]) || 0
-			if (start === target) {
-				this.animatedNumbers[key] = target
-				return
-			}
-
-			const totalSteps = Math.max(1, Math.round(COUNT_UP_DURATION_MS / COUNT_UP_STEP_MS))
-			let currentStep = 0
-			this.countUpTimers[key] = setInterval(() => {
-				currentStep += 1
-				const progress = Math.min(1, currentStep / totalSteps)
-				const eased = 1 - Math.pow(1 - progress, 3)
-				this.animatedNumbers[key] = start + (target - start) * eased
-
-				if (progress >= 1) {
-					this.clearCountUpTimers([key])
-					this.animatedNumbers[key] = target
-				}
-			}, COUNT_UP_STEP_MS)
+			this.getCountUpController().animate(key, target)
 		},
 		markTabMounted(tab) {
 			if (!tab || this.mountedTabs[tab]) return

@@ -90,6 +90,7 @@
 <script>
 import { previewAddLink } from '../../../utils/add-preview-api'
 import { getCurrentKitchenId } from '../../../utils/auth'
+import { createAddPreviewFlowController, delay, readClipboardText } from '../use-add-preview-flow'
 
 export default {
 	name: 'AddLinkPreviewPanel',
@@ -105,9 +106,19 @@ export default {
 			isParsing: false,
 			parsingStage: 'extracting',
 			parsingDuration: 0,
-			parsingTimer: null,
+			previewFlowController: null,
+			previewFlowRunId: 0,
 			manualInputText: ''
 		}
+	},
+	created() {
+		this.previewFlowController = createAddPreviewFlowController({
+			onState: ({ isParsing, stage, duration }) => {
+				this.isParsing = isParsing
+				this.parsingStage = stage
+				this.parsingDuration = duration
+			}
+		})
 	},
 	computed: {
 		parsingText() {
@@ -132,7 +143,9 @@ export default {
 			this.$emit('close')
 		},
 		async handlePasteLink() {
-			const text = await this.readClipboardText()
+			const text = await readClipboardText(uni, (error) => {
+				console.warn('读取剪贴板失败:', error)
+			})
 			if (text) {
 				this.startParsing(text)
 				return
@@ -142,19 +155,6 @@ export default {
 				title: '未读取到剪贴板，请粘贴到输入框',
 				icon: 'none',
 				duration: 2000
-			})
-		},
-		readClipboardText() {
-			return new Promise((resolve) => {
-				uni.getClipboardData({
-					success: (result) => {
-						resolve(String(result?.data || '').trim())
-					},
-					fail: (error) => {
-						console.warn('读取剪贴板失败:', error)
-						resolve('')
-					}
-				})
 			})
 		},
 		handleManualInputSubmit() {
@@ -171,27 +171,21 @@ export default {
 			this.manualInputText = ''
 		},
 		startParsing(text) {
-			this.isParsing = true
-			this.parsingStage = 'extracting'
-			this.parsingDuration = 0
-
-			// 启动计时器
-			this.parsingTimer = setInterval(() => {
-				this.parsingDuration++
-			}, 1000)
-
-			this.parseShareText(text)
+			if (this.isParsing || !this.previewFlowController) return
+			const runId = this.previewFlowController.start()
+			this.previewFlowRunId = runId
+			this.parseShareText(text, runId)
 		},
-		async parseShareText(text) {
+		async parseShareText(text, runId) {
 			try {
 				const kitchenId = Number(getCurrentKitchenId()) || 0
 				if (!kitchenId) {
-					this.finishParsing({ status: 'failed', message: '请先完成空间同步' })
+					this.finishParsing({ status: 'failed', message: '请先完成空间同步' }, runId)
 					return
 				}
 
-				await this.sleep(200)
-				this.parsingStage = 'identifying'
+				await delay(200)
+				this.previewFlowController.setStage(runId, 'identifying')
 				const result = await previewAddLink(kitchenId, {
 					text,
 					city: '佛山',
@@ -199,30 +193,24 @@ export default {
 				})
 
 				if (result?.contentType === 'place') {
-					this.parsingStage = result.status === 'place_candidates' ? 'poi' : 'place'
+					this.previewFlowController.setStage(runId, result.status === 'place_candidates' ? 'poi' : 'place')
 				} else if (result?.contentType === 'recipe') {
-					this.parsingStage = 'recipe'
+					this.previewFlowController.setStage(runId, 'recipe')
 				}
 
-				await this.sleep(240)
-				this.parsingStage = 'finalizing'
-				await this.sleep(160)
-				this.finishParsing(result || { status: 'failed', message: '解析结果为空' })
+				await delay(240)
+				this.previewFlowController.setStage(runId, 'finalizing')
+				await delay(160)
+				this.finishParsing(result || { status: 'failed', message: '解析结果为空' }, runId)
 			} catch (error) {
 				this.finishParsing({
 					status: 'failed',
 					message: error?.message || '解析失败，请手动填写'
-				})
+				}, runId)
 			}
 		},
-		finishParsing(result) {
-			clearInterval(this.parsingTimer)
-			this.parsingTimer = null
-
-			this.isParsing = false
-			this.parsingStage = 'extracting'
-			this.parsingDuration = 0
-
+		finishParsing(result, runId = this.previewFlowRunId) {
+			if (!this.previewFlowController?.stop(runId)) return
 			if (result.status === 'failed') {
 				uni.showToast({
 					title: result.message || '解析失败',
@@ -234,15 +222,10 @@ export default {
 				this.$emit('parse-result', result)
 				this.$emit('close')
 			}
-		},
-		sleep(ms) {
-			return new Promise(resolve => setTimeout(resolve, ms))
 		}
 	},
 	beforeUnmount() {
-		if (this.parsingTimer) {
-			clearInterval(this.parsingTimer)
-		}
+		this.previewFlowController?.stop()
 	}
 }
 </script>

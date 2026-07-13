@@ -550,37 +550,37 @@ import {
 import { readRecentSearches } from './storage'
 import {
 	createEmptyPlaceDraft,
-	placeLibraryComputed,
-	placeLibraryMethods
+	placeLibraryModule
 } from './use-place-library'
 import {
 	createSearchBlurController,
-	recipeHeaderComputed,
-	recipeLibraryMethods,
-	recipeListComputed,
-	recipeSearchComputed,
-	recipeSearchMethods,
-	recipeStatusMethods
+	recipeLibraryModule
 } from './use-recipe-library'
-import { mealOrderComputed, mealOrderMethods } from './use-meal-order'
+import { mealOrderModule } from './use-meal-order'
 import {
 	buildInviteShareImageURL,
 	buildInviteShareTitle,
-	kitchenInviteComputed,
-	kitchenMemberComputed,
-	kitchenSpaceMethods,
-	kitchenSpaceComputed,
-	kitchenInviteMethods
+	kitchenSpaceModule
 } from './use-kitchen-space'
 import {
-	smartAddDraftMethods,
-	smartAddComputed,
-	smartAddPlaceMethods,
-	smartAddRecipeMethods
+	smartAddModule
 } from './use-smart-add'
+import {
+	installIndexPageModules,
+	runIndexPageModuleLifecycle,
+	validateIndexPageModuleContext
+} from './page-module'
 
 const APP_MODE_SWIPE_MIN_DISTANCE = 64
 const APP_MODE_SWIPE_DOMINANCE_RATIO = 1.18
+const INDEX_PAGE_MODULES = [
+	placeLibraryModule,
+	recipeLibraryModule,
+	mealOrderModule,
+	kitchenSpaceModule,
+	smartAddModule
+]
+const INDEX_PAGE_MODULE_INSTALL = installIndexPageModules(INDEX_PAGE_MODULES)
 
 function getGestureTouch(event = {}, preferChanged = false) {
 	const primary = preferChanged ? event?.changedTouches : event?.touches
@@ -766,6 +766,10 @@ export default {
 		}
 	},
 	onLoad(options) {
+		const missingModuleContext = validateIndexPageModuleContext(this, INDEX_PAGE_MODULES)
+		if (missingModuleContext.length) {
+			console.warn('[index-page] module context is incomplete:', missingModuleContext.join(', '))
+		}
 		this.searchBlurController = createSearchBlurController(() => {
 			this.isSearchFocused = false
 		}, 120)
@@ -796,38 +800,14 @@ export default {
 		}
 	},
 	onHide() {
-		if (!this.isSubmittingMealOrder) {
-			this.syncMealOrderDraft({ silent: true })
-		}
-		this.clearMealOrderDraftSyncTimer()
-		this.clearMealOrderModeMotionTimer()
+		runIndexPageModuleLifecycle(this, INDEX_PAGE_MODULES, 'deactivate')
 		this.clearAppModeMotionTimer()
 		this.resetAppModeTouch()
-		this.clearRecipeStatusFeedback()
-		this.closeRandomPickSheet()
-		this.clearDraftLinkPreviewState()
-		this.clearSearchBlurTimer()
-				this.recipeCoverCacheRequestID += 1
-			},
+	},
 	onUnload() {
-		if (!this.isSubmittingMealOrder) {
-			this.syncMealOrderDraft({ silent: true })
-		}
-		this.clearMealOrderDraftSyncTimer()
-		this.clearMealOrderModeMotionTimer()
+		runIndexPageModuleLifecycle(this, INDEX_PAGE_MODULES, 'dispose')
 		this.clearAppModeMotionTimer()
 		this.resetAppModeTouch()
-		this.clearRecipeStatusFeedback()
-		this.closeRandomPickSheet()
-		this.clearDraftLinkPreviewState()
-		this.clearSearchBlurTimer()
-		if (this.toolbarBounceTimer) {
-			clearTimeout(this.toolbarBounceTimer)
-			this.toolbarBounceTimer = null
-		}
-		this.clearRecipeReturnFocus()
-		this.clearRecipePreviewTimeoutRefreshTimer()
-		this.recipeCoverCacheRequestID += 1
 	},
 	onShareAppMessage(res) {
 		if (res?.from === 'button' && this.activeInvite?.sharePath) {
@@ -849,15 +829,7 @@ export default {
 				if (this.appModeMotionDirection === 'back') return 'app-mode-pane--back'
 				return ''
 			},
-		...placeLibraryComputed,
-		...recipeHeaderComputed,
-		...kitchenSpaceComputed,
-		...recipeSearchComputed,
-		...mealOrderComputed,
-		...kitchenMemberComputed,
-		...recipeListComputed,
-		...kitchenInviteComputed,
-		...smartAddComputed
+		...INDEX_PAGE_MODULE_INSTALL.computed
 	},
 	watch: {
 		activeSection(next, prev) {
@@ -940,9 +912,6 @@ export default {
 					this.refreshPlaces({ silent: true })
 				}
 			},
-		...placeLibraryMethods,
-		...smartAddPlaceMethods,
-		...recipeLibraryMethods,
 		switchSection(nextSection = 'library') {
 			const targetSection = String(nextSection || '').trim()
 			if (!targetSection || targetSection === this.activeSection) return
@@ -990,8 +959,6 @@ export default {
 				this.mealOrderDate = ''
 			}
 		},
-		...mealOrderMethods,
-		...recipeSearchMethods,
 		async refreshRecipes(options = {}) {
 			const { silent = true } = options
 			const cachedRecipes = getCachedRecipes()
@@ -1061,11 +1028,7 @@ export default {
 				})
 			}
 		},
-		...kitchenSpaceMethods,
-		...smartAddDraftMethods,
-		...recipeStatusMethods,
-		...smartAddRecipeMethods,
-		...kitchenInviteMethods
+		...INDEX_PAGE_MODULE_INSTALL.methods
 	}
 }
 </script>

@@ -101,11 +101,10 @@
 </template>
 
 <script>
+import { createCountUpController } from '../../../utils/count-up'
 import LibraryEmptyState from './library-empty-state.vue'
 
 const ANIMATED_KEYS = ['recipeTotal', 'placeTotal', 'submittedMealPlanDays', 'memberTotal', 'wishlistRecipeTotal', 'wantPlaceTotal']
-const COUNT_UP_DURATION_MS = 640
-const COUNT_UP_STEP_MS = 40
 
 export default {
 	name: 'SpaceStatsCard',
@@ -137,7 +136,7 @@ export default {
 				wishlistRecipeTotal: 0,
 				wantPlaceTotal: 0
 			},
-			countUpTimers: {}
+			countUpController: null
 		}
 	},
 	computed: {
@@ -157,39 +156,25 @@ export default {
 		}
 	},
 	beforeUnmount() {
-		Object.values(this.countUpTimers).forEach((timerId) => clearInterval(timerId))
+		this.countUpController?.clear()
 	},
 	methods: {
+		getCountUpController() {
+			if (!this.countUpController) {
+				this.countUpController = createCountUpController({
+					read: (key) => this.animated[key],
+					write: (key, value) => {
+						this.animated[key] = value
+					}
+				})
+			}
+			return this.countUpController
+		},
 		runCountUp() {
 			ANIMATED_KEYS.forEach((key) => this.animateNumber(key, Number(this.overview[key]) || 0))
 		},
 		animateNumber(key, target) {
-			if (this.countUpTimers[key]) {
-				clearInterval(this.countUpTimers[key])
-				delete this.countUpTimers[key]
-			}
-
-			const start = Number(this.animated[key]) || 0
-			if (start === target) {
-				this.animated[key] = target
-				return
-			}
-
-			const totalSteps = Math.max(1, Math.round(COUNT_UP_DURATION_MS / COUNT_UP_STEP_MS))
-			let currentStep = 0
-
-			this.countUpTimers[key] = setInterval(() => {
-				currentStep += 1
-				const progress = Math.min(1, currentStep / totalSteps)
-				const eased = 1 - Math.pow(1 - progress, 3)
-				this.animated[key] = Math.round(start + (target - start) * eased)
-
-				if (progress >= 1) {
-					clearInterval(this.countUpTimers[key])
-					delete this.countUpTimers[key]
-					this.animated[key] = target
-				}
-			}, COUNT_UP_STEP_MS)
+			this.getCountUpController().animate(key, target, { round: true })
 		}
 	}
 }

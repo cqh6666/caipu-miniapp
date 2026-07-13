@@ -1,5 +1,35 @@
 # Project Changelog
 
+## 2026-07-14 (前端第二阶段重构 R1～R10 全量收口)
+
+### Changed
+
+- **修改时间**：2026-07-14 01:18:25 +0800
+- **变更背景**：承接 7 月 11 日的大文件拆分，在页面体量下降后继续处理重复异步流程、数据层职责混杂、
+  页面模块隐式依赖、Admin 重复面板和 AI Provider 页面编排过重问题，并建立可持续运行的前端测试入口。
+- **核心改动**：
+  - 测试入口：根目录新增 Miniapp 规则测试并由 `npm test` 聚合 Miniapp 与 Admin；Admin 测试按规则、Dashboard
+    和组件 SSR 分组，移除归属错误的旧测试文件。
+  - Miniapp 公共逻辑：添加链接预览收口为共享流程 controller；空间数字动效收口为无 UI count-up controller；
+    饮食管家流式响应拆为 UTF-8 decoder、SSE parser 和请求适配层；菜谱数据层拆为 model、cache、repository，
+    `recipe-store.js` 保留兼容出口。
+  - Miniapp 页面所有权：首页五个业务模块建立显式 contract 与统一 lifecycle；菜谱详情提取加载、步骤完成态和
+    动作反馈 controller。首页保持 1,063 行，详情页降至 1,550 行。
+  - Admin Dashboard：三组分布区域复用 `DistributionPanel.vue` 和独立转换规则，页面降至 847 行。
+  - Admin AI Provider：Provider 编辑和告警动作下沉为 composable；场景策略、保存确认拆为组件；保存差异格式化
+    独立为纯规则；`ProviderEditor` 收口为 `selectOptions + editor` 契约；页面降至 2,357 行。
+  - 新增 `docs/frontend-refactor-roadmap-2026-07-13.md`，记录 R1～R10 的范围、依赖、验收标准和实施结果。
+- **影响范围**：微信小程序首页、菜谱详情、空间统计、添加链接预览、饮食管家流式响应与菜谱本地/远端数据层；
+  Admin Dashboard、AI Provider 编辑/告警/场景策略/保存确认；前端依赖、测试脚本和重构文档。后端 API、数据库、
+  持久化字段和路由地址均未调整。
+- **兼容性或风险**：保留 Options API、uni-app 微信小程序编译方式、旧菜谱导入出口、密钥留空保留/显式清空、
+  草稿离页保护、公开菜谱只读和告警旧字段兼容。Admin 登录态下的完整保存、告警处置和审计筛选未做人工点击复验；
+  微信自动预览已触发成功但未逐页人工走查。Vite 仍保留既有 Element Plus 大 chunk 警告。
+- **验证情况**：`npm test`、`npm --prefix admin-web run typecheck`、`npm --prefix admin-web run build`、
+  6 个本次修改的 Miniapp SFC 脚本/模板编译与 `git diff --check` 均通过；HBuilderX 5.07 明确输出
+  “项目 caipu-miniapp 编译成功”，微信开发者工具 `auto-preview` 成功完成。最终已使用 `git status --short`
+  审计改动范围。
+
 ## 2026-07-13 (Admin Web AI Provider 节点编辑区空白修复)
 
 ### Fixed

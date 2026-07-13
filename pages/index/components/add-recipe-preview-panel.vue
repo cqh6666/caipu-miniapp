@@ -99,6 +99,12 @@
 <script>
 import { isPreviewTimeoutError, previewAddLink } from '../../../utils/add-preview-api'
 import { getCurrentKitchenId } from '../../../utils/auth'
+import {
+	createAddPreviewFlowController,
+	delay,
+	hasParseableShareHint,
+	readClipboardText
+} from '../use-add-preview-flow'
 
 export default {
 	name: 'AddRecipePreviewPanel',
@@ -114,9 +120,19 @@ export default {
 			isParsing: false,
 			parsingStage: 'extracting',
 			parsingDuration: 0,
-			parsingTimer: null,
+			previewFlowController: null,
+			previewFlowRunId: 0,
 			manualInputText: ''
 		}
+	},
+	created() {
+		this.previewFlowController = createAddPreviewFlowController({
+			onState: ({ isParsing, stage, duration }) => {
+				this.isParsing = isParsing
+				this.parsingStage = stage
+				this.parsingDuration = duration
+			}
+		})
 	},
 	computed: {
 		parsingText() {
@@ -140,7 +156,9 @@ export default {
 			this.$emit('close')
 		},
 		async handlePasteLink() {
-			const text = await this.readClipboardText()
+			const text = await readClipboardText(uni, (error) => {
+				console.warn('读取剪贴板失败:', error)
+			})
 			if (!text) {
 				uni.showToast({
 					title: '没读到剪贴板内容，复制链接后再试',
@@ -150,7 +168,7 @@ export default {
 				return
 			}
 
-			if (!this.hasParseableHint(text)) {
+			if (!hasParseableShareHint(text)) {
 				uni.showToast({
 					title: '剪贴板里没找到链接，复制小红书 / B 站分享后再试',
 					icon: 'none',
@@ -163,25 +181,6 @@ export default {
 		},
 		// 本地轻量预判：含 http(s) 链接或平台关键词才放行，避免空剪贴板 / 纯文字
 		// 也走一遍 loading 再被后端笼统驳回。含链接一律放行，交后端精判，防误杀。
-		hasParseableHint(text) {
-			const value = String(text || '').trim()
-			if (!value) return false
-			if (/https?:\/\//i.test(value)) return true
-			return /小红书|b\s*站|bilibili|b23\.tv|xhslink|xiaohongshu|抖音|快手|美团|大众点评|点评|douyin|kuaishou|dpurl/i.test(value)
-		},
-		readClipboardText() {
-			return new Promise((resolve) => {
-				uni.getClipboardData({
-					success: (result) => {
-						resolve(String(result?.data || '').trim())
-					},
-					fail: (error) => {
-						console.warn('读取剪贴板失败:', error)
-						resolve('')
-					}
-				})
-			})
-		},
 		handleManualInputSubmit() {
 			const text = this.manualInputText.trim()
 			if (!text) {
@@ -192,7 +191,7 @@ export default {
 				return
 			}
 
-			if (!this.hasParseableHint(text)) {
+			if (!hasParseableShareHint(text)) {
 				uni.showToast({
 					title: '没识别到链接，请粘贴小红书 / B 站分享文案',
 					icon: 'none',
@@ -205,31 +204,24 @@ export default {
 			this.manualInputText = ''
 		},
 		startParsing(text) {
-			this.isParsing = true
-			this.parsingStage = 'extracting'
-			this.parsingDuration = 0
-
-			// 启动计时器
-			this.parsingTimer = setInterval(() => {
-				this.parsingDuration++
-			}, 1000)
-
-			// 调用解析流程
-			this.parseRecipeLink(text)
+			if (this.isParsing || !this.previewFlowController) return
+			const runId = this.previewFlowController.start()
+			this.previewFlowRunId = runId
+			this.parseRecipeLink(text, runId)
 		},
-		async parseRecipeLink(text) {
+		async parseRecipeLink(text, runId) {
 			try {
 				const kitchenId = Number(getCurrentKitchenId()) || 0
 				if (!kitchenId) {
-					this.finishParsing({ status: 'failed', message: '请先完成空间同步' })
+					this.finishParsing({ status: 'failed', message: '请先完成空间同步' }, runId)
 					return
 				}
 
-				await this.sleep(200)
-				this.parsingStage = 'identifying'
+				await delay(200)
+				this.previewFlowController.setStage(runId, 'identifying')
 
-				await this.sleep(200)
-				this.parsingStage = 'fetching'
+				await delay(200)
+				this.previewFlowController.setStage(runId, 'fetching')
 
 				const result = await previewAddLink(kitchenId, {
 					text,
@@ -237,17 +229,17 @@ export default {
 					limit: 3
 				})
 
-				this.parsingStage = 'parsing'
-				await this.sleep(240)
-				this.parsingStage = 'finalizing'
-				await this.sleep(160)
-				this.finishParsing(result || { status: 'failed', message: '解析结果为空' })
+				this.previewFlowController.setStage(runId, 'parsing')
+				await delay(240)
+				this.previewFlowController.setStage(runId, 'finalizing')
+				await delay(160)
+				this.finishParsing(result || { status: 'failed', message: '解析结果为空' }, runId)
 			} catch (error) {
 				console.error('解析失败:', error)
 				// 解析请求超时：不再只弹失败，转交父级用「链接+猜测标题」建占位菜谱走后台补全。
 				// 仅菜谱入口启用此兜底，避免把内容误存（地点链路走 add-link-preview-panel，不走这里）。
 				if (isPreviewTimeoutError(error)) {
-					this.stopParsing()
+					if (!this.stopParsing(runId)) return
 					this.$emit('preview-timeout', { text })
 					this.$emit('close')
 					return
@@ -255,20 +247,14 @@ export default {
 				this.finishParsing({
 					status: 'failed',
 					message: error.message || '解析失败，请手动填写'
-				})
+				}, runId)
 			}
 		},
-		stopParsing() {
-			clearInterval(this.parsingTimer)
-			this.parsingTimer = null
-
-			this.isParsing = false
-			this.parsingStage = 'extracting'
-			this.parsingDuration = 0
+		stopParsing(runId = this.previewFlowRunId) {
+			return !!this.previewFlowController?.stop(runId)
 		},
-		finishParsing(result) {
-			this.stopParsing()
-
+		finishParsing(result, runId = this.previewFlowRunId) {
+			if (!this.stopParsing(runId)) return
 			if (result.status === 'failed') {
 				uni.showToast({
 					title: result.message || '解析失败',
@@ -280,15 +266,10 @@ export default {
 				this.$emit('parse-result', result)
 				this.$emit('close')
 			}
-		},
-		sleep(ms) {
-			return new Promise(resolve => setTimeout(resolve, ms))
 		}
 	},
 	beforeUnmount() {
-		if (this.parsingTimer) {
-			clearInterval(this.parsingTimer)
-		}
+		this.previewFlowController?.stop()
 	}
 }
 </script>

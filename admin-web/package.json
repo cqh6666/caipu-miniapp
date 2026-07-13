@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "npm run test:ai-provider-utils && npm run test:dashboard-utils && node tests/ai-provider-component-render.check.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test:ai-provider-utils": "esbuild tests/ai-provider-utils.check.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=/tmp/caipu-admin-ai-provider-utils-test.mjs && node /tmp/caipu-admin-ai-provider-utils-test.mjs",
-    "test:frontend-refactor": "esbuild tests/frontend-refactor.check.ts --bundle --platform=node --format=esm --outfile=/tmp/caipu-miniapp-frontend-refactor-test.mjs && node /tmp/caipu-miniapp-frontend-refactor-test.mjs && node tests/ai-provider-component-render.check.mjs",
+    "test:dashboard-utils": "esbuild tests/dashboard-distribution.check.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=/tmp/caipu-admin-dashboard-utils-test.mjs && node /tmp/caipu-admin-dashboard-utils-test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

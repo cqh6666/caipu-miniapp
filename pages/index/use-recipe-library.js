@@ -7,6 +7,7 @@ import { formatMealOrderHeaderTitle, normalizeMealOrderDate } from './meal-order
 import { writeRecentSearches } from './storage'
 import { MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
 import { countPlacesByStatus } from './use-place-library'
+import { defineIndexPageModule } from './page-module'
 
 export function filterRecipes(recipes = [], options = {}) {
 	const {
@@ -860,3 +861,36 @@ export const recipeHeaderComputed = {
 		return this.recipes.filter((recipe) => recipe.status === 'wishlist')
 	}
 }
+
+export const recipeLibraryModule = defineIndexPageModule({
+	name: 'recipe-library',
+	requires: [
+		'recipes', 'activeMealType', 'activeStatus', 'searchKeyword', 'mealTabs', 'statusTabs',
+		'clearRecipeStatusFeedback', 'closeRandomPickSheet', 'clearSearchBlurTimer'
+	],
+	methods: {
+		...recipeLibraryMethods,
+		...recipeSearchMethods,
+		...recipeStatusMethods
+	},
+	computed: {
+		...recipeHeaderComputed,
+		...recipeSearchComputed,
+		...recipeListComputed
+	},
+	lifecycle: {
+		deactivate() {
+			this.clearRecipeStatusFeedback()
+			this.closeRandomPickSheet()
+			this.clearSearchBlurTimer()
+		},
+		dispose() {
+			if (this.toolbarBounceTimer) {
+				clearTimeout(this.toolbarBounceTimer)
+				this.toolbarBounceTimer = null
+			}
+			this.clearRecipeReturnFocus()
+			this.recipeCoverCacheRequestID += 1
+		}
+	}
+})
