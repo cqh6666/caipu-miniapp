@@ -90,7 +90,7 @@ export const placeLibraryMethods = {
 		this.showPlaceDetailSheet = true
 	},
 	applyPlaces(places = []) {
-		this.places = normalizePlaceList(places)
+		this.places = Array.isArray(places) ? places.filter((item) => item?.id) : []
 	},
 	async refreshPlaces(options = {}) {
 		const { silent = true } = options
@@ -517,5 +517,13 @@ export const placeLibraryModule = defineIndexPageModule({
 	name: 'place-library',
 	requires: ['places', 'activePlaceStatus', 'placeSearchKeyword', 'placeDraft'],
 	methods: placeLibraryMethods,
-	computed: placeLibraryComputed
+	computed: placeLibraryComputed,
+	lifecycle: {
+		onKitchenChange({ nextKitchenId = 0 } = {}) {
+			this.selectedPlaceId = ''
+			this.showPlaceDetailSheet = false
+			this.showPlaceEditSheet = false
+			this.applyPlaces(nextKitchenId ? getCachedPlaces(nextKitchenId) : [])
+		}
+	}
 })

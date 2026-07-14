@@ -1,7 +1,8 @@
 import { buildRecipeCard, buildRecipeSearchText } from './recipe-card'
 import { buildRecipeCoverVersion, extractRecipeImages } from './recipe-card'
 import { loadPublicAppConfig } from '../../utils/public-app-config-api'
-import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
+import { buildImageCacheKey, createImageDisplayController } from '../../utils/image-cache'
+import { createActionFeedbackController } from '../../utils/action-feedback'
 import { mealTypeLabelMap, toggleRecipeStatusById } from '../../utils/recipe-store'
 import { formatMealOrderHeaderTitle, normalizeMealOrderDate } from './meal-order'
 import { writeRecentSearches } from './storage'
@@ -25,8 +26,8 @@ export function filterRecipes(recipes = [], options = {}) {
 	})
 }
 
-export function buildRecipeCards(recipes = [], coverMap = {}) {
-	return recipes.map((recipe) => buildRecipeCard(recipe, coverMap))
+export function buildRecipeCards(recipes = []) {
+	return recipes.map((recipe) => buildRecipeCard(recipe))
 }
 
 export function buildRandomPickPool(recipes = [], options = {}) {
@@ -77,18 +78,24 @@ export function createSearchBlurController(onBlur, delay = 160) {
 }
 
 export const recipeLibraryMethods = {
-	clearRecipeStatusFeedbackTimer() {
-	if (!this.recipeStatusFeedbackTimer) return
-	clearTimeout(this.recipeStatusFeedbackTimer)
-	this.recipeStatusFeedbackTimer = null
-},
+	getLibraryActionFeedbackController() {
+		if (!this.recipeStatusFeedbackController) {
+			this.recipeStatusFeedbackController = createActionFeedbackController({
+				minDuration: 900,
+				onState: (state) => {
+					if (Object.prototype.hasOwnProperty.call(state, 'visible')) this.recipeStatusFeedbackVisible = state.visible
+					if (Object.prototype.hasOwnProperty.call(state, 'tone')) this.recipeStatusFeedbackTone = state.tone
+					if (Object.prototype.hasOwnProperty.call(state, 'title')) this.recipeStatusFeedbackTitle = state.title
+					if (Object.prototype.hasOwnProperty.call(state, 'description')) this.recipeStatusFeedbackRecipeTitle = state.description
+					if (Object.prototype.hasOwnProperty.call(state, 'showSparkles')) this.recipeStatusFeedbackShowSparkles = state.showSparkles
+					if (Object.prototype.hasOwnProperty.call(state, 'tick')) this.recipeStatusFeedbackTick = state.tick
+				}
+			})
+		}
+		return this.recipeStatusFeedbackController
+	},
 clearRecipeStatusFeedback() {
-	this.clearRecipeStatusFeedbackTimer()
-	this.recipeStatusFeedbackVisible = false
-	this.recipeStatusFeedbackTone = ''
-	this.recipeStatusFeedbackTitle = ''
-	this.recipeStatusFeedbackRecipeTitle = ''
-	this.recipeStatusFeedbackShowSparkles = false
+	this.getLibraryActionFeedbackController().clear()
 },
 buildTonightPickPool() {
 	const visible = buildRandomPickPool(this.recipes, {
@@ -173,23 +180,7 @@ playRecipeStatusHaptic(nextStatus = 'wishlist') {
 	}
 },
 showLibraryActionFeedback(options = {}) {
-	const tone = String(options?.tone || 'done').trim() || 'done'
-	const title = String(options?.title || '').trim()
-	const description = String(options?.description || '').trim()
-	const duration = Math.max(900, Number(options?.duration) || 1440)
-	const showSparkles = !!options?.showSparkles
-	if (!title) return
-	this.clearRecipeStatusFeedbackTimer()
-	this.recipeStatusFeedbackTone = tone
-	this.recipeStatusFeedbackTitle = title
-	this.recipeStatusFeedbackRecipeTitle = description
-	this.recipeStatusFeedbackShowSparkles = showSparkles
-	this.recipeStatusFeedbackVisible = true
-	this.recipeStatusFeedbackTick += 1
-	this.recipeStatusFeedbackTimer = setTimeout(() => {
-		this.recipeStatusFeedbackVisible = false
-		this.recipeStatusFeedbackTimer = null
-	}, duration)
+	return this.getLibraryActionFeedbackController().show(options)
 },
 showRecipeStatusFeedback(recipe = {}, nextStatus = 'wishlist') {
 	const tone = nextStatus === 'done' ? 'done' : 'wishlist'
@@ -396,47 +387,21 @@ getRecipeCardDisplayCover(card = {}) {
 	if (recipeId && this.recipeCardCoverFallbackMap[recipeId]) {
 		return String(card?.remoteCover || '').trim()
 	}
-	return String(card?.cover || '').trim()
+	return String(this.cachedRecipeCoverMap[recipeId] || card?.remoteCover || '').trim()
 },
 async handleRecipeCardImageError(card = {}) {
 	const recipeId = String(card?.id || '').trim()
 	if (!recipeId) return
 
 	const displayedCover = this.getRecipeCardDisplayCover(card)
-	const cachedCover = String(card?.cachedCover || '').trim()
+	const cachedCover = String(this.cachedRecipeCoverMap[recipeId] || '').trim()
 	const remoteCover = String(card?.remoteCover || '').trim()
 
-	if (
-		cachedCover &&
-		remoteCover &&
-		displayedCover === cachedCover &&
-		cachedCover !== remoteCover &&
-		!this.recipeCardCoverFallbackMap[recipeId]
-	) {
-		this.recipeCardCoverFallbackMap = {
-			...this.recipeCardCoverFallbackMap,
-			[recipeId]: true
-		}
-
-		if (this.cachedRecipeCoverMap[recipeId]) {
-			const nextCoverMap = { ...this.cachedRecipeCoverMap }
-			delete nextCoverMap[recipeId]
-			this.cachedRecipeCoverMap = nextCoverMap
-		}
-
-		try {
-			await invalidateCachedImage(remoteCover, card.coverVersion)
-		} catch (error) {
-			// Ignore cache cleanup failures and keep the UI fallback path usable.
-		}
-		return
-	}
-
-	if (this.recipeCardHiddenMap[recipeId]) return
-	this.recipeCardHiddenMap = {
-		...this.recipeCardHiddenMap,
-		[recipeId]: true
-	}
+	if (!remoteCover) return
+	return this.getRecipeCoverDisplayController().handleError({
+		key: recipeId,
+		displayURL: displayedCover || cachedCover
+	})
 }
 
 }
@@ -498,114 +463,23 @@ buildRecipeCoverCacheEntries(recipes = []) {
 },
 async syncRecipeCoverCache(recipes = []) {
 	const entries = this.buildRecipeCoverCacheEntries(recipes)
-	const requestID = this.recipeCoverCacheRequestID + 1
-	this.recipeCoverCacheRequestID = requestID
-
-	if (!entries.length) {
-		this.cachedRecipeCoverMap = {}
-		this.recipeCardCoverFallbackMap = {}
-		this.recipeCardHiddenMap = {}
-		return
-	}
-
-	const cachedEntries = await Promise.all(
-		entries.map(async (entry) => ({
-			recipeId: entry.recipeId,
-			localPath: await getCachedImagePath(entry.url, entry.version)
-		}))
+	return this.getRecipeCoverDisplayController().sync(
+		entries.map((entry) => ({ ...entry, key: String(entry.recipeId) }))
 	)
-
-	if (requestID !== this.recipeCoverCacheRequestID) return
-
-	const nextCoverMap = {}
-	const nextFallbackMap = { ...this.recipeCardCoverFallbackMap }
-	const nextHiddenMap = { ...this.recipeCardHiddenMap }
-	cachedEntries.forEach((entry) => {
-		if (!entry.localPath) return
-		nextCoverMap[entry.recipeId] = entry.localPath
-		delete nextFallbackMap[entry.recipeId]
-		delete nextHiddenMap[entry.recipeId]
-	})
-	this.cachedRecipeCoverMap = nextCoverMap
-	this.recipeCardCoverFallbackMap = nextFallbackMap
-	this.recipeCardHiddenMap = nextHiddenMap
-
-	const recipeIdsByCacheKey = entries.reduce((result, entry) => {
-		if (!result[entry.cacheKey]) {
-			result[entry.cacheKey] = []
-		}
-		result[entry.cacheKey].push(entry.recipeId)
-		return result
-	}, {})
-
-	warmImageCache(entries, {
-		concurrency: 2,
-		onResolved: ({ cacheKey, localPath }) => {
-			if (requestID !== this.recipeCoverCacheRequestID || !localPath) return
-			const recipeIds = recipeIdsByCacheKey[cacheKey] || []
-			if (!recipeIds.length) return
-
-			let changed = false
-			const updatedCoverMap = { ...this.cachedRecipeCoverMap }
-			const updatedFallbackMap = { ...this.recipeCardCoverFallbackMap }
-			const updatedHiddenMap = { ...this.recipeCardHiddenMap }
-			recipeIds.forEach((recipeId) => {
-				if (updatedCoverMap[recipeId] === localPath) return
-				updatedCoverMap[recipeId] = localPath
-				delete updatedFallbackMap[recipeId]
-				delete updatedHiddenMap[recipeId]
-				changed = true
-			})
-
-			if (changed) {
-				this.cachedRecipeCoverMap = updatedCoverMap
-				this.recipeCardCoverFallbackMap = updatedFallbackMap
-				this.recipeCardHiddenMap = updatedHiddenMap
-			}
-		}
-	})
 },
-applySession(session = getSessionSnapshot()) {
-	const snapshot = session || getSessionSnapshot()
-	const previousKitchenId = Number(this.currentKitchenId) || 0
-	this.currentUser = snapshot?.user || null
-	this.kitchenOptions = Array.isArray(snapshot?.kitchens) ? snapshot.kitchens : []
-	this.currentKitchenName = snapshot?.currentKitchen?.name || ''
-	this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
-	const nextKitchenId = Number(snapshot?.currentKitchenId) || 0
-	this.currentKitchenId = nextKitchenId
-		if (nextKitchenId !== this.kitchenMembersKitchenId) {
-			this.kitchenMembers = []
-			this.kitchenMembersKitchenId = nextKitchenId
+	getRecipeCoverDisplayController() {
+		if (!this.recipeCoverDisplayController) {
+			this.recipeCoverDisplayController = createImageDisplayController({
+				concurrency: 2,
+				onState: ({ cachedMap, fallbackMap, hiddenMap }) => {
+					this.cachedRecipeCoverMap = cachedMap
+					this.recipeCardCoverFallbackMap = fallbackMap
+					this.recipeCardHiddenMap = hiddenMap
+				}
+			})
 		}
-		if (previousKitchenId !== nextKitchenId) {
-			this.mealOrderSyncContextID += 1
-			this.mealOrderStoreLoadedKitchenId = 0
-			this.mealOrderLocalVersion += 1
-			this.resetMealOrderState()
-			this.selectedPlaceId = ''
-			this.showPlaceDetailSheet = false
-			this.showPlaceEditSheet = false
-			// 切换空间时清空上一空间的后端统计快照，避免串味（本地聚合会随新空间数据重新计算）。
-			this.spaceStatsRemote = null
-			this.spaceStatsRemoteKitchenId = 0
-			this.spaceStatsRemoteError = ''
-			this.spaceStatsAutoSyncKitchenId = 0
-		}
-		if (!nextKitchenId) {
-			this.mealOrderStoreLoadedKitchenId = 0
-			this.resetMealOrderState()
-			this.applyPlaces([])
-		} else {
-			this.applyPlaces(getCachedPlaces(nextKitchenId))
-			if (this.mealOrderStoreLoadedKitchenId !== nextKitchenId) {
-				this.loadMealOrderStore({ silent: true })
-			}
+		return this.recipeCoverDisplayController
 	}
-	this.activeInvite = null
-	this.inviteCodeCopied = false
-}
-
 }
 
 export const recipeStatusMethods = {
@@ -719,14 +593,14 @@ export const recipeListComputed = {
 		})
 	},
 	recipeCards() {
-		return buildRecipeCards(this.filteredRecipes, this.cachedRecipeCoverMap)
+		return buildRecipeCards(this.filteredRecipes)
 	},
 	randomPickRecipe() {
 		return this.recipes.find((recipe) => recipe.id === this.randomPickRecipeId) || null
 	},
 	randomPickCard() {
 		if (!this.randomPickRecipe) return null
-		return buildRecipeCard(this.randomPickRecipe, this.cachedRecipeCoverMap)
+		return buildRecipeCard(this.randomPickRecipe)
 	},
 	randomPickCoverSrc() {
 		return this.randomPickCard ? this.getRecipeCardDisplayCover(this.randomPickCard) : ''
@@ -890,7 +764,7 @@ export const recipeLibraryModule = defineIndexPageModule({
 				this.toolbarBounceTimer = null
 			}
 			this.clearRecipeReturnFocus()
-			this.recipeCoverCacheRequestID += 1
+			this.recipeCoverDisplayController?.cancel()
 		}
 	}
 })

@@ -41,12 +41,12 @@ export function validateIndexPageModuleContext(context, modules = []) {
 		.map((key) => `${module.name}:${key}`))
 }
 
-export function runIndexPageModuleLifecycle(context, modules = [], hook) {
+export function runIndexPageModuleLifecycle(context, modules = [], hook, payload) {
 	const hooks = hook === 'dispose' ? ['deactivate', 'dispose'] : [hook]
 	hooks.forEach((hookName) => {
 		modules.forEach((module) => {
 			const handler = module.lifecycle?.[hookName]
-			if (typeof handler === 'function') handler.call(context)
+			if (typeof handler === 'function') handler.call(context, payload)
 		})
 	})
 }

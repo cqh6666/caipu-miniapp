@@ -325,6 +325,138 @@ export async function warmImageCache(entries = [], options = {}) {
 	await Promise.all(workers)
 }
 
+export function createImageDisplayController(options = {}) {
+	const {
+		concurrency = 2,
+		onState = () => {},
+		hideOnRemoteError = true,
+		getCachedImagePathFn = getCachedImagePath,
+		warmImageCacheFn = warmImageCache,
+		invalidateCachedImageFn = invalidateCachedImage
+	} = options
+	let requestID = 0
+	let entriesByKey = {}
+	let cachedMap = {}
+	let fallbackMap = {}
+	let hiddenMap = {}
+
+	function publish() {
+		onState({
+			cachedMap: { ...cachedMap },
+			fallbackMap: { ...fallbackMap },
+			hiddenMap: { ...hiddenMap }
+		})
+	}
+
+	function normalizeEntries(entries = []) {
+		return (Array.isArray(entries) ? entries : [])
+			.map((entry, index) => {
+				const url = normalizeURL(entry?.url)
+				const version = normalizeVersion(entry?.version)
+				const cacheKey = String(entry?.cacheKey || buildImageCacheKey(url, version)).trim()
+				const key = String(entry?.key ?? cacheKey ?? index).trim()
+				return url && key ? { ...entry, key, url, version, cacheKey } : null
+			})
+			.filter(Boolean)
+	}
+
+	async function sync(entries = []) {
+		const normalizedEntries = normalizeEntries(entries)
+		const currentRequestID = requestID + 1
+		requestID = currentRequestID
+		entriesByKey = Object.fromEntries(normalizedEntries.map((entry) => [entry.key, entry]))
+		cachedMap = {}
+		fallbackMap = {}
+		hiddenMap = {}
+		publish()
+		if (!normalizedEntries.length) return snapshot()
+
+		const cachedEntries = await Promise.all(normalizedEntries.map(async (entry) => ({
+			key: entry.key,
+			localPath: await getCachedImagePathFn(entry.url, entry.version)
+		})))
+		if (currentRequestID !== requestID) return snapshot()
+		cachedMap = Object.fromEntries(
+			cachedEntries.filter((entry) => entry.localPath).map((entry) => [entry.key, entry.localPath])
+		)
+		publish()
+
+		const keysByCacheKey = normalizedEntries.reduce((result, entry) => {
+			if (!result[entry.cacheKey]) result[entry.cacheKey] = []
+			result[entry.cacheKey].push(entry.key)
+			return result
+		}, {})
+		warmImageCacheFn(normalizedEntries, {
+			concurrency,
+			onResolved: ({ cacheKey, localPath }) => {
+				if (currentRequestID !== requestID || !localPath) return
+				const keys = keysByCacheKey[cacheKey] || []
+				if (!keys.length) return
+				let changed = false
+				const nextCachedMap = { ...cachedMap }
+				const nextFallbackMap = { ...fallbackMap }
+				const nextHiddenMap = { ...hiddenMap }
+				keys.forEach((key) => {
+					if (nextCachedMap[key] !== localPath) {
+						nextCachedMap[key] = localPath
+						changed = true
+					}
+					delete nextFallbackMap[key]
+					delete nextHiddenMap[key]
+				})
+				if (!changed) return
+				cachedMap = nextCachedMap
+				fallbackMap = nextFallbackMap
+				hiddenMap = nextHiddenMap
+				publish()
+			}
+		})
+		return snapshot()
+	}
+
+	async function handleError(value = {}) {
+		const key = String(value?.key || '').trim()
+		const entry = entriesByKey[key]
+		if (!entry) return ''
+		const displayedURL = String(value?.displayURL || '').trim()
+		const cachedURL = String(cachedMap[key] || '').trim()
+		if (cachedURL && displayedURL === cachedURL && cachedURL !== entry.url && !fallbackMap[key]) {
+			fallbackMap = { ...fallbackMap, [key]: true }
+			const nextCachedMap = { ...cachedMap }
+			delete nextCachedMap[key]
+			cachedMap = nextCachedMap
+			publish()
+			try { await invalidateCachedImageFn(entry.url, entry.version) } catch (_) {}
+			return 'fallback'
+		}
+		if (!hideOnRemoteError || hiddenMap[key]) return ''
+		hiddenMap = { ...hiddenMap, [key]: true }
+		publish()
+		return 'hidden'
+	}
+
+	function displayURL(key = '') {
+		const normalizedKey = String(key || '').trim()
+		const entry = entriesByKey[normalizedKey]
+		if (!entry || hiddenMap[normalizedKey]) return ''
+		return fallbackMap[normalizedKey] ? entry.url : (cachedMap[normalizedKey] || entry.url)
+	}
+
+	function snapshot() {
+		return {
+			cachedMap: { ...cachedMap },
+			fallbackMap: { ...fallbackMap },
+			hiddenMap: { ...hiddenMap }
+		}
+	}
+
+	function cancel() {
+		requestID += 1
+	}
+
+	return { cancel, displayURL, handleError, snapshot, sync }
+}
+
 export async function clearImageCache() {
 	if (!canUsePersistentImageCache()) {
 		return {

@@ -7,50 +7,74 @@ export function createCountUpController(options = {}) {
 	const {
 		read = () => 0,
 		write = () => {},
+		writeBatch = (values) => Object.entries(values).forEach(([key, value]) => write(key, value)),
 		duration = 640,
 		step = 40,
 		setIntervalFn = setInterval,
 		clearIntervalFn = clearInterval
 	} = options
-	const timers = new Map()
+	const tasks = new Map()
+	let timer = null
 
-	function clear(keys = [...timers.keys()]) {
+	function stopTimerIfIdle() {
+		if (tasks.size || timer === null) return
+		clearIntervalFn(timer)
+		timer = null
+	}
+
+	function clear(keys = [...tasks.keys()]) {
 		keys.forEach((key) => {
-			const timer = timers.get(key)
-			if (timer !== undefined) clearIntervalFn(timer)
-			timers.delete(key)
+			tasks.delete(key)
 		})
+		stopTimerIfIdle()
+	}
+
+	function tick() {
+		const values = {}
+		tasks.forEach((task, key) => {
+			task.currentStep += 1
+			const progress = Math.min(1, task.currentStep / task.totalSteps)
+			const nextValue = task.start + (task.target - task.start) * easeOutCubic(progress)
+			values[key] = task.round ? Math.round(nextValue) : nextValue
+			if (progress >= 1) {
+				values[key] = task.target
+				tasks.delete(key)
+			}
+		})
+		if (Object.keys(values).length) writeBatch(values)
+		stopTimerIfIdle()
+	}
+
+	function ensureTimer() {
+		if (timer !== null) return
+		timer = setIntervalFn(tick, step)
 	}
 
 	return {
 		animate(key, targetValue, animateOptions = {}) {
-			clear([key])
+			tasks.delete(key)
 			const target = Number(targetValue) || 0
 			const start = Number(read(key)) || 0
 			const round = animateOptions.round === true
 			if (start === target) {
-				write(key, target)
+				writeBatch({ [key]: target })
+				stopTimerIfIdle()
 				return false
 			}
 
-			const totalSteps = Math.max(1, Math.round(duration / step))
-			let currentStep = 0
-			const timer = setIntervalFn(() => {
-				currentStep += 1
-				const progress = Math.min(1, currentStep / totalSteps)
-				const nextValue = start + (target - start) * easeOutCubic(progress)
-				write(key, round ? Math.round(nextValue) : nextValue)
-				if (progress >= 1) {
-					clear([key])
-					write(key, target)
-				}
-			}, step)
-			timers.set(key, timer)
+			tasks.set(key, {
+				start,
+				target,
+				round,
+				totalSteps: Math.max(1, Math.round(duration / step)),
+				currentStep: 0
+			})
+			ensureTimer()
 			return true
 		},
 		clear,
 		activeKeys() {
-			return [...timers.keys()]
+			return [...tasks.keys()]
 		}
 	}
 }

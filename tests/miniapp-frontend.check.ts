@@ -20,6 +20,7 @@ import {
   readClipboardText,
 } from "../pages/index/use-add-preview-flow";
 import { createCountUpController, easeOutCubic } from "../utils/count-up";
+import { createImageDisplayController } from "../utils/image-cache";
 import { createChunkDecoder } from "../utils/diet-assistant-stream-decoder";
 import { createDietAssistantStreamParser } from "../utils/diet-assistant-sse";
 import {
@@ -104,6 +105,13 @@ const lifecycleModule = defineIndexPageModule({
 runIndexPageModuleLifecycle({}, [lifecycleModule], "dispose");
 assertEqual(moduleDeactivateCount, 1, "首页模块销毁前统一停用");
 assertEqual(moduleDisposeCount, 1, "首页模块统一销毁");
+let kitchenChangePayload = 0;
+const kitchenLifecycleModule = defineIndexPageModule({
+  name: "kitchen-lifecycle-test",
+  lifecycle: { onKitchenChange({ nextKitchenId }) { kitchenChangePayload = nextKitchenId; } },
+});
+runIndexPageModuleLifecycle({}, [kitchenLifecycleModule], "onKitchenChange", { nextKitchenId: 2 });
+assertEqual(kitchenChangePayload, 2, "空间切换上下文按模块分发");
 
 assertEqual(hasParseableShareHint("复制 https://example.com/a"), true, "分享链接提示识别");
 assertEqual(hasParseableShareHint("来自小红书的分享"), true, "分享平台提示识别");
@@ -155,10 +163,27 @@ assertEqual(animatedValues.total, 9, "数字滚动到达精确终值");
 countUpController.animate("total", 12);
 countUpController.animate("average", 3.5);
 assertEqual(countUpController.activeKeys().length, 2, "多键数字滚动并行");
+assertEqual(countUpTimerSequence, 2, "同批数字滚动复用单个计时器");
 countUpController.clear(["total"]);
 assertEqual(countUpController.activeKeys()[0], "average", "数字滚动按键取消");
 countUpController.clear();
 assertEqual(countUpController.activeKeys().length, 0, "数字滚动批量清理");
+
+const imageDisplayStates: Array<Record<string, Record<string, unknown>>> = [];
+let invalidatedImageCount = 0;
+const imageDisplayController = createImageDisplayController({
+  onState: (state) => imageDisplayStates.push(state),
+  getCachedImagePathFn: async () => "/local/cover.jpg",
+  warmImageCacheFn: async () => {},
+  invalidateCachedImageFn: async () => { invalidatedImageCount += 1; },
+});
+await imageDisplayController.sync([{ key: "cover", url: "https://img/cover.jpg", version: "v1" }]);
+assertEqual(imageDisplayController.displayURL("cover"), "/local/cover.jpg", "图片缓存命中本地路径");
+assertEqual(await imageDisplayController.handleError({ key: "cover", displayURL: "/local/cover.jpg" }), "fallback", "本地图片失败后回退远端");
+assertEqual(imageDisplayController.displayURL("cover"), "https://img/cover.jpg", "图片缓存回退保留远端地址");
+assertEqual(invalidatedImageCount, 1, "损坏本地图片缓存失效");
+assertEqual(await imageDisplayController.handleError({ key: "cover", displayURL: "https://img/cover.jpg" }), "hidden", "远端图片失败后隐藏");
+assertEqual(imageDisplayController.displayURL("cover"), "", "隐藏态不再返回失败图片");
 
 const manualDecoder = createChunkDecoder({ TextDecoderClass: null });
 assertEqual(manualDecoder.decode(new Uint8Array([0xe4])), "", "UTF-8 中文半包暂存");

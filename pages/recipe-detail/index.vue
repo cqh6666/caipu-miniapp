@@ -204,6 +204,7 @@ import {
 	generateRecipeFlowchartById,
 	getCachedRecipeById,
 	getRecipeById,
+	getRecipeImageSources,
 	isFallbackParsedContent as isFallbackLikeParsedContent,
 	mealTypeLabelMap,
 	mealTypeOptions,
@@ -214,7 +215,7 @@ import {
 	statusOptions,
 	updateRecipeById
 } from '../../utils/recipe-store'
-import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
+import { buildImageCacheKey, createImageDisplayController } from '../../utils/image-cache'
 import {
 	buildStepCompletionKeyList,
 	cloneStepDraftList,
@@ -295,7 +296,6 @@ export default {
 			cachedRecipeImageMap: {},
 			recipeImageFallbackMap: {},
 			recipeImageHiddenMap: {},
-			recipeImageCacheRequestID: 0,
 			// P2-A：「做法」卡片当前激活的 Tab；'flowchart' | 'steps'
 			// 默认值在 watch hasFlowchart / 初次加载时由 ensureCookingTabValid 校正
 			activeCookingTab: 'flowchart',
@@ -319,7 +319,9 @@ export default {
 			showPublicReadOnlyExplain: false,
 			cachedFlowchartImagePath: '',
 			flowchartImageCacheVersion: '',
-			flowchartImageCacheRequestID: 0,
+			flowchartImageFallbackActive: false,
+			flowchartImageHidden: false,
+			flowchartImageDisplayController: null,
 			flowchartSquareImagePath: '',
 			flowchartSquareImageSourceKey: '',
 			flowchartShareImagePendingKey: '',
@@ -384,6 +386,9 @@ export default {
 		parsedSteps() {
 			return this.parsedContentView.steps
 		},
+		currentStepCompletionKeys() {
+			return buildStepCompletionKeyList(this.parsedSteps)
+		},
 		hasMeaningfulParsedContent() {
 			return !isFallbackLikeParsedContent(this.recipe || {}, {
 				mainIngredients: this.parsedMainIngredients,
@@ -398,11 +403,7 @@ export default {
 			return buildRecipeImageVersion(this.recipe || {})
 		},
 		recipeImages() {
-			if (Array.isArray(this.recipe?.imageUrls) && this.recipe.imageUrls.length) {
-				return this.recipe.imageUrls.filter(Boolean)
-			}
-			const fallbackImage = String(this.recipe?.image || this.recipe?.imageUrl || '').trim()
-			return fallbackImage ? [fallbackImage] : []
+			return getRecipeImageSources(this.recipe || {})
 		},
 		displayRecipeLink() {
 			const rawLink = String(this.recipe?.link || '').trim()
@@ -435,6 +436,8 @@ export default {
 			return String(this.recipe?.flowchartImageUrl || '').trim()
 		},
 		flowchartDisplayImageUrl() {
+			if (this.flowchartImageHidden) return ''
+			if (this.flowchartImageFallbackActive) return this.flowchartImageUrl
 			return String(this.cachedFlowchartImagePath || '').trim() || this.flowchartImageUrl
 		},
 		flowchartStatusValue() {
@@ -639,7 +642,7 @@ export default {
 		},
 		// B2-6：已完成步骤数（用于「2 / 4」进度提示）
 		completedStepCount() {
-			const stepKeys = this.buildCurrentStepCompletionKeys()
+			const stepKeys = this.currentStepCompletionKeys
 			if (!stepKeys.length) return 0
 			let count = 0
 			for (let i = 0; i < stepKeys.length; i += 1) {
@@ -703,6 +706,8 @@ export default {
 		this.stopParsePolling()
 		this.clearActionFeedback()
 		this.recipeLoadController?.cancel()
+		this.recipeImageController?.cancel()
+		this.flowchartImageDisplayController?.cancel()
 	},
 	onBackPress() {
 		if (!this.showEditSheet) return false
@@ -862,9 +867,7 @@ export default {
 			this.statusEstimateSyncedAt = now
 			this.statusEstimateNow = now
 			this.syncRecipeImageCache(recipe)
-			this.syncFlowchartImageCache(recipe, {
-				previousCacheKey: previousFlowchartCacheKey
-			})
+			this.syncFlowchartImageCache(recipe)
 			// B2-6：每次加载菜谱时同步读取本地步骤完成进度
 			this.loadCompletedSteps()
 			if (this.heroImageIndex >= this.displayRecipeImages.length) {
@@ -897,41 +900,26 @@ export default {
 				this.activeCookingTab = 'steps'
 			}
 		},
-		async syncFlowchartImageCache(recipe = this.recipe, options = {}) {
+		getFlowchartImageDisplayController() {
+			if (!this.flowchartImageDisplayController) {
+				this.flowchartImageDisplayController = createImageDisplayController({
+					concurrency: 1,
+					onState: ({ cachedMap, fallbackMap, hiddenMap }) => {
+						this.cachedFlowchartImagePath = String(cachedMap.flowchart || '').trim()
+						this.flowchartImageFallbackActive = !!fallbackMap.flowchart
+						this.flowchartImageHidden = !!hiddenMap.flowchart
+					}
+				})
+			}
+			return this.flowchartImageDisplayController
+		},
+		async syncFlowchartImageCache(recipe = this.recipe) {
 			const entry = this.buildFlowchartImageCacheEntry(recipe)
-			const requestID = this.flowchartImageCacheRequestID + 1
-			const previousCacheKey = String(options.previousCacheKey || '').trim()
-
-			this.flowchartImageCacheRequestID = requestID
 			this.flowchartImageCacheVersion = entry.version
-
-			if (entry.cacheKey !== previousCacheKey) {
-				this.cachedFlowchartImagePath = ''
-			}
-
-			if (!entry.url) {
-				this.cachedFlowchartImagePath = ''
-				this.flowchartImageCacheVersion = ''
-				return
-			}
-
-			const localPath = await getCachedImagePath(entry.url, entry.version)
-			if (requestID !== this.flowchartImageCacheRequestID) return
-
-			if (localPath) {
-				this.cachedFlowchartImagePath = localPath
-				return
-			}
-
-			this.cachedFlowchartImagePath = ''
-			warmImageCache([entry], {
-				concurrency: 1,
-				onResolved: ({ localPath: resolvedPath }) => {
-					if (requestID !== this.flowchartImageCacheRequestID || !resolvedPath) return
-					if (this.buildFlowchartImageCacheEntry().cacheKey !== entry.cacheKey) return
-					this.cachedFlowchartImagePath = resolvedPath
-				}
-			})
+			if (!entry.url) this.flowchartImageCacheVersion = ''
+			return this.getFlowchartImageDisplayController().sync(
+				entry.url ? [{ ...entry, key: 'flowchart' }] : []
+			)
 		},
 		getRecipeImageController() {
 			if (!this.recipeImageController) this.recipeImageController = createRecipeImageController(this)
@@ -978,12 +966,7 @@ export default {
 				title: recipe.title || '',
 				ingredient: recipe.ingredient || '',
 				link: recipe.link || '',
-				images:
-					Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
-						? [...recipe.imageUrls]
-						: recipe.image
-							? [recipe.image]
-							: [],
+				images: [...getRecipeImageSources(recipe)],
 				mealType: recipe.mealType || 'breakfast',
 				status: recipe.status || 'wishlist',
 				mainIngredients: hasStructuredContent ? createIngredientDraftList(parsedContentView.mainIngredients) : [],
@@ -1209,9 +1192,6 @@ export default {
 		highlightStepDetail(detail) {
 			return highlightStepDetailText(detail)
 		},
-		buildCurrentStepCompletionKeys() {
-			return buildStepCompletionKeyList(this.parsedSteps)
-		},
 		getStepCompletionController() {
 			if (!this.stepCompletionController) {
 				this.stepCompletionController = createStepCompletionController({
@@ -1227,8 +1207,7 @@ export default {
 			return this.stepCompletionController
 		},
 		getStepCompletionKey(index) {
-			const stepKeys = this.buildCurrentStepCompletionKeys()
-			return stepKeys[index] || ''
+			return this.currentStepCompletionKeys[index] || ''
 		},
 		// ===== B2-6：步骤完成状态管理 =====
 		isStepCompleted(index) {
@@ -1238,7 +1217,7 @@ export default {
 		toggleStepCompleted(index) {
 			const changed = this.getStepCompletionController().toggle(
 				this.recipeId,
-				this.buildCurrentStepCompletionKeys(),
+				this.currentStepCompletionKeys,
 				index
 			)
 			if (!changed) return
@@ -1262,7 +1241,7 @@ export default {
 		loadCompletedSteps() {
 			this.getStepCompletionController().load(
 				this.recipeId,
-				this.buildCurrentStepCompletionKeys()
+				this.currentStepCompletionKeys
 			)
 		},
 		persistCompletedSteps() {
@@ -1493,14 +1472,12 @@ export default {
 			})
 		},
 		async handleFlowchartImageError() {
-			const localPath = String(this.cachedFlowchartImagePath || '').trim()
-			if (!localPath || this.flowchartDisplayImageUrl !== localPath) return
-			this.cachedFlowchartImagePath = ''
-			try {
-				await invalidateCachedImage(this.flowchartImageUrl, this.flowchartImageCacheVersion || this.buildFlowchartImageCacheVersion())
-			} catch (error) {
-				// Ignore stale cache cleanup failures and keep remote fallback usable.
-			}
+			const result = await this.getFlowchartImageDisplayController().handleError({
+				key: 'flowchart',
+				displayURL: this.flowchartDisplayImageUrl
+			})
+			if (result === 'hidden') this.activeCookingTab = 'steps'
+			return result
 		},
 		previewFlowchartImage() {
 			// 轻点图片：用系统原生 previewImage 做快速预览（双指缩放、保存、长按菜单）

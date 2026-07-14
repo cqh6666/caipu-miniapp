@@ -519,8 +519,8 @@ export default {
 			if (!this.countUpController) {
 				this.countUpController = createCountUpController({
 					read: (key) => this.animatedNumbers[key],
-					write: (key, value) => {
-						this.animatedNumbers[key] = value
+					writeBatch: (values) => {
+						this.animatedNumbers = { ...this.animatedNumbers, ...values }
 					}
 				})
 			}

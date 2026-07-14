@@ -91,7 +91,6 @@ async loadRemoteSpaceStats(window = this.spaceStatsWindow, options = {}) {
 	if (!kitchenId || !getAccessToken()) {
 		this.spaceStatsRemote = null
 		this.spaceStatsRemoteKitchenId = 0
-		this.spaceStatsRemoteError = '当前登录态或空间信息未就绪'
 		return false
 	}
 	try {
@@ -101,12 +100,10 @@ async loadRemoteSpaceStats(window = this.spaceStatsWindow, options = {}) {
 			this.spaceStatsRemote = remote
 			this.spaceStatsRemoteKitchenId = kitchenId
 			this.spaceStatsWindow = normalized
-			this.spaceStatsRemoteError = ''
 		}
 		return true
 	} catch (error) {
 		// 后端 stats 不可用：保留已有远端数据（窗口切换失败时不清空），无远端数据则走本地聚合。
-		this.spaceStatsRemoteError = error?.message || '后端统计暂不可用'
 		console.warn('[space-stats] remote stats unavailable', error)
 		if (!silent) {
 			uni.showToast({
@@ -121,12 +118,12 @@ async refreshSpaceStats(options = {}) {
 	const { silent = true } = options
 	if (this.isRefreshingSpaceStats) return
 	this.isRefreshingSpaceStats = true
-	this.spaceStatsRemoteError = ''
 	try {
-		// refreshRecipes 内部已串起 recipes / places / members 同步，并负责设置 spaceStatsSyncedAt。
-		await this.refreshRecipes({ silent })
-		await this.loadMealOrderStore({ silent })
-		await this.loadRemoteSpaceStats(this.spaceStatsWindow, { silent })
+		await Promise.all([
+			this.refreshRecipes({ silent }),
+			this.loadMealOrderStore({ silent }),
+			this.loadRemoteSpaceStats(this.spaceStatsWindow, { silent })
+		])
 	} finally {
 		this.isRefreshingSpaceStats = false
 	}
@@ -181,13 +178,13 @@ handleSpaceStatsAction(payload = {}) {
 	}
 },
 memberRoleLabel(role) {
-	return formatMemberRoleLabel(role)
+	return memberRoleLabel(role)
 },
 memberDisplayName(member = {}) {
-	return formatMemberDisplayName(member)
+	return memberDisplayName(member)
 },
 memberInitial(member = {}) {
-	return formatMemberInitial(member)
+	return memberInitial(member)
 },
 memberMemberDescription(member = {}) {
 	return memberDescription(member)
@@ -738,5 +735,14 @@ export const kitchenSpaceModule = defineIndexPageModule({
 		...kitchenSpaceComputed,
 		...kitchenMemberComputed,
 		...kitchenInviteComputed
+	},
+	lifecycle: {
+		onKitchenChange({ nextKitchenId = 0 } = {}) {
+			this.kitchenMembers = []
+			this.kitchenMembersKitchenId = nextKitchenId
+			this.spaceStatsRemote = null
+			this.spaceStatsRemoteKitchenId = 0
+			this.spaceStatsAutoSyncKitchenId = 0
+		}
 	}
 })

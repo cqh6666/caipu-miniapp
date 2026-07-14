@@ -21,6 +21,7 @@ import {
 } from './recipe-cache'
 import {
 	buildRecipePayload,
+	getRecipeImageSources,
 	mergeUpdatedParsedContent,
 	normalizeImageList,
 	normalizeRecipe
@@ -28,13 +29,7 @@ import {
 import { ensureUploadedImages } from './upload-api'
 
 async function resolveRecipeImages(recipe = {}) {
-	const imageSources =
-		Array.isArray(recipe.images) && recipe.images.length
-			? recipe.images
-			: Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
-				? recipe.imageUrls
-				: [recipe.image || recipe.imageUrl || '']
-	return ensureUploadedImages(normalizeImageList(imageSources))
+	return ensureUploadedImages(normalizeImageList(getRecipeImageSources(recipe)))
 }
 
 export async function syncRecipes(filters = {}) {

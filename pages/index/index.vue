@@ -355,10 +355,12 @@
 
 		<add-recipe-preview-panel
 			:show="showAddRecipePreviewPanel"
+			:is-parsing="addPreviewIsParsing && addPreviewMode === 'recipe'"
+			:parsing-text="addPreviewParsingText"
+			:parsing-duration="addPreviewParsingDuration"
 			@close="closeAddRecipePreviewPanel"
 			@manual-entry="handleRecipeManualEntry"
-			@parse-result="handleRecipeParseResult"
-			@preview-timeout="handleRecipePreviewTimeoutFallback"
+			@paste="handleRecipePreviewPaste"
 		></add-recipe-preview-panel>
 
 		<add-recipe-sheet
@@ -425,9 +427,12 @@
 
 		<add-link-preview-panel
 			:show="showAddLinkPreviewPanel"
+			:is-parsing="addPreviewIsParsing && addPreviewMode === 'place'"
+			:parsing-text="addPreviewParsingText"
+			:parsing-duration="addPreviewParsingDuration"
 			@close="closeAddLinkPreviewPanel"
 			@manual-entry="handleManualEntry"
-			@parse-result="handleParseResult"
+			@paste="handlePlacePreviewPaste"
 		></add-link-preview-panel>
 
 		<place-candidate-sheet
@@ -516,7 +521,8 @@ import { takePendingSpaceStatsAction } from '../../utils/space-stats-bridge'
 import {
 	ensureSession,
 	getCurrentKitchenId,
-	getFriendlySessionErrorMessage
+	getFriendlySessionErrorMessage,
+	getSessionSnapshot
 } from '../../utils/auth'
 import { getAccessToken } from '../../utils/session-storage'
 import { createEmptyDraft, statusMap } from './constants'
@@ -639,6 +645,12 @@ export default {
 			pendingPlaceStatusChangeId: '',
 			showAddLinkPreviewPanel: false,
 			showAddRecipePreviewPanel: false,
+			addPreviewFlowController: null,
+			addPreviewFlowRunId: 0,
+			addPreviewIsParsing: false,
+			addPreviewParsingStage: 'extracting',
+			addPreviewParsingDuration: 0,
+			addPreviewMode: '',
 			showPlaceCandidateSheet: false,
 			placeCandidates: [],
 			placeExtracted: {},
@@ -669,7 +681,6 @@ export default {
 			dietAssistantInitialPrompt: '',
 			publicAppConfig: readCachedPublicAppConfig(),
 			publicAppConfigRequestID: 0,
-			draftLinkPrefillSource: '',
 			showInviteSheet: false,
 			showInviteCodeSheet: false,
 			showProfileSheet: false,
@@ -731,7 +742,7 @@ export default {
 			cachedRecipeCoverMap: {},
 			recipeCardCoverFallbackMap: {},
 			recipeCardHiddenMap: {},
-			recipeCoverCacheRequestID: 0,
+			recipeCoverDisplayController: null,
 			recipeListMotionTick: 0,
 			recipeStatusPendingMap: {},
 			recipeStatusFeedbackVisible: false,
@@ -740,7 +751,7 @@ export default {
 			recipeStatusFeedbackRecipeTitle: '',
 			recipeStatusFeedbackShowSparkles: false,
 			recipeStatusFeedbackTick: 0,
-			recipeStatusFeedbackTimer: null,
+			recipeStatusFeedbackController: null,
 			recipePreviewTimeoutRefreshTimer: null,
 			showRandomPickSheet: false,
 			randomPickRecipeId: '',
@@ -761,7 +772,6 @@ export default {
 			spaceStatsWindow: 'all',
 			spaceStatsRemote: null,
 			spaceStatsRemoteKitchenId: 0,
-			spaceStatsRemoteError: '',
 			spaceStatsAutoSyncKitchenId: 0
 		}
 	},
@@ -958,6 +968,24 @@ export default {
 			if (!this.isMealOrderMode) {
 				this.mealOrderDate = ''
 			}
+		},
+		applySession(session = getSessionSnapshot()) {
+			const snapshot = session || getSessionSnapshot()
+			const previousKitchenId = Number(this.currentKitchenId) || 0
+			const nextKitchenId = Number(snapshot?.currentKitchenId) || 0
+			this.currentUser = snapshot?.user || null
+			this.kitchenOptions = Array.isArray(snapshot?.kitchens) ? snapshot.kitchens : []
+			this.currentKitchenName = snapshot?.currentKitchen?.name || ''
+			this.currentKitchenRole = snapshot?.currentKitchen?.role || ''
+			this.currentKitchenId = nextKitchenId
+			if (previousKitchenId !== nextKitchenId) {
+				runIndexPageModuleLifecycle(this, INDEX_PAGE_MODULES, 'onKitchenChange', {
+					previousKitchenId,
+					nextKitchenId
+				})
+			}
+			this.activeInvite = null
+			this.inviteCodeCopied = false
 		},
 		async refreshRecipes(options = {}) {
 			const { silent = true } = options

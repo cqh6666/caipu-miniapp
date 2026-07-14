@@ -40,6 +40,45 @@ export function normalizeTextList(items = []) {
 	return normalized
 }
 
+export function getRecipeImageSources(recipe = {}) {
+	if (Array.isArray(recipe.imageUrls) && recipe.imageUrls.length) {
+		return recipe.imageUrls.filter(Boolean)
+	}
+	if (Array.isArray(recipe.images) && recipe.images.length) {
+		return recipe.images.filter(Boolean)
+	}
+	return [recipe.image, recipe.imageUrl].filter(Boolean)
+}
+
+export function buildRecipeImageVersion(recipe = {}) {
+	return String(recipe.updatedAt || recipe.parseFinishedAt || '').trim()
+}
+
+export function stringifyRecipeParsedContent(content) {
+	if (!content) return ''
+	if (typeof content === 'string') return content.trim()
+	const lines = []
+	const mainIngredients = normalizeTextList(content.mainIngredients)
+	const secondaryIngredients = normalizeTextList(content.secondaryIngredients)
+	const steps = Array.isArray(content.steps) ? content.steps : []
+	if (mainIngredients.length) lines.push(`主料：${mainIngredients.join('、')}`)
+	if (secondaryIngredients.length) lines.push(`辅料：${secondaryIngredients.join('、')}`)
+	if (steps.length) {
+		lines.push('步骤：')
+		steps.forEach((step, index) => {
+			if (typeof step === 'string') {
+				if (step.trim()) lines.push(`${index + 1}. ${step.trim()}`)
+				return
+			}
+			const text = [String(step?.title || '').trim(), String(step?.detail || '').trim()]
+				.filter(Boolean)
+				.join('：')
+			if (text) lines.push(`${index + 1}. ${text}`)
+		})
+	}
+	return lines.join('\n').trim()
+}
+
 function inferStepTitle(detail = '', index = 0) {
 	const text = String(detail || '').trim()
 	if (!text) return ''
@@ -291,12 +330,7 @@ export function isFallbackParsedContent(recipe = {}, parsedContent = {}) {
 
 export function normalizeRecipe(recipe = {}) {
 	const imageUrls = normalizeImageList(
-		(Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
-			? recipe.imageUrls
-			: Array.isArray(recipe.images) && recipe.images.length
-				? recipe.images
-				: [recipe.image, recipe.imageUrl]
-		).map((item) => resolveAssetURL(item || ''))
+		getRecipeImageSources(recipe).map((item) => resolveAssetURL(item || ''))
 	)
 	const image = imageUrls[0] || ''
 	const flowchartImageUrl = resolveAssetURL(recipe.flowchartImageUrl || '')

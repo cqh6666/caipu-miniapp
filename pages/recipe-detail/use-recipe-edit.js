@@ -66,9 +66,6 @@ export const serializeComparableEditDraft = (draft = {}) => JSON.stringify({
 })
 
 export function buildRecipeEditPayload(draft = {}) {
-	const normalizeTextList = (items = []) => getIngredientDraftValues(items)
-		.map((item) => String(item || '').trim())
-		.filter(Boolean)
 	return {
 		title: String(draft.title || '').trim(),
 		ingredient: String(draft.ingredient || '').trim(),
@@ -79,8 +76,8 @@ export function buildRecipeEditPayload(draft = {}) {
 		mealType: String(draft.mealType || '').trim() || 'breakfast',
 		status: String(draft.status || '').trim() || 'wishlist',
 		parsedContent: {
-			mainIngredients: normalizeTextList(draft.mainIngredients),
-			secondaryIngredients: normalizeTextList(draft.secondaryIngredients),
+			mainIngredients: comparableTextList(draft.mainIngredients),
+			secondaryIngredients: comparableTextList(draft.secondaryIngredients),
 			steps: normalizeParsedSteps(draft.steps)
 		},
 		parsedContentEdited: draft.parsedContentMode === 'manual',

@@ -533,12 +533,8 @@ export const mealOrderComputed = {
 		return normalizeMealOrderDraft(this.mealOrderStore?.drafts?.[date], date)
 	},
 	mealOrderCartItems() {
-		const recipeMap = this.recipes.reduce((result, recipe) => {
-			result[recipe.id] = recipe
-			return result
-		}, {})
 		return this.mealOrderCurrentDraft.items.map((item) => {
-			const recipe = recipeMap[item.recipeId] || {}
+			const recipe = this.recipes.find((candidate) => candidate.id === item.recipeId) || {}
 			const title = item.titleSnapshot || recipe.title || '未命名菜品'
 			const mealType = item.mealTypeSnapshot || recipe.mealType || 'main'
 			const mealTypeLabel = mealTypeLabelMap[mealType] || '正餐'
@@ -695,6 +691,13 @@ export const mealOrderModule = defineIndexPageModule({
 	methods: mealOrderMethods,
 	computed: mealOrderComputed,
 	lifecycle: {
+		onKitchenChange({ nextKitchenId = 0 } = {}) {
+			this.mealOrderSyncContextID += 1
+			this.mealOrderStoreLoadedKitchenId = 0
+			this.mealOrderLocalVersion += 1
+			this.resetMealOrderState()
+			if (nextKitchenId) this.loadMealOrderStore({ silent: true })
+		},
 		deactivate() {
 			if (!this.isSubmittingMealOrder) this.syncMealOrderDraft({ silent: true })
 			this.clearMealOrderDraftSyncTimer()

@@ -1,40 +1,19 @@
 import { createEmptyPlaceDraft } from './use-place-library'
+import { isPreviewTimeoutError, previewAddLink } from '../../utils/add-preview-api'
+import { getCurrentKitchenId } from '../../utils/auth'
 import { previewRecipeLink } from '../../utils/recipe-api'
 import { createRecipeFromDraft, getCachedRecipes } from '../../utils/recipe-store'
+import { stringifyRecipeParsedContent } from '../../utils/recipe-model'
 import { createEmptyDraft } from './constants'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
 import { formatMealOrderDateText } from './meal-order'
 import { defineIndexPageModule } from './page-module'
+import { createAddPreviewFlowController, delay } from './use-add-preview-flow'
 
 export function normalizePreviewImageList(source = {}) {
 	const values = source.images || source.imageUrls || source.imageURL || source.imageUrl || []
 	const items = Array.isArray(values) ? values : [values]
 	return items.map((item) => String(item || '').trim()).filter(Boolean)
-}
-
-export function stringifyRecipeParsedContent(content) {
-	if (!content) return ''
-	if (typeof content === 'string') return content.trim()
-	const lines = []
-	const mainIngredients = Array.isArray(content.mainIngredients) ? content.mainIngredients : []
-	const secondaryIngredients = Array.isArray(content.secondaryIngredients) ? content.secondaryIngredients : []
-	const steps = Array.isArray(content.steps) ? content.steps : []
-	if (mainIngredients.length) lines.push(`主料：${mainIngredients.filter(Boolean).join('、')}`)
-	if (secondaryIngredients.length) lines.push(`辅料：${secondaryIngredients.filter(Boolean).join('、')}`)
-	if (steps.length) {
-		lines.push('步骤：')
-		steps.forEach((step, index) => {
-			if (typeof step === 'string') {
-				if (step.trim()) lines.push(`${index + 1}. ${step.trim()}`)
-				return
-			}
-			const text = [String(step?.title || '').trim(), String(step?.detail || '').trim()]
-				.filter(Boolean)
-				.join('：')
-			if (text) lines.push(`${index + 1}. ${text}`)
-		})
-	}
-	return lines.join('\n').trim()
 }
 
 export function buildPlaceDraftFromPreview(draft = {}) {
@@ -62,6 +41,61 @@ export function buildPlaceDraftFromCandidate(candidate = {}, context = {}) {
 }
 
 export const smartAddPlaceMethods = {
+	getAddPreviewFlowController() {
+		if (!this.addPreviewFlowController) {
+			this.addPreviewFlowController = createAddPreviewFlowController({
+				onState: ({ isParsing, stage, duration }) => {
+					this.addPreviewIsParsing = isParsing
+					this.addPreviewParsingStage = stage
+					this.addPreviewParsingDuration = duration
+				}
+			})
+		}
+		return this.addPreviewFlowController
+	},
+	finishAddPreviewParsing(result, runId = this.addPreviewFlowRunId) {
+		if (!this.getAddPreviewFlowController().stop(runId)) return false
+		if (result?.status === 'failed') {
+			uni.showToast({
+				title: result.message || '解析失败',
+				icon: 'none',
+				duration: 2000
+			})
+			return false
+		}
+		if (this.addPreviewMode === 'recipe') this.showAddRecipePreviewPanel = false
+		if (this.addPreviewMode === 'place') this.showAddLinkPreviewPanel = false
+		return true
+	},
+	async handlePlacePreviewPaste(text = '') {
+		if (this.addPreviewIsParsing) return
+		this.addPreviewMode = 'place'
+		const controller = this.getAddPreviewFlowController()
+		const runId = controller.start()
+		this.addPreviewFlowRunId = runId
+		try {
+			const kitchenId = Number(getCurrentKitchenId()) || 0
+			if (!kitchenId) {
+				this.finishAddPreviewParsing({ status: 'failed', message: '请先完成空间同步' }, runId)
+				return
+			}
+			await delay(200)
+			controller.setStage(runId, 'identifying')
+			const result = await previewAddLink(kitchenId, { text, city: '佛山', limit: 3 })
+			if (result?.contentType === 'place') {
+				controller.setStage(runId, result.status === 'place_candidates' ? 'poi' : 'place')
+			} else if (result?.contentType === 'recipe') {
+				controller.setStage(runId, 'recipe')
+			}
+			await delay(240)
+			controller.setStage(runId, 'finalizing')
+			await delay(160)
+			const normalizedResult = result || { status: 'failed', message: '解析结果为空' }
+			if (this.finishAddPreviewParsing(normalizedResult, runId)) this.handleParseResult(normalizedResult)
+		} catch (error) {
+			this.finishAddPreviewParsing({ status: 'failed', message: error?.message || '解析失败，请手动填写' }, runId)
+		}
+	},
 	closeAddLinkPreviewPanel() {
 		this.showAddLinkPreviewPanel = false
 	},
@@ -144,7 +178,6 @@ resetDraftAssistState() {
 	this.draftLinkPreviewPlatform = ''
 	this.draftLinkPreviewTitleSource = ''
 	this.draftLinkPreviewError = ''
-	this.draftLinkPrefillSource = ''
 },
 clearDraftLinkPreviewState() {
 	if (this.draftLinkPreviewTimer) {
@@ -196,7 +229,6 @@ handleDraftNoteInput(event) {
 handleDraftLinkInput(event) {
 	const value = String(event?.detail?.value || '')
 	this.draft.link = value
-	this.draftLinkPrefillSource = ''
 	this.scheduleDraftLinkPreview(value)
 },
 scheduleDraftLinkPreview(rawInput = '') {
@@ -289,6 +321,38 @@ handleDietAssistantRecipesMutated(mutation = {}) {
 },
 closeAddRecipePreviewPanel() {
 	this.showAddRecipePreviewPanel = false
+},
+	async handleRecipePreviewPaste(text = '') {
+		if (this.addPreviewIsParsing) return
+		this.addPreviewMode = 'recipe'
+		const controller = this.getAddPreviewFlowController()
+		const runId = controller.start()
+		this.addPreviewFlowRunId = runId
+		try {
+			const kitchenId = Number(getCurrentKitchenId()) || 0
+			if (!kitchenId) {
+				this.finishAddPreviewParsing({ status: 'failed', message: '请先完成空间同步' }, runId)
+				return
+			}
+			await delay(200)
+			controller.setStage(runId, 'identifying')
+			await delay(200)
+			controller.setStage(runId, 'fetching')
+			const result = await previewAddLink(kitchenId, { text, city: '佛山', limit: 3 })
+			controller.setStage(runId, 'parsing')
+			await delay(240)
+			controller.setStage(runId, 'finalizing')
+			await delay(160)
+			const normalizedResult = result || { status: 'failed', message: '解析结果为空' }
+			if (this.finishAddPreviewParsing(normalizedResult, runId)) this.handleRecipeParseResult(normalizedResult)
+		} catch (error) {
+			if (isPreviewTimeoutError(error)) {
+				if (!controller.stop(runId)) return
+				await this.handleRecipePreviewTimeoutFallback({ text })
+				return
+			}
+			this.finishAddPreviewParsing({ status: 'failed', message: error?.message || '解析失败，请手动填写' }, runId)
+		}
 },
 handleRecipeManualEntry() {
 	// 关闭智能识别面板，打开原始手动表单
@@ -511,6 +575,20 @@ async submitDraft() {
 }
 
 export const smartAddComputed = {
+	addPreviewParsingText() {
+		const recipeStages = {
+			extracting: '正在提取链接信息...', identifying: '正在识别平台类型...',
+			fetching: '正在获取菜谱内容...', parsing: '正在解析食材和步骤...',
+			finalizing: '正在整理图片和补充信息...'
+		}
+		const placeStages = {
+			extracting: '正在提取分享链接信息...', identifying: '正在识别内容类型...',
+			place: '正在提取地点信息...', recipe: '正在提取菜谱信息...',
+			poi: '正在匹配可能的地点...', finalizing: '正在整理图片和补充信息...'
+		}
+		const stages = this.addPreviewMode === 'recipe' ? recipeStages : placeStages
+		return stages[this.addPreviewParsingStage] || '正在处理...'
+	},
 	canSubmitDraft() {
 		return !!this.draft.title.trim()
 	},
@@ -565,6 +643,7 @@ export const smartAddModule = defineIndexPageModule({
 	computed: smartAddComputed,
 	lifecycle: {
 		deactivate() {
+			this.addPreviewFlowController?.stop()
 			this.clearDraftLinkPreviewState()
 		},
 		dispose() {

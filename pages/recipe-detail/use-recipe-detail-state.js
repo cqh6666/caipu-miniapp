@@ -3,49 +3,7 @@ import {
 	createCompletedStepStoragePayload,
 	normalizeCompletedStepKeyMap
 } from './use-recipe-edit'
-
-export function createActionFeedbackController(options = {}) {
-	const {
-		onState = () => {},
-		setTimeoutFn = setTimeout,
-		clearTimeoutFn = clearTimeout
-	} = options
-	let timer = null
-	let tick = 0
-
-	function clearTimer() {
-		if (timer !== null) clearTimeoutFn(timer)
-		timer = null
-	}
-
-	return {
-		show(value = {}) {
-			const title = String(value?.title || '').trim()
-			if (!title) return false
-			clearTimer()
-			tick += 1
-			onState({
-				visible: true,
-				tone: String(value?.tone || 'done').trim() || 'done',
-				title,
-				description: String(value?.description || '').trim(),
-				tick
-			})
-			timer = setTimeoutFn(() => {
-				timer = null
-				onState({ visible: false, tick })
-			}, Math.max(1200, Number(value?.duration) || 1680))
-			return true
-		},
-		clear() {
-			clearTimer()
-			onState({ visible: false, tone: '', title: '', description: '', tick })
-		},
-		status() {
-			return { active: timer !== null, tick }
-		}
-	}
-}
+export { createActionFeedbackController } from '../../utils/action-feedback'
 
 export function createStepCompletionController(options = {}) {
 	const { storage, onChange = () => {}, onError = () => {} } = options

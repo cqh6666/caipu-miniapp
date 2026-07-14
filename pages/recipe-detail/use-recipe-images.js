@@ -1,14 +1,11 @@
 import { updateRecipeById } from '../../utils/recipe-store'
-import { buildImageCacheKey, getCachedImagePath, invalidateCachedImage, warmImageCache } from '../../utils/image-cache'
+import { buildRecipeImageVersion, getRecipeImageSources } from '../../utils/recipe-model'
+import { buildImageCacheKey, createImageDisplayController } from '../../utils/image-cache'
 
-export function buildRecipeImageVersion(recipe = {}) {
-	return String(recipe?.updatedAt || recipe?.parseFinishedAt || '').trim()
-}
+export { buildRecipeImageVersion } from '../../utils/recipe-model'
 
 export function buildRecipeImageCacheEntries(recipe = {}, buildCacheKey) {
-	const images = Array.isArray(recipe.imageUrls) && recipe.imageUrls.length
-		? recipe.imageUrls.filter(Boolean)
-		: [recipe.image, recipe.imageUrl].filter(Boolean)
+	const images = getRecipeImageSources(recipe)
 	const version = buildRecipeImageVersion(recipe)
 	return images
 		.map((url) => ({ url: String(url || '').trim(), version, cacheKey: buildCacheKey(url, version) }))
@@ -29,6 +26,15 @@ export function resolveVisibleImageIndex(visibleList = [], sourceImages = [], ve
 }
 
 export function createRecipeImageController(host) {
+	const displayController = createImageDisplayController({
+		concurrency: 2,
+		onState: ({ cachedMap, fallbackMap, hiddenMap }) => {
+			host.cachedRecipeImageMap = cachedMap
+			host.recipeImageFallbackMap = fallbackMap
+			host.recipeImageHiddenMap = hiddenMap
+		}
+	})
+
 	function originalIndex(visibleIndex = host.heroImageIndex) {
 		return resolveVisibleImageIndex(
 			host.displayRecipeImages,
@@ -41,48 +47,15 @@ export function createRecipeImageController(host) {
 
 	async function syncRecipeCache(recipe = host.recipe) {
 		const entries = buildRecipeImageCacheEntries(recipe || {}, buildImageCacheKey)
-		const requestID = host.recipeImageCacheRequestID + 1
-		host.recipeImageCacheRequestID = requestID
-		host.cachedRecipeImageMap = {}
-		host.recipeImageFallbackMap = {}
-		host.recipeImageHiddenMap = {}
-		if (!entries.length) return
-		const cachedEntries = await Promise.all(entries.map(async (entry) => ({
-			cacheKey: entry.cacheKey,
-			localPath: await getCachedImagePath(entry.url, entry.version)
-		})))
-		if (requestID !== host.recipeImageCacheRequestID) return
-		host.cachedRecipeImageMap = Object.fromEntries(
-			cachedEntries.filter((entry) => entry.localPath).map((entry) => [entry.cacheKey, entry.localPath])
-		)
-		warmImageCache(entries, {
-			concurrency: 2,
-			onResolved: ({ cacheKey, localPath }) => {
-				if (requestID !== host.recipeImageCacheRequestID || !localPath) return
-				if (host.cachedRecipeImageMap[cacheKey] === localPath) return
-				host.cachedRecipeImageMap = { ...host.cachedRecipeImageMap, [cacheKey]: localPath }
-			}
-		})
+		return displayController.sync(entries.map((entry) => ({ ...entry, key: entry.cacheKey })))
 	}
 
 	async function handleImageError(image = {}) {
 		const remoteURL = String(image?.remoteURL || '').trim()
 		if (!remoteURL) return
-		const version = host.recipeImageVersion
-		const cacheKey = String(image?.cacheKey || buildImageCacheKey(remoteURL, version)).trim()
-		const displayedURL = String(image?.displayURL || '').trim()
-		const cachedURL = String(host.cachedRecipeImageMap[cacheKey] || '').trim()
-		if (cachedURL && displayedURL === cachedURL && cachedURL !== remoteURL && !host.recipeImageFallbackMap[cacheKey]) {
-			host.recipeImageFallbackMap = { ...host.recipeImageFallbackMap, [cacheKey]: true }
-			const nextMap = { ...host.cachedRecipeImageMap }
-			delete nextMap[cacheKey]
-			host.cachedRecipeImageMap = nextMap
-			try { await invalidateCachedImage(remoteURL, version) } catch (_) {}
-			return
-		}
-		if (host.recipeImageHiddenMap[cacheKey]) return
-		host.recipeImageHiddenMap = { ...host.recipeImageHiddenMap, [cacheKey]: true }
-		host.heroImageIndex = 0
+		const cacheKey = String(image?.cacheKey || buildImageCacheKey(remoteURL, host.recipeImageVersion)).trim()
+		const result = await displayController.handleError({ key: cacheKey, displayURL: image?.displayURL })
+		if (result === 'hidden') host.heroImageIndex = 0
 	}
 
 	async function saveHeroImages(imagePaths = []) {
@@ -166,6 +139,7 @@ export function createRecipeImageController(host) {
 	}
 
 	return {
+		cancel: displayController.cancel,
 		chooseHeroImages,
 		deleteCurrent,
 		handleImageError,

@@ -1,4 +1,5 @@
 import { mealTypeLabelMap } from '../../utils/recipe-store'
+import { buildRecipeImageVersion, getRecipeImageSources } from '../../utils/recipe-model'
 
 export function buildRecipeInfoLine(recipe = {}) {
 	const mealLabel = mealTypeLabelMap[recipe.mealType] || '早餐'
@@ -36,13 +37,7 @@ export function pickRecipePlaceholderIcon(recipe = {}) {
 }
 
 export function extractRecipeImages(recipe = {}) {
-	if (Array.isArray(recipe.imageUrls) && recipe.imageUrls.length) {
-		return recipe.imageUrls.filter(Boolean)
-	}
-	if (Array.isArray(recipe.images) && recipe.images.length) {
-		return recipe.images.filter(Boolean)
-	}
-	return [recipe.image, recipe.imageUrl].filter(Boolean)
+	return getRecipeImageSources(recipe)
 }
 
 function truncateTextByRune(value = '', maxLength = 15) {
@@ -88,7 +83,7 @@ export function buildRecipeListSummary(recipe = {}) {
 }
 
 export function buildRecipeCoverVersion(recipe = {}) {
-	return String(recipe.updatedAt || recipe.parseFinishedAt || '').trim()
+	return buildRecipeImageVersion(recipe)
 }
 
 export function buildRecipeSearchText(recipe = {}) {
@@ -131,16 +126,13 @@ export function buildRecipeParseBadge(recipe = {}) {
 	return null
 }
 
-export function buildRecipeCard(recipe = {}, cachedCoverMap = {}) {
+export function buildRecipeCard(recipe = {}) {
 	const images = extractRecipeImages(recipe)
 	const remoteCover = images[0] || ''
-	const cachedCover = cachedCoverMap[recipe.id] || ''
 	const realSummary = pickFirstNonEmptySummary(recipe)
 	return {
 		...recipe,
 		parseBadge: buildRecipeParseBadge(recipe),
-		cover: cachedCover || remoteCover,
-		cachedCover,
 		remoteCover,
 		coverVersion: buildRecipeCoverVersion(recipe),
 		isPinned: !!String(recipe.pinnedAt || '').trim(),
