@@ -501,7 +501,7 @@
 
 <script>
 import ActionFeedback from '../../components/action-feedback.vue'
-import { readCachedPublicAppConfig } from '../../utils/public-app-config-api'
+import { normalizePublicAppConfig } from '../../utils/public-app-config-api'
 import {
 	MAX_PLACE_IMAGES,
 	getCachedPlaces,
@@ -679,7 +679,7 @@ export default {
 			showAddSheet: false,
 			showDietAssistantSheet: false,
 			dietAssistantInitialPrompt: '',
-			publicAppConfig: readCachedPublicAppConfig(),
+			publicAppConfig: normalizePublicAppConfig(),
 			publicAppConfigRequestID: 0,
 			showInviteSheet: false,
 			showInviteCodeSheet: false,

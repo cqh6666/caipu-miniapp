@@ -131,7 +131,7 @@ func (p *RuntimeProvider) LinkparseSidecar(ctx context.Context) LinkparseSidecar
 
 func (p *RuntimeProvider) MiniProgramFeatures(ctx context.Context) MiniProgramFeatureConfig {
 	return MiniProgramFeatureConfig{
-		DietAssistantEnabled: p.getBool(ctx, "miniapp.features.diet_assistant_enabled", true),
+		DietAssistantEnabled: p.getBool(ctx, "miniapp.features.diet_assistant_enabled", false),
 	}
 }
 

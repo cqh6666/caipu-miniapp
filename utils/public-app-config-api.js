@@ -1,7 +1,5 @@
 import { request } from './http'
 
-const storageKey = 'caipu.publicAppConfig'
-
 function normalizeBool(value, fallback = false) {
 	if (typeof value === 'boolean') return value
 	if (typeof value === 'string') {
@@ -16,20 +14,8 @@ export function normalizePublicAppConfig(value = {}) {
 	const features = value?.features || {}
 	return {
 		features: {
-			dietAssistantEnabled: normalizeBool(features.dietAssistantEnabled, true)
+			dietAssistantEnabled: normalizeBool(features.dietAssistantEnabled, false)
 		}
-	}
-}
-
-export function readCachedPublicAppConfig() {
-	try {
-		const cached = uni.getStorageSync(storageKey)
-		if (!cached || typeof cached !== 'object') {
-			return normalizePublicAppConfig()
-		}
-		return normalizePublicAppConfig(cached)
-	} catch (error) {
-		return normalizePublicAppConfig()
 	}
 }
 
@@ -38,13 +24,5 @@ export function loadPublicAppConfig() {
 		url: '/caipu-api/public/app-config',
 		method: 'GET',
 		auth: false
-	}).then((data) => {
-		const config = normalizePublicAppConfig(data)
-		try {
-			uni.setStorageSync(storageKey, config)
-		} catch (error) {
-			// 缓存失败不影响本次配置生效。
-		}
-		return config
-	})
+	}).then((data) => normalizePublicAppConfig(data))
 }

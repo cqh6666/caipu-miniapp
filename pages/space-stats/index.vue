@@ -165,7 +165,7 @@
 					</view>
 					<view class="progress-row">
 						<view class="progress-row__head">
-							<text class="progress-row__label">已智能解析</text>
+							<text class="progress-row__label">已完成解析</text>
 							<text class="progress-row__value progress-row__value--terracotta">{{ animatedInt('recipeParsedTotal') }} 道</text>
 						</view>
 						<view class="progress-track">

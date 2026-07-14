@@ -189,7 +189,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
   `smtp.qq.com:587` + SMTP 授权码
 - 后台 `配置中心 -> 小程序功能开关 -> AI 助手入口` 控制小程序首页底部中间按钮：
   开启时打开饮食管家，关闭时打开添加菜谱弹层；小程序通过
-  `GET /api/public/app-config` 读取公开功能开关。
+  `GET /api/public/app-config` 拉取配置。该开关默认关闭，配置缺失或拉取失败时保持关闭。
 
 接口口径说明：
 

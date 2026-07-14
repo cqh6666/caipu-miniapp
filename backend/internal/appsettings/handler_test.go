@@ -44,3 +44,29 @@ func TestHandlerGetPublicAppConfigReturnsMiniProgramFeatures(t *testing.T) {
 		t.Fatal("DietAssistantEnabled = true, want false")
 	}
 }
+
+func TestHandlerGetPublicAppConfigDefaultsDietAssistantToDisabled(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(nil, nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/public/app-config", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.GetPublicAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("recorder.Code = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response struct {
+		Data struct {
+			Features MiniProgramFeatureConfig `json:"features"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if response.Data.Features.DietAssistantEnabled {
+		t.Fatal("DietAssistantEnabled = true, want false without runtime provider")
+	}
+}

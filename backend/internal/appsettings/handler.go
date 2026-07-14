@@ -16,9 +16,7 @@ func NewHandler(service *Service, runtime *RuntimeProvider) *Handler {
 }
 
 func (h *Handler) GetPublicAppConfig(w http.ResponseWriter, r *http.Request) {
-	features := MiniProgramFeatureConfig{
-		DietAssistantEnabled: true,
-	}
+	features := MiniProgramFeatureConfig{}
 	if h.runtime != nil {
 		features = h.runtime.MiniProgramFeatures(r.Context())
 	}

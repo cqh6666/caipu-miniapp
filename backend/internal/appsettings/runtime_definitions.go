@@ -92,7 +92,7 @@ func buildRuntimeGroups(cfg config.Config) []runtimeGroupDefinition {
 					Label:        "AI 助手入口",
 					Description:  "开启后首页底部中间按钮打开饮食管家；关闭后同一按钮打开添加菜谱弹层。",
 					ValueType:    "bool",
-					DefaultValue: "true",
+					DefaultValue: "false",
 				},
 			},
 		},

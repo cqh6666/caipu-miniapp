@@ -147,18 +147,18 @@ func TestRuntimeProviderMiniProgramFeaturesDefaultsAndUpdates(t *testing.T) {
 	provider := newRuntimeProviderForTest(t)
 	ctx := context.Background()
 
-	if got := provider.MiniProgramFeatures(ctx).DietAssistantEnabled; !got {
-		t.Fatal("MiniProgramFeatures().DietAssistantEnabled = false, want true default")
+	if got := provider.MiniProgramFeatures(ctx).DietAssistantEnabled; got {
+		t.Fatal("MiniProgramFeatures().DietAssistantEnabled = true, want false default")
 	}
 
 	if _, err := provider.UpdateRuntimeGroup(ctx, "tester", "req-miniapp-features", "miniapp.features", map[string]any{
-		"diet_assistant_enabled": false,
+		"diet_assistant_enabled": true,
 	}, nil); err != nil {
 		t.Fatalf("UpdateRuntimeGroup(miniapp.features) error = %v", err)
 	}
 
-	if got := provider.MiniProgramFeatures(ctx).DietAssistantEnabled; got {
-		t.Fatal("MiniProgramFeatures().DietAssistantEnabled = true, want false after update")
+	if got := provider.MiniProgramFeatures(ctx).DietAssistantEnabled; !got {
+		t.Fatal("MiniProgramFeatures().DietAssistantEnabled = false, want true after update")
 	}
 }
 

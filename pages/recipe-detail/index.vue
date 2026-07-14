@@ -1029,7 +1029,7 @@ export default {
 			if (this.hasMeaningfulParsedContent) {
 				uni.showModal({
 					title: '重新整理？',
-					content: '将再次调用 AI 整理食材与步骤，消耗 1 次额度。',
+					content: '将重新整理食材与步骤，消耗 1 次整理额度。',
 					confirmText: '继续整理',
 					confirmColor: '#b4664c',
 					success: ({ confirm }) => {

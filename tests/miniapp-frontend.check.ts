@@ -21,6 +21,7 @@ import {
 } from "../pages/index/use-add-preview-flow";
 import { createCountUpController, easeOutCubic } from "../utils/count-up";
 import { createImageDisplayController } from "../utils/image-cache";
+import { normalizePublicAppConfig } from "../utils/public-app-config-api";
 import { createChunkDecoder } from "../utils/diet-assistant-stream-decoder";
 import { createDietAssistantStreamParser } from "../utils/diet-assistant-sse";
 import {
@@ -64,6 +65,9 @@ const recipes = [
   { id: "1", title: "番茄炒蛋", mealType: "main", status: "wishlist" },
   { id: "2", title: "早餐粥", mealType: "breakfast", status: "done" },
 ];
+assertEqual(normalizePublicAppConfig().features.dietAssistantEnabled, false, "AI 助手配置缺失时默认关闭");
+assertEqual(normalizePublicAppConfig({ features: { dietAssistantEnabled: "invalid" } }).features.dietAssistantEnabled, false, "AI 助手非法配置保持关闭");
+assertEqual(normalizePublicAppConfig({ features: { dietAssistantEnabled: true } }).features.dietAssistantEnabled, true, "AI 助手仅显式开启时展示");
 assertEqual(filterRecipes(recipes, { mealType: "main", status: "wishlist" }).length, 1, "菜谱筛选");
 assertEqual(filterRecipes(recipes, { mealOrderMode: true }).length, 2, "点菜模式不过滤分类");
 assertEqual(pickRandomRecipe(recipes, "1", () => 0)?.id, "2", "随机推荐排除当前项");

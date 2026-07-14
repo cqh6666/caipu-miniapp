@@ -19,12 +19,12 @@
 				</view>
 			</view>
 
-			<!-- 智能解析中状态 -->
+			<!-- 内容解析中状态 -->
 			<view v-if="isParsing" class="parsing-state">
 				<view class="parsing-state__spinner">
 					<up-loading-icon mode="circle" color="#745742" size="48"></up-loading-icon>
 				</view>
-				<text class="parsing-state__title">智能解析中</text>
+				<text class="parsing-state__title">内容解析中</text>
 				<text class="parsing-state__desc">{{ parsingText }}</text>
 				<text v-if="parsingDuration > 3" class="parsing-state__hint">可能需要几秒，请稍等</text>
 			</view>

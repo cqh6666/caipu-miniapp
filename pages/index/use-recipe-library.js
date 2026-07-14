@@ -255,12 +255,16 @@ buildSearchNoResultPrompt() {
 },
 refreshPublicAppConfig() {
 	const requestID = ++this.publicAppConfigRequestID
+	this.publicAppConfig = { features: { dietAssistantEnabled: false } }
 	loadPublicAppConfig()
 		.then((config) => {
 			if (requestID !== this.publicAppConfigRequestID) return
 			this.publicAppConfig = config
 		})
 		.catch((error) => {
+			if (requestID === this.publicAppConfigRequestID) {
+				this.publicAppConfig = { features: { dietAssistantEnabled: false } }
+			}
 			console.warn?.('load public app config failed', error)
 		})
 },
@@ -654,7 +658,7 @@ export const recipeListComputed = {
 		return this.activeStatus !== 'all' || this.hasSearchKeyword
 	},
 	isDietAssistantEntryEnabled() {
-		return this.publicAppConfig?.features?.dietAssistantEnabled !== false
+		return this.publicAppConfig?.features?.dietAssistantEnabled === true
 	},
 	isExplorePrimaryFab() {
 		return this.activeSection === 'library' && this.appMode === 'explore'

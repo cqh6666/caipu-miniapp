@@ -598,7 +598,7 @@ export const smartAddComputed = {
 		return '链接'
 	},
 	draftLinkTitleSourceLabel() {
-		if (this.draftLinkPreviewTitleSource === 'ai') return 'AI 识别'
+		if (this.draftLinkPreviewTitleSource === 'ai') return '自动识别'
 		if (this.draftLinkPreviewTitleSource === 'rule') return '规则识别'
 		return ''
 	},
