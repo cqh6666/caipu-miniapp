@@ -28,6 +28,20 @@ cp configs/example.env configs/local.env
 go run ./cmd/server
 ```
 
+开发与重构自验：
+
+```bash
+cd backend
+go test ./...
+go vet ./...
+go test -race ./...
+```
+
+- 核心包按“业务服务 / 外部协议 / 持久化 / 规则”组织，应用装配集中在 `internal/app/`。
+- 涉及迁移、配置、鉴权或跨模块接线时，除定向测试外必须执行后端全量测试。
+- 当前后端可维护性重构范围、优先级、进度与验证记录见
+  [Go 后端可维护性重构路线图](../docs/backend-refactor-roadmap-2026-07-14.md)。
+
 和 B 站自动解析相关的可选配置：
 
 - `RECIPE_AUTO_PARSE_ENABLED`

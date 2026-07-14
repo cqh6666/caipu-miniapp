@@ -28,7 +28,7 @@ var fallbackWords = []string{
 }
 
 var placeholderNames = map[string]struct{}{
-	"微信用户":    {},
+	"微信用户":        {},
 	"wechat user": {},
 }
 

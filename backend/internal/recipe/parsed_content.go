@@ -1,0 +1,400 @@
+package recipe
+
+import (
+	"regexp"
+	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
+)
+
+var (
+	secondaryIngredientPattern          = regexp.MustCompile(`(?i)(常用配菜|基础调味|调味|葱|姜|蒜|香叶|桂皮|八角|花椒|胡椒|盐|糖|冰糖|白糖|红糖|生抽|老抽|蚝油|料酒|鸡精|味精|醋|陈醋|米醋|香醋|豆瓣酱|辣椒|小米椒|淀粉|清水|热水|食用油|香油|芝麻油|花椒粉|辣椒粉|五香粉|十三香|孜然|芝麻|香菜|葱花)`)
+	secondaryIngredientExceptionPattern = regexp.MustCompile(`(?i)^(洋葱|红葱头|葱头)`)
+	ingredientSuffixPattern             = regexp.MustCompile(`\s*(?:\d+(?:\.\d+)?\s*(?:g|kg|克|千克|ml|毫升|l|升|勺|汤匙|茶匙|匙|杯|个|颗|根|把|片|块|斤|两|袋|盒|碗)|半个|半颗|半根|半头|适量|少许)$`)
+)
+
+func normalizeParsedContent(content ParsedContent, mealType, title, ingredient string) ParsedContent {
+	mainIngredients := cleanLines(content.MainIngredients)
+	secondaryIngredients := cleanLines(content.SecondaryIngredients)
+	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
+		mainIngredients, secondaryIngredients = splitIngredientLines(cleanLines(content.legacyIngredients))
+	}
+
+	steps := cleanParsedSteps(content.Steps)
+	if len(steps) == 0 {
+		steps = buildParsedSteps(cleanLines(content.legacySteps))
+	}
+
+	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 && len(steps) == 0 {
+		return defaultParsedContent(mealType, title, ingredient)
+	}
+
+	fallback := defaultParsedContent(mealType, title, ingredient)
+	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
+		mainIngredients = append([]string{}, fallback.MainIngredients...)
+		secondaryIngredients = append([]string{}, fallback.SecondaryIngredients...)
+	}
+	if len(steps) == 0 {
+		steps = append([]ParsedStep{}, fallback.Steps...)
+	}
+
+	return ParsedContent{
+		MainIngredients:      mainIngredients,
+		SecondaryIngredients: secondaryIngredients,
+		Steps:                steps,
+	}
+}
+
+func defaultParsedContent(mealType, title, ingredient string) ParsedContent {
+	mainIngredient := ingredient
+	if mainIngredient == "" {
+		mainIngredient = title
+	}
+	if mainIngredient == "" {
+		mainIngredient = "主食材"
+	}
+
+	mealLabel := "早餐"
+	if mealType == "main" {
+		mealLabel = "正餐"
+	}
+
+	return ParsedContent{
+		MainIngredients: []string{
+			mainIngredient + " 1份",
+		},
+		SecondaryIngredients: []string{
+			mealLabel + "常用配菜 适量",
+			"基础调味 适量",
+		},
+		Steps: []ParsedStep{
+			{Title: "整理做法", Detail: "先整理这道菜的核心做法。"},
+			{Title: "调整口味", Detail: "按自己的口味调整成容易复刻的版本。"},
+			{Title: "补充记录", Detail: "做完以后补充口感和火候记录。"},
+		},
+	}
+}
+
+func legacyFrontendFallbackParsedContent(mealType, title, ingredient string) ParsedContent {
+	return normalizeParsedContent(ParsedContent{
+		legacyIngredients: legacyFrontendFallbackIngredientLines(mealType, title, ingredient),
+		legacySteps:       legacyFrontendFallbackStepLines(title),
+	}, mealType, title, ingredient)
+}
+
+func cleanLines(lines []string) []string {
+	items := make([]string, 0, len(lines))
+	seen := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if _, exists := seen[line]; exists {
+			continue
+		}
+		seen[line] = struct{}{}
+		items = append(items, line)
+	}
+	return items
+}
+
+func shouldQueueAutoParse(link string, content ParsedContent, mealType, title, ingredient string) bool {
+	if !linkparse.SupportsAutoParseURL(link) {
+		return false
+	}
+
+	return !hasUserProvidedParsedContent(content, mealType, title, ingredient)
+}
+
+func canGenerateFlowchartForRecipe(item Recipe) bool {
+	if strings.TrimSpace(item.Title) == "" {
+		return false
+	}
+	if !hasUserProvidedParsedContent(item.ParsedContent, item.MealType, item.Title, item.Ingredient) {
+		return false
+	}
+	return len(cleanParsedSteps(item.ParsedContent.Steps)) >= 3
+}
+
+func hasMeaningfulParsedContent(content ParsedContent) bool {
+	return len(parsedContentIngredientLines(content)) > 0 || len(parsedContentStepLines(content)) > 0
+}
+
+func hasUserProvidedParsedContent(content ParsedContent, mealType, title, ingredient string) bool {
+	if !hasMeaningfulParsedContent(content) {
+		return false
+	}
+
+	requestedIngredients := parsedContentIngredientLines(content)
+	requestedSteps := parsedContentStepLines(content)
+
+	for _, fallback := range []struct {
+		ingredients []string
+		steps       []string
+	}{
+		{
+			ingredients: parsedContentIngredientLines(defaultParsedContent(mealType, title, ingredient)),
+			steps:       parsedContentStepLines(defaultParsedContent(mealType, title, ingredient)),
+		},
+		{
+			ingredients: legacyFrontendFallbackIngredientLines(mealType, title, ingredient),
+			steps:       legacyFrontendFallbackStepLines(title),
+		},
+	} {
+		if stringSlicesEqual(requestedIngredients, fallback.ingredients) && stringSlicesEqual(requestedSteps, fallback.steps) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func legacyFrontendFallbackIngredientLines(mealType, title, ingredient string) []string {
+	return parsedContentIngredientLines(defaultParsedContent(mealType, title, ingredient))
+}
+
+func legacyFrontendFallbackStepLines(title string) []string {
+	titleLabel := strings.TrimSpace(title)
+	if titleLabel == "" {
+		titleLabel = "这道菜"
+	}
+
+	return []string{
+		"先从链接里抓出 " + titleLabel + " 的核心做法。",
+		"按自己的口味整理成容易复刻的家常版本。",
+		"做完以后回来补充口感、火候和踩坑点。",
+	}
+}
+
+func parsedContentIngredientLines(content ParsedContent) []string {
+	mainIngredients := cleanLines(content.MainIngredients)
+	secondaryIngredients := cleanLines(content.SecondaryIngredients)
+	if len(mainIngredients) > 0 || len(secondaryIngredients) > 0 {
+		return append(append([]string{}, mainIngredients...), secondaryIngredients...)
+	}
+	return cleanLines(content.legacyIngredients)
+}
+
+func parsedContentStepLines(content ParsedContent) []string {
+	steps := cleanParsedSteps(content.Steps)
+	if len(steps) > 0 {
+		items := make([]string, 0, len(steps))
+		for _, step := range steps {
+			items = append(items, step.Detail)
+		}
+		return items
+	}
+	return cleanLines(content.legacySteps)
+}
+
+func splitIngredientLines(lines []string) ([]string, []string) {
+	cleaned := cleanLines(lines)
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+
+	mainIngredients := make([]string, 0, 4)
+	secondaryIngredients := make([]string, 0, len(cleaned))
+
+	for _, line := range cleaned {
+		if isSecondaryIngredientLine(line) {
+			secondaryIngredients = append(secondaryIngredients, line)
+			continue
+		}
+		mainIngredients = append(mainIngredients, line)
+	}
+
+	if len(mainIngredients) == 0 {
+		limit := 3
+		if len(cleaned) < limit {
+			limit = len(cleaned)
+		}
+		mainIngredients = append(mainIngredients, cleaned[:limit]...)
+		secondaryIngredients = append([]string{}, cleaned[limit:]...)
+	}
+
+	return mainIngredients, secondaryIngredients
+}
+
+func isSecondaryIngredientLine(line string) bool {
+	label := ingredientLabelFromLine(line)
+	return secondaryIngredientPattern.MatchString(label) && !secondaryIngredientExceptionPattern.MatchString(label)
+}
+
+func ingredientLabelFromLine(line string) string {
+	label := strings.TrimSpace(line)
+	label = ingredientSuffixPattern.ReplaceAllString(label, "")
+	return strings.TrimSpace(label)
+}
+
+func cleanParsedSteps(steps []ParsedStep) []ParsedStep {
+	items := make([]ParsedStep, 0, len(steps))
+	seen := make(map[string]struct{}, len(steps))
+	for index, step := range steps {
+		title := strings.TrimSpace(step.Title)
+		detail := strings.TrimSpace(step.Detail)
+		if detail == "" {
+			detail = title
+		}
+		if detail == "" {
+			continue
+		}
+		if title == "" {
+			title = inferParsedStepTitle(detail, index)
+		}
+		key := title + "\x00" + detail
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, ParsedStep{
+			Title:  title,
+			Detail: detail,
+		})
+	}
+	return compactParsedSteps(items)
+}
+
+func buildParsedSteps(lines []string) []ParsedStep {
+	items := make([]ParsedStep, 0, len(lines))
+	for index, line := range cleanLines(lines) {
+		items = append(items, ParsedStep{
+			Title:  inferParsedStepTitle(line, index),
+			Detail: line,
+		})
+	}
+	return compactParsedSteps(items)
+}
+
+func compactParsedSteps(steps []ParsedStep) []ParsedStep {
+	if len(steps) <= maxParsedSteps {
+		return append([]ParsedStep{}, steps...)
+	}
+
+	items := make([]ParsedStep, 0, maxParsedSteps)
+	for index := 0; index < maxParsedSteps; index++ {
+		start := index * len(steps) / maxParsedSteps
+		end := (index + 1) * len(steps) / maxParsedSteps
+		if start >= len(steps) {
+			break
+		}
+		if end <= start {
+			end = start + 1
+		}
+		if end > len(steps) {
+			end = len(steps)
+		}
+
+		group := steps[start:end]
+		title := strings.TrimSpace(group[0].Title)
+		if title == "" {
+			title = inferParsedStepTitle(group[0].Detail, index)
+		}
+
+		details := make([]string, 0, len(group))
+		for _, step := range group {
+			detail := strings.TrimSpace(step.Detail)
+			if detail == "" {
+				continue
+			}
+			details = append(details, detail)
+		}
+		if len(details) == 0 && title != "" {
+			details = append(details, title)
+		}
+
+		items = append(items, ParsedStep{
+			Title:  title,
+			Detail: strings.Join(details, "；"),
+		})
+	}
+
+	return items
+}
+
+func inferParsedStepTitle(detail string, index int) string {
+	switch {
+	case strings.Contains(detail, "焯水") || strings.Contains(detail, "汆水"):
+		if strings.Contains(detail, "腥") || strings.Contains(detail, "浮沫") {
+			return "焯水去腥"
+		}
+		return "焯水备用"
+	case strings.Contains(detail, "腌"):
+		return "腌制入味"
+	case strings.Contains(detail, "糖色") || strings.Contains(detail, "冰糖"):
+		return "炒糖上色"
+	case strings.Contains(detail, "爆香") || strings.Contains(detail, "炒香"):
+		return "炒香底料"
+	case strings.Contains(detail, "切") || strings.Contains(detail, "改刀"):
+		return "切配备料"
+	case strings.Contains(detail, "收汁"):
+		return "收汁出锅"
+	case strings.Contains(detail, "炖") || strings.Contains(detail, "焖"):
+		return "小火慢炖"
+	case strings.Contains(detail, "蒸"):
+		return "上锅蒸熟"
+	case strings.Contains(detail, "炸"):
+		return "炸至金黄"
+	case strings.Contains(detail, "煎"):
+		return "煎香上色"
+	case strings.Contains(detail, "烤"):
+		return "烤至上色"
+	case strings.Contains(detail, "煮"):
+		return "煮至入味"
+	case strings.Contains(detail, "拌"):
+		return "拌匀调味"
+	case strings.Contains(detail, "炒") || strings.Contains(detail, "翻炒"):
+		return "翻炒入味"
+	case strings.Contains(detail, "出锅"):
+		return "调味出锅"
+	case index == 0:
+		return "处理食材"
+	default:
+		return "继续烹饪"
+	}
+}
+
+func stringSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func parsedStepSlicesEqual(left, right []ParsedStep) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	for index := range left {
+		if left[index].Title != right[index].Title || left[index].Detail != right[index].Detail {
+			return false
+		}
+	}
+
+	return true
+}
+
+func parsedContentSlicesEqual(left, right ParsedContent) bool {
+	return stringSlicesEqual(cleanLines(left.MainIngredients), cleanLines(right.MainIngredients)) &&
+		stringSlicesEqual(cleanLines(left.SecondaryIngredients), cleanLines(right.SecondaryIngredients)) &&
+		parsedStepSlicesEqual(cleanParsedSteps(left.Steps), cleanParsedSteps(right.Steps))
+}
+
+func isAllowedMealType(value string) bool {
+	_, ok := allowedMealTypes[value]
+	return ok
+}
+
+func isAllowedStatus(value string) bool {
+	_, ok := allowedStatuses[value]
+	return ok
+}

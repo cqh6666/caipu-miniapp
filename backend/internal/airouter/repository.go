@@ -13,16 +13,16 @@ type Repository struct {
 }
 
 type sceneRecord struct {
-	Scene                  Scene
-	Enabled                bool
-	Strategy               Strategy
-	MaxAttempts            int
-	RetryOn                []string
+	Scene                   Scene
+	Enabled                 bool
+	Strategy                Strategy
+	MaxAttempts             int
+	RetryOn                 []string
 	BreakerFailureThreshold int
-	BreakerCooldownSeconds int
-	RequestOptions         RequestOptions
-	UpdatedBy              string
-	UpdatedAt              string
+	BreakerCooldownSeconds  int
+	RequestOptions          RequestOptions
+	UpdatedBy               string
+	UpdatedAt               string
 }
 
 type providerRecord struct {
