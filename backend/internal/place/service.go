@@ -94,7 +94,10 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req place
 	if err != nil {
 		return Place{}, err
 	}
-	item.ImageURLs = s.mirrorExternalImages(ctx, item.ImageURLs)
+	item.ImageURLs, err = s.mirrorExternalImages(ctx, item.ImageURLs)
+	if err != nil {
+		return Place{}, err
+	}
 
 	placeID, err := common.NewPrefixedID("pla")
 	if err != nil {
@@ -139,7 +142,10 @@ func (s *Service) Update(ctx context.Context, userID int64, placeID string, req 
 	if err != nil {
 		return Place{}, err
 	}
-	next.ImageURLs = s.mirrorExternalImages(ctx, next.ImageURLs)
+	next.ImageURLs, err = s.mirrorExternalImages(ctx, next.ImageURLs)
+	if err != nil {
+		return Place{}, err
+	}
 
 	now := time.Now().Format(time.RFC3339)
 	next.ID = current.ID
@@ -224,9 +230,9 @@ func (s *Service) Delete(ctx context.Context, userID int64, placeID string) erro
 	return nil
 }
 
-func (s *Service) mirrorExternalImages(ctx context.Context, imageURLs []string) []string {
+func (s *Service) mirrorExternalImages(ctx context.Context, imageURLs []string) ([]string, error) {
 	if s.upload == nil || len(imageURLs) == 0 {
-		return imageURLs
+		return imageURLs, nil
 	}
 
 	next := make([]string, 0, len(imageURLs))
@@ -242,7 +248,10 @@ func (s *Service) mirrorExternalImages(ctx context.Context, imageURLs []string) 
 			if image, err := s.upload.SaveRemoteImage(ctx, value); err == nil && strings.TrimSpace(image.URL) != "" {
 				resolved = strings.TrimSpace(image.URL)
 			} else {
-				continue
+				if err != nil {
+					return nil, err
+				}
+				return nil, common.NewAppError(common.CodeBadRequest, "remote place image could not be mirrored", http.StatusBadRequest)
 			}
 		}
 
@@ -256,7 +265,7 @@ func (s *Service) mirrorExternalImages(ctx context.Context, imageURLs []string) 
 			break
 		}
 	}
-	return next
+	return next, nil
 }
 
 func isRemoteImageURL(value string) bool {

@@ -16,7 +16,7 @@ func TestServiceLoginIssuesToken(t *testing.T) {
 		t.Fatalf("GenerateFromPassword returned error: %v", err)
 	}
 
-	tokens := NewTokenManager("unit-test-secret", time.Hour)
+	tokens := NewTokenManager("unit-test-secret", time.Hour, "admin")
 	service := NewService("admin", string(hash), tokens, false)
 
 	token, err := service.Login(context.Background(), "admin", "secret-123")
@@ -44,7 +44,7 @@ func TestServiceLoginRejectsWrongPassword(t *testing.T) {
 		t.Fatalf("GenerateFromPassword returned error: %v", err)
 	}
 
-	service := NewService("admin", string(hash), NewTokenManager("unit-test-secret", time.Hour), false)
+	service := NewService("admin", string(hash), NewTokenManager("unit-test-secret", time.Hour, "admin"), false)
 	if _, err := service.Login(context.Background(), "admin", "wrong-password"); err == nil {
 		t.Fatal("expected login error")
 	}

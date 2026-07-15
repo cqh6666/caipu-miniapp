@@ -244,7 +244,10 @@ JWT_SECRET=请替换成openssl生成的随机字符串
 JWT_EXPIRE_HOURS=720
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH=请填写 bcrypt 哈希
-ADMIN_JWT_SECRET=
+ADMIN_JWT_SECRET=请替换成另一条openssl生成的随机字符串
+CREDENTIALS_SECRET=请替换成第三条openssl生成的随机字符串
+CREDENTIALS_KEY_VERSION=prod-v1
+CREDENTIALS_PREVIOUS_KEYS=
 
 WECHAT_APP_ID=wxafe7c4144c9c063e
 WECHAT_APP_SECRET=请填写真实微信小程序密钥
@@ -267,13 +270,16 @@ EOF
 - `APP_ADDR` 默认写的是 `127.0.0.1:8080`，如果你改了 `APP_PORT`，这里也要一起改
 - `UPLOAD_PUBLIC_BASE_URL` 要改成你的正式 `HTTPS` 域名
 
-生成 `JWT_SECRET`：
+分别生成 `JWT_SECRET`、`ADMIN_JWT_SECRET` 和 `CREDENTIALS_SECRET`：
 
 ```bash
 openssl rand -hex 32
+openssl rand -hex 32
+openssl rand -hex 32
 ```
 
-把生成结果填回上面的 `.env` 文件即可。
+把三次生成结果依次填回上面的 `.env` 文件。三者必须独立，不能复用；轮换
+`CREDENTIALS_SECRET` 时再临时填写 `CREDENTIALS_PREVIOUS_KEYS=旧版本=旧密钥`。
 
 生成后台密码哈希示例：
 

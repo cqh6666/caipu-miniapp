@@ -180,12 +180,9 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		ctx,
 		`UPDATE recipes
 	SET title = ?, title_source = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, meal_type = ?, status = ?, note = ?,
-	    ingredients_json = ?, steps_json = ?, flowchart_image_url = ?, flowchart_provider = ?, flowchart_model = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
-	    flowchart_status = ?, flowchart_error = ?, flowchart_requested_at = ?, flowchart_finished_at = ?,
-	    parse_status = ?, parse_source = ?, parse_error = ?,
-	    parse_requested_at = ?, parse_finished_at = ?, parse_attempts = ?, parse_next_attempt_at = ?, parse_last_error_type = ?, parse_processing_started_at = ?,
-	    parsed_content_edited = ?, pinned_at = ?, done_at = ?, updated_by = ?, updated_at = ?
-WHERE id = ? AND deleted_at IS NULL`,
+	    ingredients_json = ?, steps_json = ?, parsed_content_edited = ?, pinned_at = ?, done_at = ?,
+	    updated_by = ?, updated_at = ?, content_version = COALESCE(content_version, 0) + 1
+	WHERE id = ? AND deleted_at IS NULL`,
 		item.Title,
 		normalizeTitleSource(item.TitleSource),
 		nullableString(item.Ingredient),
@@ -199,24 +196,6 @@ WHERE id = ? AND deleted_at IS NULL`,
 		nullableString(item.Note),
 		ingredientsJSON,
 		stepsJSON,
-		nonNullableTrimmedString(item.FlowchartImageURL),
-		strings.TrimSpace(item.FlowchartProvider),
-		strings.TrimSpace(item.FlowchartModel),
-		nullableString(item.FlowchartUpdatedAt),
-		strings.TrimSpace(item.FlowchartSourceHash),
-		item.FlowchartStatus,
-		strings.TrimSpace(item.FlowchartError),
-		nullableString(item.FlowchartRequestedAt),
-		nullableString(item.FlowchartFinishedAt),
-		item.ParseStatus,
-		item.ParseSource,
-		strings.TrimSpace(item.ParseError),
-		nullableString(item.ParseRequestedAt),
-		nullableString(item.ParseFinishedAt),
-		item.ParseAttempts,
-		nonNullableTrimmedString(item.ParseNextAttemptAt),
-		nonNullableTrimmedString(item.ParseLastErrorType),
-		nonNullableTrimmedString(item.ParseProcessingStartedAt),
 		item.ParsedContentEdited,
 		nullableString(item.PinnedAt),
 		nonNullableTrimmedString(item.DoneAt),
@@ -239,6 +218,30 @@ WHERE id = ? AND deleted_at IS NULL`,
 		return Recipe{}, sql.ErrNoRows
 	}
 
+	if autoParseStateChanged(current, item) {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE recipes
+	SET parse_status = ?, parse_source = ?, parse_error = ?, parse_requested_at = ?, parse_finished_at = ?,
+	    parse_attempts = ?, parse_next_attempt_at = ?, parse_last_error_type = ?, parse_processing_started_at = ?,
+	    parse_claim_token = '', parse_claim_content_version = 0, parse_lease_expires_at = ''
+	WHERE id = ? AND deleted_at IS NULL`,
+			item.ParseStatus,
+			item.ParseSource,
+			strings.TrimSpace(item.ParseError),
+			nullableString(item.ParseRequestedAt),
+			nullableString(item.ParseFinishedAt),
+			item.ParseAttempts,
+			nonNullableTrimmedString(item.ParseNextAttemptAt),
+			nonNullableTrimmedString(item.ParseLastErrorType),
+			nonNullableTrimmedString(item.ParseProcessingStartedAt),
+			item.ID,
+		); err != nil {
+			_ = tx.Rollback()
+			return Recipe{}, fmt.Errorf("update recipe auto-parse state: %w", err)
+		}
+	}
+
 	if current.Status != item.Status {
 		if err := insertRecipeStatusEvent(ctx, tx, item.KitchenID, item.ID, current.Status, item.Status, item.UpdatedBy, item.UpdatedAt, "api"); err != nil {
 			_ = tx.Rollback()
@@ -251,11 +254,29 @@ WHERE id = ? AND deleted_at IS NULL`,
 		return Recipe{}, err
 	}
 
+	updated, err := findRecipeByIDTx(ctx, tx, item.ID)
+	if err != nil {
+		_ = tx.Rollback()
+		return Recipe{}, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return Recipe{}, fmt.Errorf("commit update recipe: %w", err)
 	}
 
-	return item, nil
+	return updated, nil
+}
+
+func autoParseStateChanged(current, next Recipe) bool {
+	return current.ParseStatus != next.ParseStatus ||
+		current.ParseSource != next.ParseSource ||
+		current.ParseError != next.ParseError ||
+		current.ParseRequestedAt != next.ParseRequestedAt ||
+		current.ParseFinishedAt != next.ParseFinishedAt ||
+		current.ParseAttempts != next.ParseAttempts ||
+		current.ParseNextAttemptAt != next.ParseNextAttemptAt ||
+		current.ParseLastErrorType != next.ParseLastErrorType ||
+		current.ParseProcessingStartedAt != next.ParseProcessingStartedAt
 }
 
 func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenID int64, status string, updatedBy int64, touchedAt string) error {

@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
@@ -10,31 +11,45 @@ import (
 )
 
 type TokenManager struct {
-	secret []byte
-	expire time.Duration
+	secret          []byte
+	expire          time.Duration
+	expectedSubject string
 }
 
+const (
+	adminTokenIssuer   = "caipu-miniapp-admin"
+	adminTokenAudience = "caipu-miniapp-admin-api"
+	adminTokenUse      = "admin_access"
+)
+
 type Claims struct {
-	Subject string `json:"sub"`
+	TokenUse string `json:"token_use"`
 	jwt.RegisteredClaims
 }
 
-func NewTokenManager(secret string, expire time.Duration) *TokenManager {
+func NewTokenManager(secret string, expire time.Duration, expectedSubject ...string) *TokenManager {
 	if expire <= 0 {
 		expire = 24 * time.Hour
 	}
+	subject := ""
+	if len(expectedSubject) > 0 {
+		subject = strings.TrimSpace(expectedSubject[0])
+	}
 	return &TokenManager{
-		secret: []byte(secret),
-		expire: expire,
+		secret:          []byte(secret),
+		expire:          expire,
+		expectedSubject: subject,
 	}
 }
 
 func (m *TokenManager) Issue(subject string) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		Subject: subject,
+		TokenUse: adminTokenUse,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   subject,
+			Issuer:    adminTokenIssuer,
+			Subject:   strings.TrimSpace(subject),
+			Audience:  jwt.ClaimStrings{adminTokenAudience},
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.expire)),
@@ -51,12 +66,12 @@ func (m *TokenManager) Parse(tokenString string) (string, error) {
 			return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
 		}
 		return m.secret, nil
-	})
+	}, jwt.WithIssuer(adminTokenIssuer), jwt.WithAudience(adminTokenAudience), jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil || !token.Valid {
 		return "", common.NewAppError(common.CodeUnauthorized, "invalid admin token", http.StatusUnauthorized).WithErr(err)
 	}
 
-	if claims.Subject == "" {
+	if claims.TokenUse != adminTokenUse || claims.Subject == "" || m.expectedSubject == "" || claims.Subject != m.expectedSubject {
 		return "", common.NewAppError(common.CodeUnauthorized, "invalid admin token", http.StatusUnauthorized)
 	}
 	return claims.Subject, nil

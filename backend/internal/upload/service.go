@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/securehttp"
 )
 
 var allowedImageTypes = map[string]string{
@@ -41,8 +43,19 @@ func NewService(uploadDir, publicBaseURL string, maxImageSizeMB int64) *Service 
 		uploadDir:         uploadDir,
 		publicBaseURL:     strings.TrimRight(strings.TrimSpace(publicBaseURL), "/"),
 		maxImageSizeBytes: maxImageSizeMB * 1024 * 1024,
-		httpClient:        &http.Client{Timeout: 20 * time.Second},
+		httpClient:        securehttp.NewClient(20 * time.Second),
 	}
+}
+
+// NewServiceWithHTTPClient is intended for trusted adapters and deterministic
+// tests. Production code should use NewService so untrusted destinations pass
+// through the guarded DNS and redirect policy.
+func NewServiceWithHTTPClient(uploadDir, publicBaseURL string, maxImageSizeMB int64, client *http.Client) *Service {
+	service := NewService(uploadDir, publicBaseURL, maxImageSizeMB)
+	if client != nil {
+		service.httpClient = client
+	}
+	return service
 }
 
 func (s *Service) MaxImageSizeBytes() int64 {
@@ -79,7 +92,11 @@ func (s *Service) SaveRemoteImage(ctx context.Context, sourceURL string) (Image,
 		return s.saveImageReader("", nopReadSeekCloser{Reader: bytes.NewReader(data)}, contentType)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	parsedURL, err := url.Parse(sourceURL)
+	if err != nil || securehttp.ValidateURL(parsedURL) != nil {
+		return Image{}, common.NewAppError(common.CodeBadRequest, "remote image URL is not allowed", http.StatusBadRequest)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
 	if err != nil {
 		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("build remote image request: %w", err))
 	}
@@ -87,6 +104,9 @@ func (s *Service) SaveRemoteImage(ctx context.Context, sourceURL string) (Image,
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		if errors.Is(err, securehttp.ErrBlockedAddress) || errors.Is(err, securehttp.ErrInvalidURL) {
+			return Image{}, common.NewAppError(common.CodeBadRequest, "remote image URL is not allowed", http.StatusBadRequest).WithErr(err)
+		}
 		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("download remote image: %w", err))
 	}
 	defer resp.Body.Close()

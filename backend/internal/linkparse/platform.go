@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/securehttp"
 )
 
 func extractSupportedURL(rawInput string) (string, error) {
@@ -41,7 +42,7 @@ func SupportsBilibiliURL(rawInput string) bool {
 		return false
 	}
 
-	return isResolvableBilibiliHost(u.Host)
+	return securehttp.ValidateURL(u) == nil && isResolvableBilibiliHost(u.Hostname())
 }
 
 func SupportsXiaohongshuURL(rawInput string) bool {
@@ -55,7 +56,7 @@ func SupportsXiaohongshuURL(rawInput string) bool {
 		return false
 	}
 
-	return isResolvableXiaohongshuHost(u.Host)
+	return securehttp.ValidateURL(u) == nil && isResolvableXiaohongshuHost(u.Hostname())
 }
 
 func SupportsAutoParseURL(rawInput string) bool {
@@ -74,6 +75,5 @@ func DetectParsePlatform(rawInput string) string {
 }
 
 func isResolvableXiaohongshuHost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return strings.Contains(host, "xiaohongshu.com") || strings.Contains(host, "xhslink.com")
+	return securehttp.HostMatches(host, "xiaohongshu.com", "xhslink.com")
 }

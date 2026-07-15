@@ -56,6 +56,8 @@ go test -race ./...
 - `RECIPE_IMAGE_MIRROR_INTERVAL_SECONDS`
 - `RECIPE_IMAGE_MIRROR_BATCH_SIZE`
 - `CREDENTIALS_SECRET`
+- `CREDENTIALS_KEY_VERSION`
+- `CREDENTIALS_PREVIOUS_KEYS`（仅在凭据密钥轮换窗口临时配置旧 keyring）
 - `APP_SETTINGS_ACCESS_MODE`
 - `APP_ADMIN_OPENIDS`
 - `APP_SETTINGS_ALLOWED_OPENIDS`
@@ -140,6 +142,7 @@ go test -race ./...
 
 应用级 B 站配置页访问控制：
 
+- 默认使用 `APP_SETTINGS_ACCESS_MODE=admin`。
 - `APP_SETTINGS_ACCESS_MODE=all`：所有登录用户都能进入隐藏设置页
 - `APP_SETTINGS_ACCESS_MODE=admin`：只有 `APP_ADMIN_OPENIDS` 里的用户能进入
 - `APP_SETTINGS_ACCESS_MODE=whitelist`：`APP_ADMIN_OPENIDS` 和 `APP_SETTINGS_ALLOWED_OPENIDS` 里的用户都能进入
@@ -335,7 +338,7 @@ go run ./cmd/server -migrate-only
 - 保存菜谱时如果识别到 B 站链接，会自动标记为 `parseStatus=pending`
 - 后端定时任务按 `RECIPE_AUTO_PARSE_INTERVAL_SECONDS` 扫描并解析
 - 如果配置了全局 `SESSDATA`，解析器会自动带上登录态请求 B 站字幕接口
-- 隐藏设置页的访问权限由 `APP_SETTINGS_ACCESS_MODE` 控制，当前默认值是 `all`
+- 隐藏设置页的访问权限由 `APP_SETTINGS_ACCESS_MODE` 控制，当前默认值是 `admin`
 - 成功后会自动补齐 `ingredient`、`parsedContent.ingredients`、`parsedContent.steps`
 - 失败后会保留 `parseStatus=failed` 和 `parseError`
 - 可通过 `POST /api/recipes/{recipeID}/reparse` 手动重新入队
@@ -347,7 +350,7 @@ go run ./cmd/server -migrate-only
 - 后台登录和小程序登录分离，走独立账号：
   - `ADMIN_USERNAME`
   - `ADMIN_PASSWORD_HASH`
-  - `ADMIN_JWT_SECRET`（可选）
+  - `ADMIN_JWT_SECRET`（非 `local` 环境必须配置，且必须与 `JWT_SECRET`、`CREDENTIALS_SECRET` 独立）
 - `app_runtime_settings` 支持在线覆盖 `AI / sidecar` 相关配置，并在更新后自动失效本地缓存
 - `app_setting_audits` 记录后台保存、测试，以及移动端 `Bilibili SESSDATA` 更新动作
 

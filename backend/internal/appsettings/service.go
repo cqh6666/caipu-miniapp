@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
 )
 
@@ -18,6 +19,15 @@ type Service struct {
 	cipherBox *cipherBox
 	parser    *linkparse.Service
 	authorize AccessAuthorizer
+}
+
+func (s *Service) ConfigureCredentialKeys(secret, version string, previous []credentialcipher.Key) error {
+	box, err := newVersionedCipherBox(secret, version, previous)
+	if err != nil {
+		return err
+	}
+	s.cipherBox = box
+	return nil
 }
 
 func NewService(repo *Repository, secret string, parser *linkparse.Service, authorize AccessAuthorizer) *Service {

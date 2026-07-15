@@ -3,6 +3,7 @@ package recipe
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 )
 
@@ -91,17 +92,21 @@ INSERT INTO recipes (
 		t.Fatalf("seed recipe error = %v", err)
 	}
 
-	marked, err := NewRepository(db).MarkAutoParseProcessing(
+	claimToken, marked, err := NewRepository(db).MarkAutoParseProcessing(
 		context.Background(),
 		"attempt-track",
 		"xiaohongshu",
 		"2026-05-01T00:02:00Z",
+		"2026-05-01T00:12:00Z",
 	)
 	if err != nil {
 		t.Fatalf("MarkAutoParseProcessing() error = %v", err)
 	}
 	if !marked {
 		t.Fatal("MarkAutoParseProcessing() marked = false, want true")
+	}
+	if claimToken == "" {
+		t.Fatal("MarkAutoParseProcessing() claim token = empty")
 	}
 
 	assertAutoParseState(t, db, "attempt-track", ParseStatusProcessing, "xiaohongshu", "", "", "", "", "", "2026-05-01T00:02:00Z", 2)
@@ -113,19 +118,31 @@ func TestRepositoryMarkAutoParseRetryPendingStoresNextAttempt(t *testing.T) {
 
 	if _, err := db.Exec(`
 INSERT INTO recipes (
-  id, title, parse_status, parse_attempts, parse_processing_started_at, parse_finished_at,
+  id, title, parse_status, parse_attempts, parse_finished_at,
   created_by, updated_by, created_at, updated_at
 ) VALUES (
-  'retry-pending', '小炒牛肉', 'processing', 1, '2026-05-01T00:00:00Z', '2026-05-01T00:01:00Z',
+  'retry-pending', '小炒牛肉', 'pending', 0, '2026-05-01T00:01:00Z',
   1, 1, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z'
 );
 `); err != nil {
 		t.Fatalf("seed recipe error = %v", err)
 	}
 
-	if err := NewRepository(db).MarkAutoParseRetryPending(
+	repo := NewRepository(db)
+	claimToken, marked, err := repo.MarkAutoParseProcessing(
 		context.Background(),
 		"retry-pending",
+		"bilibili",
+		"2026-05-01T00:02:00Z",
+		"2026-05-01T00:12:00Z",
+	)
+	if err != nil || !marked {
+		t.Fatalf("MarkAutoParseProcessing() marked=%t error=%v", marked, err)
+	}
+	if err := repo.MarkAutoParseRetryPending(
+		context.Background(),
+		"retry-pending",
+		claimToken,
 		"bilibili",
 		"upstream timed out",
 		"timeout",
@@ -183,8 +200,8 @@ INSERT INTO recipes (
   id, kitchen_id, title, title_source, parse_status, parse_attempts, parse_next_attempt_at, parse_last_error_type,
   parse_processing_started_at, created_by, updated_by, created_at, updated_at
 ) VALUES
-  ('placeholder-title', 1, '猜测标题', 'placeholder', 'processing', 1, '2999-01-01T00:00:00Z', 'timeout', '2026-05-01T00:00:00Z', 7, 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z'),
-  ('manual-title', 1, '用户标题', 'manual', 'processing', 1, '2999-01-01T00:00:00Z', 'timeout', '2026-05-01T00:00:00Z', 7, 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
+  ('placeholder-title', 1, '猜测标题', 'placeholder', 'pending', 0, '2999-01-01T00:00:00Z', 'timeout', '', 7, 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z'),
+  ('manual-title', 1, '用户标题', 'manual', 'pending', 0, '2999-01-01T00:00:00Z', 'timeout', '', 7, 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
 `); err != nil {
 		t.Fatalf("seed recipes error = %v", err)
 	}
@@ -203,9 +220,20 @@ INSERT INTO recipes (
 		},
 	}
 	for _, recipeID := range []string{"placeholder-title", "manual-title"} {
+		claimToken, marked, err := repo.MarkAutoParseProcessing(
+			context.Background(),
+			recipeID,
+			"xiaohongshu",
+			"2026-05-01T00:01:00Z",
+			"2026-05-01T00:11:00Z",
+		)
+		if err != nil || !marked {
+			t.Fatalf("MarkAutoParseProcessing(%s) marked=%t error=%v", recipeID, marked, err)
+		}
 		if err := repo.ApplyAutoParseResult(
 			context.Background(),
 			recipeID,
+			claimToken,
 			"xiaohongshu:ai",
 			"",
 			"2026-05-01T00:05:00Z",
@@ -219,6 +247,85 @@ INSERT INTO recipes (
 	assertRecipeTitleSource(t, db, "manual-title", "用户标题", TitleSourceManual)
 	assertAutoParseState(t, db, "placeholder-title", ParseStatusDone, "xiaohongshu:ai", "", "", "2026-05-01T00:05:00Z", "", "", "", 1)
 	assertAutoParseState(t, db, "manual-title", ParseStatusDone, "xiaohongshu:ai", "", "", "2026-05-01T00:05:00Z", "", "", "", 1)
+}
+
+func TestRepositoryAutoParseClaimRejectsReclaimedWorkerResult(t *testing.T) {
+	db := openRecipeCreateTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`
+INSERT INTO kitchens (id, name, owner_user_id, created_at, updated_at, name_source)
+VALUES (1, '并发测试厨房', 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'custom');
+INSERT INTO recipes (id, kitchen_id, title, parse_status, created_by, updated_by, created_at, updated_at)
+VALUES ('reclaimed-parse', 1, '原始标题', 'pending', 7, 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
+`); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+	claimA, marked, err := repo.MarkAutoParseProcessing(context.Background(), "reclaimed-parse", "bilibili", "2026-05-01T00:01:00Z", "2026-05-01T00:02:00Z")
+	if err != nil || !marked {
+		t.Fatalf("claim A marked=%t error=%v", marked, err)
+	}
+	if _, err := repo.RequeueStaleAutoParse(context.Background(), "2026-05-01T00:00:00Z", "2026-05-01T00:03:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	claimB, marked, err := repo.MarkAutoParseProcessing(context.Background(), "reclaimed-parse", "bilibili", "2026-05-01T00:04:00Z", "2026-05-01T00:14:00Z")
+	if err != nil || !marked {
+		t.Fatalf("claim B marked=%t error=%v", marked, err)
+	}
+	if err := repo.MarkAutoParseFailed(context.Background(), "reclaimed-parse", claimA, "bilibili", "old worker", "upstream", "2026-05-01T00:05:00Z"); !errors.Is(err, ErrStaleJobResult) {
+		t.Fatalf("claim A failure update error=%v, want stale result", err)
+	}
+	if err := repo.ApplyAutoParseResult(context.Background(), "reclaimed-parse", claimB, "bilibili:ai", "", "2026-05-01T00:06:00Z", Recipe{
+		Title:         "新执行者标题",
+		ParsedContent: ParsedContent{Steps: []ParsedStep{{Title: "步骤一", Detail: "完成"}}},
+	}); err != nil {
+		t.Fatalf("claim B apply error=%v", err)
+	}
+	assertRecipeTitleSource(t, db, "reclaimed-parse", "原始标题", TitleSourceManual)
+	assertAutoParseState(t, db, "reclaimed-parse", ParseStatusDone, "bilibili:ai", "", "2026-05-01T00:03:00Z", "2026-05-01T00:06:00Z", "", "", "", 2)
+}
+
+func TestRepositoryAutoParsePreservesHumanUpdateDuringClaim(t *testing.T) {
+	db := openRecipeCreateTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`
+INSERT INTO kitchens (id, name, owner_user_id, created_at, updated_at, name_source)
+VALUES (1, '人工编辑厨房', 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'custom');
+INSERT INTO recipes (
+  id, kitchen_id, title, title_source, meal_type, status, parse_status,
+  created_by, updated_by, created_at, updated_at
+) VALUES (
+  'human-edit-parse', 1, '占位标题', 'placeholder', 'main', 'wishlist', 'pending',
+  7, 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z'
+);
+`); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+	claim, marked, err := repo.MarkAutoParseProcessing(context.Background(), "human-edit-parse", "bilibili", "2026-05-01T00:01:00Z", "2026-05-01T00:11:00Z")
+	if err != nil || !marked {
+		t.Fatalf("claim marked=%t error=%v", marked, err)
+	}
+	item, err := repo.FindByID(context.Background(), "human-edit-parse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.Title = "用户刚保存的标题"
+	item.TitleSource = TitleSourceManual
+	item.UpdatedBy = 7
+	item.UpdatedAt = "2026-05-01T00:02:00Z"
+	if _, err := repo.Update(context.Background(), item); err != nil {
+		t.Fatalf("human Update error=%v", err)
+	}
+	err = repo.ApplyAutoParseResult(context.Background(), "human-edit-parse", claim, "bilibili:ai", "", "2026-05-01T00:03:00Z", Recipe{
+		Title:         "模型覆盖标题",
+		ParsedContent: ParsedContent{Steps: []ParsedStep{{Title: "模型步骤", Detail: "不应保存"}}},
+	})
+	if !errors.Is(err, ErrAutoParseContentChanged) {
+		t.Fatalf("ApplyAutoParseResult error=%v, want content conflict", err)
+	}
+	assertRecipeTitleSource(t, db, "human-edit-parse", "用户刚保存的标题", TitleSourceManual)
+	assertAutoParseState(t, db, "human-edit-parse", ParseStatusFailed, "bilibili", "菜谱已被人工修改，自动解析结果未应用", "", "2026-05-01T00:03:00Z", "", "content_conflict", "", 1)
 }
 
 func TestResolveUpdateTitleSourceKeepsEditedTitleManual(t *testing.T) {

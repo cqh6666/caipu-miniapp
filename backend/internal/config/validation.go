@@ -2,7 +2,10 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
 )
 
 func validateAndFinalize(cfg Config) (Config, error) {
@@ -58,11 +61,37 @@ func validateAndFinalize(cfg Config) (Config, error) {
 		return Config{}, errors.New("APP_SETTINGS_ACCESS_MODE must be one of all, admin, whitelist")
 	}
 
-	if cfg.CredentialsSecret == "" {
-		cfg.CredentialsSecret = cfg.JWTSecret
+	cfg.AppEnv = strings.ToLower(strings.TrimSpace(cfg.AppEnv))
+	if cfg.AppEnv == "" {
+		cfg.AppEnv = "local"
 	}
-	if cfg.AdminJWTSecret == "" {
-		cfg.AdminJWTSecret = cfg.JWTSecret
+	if cfg.AppEnv != "local" {
+		secrets := []struct {
+			name  string
+			value string
+		}{
+			{name: "JWT_SECRET", value: cfg.JWTSecret},
+			{name: "ADMIN_JWT_SECRET", value: cfg.AdminJWTSecret},
+			{name: "CREDENTIALS_SECRET", value: cfg.CredentialsSecret},
+		}
+		for _, item := range secrets {
+			if isWeakProductionSecret(item.value) {
+				return Config{}, fmt.Errorf("%s must be explicitly set to at least 32 non-default characters outside local mode", item.name)
+			}
+		}
+		if cfg.JWTSecret == cfg.AdminJWTSecret || cfg.JWTSecret == cfg.CredentialsSecret || cfg.AdminJWTSecret == cfg.CredentialsSecret {
+			return Config{}, errors.New("JWT_SECRET, ADMIN_JWT_SECRET, and CREDENTIALS_SECRET must be independent outside local mode")
+		}
+	}
+	previousKeys, err := credentialcipher.ParsePreviousKeys(cfg.CredentialsPreviousKeys)
+	if err != nil {
+		return Config{}, err
+	}
+	if _, err := credentialcipher.New(credentialcipher.Key{
+		Version: cfg.CredentialsKeyVersion,
+		Secret:  cfg.CredentialsSecret,
+	}, previousKeys); err != nil {
+		return Config{}, fmt.Errorf("invalid credential keyring: %w", err)
 	}
 	if cfg.AIFlowchartBaseURL == "" {
 		cfg.AIFlowchartBaseURL = cfg.AIBaseURL
@@ -72,6 +101,19 @@ func validateAndFinalize(cfg Config) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func isWeakProductionSecret(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) < 32 {
+		return true
+	}
+	switch value {
+	case localUserJWTSecret, localAdminJWTSecret, localCredentialsKey, "dev-secret-change-me", "replace-me":
+		return true
+	default:
+		return false
+	}
 }
 
 func isValidDietAssistantThinkingType(value string) bool {

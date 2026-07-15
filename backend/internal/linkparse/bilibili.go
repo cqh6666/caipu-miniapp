@@ -10,10 +10,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/securehttp"
 )
 
 var (
@@ -24,6 +26,11 @@ var (
 		{BVID: "BV1gY411C7BY", CID: 1026481904},
 		{BVID: "BV1Pw4m1k7pU", CID: 1621665057},
 	}
+)
+
+var (
+	bilibiliInputDomains = []string{"bilibili.com", "b23.tv", "bili2233.cn"}
+	bilibiliAssetDomains = []string{"bilibili.com", "hdslb.com", "bilivideo.com", "biliapi.net"}
 )
 
 type videoRef struct {
@@ -343,7 +350,7 @@ func extractInputURL(rawInput string) (string, error) {
 	if err != nil {
 		return "", common.NewAppError(common.CodeBadRequest, "invalid bilibili url", http.StatusBadRequest)
 	}
-	if strings.TrimSpace(u.Host) == "" {
+	if securehttp.ValidateURL(u) != nil || !isResolvableBilibiliHost(u.Hostname()) {
 		return "", common.NewAppError(common.CodeBadRequest, "invalid bilibili url", http.StatusBadRequest)
 	}
 
@@ -360,7 +367,7 @@ func (s *Service) resolveVideoRef(ctx context.Context, rawURL string) (videoRef,
 		return ref, nil, nil
 	}
 
-	if !isResolvableBilibiliHost(u.Host) {
+	if securehttp.ValidateURL(u) != nil || !isResolvableBilibiliHost(u.Hostname()) {
 		return videoRef{}, nil, common.NewAppError(common.CodeBadRequest, "only bilibili links are supported in this POC", http.StatusBadRequest)
 	}
 
@@ -386,8 +393,7 @@ func parseVideoRef(u *url.URL) (videoRef, bool) {
 		return videoRef{}, false
 	}
 
-	host := strings.ToLower(strings.TrimSpace(u.Host))
-	if !isResolvableBilibiliHost(host) {
+	if securehttp.ValidateURL(u) != nil || !isResolvableBilibiliHost(u.Hostname()) {
 		return videoRef{}, false
 	}
 
@@ -423,8 +429,28 @@ func parseVideoRef(u *url.URL) (videoRef, bool) {
 }
 
 func isResolvableBilibiliHost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return strings.Contains(host, "bilibili.com") || strings.Contains(host, "b23.tv") || strings.Contains(host, "bili2233.cn")
+	return securehttp.HostMatches(host, bilibiliInputDomains...)
+}
+
+func isTrustedBilibiliAssetHost(host string) bool {
+	return securehttp.HostMatches(host, bilibiliAssetDomains...)
+}
+
+func newBilibiliResolveClient(timeout time.Duration) *http.Client {
+	client := securehttp.NewClient(timeout)
+	baseRedirect := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if baseRedirect != nil {
+			if err := baseRedirect(req, via); err != nil {
+				return err
+			}
+		}
+		if !isResolvableBilibiliHost(req.URL.Hostname()) {
+			return fmt.Errorf("bilibili redirect target is not trusted")
+		}
+		return nil
+	}
+	return client
 }
 
 func (s *Service) resolveFinalURL(ctx context.Context, rawURL string) (string, error) {
@@ -563,8 +589,12 @@ func (s *Service) fetchSubtitleFile(ctx context.Context, subtitleURL string, ses
 	case strings.HasPrefix(subtitleURL, "/"):
 		subtitleURL = "https://api.bilibili.com" + subtitleURL
 	}
+	parsedURL, err := url.Parse(subtitleURL)
+	if err != nil || securehttp.ValidateURL(parsedURL) != nil || !isTrustedBilibiliAssetHost(parsedURL.Hostname()) {
+		return bilibiliSubtitleFile{}, common.NewAppError(common.CodeBadRequest, "untrusted bilibili subtitle url", http.StatusBadRequest)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, subtitleURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
 	if err != nil {
 		return bilibiliSubtitleFile{}, common.ErrInternal.WithErr(err)
 	}
@@ -599,7 +629,7 @@ func (s *Service) doJSON(req *http.Request, dst any) error {
 func addBilibiliHeaders(req *http.Request, sessdata string) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://www.bilibili.com/")
-	if strings.TrimSpace(sessdata) != "" {
+	if strings.TrimSpace(sessdata) != "" && req != nil && req.URL != nil && isTrustedBilibiliAssetHost(req.URL.Hostname()) {
 		req.Header.Set("Cookie", "SESSDATA="+strings.TrimSpace(sessdata))
 	}
 }

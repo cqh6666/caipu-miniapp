@@ -178,7 +178,7 @@ func TestServiceCreateMirrorsRemoteImages(t *testing.T) {
 	defer imageServer.Close()
 
 	service := newPlaceTestService(db)
-	service.SetUploadService(upload.NewService(t.TempDir(), "https://static.example.com/uploads", 10))
+	service.SetUploadService(upload.NewServiceWithHTTPClient(t.TempDir(), "https://static.example.com/uploads", 10, imageServer.Client()))
 
 	created, err := service.Create(context.Background(), 7, 1, placeRequest{
 		Name:      ptrString("远程图片店"),

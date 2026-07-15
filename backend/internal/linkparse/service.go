@@ -9,6 +9,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/securehttp"
 )
 
 const (
@@ -107,12 +108,12 @@ type LinkparseSidecarConfig struct {
 func NewService(opts Options) *Service {
 	httpClient := opts.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultHTTPTimeout}
+		httpClient = securehttp.NewClient(defaultHTTPTimeout)
 	}
 
 	resolveURLClient := opts.ResolveURLClient
 	if resolveURLClient == nil {
-		resolveURLClient = httpClient
+		resolveURLClient = newBilibiliResolveClient(defaultHTTPTimeout)
 	}
 
 	titleModel := strings.TrimSpace(opts.AITitleModel)

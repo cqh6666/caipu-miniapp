@@ -5,13 +5,16 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 func (r *Repository) QueueFlowchart(ctx context.Context, recipeID, requestedAt string) error {
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL
+	SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL,
+	    flowchart_claim_token = '', flowchart_claim_content_version = 0, flowchart_lease_expires_at = ''
 WHERE id = ? AND deleted_at IS NULL`,
 		FlowchartStatusPending,
 		nullableString(requestedAt),
@@ -167,33 +170,43 @@ LIMIT ?`
 	return items, nil
 }
 
-func (r *Repository) MarkFlowchartProcessing(ctx context.Context, recipeID string) (bool, error) {
+func (r *Repository) MarkFlowchartProcessing(ctx context.Context, recipeID, leaseExpiresAt string) (string, bool, error) {
+	claimToken, err := common.NewPrefixedID("flow_claim")
+	if err != nil {
+		return "", false, fmt.Errorf("generate flowchart claim token: %w", err)
+	}
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = ''
-WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ?`,
+	SET flowchart_status = ?, flowchart_error = '', flowchart_claim_token = ?,
+	    flowchart_claim_content_version = COALESCE(content_version, 0), flowchart_lease_expires_at = ?
+	WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ?`,
 		FlowchartStatusProcessing,
+		claimToken,
+		nonNullableTrimmedString(leaseExpiresAt),
 		recipeID,
 		FlowchartStatusPending,
 	)
 	if err != nil {
-		return false, fmt.Errorf("mark recipe flowchart processing: %w", err)
+		return "", false, fmt.Errorf("mark recipe flowchart processing: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("read flowchart processing rows: %w", err)
+		return "", false, fmt.Errorf("read flowchart processing rows: %w", err)
 	}
-
-	return rowsAffected > 0, nil
+	if rowsAffected == 0 {
+		return "", false, nil
+	}
+	return claimToken, true, nil
 }
 
 func (r *Repository) MarkAutoFlowchartPending(ctx context.Context, recipeID, requestedAt string) (bool, error) {
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL
+	SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL,
+	    flowchart_claim_token = '', flowchart_claim_content_version = 0, flowchart_lease_expires_at = ''
 WHERE id = ? AND deleted_at IS NULL
   AND COALESCE(flowchart_status, '') IN (?, ?)
   AND COALESCE(TRIM(flowchart_image_url), '') = ''`,
@@ -219,13 +232,18 @@ func (r *Repository) RequeueStaleFlowcharts(ctx context.Context, staleBefore, re
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL
-WHERE deleted_at IS NULL
-  AND flowchart_status = ?
-  AND datetime(COALESCE(NULLIF(flowchart_requested_at, ''), NULLIF(updated_at, ''), NULLIF(created_at, ''))) <= datetime(?)`,
+	SET flowchart_status = ?, flowchart_error = '', flowchart_requested_at = ?, flowchart_finished_at = NULL,
+	    flowchart_claim_token = '', flowchart_claim_content_version = 0, flowchart_lease_expires_at = ''
+	WHERE deleted_at IS NULL
+	  AND flowchart_status = ?
+	  AND (
+	    (COALESCE(flowchart_lease_expires_at, '') <> '' AND datetime(flowchart_lease_expires_at) <= datetime(?))
+	    OR (COALESCE(flowchart_lease_expires_at, '') = '' AND datetime(COALESCE(NULLIF(flowchart_requested_at, ''), NULLIF(updated_at, ''), NULLIF(created_at, ''))) <= datetime(?))
+	  )`,
 		FlowchartStatusPending,
 		nullableString(requestedAt),
 		FlowchartStatusProcessing,
+		requestedAt,
 		staleBefore,
 	)
 	if err != nil {
@@ -240,30 +258,35 @@ WHERE deleted_at IS NULL
 	return rowsAffected, nil
 }
 
-func (r *Repository) MarkFlowchartFailed(ctx context.Context, recipeID, flowchartError, finishedAt string) error {
-	if _, err := r.db.ExecContext(
+func (r *Repository) MarkFlowchartFailed(ctx context.Context, recipeID, claimToken, flowchartError, finishedAt string) error {
+	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_status = ?, flowchart_error = ?, flowchart_finished_at = ?
-WHERE id = ? AND deleted_at IS NULL`,
+	SET flowchart_status = ?, flowchart_error = ?, flowchart_finished_at = ?,
+	    flowchart_claim_token = '', flowchart_claim_content_version = 0, flowchart_lease_expires_at = ''
+	WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ? AND flowchart_claim_token = ?`,
 		FlowchartStatusFailed,
 		truncateString(strings.TrimSpace(flowchartError), 300),
 		finishedAt,
 		recipeID,
-	); err != nil {
+		FlowchartStatusProcessing,
+		claimToken,
+	)
+	if err != nil {
 		return fmt.Errorf("mark recipe flowchart failed: %w", err)
 	}
-
-	return nil
+	return requireClaimedRow(result, "mark recipe flowchart failed")
 }
 
-func (r *Repository) ApplyFlowchartResult(ctx context.Context, recipeID, imageURL, provider, model, sourceHash, finishedAt string) error {
+func (r *Repository) ApplyFlowchartResult(ctx context.Context, recipeID, claimToken, imageURL, provider, model, sourceHash, finishedAt string) error {
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET flowchart_image_url = ?, flowchart_provider = ?, flowchart_model = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
-    flowchart_status = ?, flowchart_error = '', flowchart_finished_at = ?
-WHERE id = ? AND deleted_at IS NULL`,
+	SET flowchart_image_url = ?, flowchart_provider = ?, flowchart_model = ?, flowchart_updated_at = ?, flowchart_source_hash = ?,
+	    flowchart_status = ?, flowchart_error = '', flowchart_finished_at = ?,
+	    flowchart_claim_token = '', flowchart_claim_content_version = 0, flowchart_lease_expires_at = ''
+	WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ? AND flowchart_claim_token = ?
+	  AND COALESCE(content_version, 0) = COALESCE(flowchart_claim_content_version, 0)`,
 		nullableString(imageURL),
 		strings.TrimSpace(provider),
 		strings.TrimSpace(model),
@@ -272,6 +295,8 @@ WHERE id = ? AND deleted_at IS NULL`,
 		FlowchartStatusDone,
 		finishedAt,
 		recipeID,
+		FlowchartStatusProcessing,
+		claimToken,
 	)
 	if err != nil {
 		return fmt.Errorf("apply recipe flowchart result: %w", err)
@@ -282,7 +307,7 @@ WHERE id = ? AND deleted_at IS NULL`,
 		return fmt.Errorf("read flowchart result rows: %w", err)
 	}
 	if rowsAffected == 0 {
-		return sql.ErrNoRows
+		return ErrStaleJobResult
 	}
 
 	return nil

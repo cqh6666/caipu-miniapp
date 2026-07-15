@@ -3,6 +3,7 @@ package linkparse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,41 @@ func TestExtractInputURL(t *testing.T) {
 	want := "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
 	if got != want {
 		t.Fatalf("extractInputURL = %q, want %q", got, want)
+	}
+}
+
+func TestSupportedPlatformHostsRequireDNSLabelBoundary(t *testing.T) {
+	tests := []struct {
+		url       string
+		supported bool
+	}{
+		{url: "https://www.bilibili.com/video/BV1xx411c7mD", supported: true},
+		{url: "https://b23.tv/abc", supported: true},
+		{url: "https://bilibili.com.attacker.example/video/BV1xx411c7mD", supported: false},
+		{url: "https://user@bilibili.com/video/BV1xx411c7mD", supported: false},
+		{url: "ftp://bilibili.com/video/BV1xx411c7mD", supported: false},
+	}
+	for _, tt := range tests {
+		if got := SupportsBilibiliURL(tt.url); got != tt.supported {
+			t.Fatalf("SupportsBilibiliURL(%q) = %t, want %t", tt.url, got, tt.supported)
+		}
+	}
+	if SupportsXiaohongshuURL("https://xiaohongshu.com.attacker.example/explore/1") {
+		t.Fatal("xiaohongshu fake suffix must be rejected")
+	}
+}
+
+func TestFetchSubtitleRejectsUntrustedHostWithoutSendingSessdata(t *testing.T) {
+	called := false
+	svc := NewService(Options{HTTPClient: &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		called = true
+		return nil, errors.New("unexpected request")
+	})}})
+	if _, err := svc.fetchSubtitleFile(context.Background(), "https://attacker.example/subtitle.json", "secret-cookie"); err == nil {
+		t.Fatal("expected untrusted subtitle URL rejection")
+	}
+	if called {
+		t.Fatal("untrusted subtitle URL must be rejected before HTTP request")
 	}
 }
 

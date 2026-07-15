@@ -187,7 +187,8 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 	defer cancel()
 	startedAt := time.Now()
 
-	marked, err := w.repo.MarkFlowchartProcessing(ctx, recipeID)
+	leaseExpiresAt := startedAt.Add(staleFlowchartProcessingThreshold).Format(time.RFC3339)
+	claimToken, marked, err := w.repo.MarkFlowchartProcessing(ctx, recipeID, leaseExpiresAt)
 	if err != nil {
 		return err
 	}
@@ -241,7 +242,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 	item, err := w.repo.FindByID(ctx, recipeID)
 	if err != nil {
 		finishedAt := time.Now().Format(time.RFC3339)
-		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
+		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, claimToken, err.Error(), finishedAt); markErr != nil && !errors.Is(markErr, ErrStaleJobResult) {
 			w.logger.Error("mark recipe flowchart failed after load error", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "load", startedAt, err)
@@ -252,7 +253,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 	if !canGenerateFlowchartForRecipe(item) {
 		err = errors.New("please complete key recipe steps before generating a flowchart")
 		finishedAt := time.Now().Format(time.RFC3339)
-		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
+		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, claimToken, err.Error(), finishedAt); markErr != nil && !errors.Is(markErr, ErrStaleJobResult) {
 			w.logger.Error("mark recipe flowchart invalid-input failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "validate", startedAt, err)
@@ -263,7 +264,7 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 	result, err := w.generator.Generate(ctx, item)
 	if err != nil {
 		finishedAt := time.Now().Format(time.RFC3339)
-		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
+		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, claimToken, err.Error(), finishedAt); markErr != nil && !errors.Is(markErr, ErrStaleJobResult) {
 			w.logger.Error("mark recipe flowchart failed state failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "generate", startedAt, err)
@@ -272,8 +273,13 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 	}
 
 	finishedAt := time.Now().Format(time.RFC3339)
-	if err := w.repo.ApplyFlowchartResult(ctx, recipeID, result.ImageURL, result.Provider, result.Model, result.SourceHash, finishedAt); err != nil {
-		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, err.Error(), finishedAt); markErr != nil {
+	if err := w.repo.ApplyFlowchartResult(ctx, recipeID, claimToken, result.ImageURL, result.Provider, result.Model, result.SourceHash, finishedAt); err != nil {
+		if errors.Is(err, ErrStaleJobResult) {
+			w.logger.Warn("discarded stale recipe flowchart result", "recipeID", recipeID)
+			finishJob(audit.JobStatusFailed, result, err, map[string]any{"stage": "stale"})
+			return nil
+		}
+		if markErr := w.repo.MarkFlowchartFailed(ctx, recipeID, claimToken, err.Error(), finishedAt); markErr != nil && !errors.Is(markErr, ErrStaleJobResult) {
 			w.logger.Error("mark recipe flowchart apply failure failed", "recipeID", recipeID, "error", markErr)
 		}
 		w.logFailure(recipeID, "persist", startedAt, err)

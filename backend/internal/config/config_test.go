@@ -23,14 +23,50 @@ func TestLoadDefaultsAndFallbacks(t *testing.T) {
 	if cfg.SQLitePath != filepath.Clean("./data/app.db") || cfg.SQLiteBusyTimeoutMS != 5000 {
 		t.Fatalf("unexpected sqlite defaults: path=%q timeout=%d", cfg.SQLitePath, cfg.SQLiteBusyTimeoutMS)
 	}
-	if cfg.CredentialsSecret != cfg.JWTSecret || cfg.AdminJWTSecret != cfg.JWTSecret {
-		t.Fatal("credentials and admin JWT secrets should fall back to JWT_SECRET")
+	if cfg.CredentialsSecret == cfg.JWTSecret || cfg.AdminJWTSecret == cfg.JWTSecret || cfg.CredentialsSecret == cfg.AdminJWTSecret {
+		t.Fatal("local credential, user JWT, and admin JWT secrets must remain independent")
 	}
 	if cfg.AIFlowchartBaseURL != cfg.AIBaseURL || cfg.AIFlowchartAPIKey != cfg.AIAPIKey {
 		t.Fatal("flowchart credentials should fall back to summary AI credentials")
 	}
-	if cfg.AppSettingsAccessMode != "all" || !cfg.RecipeAutoParseEnabled || !cfg.RecipeFlowchartEnabled {
+	if cfg.AppSettingsAccessMode != "admin" || !cfg.RecipeAutoParseEnabled || !cfg.RecipeFlowchartEnabled {
 		t.Fatalf("unexpected feature defaults: access=%q autoParse=%t flowchart=%t", cfg.AppSettingsAccessMode, cfg.RecipeAutoParseEnabled, cfg.RecipeFlowchartEnabled)
+	}
+}
+
+func TestLoadRejectsMissingWeakOrSharedProductionSecrets(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(*testing.T)
+		message string
+	}{
+		{
+			name:    "local defaults are forbidden",
+			setup:   func(t *testing.T) { t.Setenv("APP_ENV", "production") },
+			message: "JWT_SECRET",
+		},
+		{
+			name: "shared secrets are forbidden",
+			setup: func(t *testing.T) {
+				t.Setenv("APP_ENV", "production")
+				t.Setenv("JWT_SECRET", strings.Repeat("u", 40))
+				t.Setenv("ADMIN_JWT_SECRET", strings.Repeat("u", 40))
+				t.Setenv("CREDENTIALS_SECRET", strings.Repeat("c", 40))
+			},
+			message: "must be independent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanConfigEnvironment(t)
+			t.Chdir(t.TempDir())
+			tt.setup(t)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), tt.message) {
+				t.Fatalf("expected error containing %q, got %v", tt.message, err)
+			}
+		})
 	}
 }
 
@@ -130,6 +166,7 @@ func cleanConfigEnvironment(t *testing.T) {
 		"APP_NAME", "APP_ENV", "APP_ADDR", "APP_ENV_FILE", "LOG_LEVEL",
 		"ADMIN_USERNAME", "ADMIN_PASSWORD_HASH", "ADMIN_JWT_SECRET", "APP_ADMIN_OPENIDS",
 		"APP_SETTINGS_ACCESS_MODE", "APP_SETTINGS_ALLOWED_OPENIDS", "CREDENTIALS_SECRET",
+		"CREDENTIALS_KEY_VERSION", "CREDENTIALS_PREVIOUS_KEYS",
 		"JWT_SECRET", "JWT_EXPIRE_HOURS", "AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_TIMEOUT_SECONDS",
 		"AI_FLOWCHART_BASE_URL", "AI_FLOWCHART_API_KEY", "AI_FLOWCHART_MODEL", "AI_FLOWCHART_ENDPOINT_MODE",
 		"AI_FLOWCHART_RESPONSE_FORMAT", "AI_FLOWCHART_TIMEOUT_SECONDS", "AI_TITLE_ENABLED", "AI_TITLE_BASE_URL",

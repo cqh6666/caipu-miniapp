@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Recipe, error) {
@@ -127,39 +129,50 @@ LIMIT ?`
 	return items, nil
 }
 
-func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource, startedAt string) (bool, error) {
+func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, parseSource, startedAt, leaseExpiresAt string) (string, bool, error) {
+	claimToken, err := common.NewPrefixedID("parse_claim")
+	if err != nil {
+		return "", false, fmt.Errorf("generate auto parse claim token: %w", err)
+	}
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = '', parse_processing_started_at = ?,
-    parse_finished_at = NULL, parse_attempts = COALESCE(parse_attempts, 0) + 1,
-    parse_next_attempt_at = '', parse_last_error_type = ''
-WHERE id = ? AND deleted_at IS NULL AND parse_status = ?`,
+	SET parse_status = ?, parse_source = ?, parse_error = '', parse_processing_started_at = ?,
+	    parse_finished_at = NULL, parse_attempts = COALESCE(parse_attempts, 0) + 1,
+	    parse_next_attempt_at = '', parse_last_error_type = '', parse_claim_token = ?,
+	    parse_claim_content_version = COALESCE(content_version, 0), parse_lease_expires_at = ?
+	WHERE id = ? AND deleted_at IS NULL AND parse_status = ?`,
 		ParseStatusProcessing,
 		parseSource,
 		nonNullableTrimmedString(startedAt),
+		claimToken,
+		nonNullableTrimmedString(leaseExpiresAt),
 		recipeID,
 		ParseStatusPending,
 	)
 	if err != nil {
-		return false, fmt.Errorf("mark recipe auto parse processing: %w", err)
+		return "", false, fmt.Errorf("mark recipe auto parse processing: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("read auto parse processing rows: %w", err)
+		return "", false, fmt.Errorf("read auto parse processing rows: %w", err)
 	}
 
-	return rowsAffected > 0, nil
+	if rowsAffected == 0 {
+		return "", false, nil
+	}
+	return claimToken, true, nil
 }
 
 func (r *Repository) MarkAutoParsePending(ctx context.Context, recipeID, parseSource, requestedAt string) (bool, error) {
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
-    parse_attempts = 0, parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
-    updated_at = ?
+	SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
+	    parse_attempts = 0, parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
+	    parse_claim_token = '', parse_claim_content_version = 0, parse_lease_expires_at = '',
+	    updated_at = ?
 WHERE id = ? AND deleted_at IS NULL AND COALESCE(parse_status, '') = ''`,
 		ParseStatusPending,
 		parseSource,
@@ -183,14 +196,19 @@ func (r *Repository) RequeueStaleAutoParse(ctx context.Context, staleBefore, req
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
-    parse_next_attempt_at = '', parse_processing_started_at = ''
-WHERE deleted_at IS NULL
-  AND parse_status = ?
-  AND datetime(COALESCE(NULLIF(parse_processing_started_at, ''), NULLIF(parse_requested_at, ''), NULLIF(updated_at, ''), NULLIF(created_at, ''))) <= datetime(?)`,
+	SET parse_status = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
+	    parse_next_attempt_at = '', parse_processing_started_at = '',
+	    parse_claim_token = '', parse_claim_content_version = 0, parse_lease_expires_at = ''
+	WHERE deleted_at IS NULL
+	  AND parse_status = ?
+	  AND (
+	    (COALESCE(parse_lease_expires_at, '') <> '' AND datetime(parse_lease_expires_at) <= datetime(?))
+	    OR (COALESCE(parse_lease_expires_at, '') = '' AND datetime(COALESCE(NULLIF(parse_processing_started_at, ''), NULLIF(parse_requested_at, ''), NULLIF(updated_at, ''), NULLIF(created_at, ''))) <= datetime(?))
+	  )`,
 		ParseStatusPending,
 		nullableString(requestedAt),
 		ParseStatusProcessing,
+		requestedAt,
 		staleBefore,
 	)
 	if err != nil {
@@ -205,47 +223,53 @@ WHERE deleted_at IS NULL
 	return rowsAffected, nil
 }
 
-func (r *Repository) MarkAutoParseFailed(ctx context.Context, recipeID, parseSource, parseError, errorType, finishedAt string) error {
-	if _, err := r.db.ExecContext(
+func (r *Repository) MarkAutoParseFailed(ctx context.Context, recipeID, claimToken, parseSource, parseError, errorType, finishedAt string) error {
+	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?,
-    parse_next_attempt_at = '', parse_last_error_type = ?, parse_processing_started_at = ''
-WHERE id = ? AND deleted_at IS NULL`,
+	SET parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?,
+	    parse_next_attempt_at = '', parse_last_error_type = ?, parse_processing_started_at = '',
+	    parse_claim_token = '', parse_claim_content_version = 0, parse_lease_expires_at = ''
+	WHERE id = ? AND deleted_at IS NULL AND parse_status = ? AND parse_claim_token = ?`,
 		ParseStatusFailed,
 		parseSource,
 		truncateString(strings.TrimSpace(parseError), 300),
 		finishedAt,
 		nonNullableTrimmedString(errorType),
 		recipeID,
-	); err != nil {
+		ParseStatusProcessing,
+		claimToken,
+	)
+	if err != nil {
 		return fmt.Errorf("mark recipe auto parse failed: %w", err)
 	}
-
-	return nil
+	return requireClaimedRow(result, "mark recipe auto parse failed")
 }
 
-func (r *Repository) MarkAutoParseRetryPending(ctx context.Context, recipeID, parseSource, parseError, errorType, nextAttemptAt string) error {
-	if _, err := r.db.ExecContext(
+func (r *Repository) MarkAutoParseRetryPending(ctx context.Context, recipeID, claimToken, parseSource, parseError, errorType, nextAttemptAt string) error {
+	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = NULL, parse_next_attempt_at = ?,
-    parse_last_error_type = ?, parse_processing_started_at = ''
-WHERE id = ? AND deleted_at IS NULL`,
+	SET parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = NULL, parse_next_attempt_at = ?,
+	    parse_last_error_type = ?, parse_processing_started_at = '',
+	    parse_claim_token = '', parse_claim_content_version = 0, parse_lease_expires_at = ''
+	WHERE id = ? AND deleted_at IS NULL AND parse_status = ? AND parse_claim_token = ?`,
 		ParseStatusPending,
 		parseSource,
 		truncateString(strings.TrimSpace(parseError), 300),
 		nonNullableTrimmedString(nextAttemptAt),
 		nonNullableTrimmedString(errorType),
 		recipeID,
-	); err != nil {
+		ParseStatusProcessing,
+		claimToken,
+	)
+	if err != nil {
 		return fmt.Errorf("mark recipe auto parse retry pending: %w", err)
 	}
-
-	return nil
+	return requireClaimedRow(result, "mark recipe auto parse retry pending")
 }
 
-func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSource, parseError, finishedAt string, draft Recipe) error {
+func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, claimToken, parseSource, parseError, finishedAt string, draft Recipe) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin apply auto parse tx: %w", err)
@@ -255,6 +279,56 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 	if err != nil {
 		_ = tx.Rollback()
 		return err
+	}
+	var currentClaim string
+	var contentVersion int64
+	var claimContentVersion int64
+	var parsedContentEdited bool
+	var parseStatus string
+	if err := tx.QueryRowContext(ctx, `
+SELECT COALESCE(parse_claim_token, ''), COALESCE(content_version, 0), COALESCE(parse_claim_content_version, 0),
+       COALESCE(parsed_content_edited, 0), COALESCE(parse_status, '')
+FROM recipes WHERE id = ? AND deleted_at IS NULL`, recipeID).Scan(
+		&currentClaim,
+		&contentVersion,
+		&claimContentVersion,
+		&parsedContentEdited,
+		&parseStatus,
+	); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("read auto parse claim: %w", err)
+	}
+	if parseStatus != ParseStatusProcessing || currentClaim == "" || currentClaim != claimToken {
+		_ = tx.Rollback()
+		return ErrStaleJobResult
+	}
+	if contentVersion != claimContentVersion || parsedContentEdited {
+		result, updateErr := tx.ExecContext(ctx, `
+UPDATE recipes
+SET parse_status = ?, parse_error = ?, parse_finished_at = ?, parse_last_error_type = ?,
+    parse_processing_started_at = '', parse_claim_token = '', parse_claim_content_version = 0,
+    parse_lease_expires_at = ''
+WHERE id = ? AND deleted_at IS NULL AND parse_status = ? AND parse_claim_token = ?`,
+			ParseStatusFailed,
+			"菜谱已被人工修改，自动解析结果未应用",
+			finishedAt,
+			"content_conflict",
+			recipeID,
+			ParseStatusProcessing,
+			claimToken,
+		)
+		if updateErr != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record auto parse content conflict: %w", updateErr)
+		}
+		if err := requireClaimedRow(result, "record auto parse content conflict"); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit auto parse content conflict: %w", err)
+		}
+		return ErrAutoParseContentChanged
 	}
 
 	ingredientsJSON, stepsJSON, err := marshalParsedContent(draft.ParsedContent)
@@ -285,10 +359,13 @@ func (r *Repository) ApplyAutoParseResult(ctx context.Context, recipeID, parseSo
 		ctx,
 		`UPDATE recipes
 SET title = ?, title_source = ?, ingredient = ?, summary = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, ingredients_json = ?, steps_json = ?,
-    parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?,
-    parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
-    parsed_content_edited = 0, updated_at = ?
-WHERE id = ? AND deleted_at IS NULL`,
+	    parse_status = ?, parse_source = ?, parse_error = ?, parse_finished_at = ?,
+	    parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
+	    parse_claim_token = '', parse_claim_content_version = 0, parse_lease_expires_at = '',
+	    parsed_content_edited = 0, updated_at = ?
+	WHERE id = ? AND deleted_at IS NULL AND parse_status = ? AND parse_claim_token = ?
+	  AND COALESCE(content_version, 0) = COALESCE(parse_claim_content_version, 0)
+	  AND COALESCE(parsed_content_edited, 0) = 0`,
 		resolveAutoParseTitle(current, draft),
 		resolveAutoParseTitleSource(current, draft),
 		nullableString(ingredientValue),
@@ -304,6 +381,8 @@ WHERE id = ? AND deleted_at IS NULL`,
 		finishedAt,
 		finishedAt,
 		recipeID,
+		ParseStatusProcessing,
+		claimToken,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -347,9 +426,10 @@ func (r *Repository) RequeueAutoParse(ctx context.Context, recipeID string, user
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE recipes
-SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
-    parse_attempts = 0, parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
-    updated_by = ?, updated_at = ?
+	SET parse_status = ?, parse_source = ?, parse_error = '', parse_requested_at = ?, parse_finished_at = NULL,
+	    parse_attempts = 0, parse_next_attempt_at = '', parse_last_error_type = '', parse_processing_started_at = '',
+	    parse_claim_token = '', parse_claim_content_version = 0, parse_lease_expires_at = '',
+	    updated_by = ?, updated_at = ?
 WHERE id = ? AND deleted_at IS NULL`,
 		ParseStatusPending,
 		parseSource,
@@ -382,5 +462,16 @@ WHERE id = ? AND deleted_at IS NULL`,
 		return fmt.Errorf("commit requeue auto parse: %w", err)
 	}
 
+	return nil
+}
+
+func requireClaimedRow(result sql.Result, operation string) error {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read %s rows: %w", operation, err)
+	}
+	if rowsAffected == 0 {
+		return ErrStaleJobResult
+	}
 	return nil
 }

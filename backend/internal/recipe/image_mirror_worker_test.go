@@ -41,7 +41,7 @@ func TestMirrorRecipeImagesDownloadsRemoteAssets(t *testing.T) {
 	defer server.Close()
 
 	uploadDir := t.TempDir()
-	uploadService := upload.NewService(uploadDir, "", 10)
+	uploadService := upload.NewServiceWithHTTPClient(uploadDir, "", 10, server.Client())
 
 	existing, err := uploadService.SaveRemoteImage(context.Background(), server.URL+"/existing.png")
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
 )
 
 type runtimeFieldDefinition struct {
@@ -19,6 +20,15 @@ type runtimeFieldDefinition struct {
 	IsSecret          bool
 	IsRestartRequired bool
 	DefaultValue      string
+}
+
+func (p *RuntimeProvider) ConfigureCredentialKeys(secret, version string, previous []credentialcipher.Key) error {
+	box, err := newVersionedCipherBox(secret, version, previous)
+	if err != nil {
+		return err
+	}
+	p.cipherBox = box
+	return nil
 }
 
 type runtimeGroupDefinition struct {

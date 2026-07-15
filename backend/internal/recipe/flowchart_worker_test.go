@@ -3,6 +3,7 @@ package recipe
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"testing"
 
@@ -201,15 +202,20 @@ func TestRepositoryApplyFlowchartResultDoesNotTouchUpdatedAt(t *testing.T) {
 INSERT INTO recipes (
   id, title, meal_type, status, flowchart_status, flowchart_requested_at, created_at, updated_at
 ) VALUES
-  ('apply-result', '清炖牛腩', 'main', 'wishlist', 'processing', '2026-03-25T00:20:00+08:00', '2026-03-25T00:00:00+08:00', '2026-03-25T00:12:00+08:00');
+  ('apply-result', '清炖牛腩', 'main', 'wishlist', 'pending', '2026-03-25T00:20:00+08:00', '2026-03-25T00:00:00+08:00', '2026-03-25T00:12:00+08:00');
 `); err != nil {
 		t.Fatalf("seed recipe error = %v", err)
 	}
 
 	repo := NewRepository(db)
+	claimToken, marked, err := repo.MarkFlowchartProcessing(context.Background(), "apply-result", "2026-03-25T00:50:00+08:00")
+	if err != nil || !marked {
+		t.Fatalf("MarkFlowchartProcessing() marked=%t error=%v", marked, err)
+	}
 	if err := repo.ApplyFlowchartResult(
 		context.Background(),
 		"apply-result",
+		claimToken,
 		"https://cdn.example.com/flowchart-result.png",
 		"flowchart-compat",
 		"gpt-image-2-1536x1024",
@@ -244,6 +250,36 @@ WHERE id = 'apply-result'
 	if got, want := flowchartUpdatedAt.String, "2026-03-25T00:40:00+08:00"; got != want {
 		t.Fatalf("flowchart_updated_at = %q, want %q", got, want)
 	}
+}
+
+func TestRepositoryFlowchartClaimRejectsReclaimedWorkerResult(t *testing.T) {
+	db := openFlowchartTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`
+INSERT INTO recipes (id, title, meal_type, status, flowchart_status, flowchart_requested_at, created_at, updated_at)
+VALUES ('reclaimed-flow', '并发流程图', 'main', 'wishlist', 'pending', '2026-03-25T00:00:00Z', '2026-03-25T00:00:00Z', '2026-03-25T00:00:00Z');
+`); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+	claimA, marked, err := repo.MarkFlowchartProcessing(context.Background(), "reclaimed-flow", "2026-03-25T00:01:00Z")
+	if err != nil || !marked {
+		t.Fatalf("claim A marked=%t error=%v", marked, err)
+	}
+	if _, err := repo.RequeueStaleFlowcharts(context.Background(), "2026-03-24T23:00:00Z", "2026-03-25T00:02:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	claimB, marked, err := repo.MarkFlowchartProcessing(context.Background(), "reclaimed-flow", "2026-03-25T00:12:00Z")
+	if err != nil || !marked {
+		t.Fatalf("claim B marked=%t error=%v", marked, err)
+	}
+	if err := repo.ApplyFlowchartResult(context.Background(), "reclaimed-flow", claimA, "https://example.com/old.png", "old", "old", "old", "2026-03-25T00:03:00Z"); !errors.Is(err, ErrStaleJobResult) {
+		t.Fatalf("claim A apply error=%v, want stale result", err)
+	}
+	if err := repo.ApplyFlowchartResult(context.Background(), "reclaimed-flow", claimB, "https://example.com/new.png", "new", "new", "new", "2026-03-25T00:04:00Z"); err != nil {
+		t.Fatalf("claim B apply error=%v", err)
+	}
+	assertFlowchartState(t, db, "reclaimed-flow", FlowchartStatusDone, "", "2026-03-25T00:02:00Z", "2026-03-25T00:04:00Z", "2026-03-25T00:00:00Z")
 }
 
 func openFlowchartTestDB(t *testing.T) *sql.DB {
@@ -290,6 +326,13 @@ CREATE TABLE recipes (
   parse_last_error_type TEXT NOT NULL DEFAULT '',
   parse_processing_started_at TEXT NOT NULL DEFAULT '',
   parsed_content_edited INTEGER NOT NULL DEFAULT 0,
+  content_version INTEGER NOT NULL DEFAULT 0,
+  parse_claim_token TEXT NOT NULL DEFAULT '',
+  parse_claim_content_version INTEGER NOT NULL DEFAULT 0,
+  parse_lease_expires_at TEXT NOT NULL DEFAULT '',
+  flowchart_claim_token TEXT NOT NULL DEFAULT '',
+  flowchart_claim_content_version INTEGER NOT NULL DEFAULT 0,
+  flowchart_lease_expires_at TEXT NOT NULL DEFAULT '',
   pinned_at TEXT NOT NULL DEFAULT '',
   created_by INTEGER NOT NULL DEFAULT 0,
   updated_by INTEGER NOT NULL DEFAULT 0,

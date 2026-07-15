@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+const (
+	localUserJWTSecret  = "local-user-jwt-secret-change-me"
+	localAdminJWTSecret = "local-admin-jwt-secret-change-me"
+	localCredentialsKey = "local-credentials-secret-change-me"
+)
+
 type Config struct {
 	AppName                        string
 	AppEnv                         string
@@ -19,6 +25,8 @@ type Config struct {
 	AppSettingsAccessMode          string
 	AppSettingsAllowedOpenIDs      []string
 	CredentialsSecret              string
+	CredentialsKeyVersion          string
+	CredentialsPreviousKeys        string
 	JWTSecret                      string
 	JWTExpireHours                 int
 	AIBaseURL                      string
@@ -101,12 +109,14 @@ func Load() (Config, error) {
 		LogLevel:                       getEnv("LOG_LEVEL", "info"),
 		AdminUsername:                  strings.TrimSpace(os.Getenv("ADMIN_USERNAME")),
 		AdminPasswordHash:              strings.TrimSpace(os.Getenv("ADMIN_PASSWORD_HASH")),
-		AdminJWTSecret:                 strings.TrimSpace(os.Getenv("ADMIN_JWT_SECRET")),
+		AdminJWTSecret:                 strings.TrimSpace(getEnv("ADMIN_JWT_SECRET", localAdminJWTSecret)),
 		AdminOpenIDs:                   splitCSV(os.Getenv("APP_ADMIN_OPENIDS")),
-		AppSettingsAccessMode:          strings.TrimSpace(strings.ToLower(getEnv("APP_SETTINGS_ACCESS_MODE", "all"))),
+		AppSettingsAccessMode:          strings.TrimSpace(strings.ToLower(getEnv("APP_SETTINGS_ACCESS_MODE", "admin"))),
 		AppSettingsAllowedOpenIDs:      splitCSV(os.Getenv("APP_SETTINGS_ALLOWED_OPENIDS")),
-		CredentialsSecret:              strings.TrimSpace(os.Getenv("CREDENTIALS_SECRET")),
-		JWTSecret:                      getEnv("JWT_SECRET", "dev-secret-change-me"),
+		CredentialsSecret:              strings.TrimSpace(getEnv("CREDENTIALS_SECRET", localCredentialsKey)),
+		CredentialsKeyVersion:          strings.TrimSpace(getEnv("CREDENTIALS_KEY_VERSION", "local-v1")),
+		CredentialsPreviousKeys:        strings.TrimSpace(os.Getenv("CREDENTIALS_PREVIOUS_KEYS")),
+		JWTSecret:                      getEnv("JWT_SECRET", localUserJWTSecret),
 		JWTExpireHours:                 getInt("JWT_EXPIRE_HOURS", 720),
 		AIBaseURL:                      strings.TrimSpace(getEnv("AI_BASE_URL", "https://api.openai.com/v1")),
 		AIAPIKey:                       strings.TrimSpace(os.Getenv("AI_API_KEY")),

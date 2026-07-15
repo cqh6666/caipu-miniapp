@@ -100,7 +100,9 @@
 - 后台依赖独立环境变量账号：
   - `ADMIN_USERNAME`
   - `ADMIN_PASSWORD_HASH`
-  - `ADMIN_JWT_SECRET`（可选，不填时回退 `JWT_SECRET`）
+  - `ADMIN_JWT_SECRET`（非 `local` 环境必须独立配置，不再回退 `JWT_SECRET`）
+- 非 `local` 环境的 `JWT_SECRET`、`ADMIN_JWT_SECRET`、`CREDENTIALS_SECRET` 必须分别使用
+  不少于 32 个非默认字符的独立密钥，否则后端拒绝启动。
 - 当前后台页面：
   - `概览`
   - `AI Provider`

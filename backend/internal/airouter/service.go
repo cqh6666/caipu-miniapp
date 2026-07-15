@@ -12,6 +12,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
 )
 
 type CompatibilityLoader func(context.Context, Scene) SceneConfig
@@ -41,6 +42,15 @@ type Service struct {
 	breaker          *breakerStore
 	roundRobinMu     sync.Mutex
 	roundRobinNext   map[Scene]int
+}
+
+func (s *Service) ConfigureCredentialKeys(secret, version string, previous []credentialcipher.Key) error {
+	box, err := newVersionedCipherBox(secret, version, previous)
+	if err != nil {
+		return err
+	}
+	s.cipherBox = box
+	return nil
 }
 
 func NewService(repo *Repository, secret string, compatibility CompatibilityLoader, tracker audit.Tracker, alertTracker aialert.Tracker) *Service {

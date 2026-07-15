@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/bootstrap"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/db"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/dietassistant"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
@@ -44,6 +46,14 @@ type App struct {
 
 func New(cfg config.Config) (*App, error) {
 	logger := newLogger(cfg.LogLevel)
+	credentialVersion := cfg.CredentialsKeyVersion
+	if credentialVersion == "" {
+		credentialVersion = "v1"
+	}
+	previousCredentialKeys, err := credentialcipher.ParsePreviousKeys(cfg.CredentialsPreviousKeys)
+	if err != nil {
+		return nil, fmt.Errorf("parse previous credential keys: %w", err)
+	}
 
 	dbConn, err := db.Open(cfg, logger)
 	if err != nil {
@@ -70,6 +80,10 @@ func New(cfg config.Config) (*App, error) {
 
 	appSettingsRepo := appsettings.NewRepository(dbConn)
 	runtimeProvider := appsettings.NewRuntimeProvider(appSettingsRepo, cfg.CredentialsSecret, cfg)
+	if err := runtimeProvider.ConfigureCredentialKeys(cfg.CredentialsSecret, credentialVersion, previousCredentialKeys); err != nil {
+		_ = dbConn.Close()
+		return nil, fmt.Errorf("configure runtime credential keys: %w", err)
+	}
 	auditService := audit.NewService(dbConn, logger)
 	alertSender := aialert.NewSMTPSender()
 	runtimeProvider.SetAIAlertSender(alertSender)
@@ -83,6 +97,10 @@ func New(cfg config.Config) (*App, error) {
 		auditService,
 		aiAlertService,
 	)
+	if err := aiRoutingService.ConfigureCredentialKeys(cfg.CredentialsSecret, credentialVersion, previousCredentialKeys); err != nil {
+		_ = dbConn.Close()
+		return nil, fmt.Errorf("configure AI routing credential keys: %w", err)
+	}
 	aiRoutingService.SetTestInputBuilder(buildAIRoutingTestInputBuilder())
 	// 反向注入：aialert 通过接口消费 airouter 的运行时状态与复测能力（打破循环依赖）。
 	aiAlertService.SetProviderStatusResolver(aiRoutingService)
@@ -168,9 +186,13 @@ func New(cfg config.Config) (*App, error) {
 	authHandler := auth.NewHandler(authService)
 	authMiddleware := appmiddleware.Authenticate(tokenManager)
 	appSettingsService := appsettings.NewService(appSettingsRepo, cfg.CredentialsSecret, linkParseService, authService.EnsureCanManageAppSettings)
+	if err := appSettingsService.ConfigureCredentialKeys(cfg.CredentialsSecret, credentialVersion, previousCredentialKeys); err != nil {
+		_ = dbConn.Close()
+		return nil, fmt.Errorf("configure app settings credential keys: %w", err)
+	}
 	appSettingsRef.service = appSettingsService
 	appSettingsHandler := appsettings.NewHandler(appSettingsService, runtimeProvider)
-	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour)
+	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour, cfg.AdminUsername)
 	adminService := admin.NewService(cfg.AdminUsername, cfg.AdminPasswordHash, adminTokenManager, cfg.AppEnv != "local")
 	serverHealthService := admin.NewServerHealthService(cfg, runtimeProvider)
 	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService, serverHealthService, aiRoutingService, aiAlertService)

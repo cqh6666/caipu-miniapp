@@ -207,7 +207,8 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	}
 
 	startedAt := time.Now()
-	marked, err := w.repo.MarkAutoParseProcessing(ctx, item.ID, platform, startedAt.Format(time.RFC3339))
+	leaseExpiresAt := startedAt.Add(w.staleProcessingThreshold).Format(time.RFC3339)
+	claimToken, marked, err := w.repo.MarkAutoParseProcessing(ctx, item.ID, platform, startedAt.Format(time.RFC3339), leaseExpiresAt)
 	if err != nil {
 		return err
 	}
@@ -231,7 +232,7 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 		defer stateCancel()
 		if w.shouldRetry(item, errorType) {
 			nextAttemptAt := w.nextAttemptAt(item).Format(time.RFC3339)
-			if markErr := w.repo.MarkAutoParseRetryPending(stateCtx, item.ID, platform, err.Error(), errorType, nextAttemptAt); markErr != nil {
+			if markErr := w.repo.MarkAutoParseRetryPending(stateCtx, item.ID, claimToken, platform, err.Error(), errorType, nextAttemptAt); markErr != nil && !errors.Is(markErr, ErrStaleJobResult) {
 				w.logger.Error("mark recipe auto-parse retry state failed", "recipeID", item.ID, "error", markErr)
 			}
 			w.logger.Warn(
@@ -249,7 +250,7 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 			)
 			return err
 		}
-		if markErr := w.repo.MarkAutoParseFailed(stateCtx, item.ID, platform, err.Error(), errorType, finishedAt); markErr != nil {
+		if markErr := w.repo.MarkAutoParseFailed(stateCtx, item.ID, claimToken, platform, err.Error(), errorType, finishedAt); markErr != nil && !errors.Is(markErr, ErrStaleJobResult) {
 			w.logger.Error("mark recipe auto-parse failed state failed", "recipeID", item.ID, "error", markErr)
 		}
 		return err
@@ -261,7 +262,7 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	stateCtx, stateCancel := context.WithTimeout(parent, 10*time.Second)
 	defer stateCancel()
 
-	if err := w.repo.ApplyAutoParseResult(stateCtx, item.ID, parseSource, parseError, finishedAt, Recipe{
+	if err := w.repo.ApplyAutoParseResult(stateCtx, item.ID, claimToken, parseSource, parseError, finishedAt, Recipe{
 		Title:      result.RecipeDraft.Title,
 		Ingredient: result.RecipeDraft.Ingredient,
 		Summary:    result.RecipeDraft.Summary,
@@ -273,8 +274,12 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 			Steps:                mapParsedSteps(result.RecipeDraft.ParsedContent.Steps),
 		},
 	}); err != nil {
+		if errors.Is(err, ErrStaleJobResult) || errors.Is(err, ErrAutoParseContentChanged) {
+			w.logger.Warn("discarded stale recipe auto-parse result", "recipeID", item.ID, "reason", err)
+			return nil
+		}
 		errorType := classifyAutoParseError(err)
-		if markErr := w.repo.MarkAutoParseFailed(stateCtx, item.ID, parseSource, err.Error(), errorType, finishedAt); markErr != nil {
+		if markErr := w.repo.MarkAutoParseFailed(stateCtx, item.ID, claimToken, parseSource, err.Error(), errorType, finishedAt); markErr != nil && !errors.Is(markErr, ErrStaleJobResult) {
 			w.logger.Error("mark recipe auto-parse failure after apply error failed", "recipeID", item.ID, "error", markErr)
 		}
 		return err
