@@ -4,11 +4,12 @@
 方便后续排障、发版和迁移。文档只记录结构、路径、端口、服务名和配置
 入口，不记录任何真实密钥。
 
-仓库文档更新时间：`2026-07-16 10:00 CST`
+仓库文档更新时间：`2026-07-16 12:45 CST`
 
-生产主机最后实机核对仍为：`2026-04-23 17:34 CST`。2026-07-16 已在仓库完成版本化
-release、在线备份、readiness 和最小权限 unit，但尚未在生产执行 bootstrap 迁移与演练；
-下文明确区分“已核对现状”和“仓库目标”，不得把后者提前当成线上事实。
+生产主机最后实机核对为：`2026-07-16 12:43 CST`。后端已完成版本化 release、在线备份、
+readiness、Go `1.26.5` 构建身份与最小权限 unit 的生产迁移；异机备份、故障注入、真实
+回滚、ops-health 外部告警和全局 journald 留存策略仍待执行，下文不把这些待办提前当成
+线上事实。
 
 ## 1. 服务器基础信息
 
@@ -66,7 +67,7 @@ Internet
 | `/admin/` | `/srv/caipu-miniapp/admin-web/dist/` | 后台管理前端静态资源 |
 | `/caipu-api/` | `http://127.0.0.1:8080/api/` | 小程序后端 API 与后台 API，`proxy_read_timeout / proxy_send_timeout = 300s` |
 | `/caipu-uploads/` | `http://127.0.0.1:8080/uploads/` | 上传文件访问 |
-| `/caipu-healthz` | 现网待复核；仓库模板为 `http://127.0.0.1:8080/readyz` | 后端 readiness |
+| `/caipu-healthz` | `http://127.0.0.1:8080/healthz`；后端将其作为 `/readyz` 兼容别名 | 后端 readiness |
 
 关键约束：
 
@@ -95,13 +96,13 @@ Internet
 
 - `/etc/systemd/system/caipu-backend.service`
 
-2026-04-23 最后一次实机核对的旧配置：
+2026-04-23 最后一次实机核对的旧配置（已归档）：
 
 - `WorkingDirectory=/srv/caipu-miniapp/backend`
 - `Environment=APP_ENV_FILE=/srv/caipu-miniapp/backend/configs/prod.env`
 - `ExecStart=/srv/caipu-miniapp/backend/bin/server`
 
-2026-07-16 仓库已提供、但生产待迁移验证的目标配置：
+2026-07-16 已实机迁移并验证的当前配置：
 
 - `User/Group=caipu-backend`，进程 UID 非 0；
 - `WorkingDirectory=/srv/caipu-miniapp/backend/current`；
@@ -109,9 +110,11 @@ Internet
 - `current` 原子指向 `releases/<release-id>`；
 - 只允许写 `backend/data`，启用 `NoNewPrivileges`、`PrivateTmp`、
   `ProtectSystem=strict`、`ProtectHome=true` 和 `UMask=0077`；
-- 每日 `caipu-backend-backup.timer`、每周 `caipu-backend-restore-drill.timer` 与每五分钟
-  `caipu-backend-ops-health.timer`；仓库巡检策略覆盖 5xx、worker、磁盘、备份和恢复年龄；
-- journald 目标为主机全局 `512M` / `14day`，后端 unit 另有日志速率上限；
+- 当前 release 为 `20260716T043954Z-c928d193493a`，commit 为 `c928d19`，二进制实际和
+  manifest/健康接口均报告 Go `1.26.5`；
+- 每日 `caipu-backend-backup.timer` 与每周 `caipu-backend-restore-drill.timer` 已启用；
+- 每五分钟 `caipu-backend-ops-health.timer` 和主机全局 journald `512M/14day` 尚未启用，
+  当前磁盘使用率 96%，接入巡检前应先确定历史日志保留和外部告警接收策略；
 - `HEALTH_BACKEND_SERVICE_NAME` / `HEALTH_BACKEND_BASE_URL` 与实际 unit/端口一致，
   release manifest 可映射 release、commit、build time、Go toolchain 和 migration 集合。
 
@@ -206,7 +209,7 @@ journalctl -u hapi-runner -n 200 --no-pager
 | --- | --- |
 | `/srv/caipu-miniapp` | 仓库根目录 |
 | `/srv/caipu-miniapp/backend` | Go 后端源码 |
-| `/srv/caipu-miniapp/backend/current` | 当前版本原子符号链接（生产待迁移） |
+| `/srv/caipu-miniapp/backend/current` | 当前版本原子符号链接，已指向 `releases/20260716T043954Z-c928d193493a` |
 | `/srv/caipu-miniapp/backend/releases/<release-id>` | 版本化二进制、迁移和 manifest |
 | `/srv/caipu-miniapp/backend/data` | SQLite 和上传目录 |
 | `/srv/caipu-miniapp/backend/backups` | 原子备份包与校验清单 |
@@ -294,11 +297,10 @@ cd /srv/caipu-miniapp
 bash scripts/deploy-backend-on-server.sh
 ```
 
-仓库脚本的新发布契约：执行后端测试和配置校验，使用 `sqlite3 .backup` 创建发布前快照，
+当前发布契约：执行后端测试和配置校验，使用 `sqlite3 .backup` 创建发布前快照，
 在快照副本预演 migration，再构建版本化 release、原子切换 `current`；只有 `/readyz`
 连续成功且 `X-Release-ID` 与目标一致才成功。失败恢复上一二进制，不自动反向执行 SQL。
-生产首次使用前必须先运行新版 `backend/scripts/bootstrap-server.sh` 迁移旧 unit，否则脚本
-会因 `ExecStart` 仍指向 `bin/server` 而在备份/迁移前安全失败。
+生产旧 unit 已于 2026-07-16 迁移完成；后续禁止恢复为直接覆盖 `bin/server` 的发布方式。
 
 说明：
 
@@ -449,15 +451,17 @@ curl -i https://www.gxm1227.top/caipu-api/admin/auth/me
 10. 如果确实要在服务器上强制构建 `admin-web`、执行 sidecar 依赖安装，
     或前后端一起构建，必须显式带 `ALLOW_LOW_RESOURCE_BUILD=1`，并尽量放到
     维护窗口执行。
-11. 生产迁移新版 unit 后必须验证：进程 UID 非 0、release 和 `/etc` 不可写、data
-    可写；配置 `/etc/caipu-backend-backup.env` 的异机 rsync 目标并实际完成一次恢复演练；
-    让告警平台订阅 `caipu-backend-ops-health.service` 的 Warning/Critical。
+11. 生产进程 UID、release/`/etc` 不可写、data/WAL 可写、字体读取、服务重启和 readiness
+    已验证；仍需配置 `/etc/caipu-backend-backup.env` 的异机 rsync 目标并完成真实恢复，
+    以及让告警平台订阅 `caipu-backend-ops-health.service` 的 Warning/Critical。
+12. 当前根分区使用率 96%，已清理 Go/apt 构建缓存但未删除 journal、备份或业务数据；
+    在确认日志留存后再启用 journald `512M/14day`，禁止为腾空间误删 SQLite/WAL/uploads。
 
 ## 10. 推荐的后续补强
 
-1. 在维护窗口运行新版 bootstrap，核对生成 unit/nginx diff 后执行首次版本化发布。
-2. 配置异机 rsync、手工触发 backup/restore-drill service，并记录远端副本与恢复结果。
+1. 配置异机 rsync，记录远端副本与真实恢复结果；本机 backup/restore-drill 已验证并启用。
+2. 确认共享主机历史日志保留需求后设置 journald 上限，把磁盘使用率降到告警阈值以下。
 3. 接入 `ops-health` 失败 unit 的外部告警接收端，制造测试 5xx/worker/备份过期信号并
    记录真实投递结果。
-4. 实测健康失败自动回滚、进程 UID/沙箱、journald 容量和 Go 生产工具链，随后更新本文件
-   “实机核对时间”。
+4. 实测健康失败自动回滚和关闭 DB/破坏目录权限时的 readiness/liveness 分离；进程 UID、
+   沙箱、字体、WAL、重启和 Go 生产工具链已完成实机核对。

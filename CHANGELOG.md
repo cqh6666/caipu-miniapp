@@ -1,5 +1,34 @@
 # Project Changelog
 
+## 2026-07-16 (生产后端版本化发布与构建身份修正)
+
+### Fixed
+
+- **修改时间**：2026-07-16 12:45:00 +0800
+- **变更背景**：生产仍以 root 运行旧 `backend/bin/server`，配置文件权限为 `0644`，尚未
+  迁移到版本化 release。首次迁移发布后又发现二进制实际由模块自动工具链 `go1.26.5`
+  编译，但发布脚本在仓库根目录读取 `GOVERSION`，导致 manifest、健康接口和版本命令
+  误报基础 Go `1.26.1`。
+- **核心改动**：发布脚本改为在 `backend` 模块目录读取 Go 工具链版本，并补集成断言。
+  生产 `caipu-backend` 已迁移为专用不可登录用户、`current/server` 原子 release、只写
+  `backend/data` 的 systemd 沙箱；`prod.env` 收紧为 `0600`，补齐共享前缀下的 Admin
+  Cookie、上传公网地址和健康探测配置。生产已应用 migration `025`～`028`，启用每日在线
+  备份与每周恢复校验 timer，并保留旧 unit/config 备份及可回退 release。
+- **影响范围**：`backend/scripts/release-on-server.sh` 及其回滚集成测试、生产后端 systemd
+  unit、运行配置权限、SQLite schema、版本化 release、备份/恢复 timer 与部署事实文档；
+  Admin Web 未在低配云主机编译或发布，nginx、sidecar 和 Hapi 服务未改动。
+- **兼容性或风险**：当前生产 release 为 `20260716T043954Z-c928d193493a`，构建身份已准确
+  报告 `go1.26.5`。主机磁盘仍使用 96%，五分钟 ops-health timer、全局 journald
+  `512M/14day` 策略、异机备份、故障 readiness 和真实回滚演练尚未执行；压缩旧 journal
+  会删除历史日志，需另行确认后处理。migration 只允许前向兼容，不执行反向 SQL。
+- **验证情况**：生产 `go1.26.5` 全量测试、配置校验、SQLite Online Backup、备份副本迁移
+  预演、生产迁移与连续 3 次 release-aware readiness 均通过；外部
+  `https://www.gxm1227.top/caipu-healthz` 返回 200。进程 UID 非 0，服务用户无法写 `/etc`
+  或 release，可读取 Noto CJK 字体并持有 DB/WAL/SHM；`PRAGMA integrity_check=ok`，29 条
+  migration checksum 均非空，最新备份的 SHA-256、SQLite quick check 和 uploads 解包验证
+  通过，发布后 warning 以上服务日志为空。构建身份修复的 Shell 集成测试、
+  `git diff --check` 及 commit `c928d19` 的 Backend CI 均通过。
+
 ## 2026-07-16 (后端管理写并发、迁移校验与运维身份闭环)
 
 ### Changed
