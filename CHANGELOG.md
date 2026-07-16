@@ -1,5 +1,47 @@
 # Project Changelog
 
+## 2026-07-16 (生产可重建缓存与未引用镜像清理)
+
+### Changed
+
+- **修改时间**：2026-07-16 14:00:44 +0800
+- **变更背景**：生产完成 journal 与 Docker 悬空镜像治理后根分区仍使用 81%；用户确认
+  继续清理 root/AstrBot 下载缓存，以及未被任何容器引用的有标签 Docker 镜像，不扩大到
+  Playwright、Go module、Hapi runtime、容器、卷、swap 或业务数据。
+- **核心改动**：通过 npm 标准命令清空 root 约 2.7 GiB 与 AstrBot 约 424 MiB 的
+  `_cacache`，通过 AstrBot 用户的 uv 标准命令清理缓存；执行 `docker image prune -a -f`
+  删除零容器引用的 `python:3.12-slim`、`node:18`、`mysql:8.2.0`。未删除运行中 npm 进程
+  打开的日志、AstrBot `.venv`、Docker 容器/卷/网络/bind mount 或其他缓存。
+- **影响范围**：npm/uv 本地下载缓存和三个未引用镜像；后续安装依赖或再次使用上述基础
+  镜像时需要联网重新下载。Docker 仍保留被运行/退出容器引用的全部镜像。
+- **兼容性或风险**：不影响已安装依赖和当前服务运行，但离线环境下无法依赖已清缓存完成
+  npm/uv 安装或重新创建上述镜像环境。首次 uv 清理因工作目录 `/root` 不可读而在删除前
+  失败，切换到 `/home/astrbot` 后按相同范围成功执行；Docker 当时尚未开始清理。
+- **验证情况**：Docker 报告释放 1.708 GB；root `.npm` 降至 56 KiB，AstrBot `.npm`
+  降至 556 KiB、`.cache` 降至 4 KiB。根分区从 81%/7.3 GiB 可用降至 68%/13 GiB 可用；
+  4 个运行容器状态不变，Hapi Hub/Runner 与 `caipu-backend` 均为 active，root `npm start`
+  进程仍在，后端 `/readyz` 返回 200。Playwright、Go module、Hapi runtime、swap、备份、
+  数据库和 uploads 均未修改。
+
+## 2026-07-16 (生产 Docker 悬空镜像清理)
+
+### Changed
+
+- **修改时间**：2026-07-16 13:53:21 +0800
+- **变更背景**：生产完成 journald 容量治理后根分区仍使用 87%，Docker 保存 14 个无标签
+  悬空镜像，主要来自 `sub2api` 历史自动更新构建。用户确认先处理悬空镜像，不扩大到退出
+  容器、卷、网络或全部未使用镜像。
+- **核心改动**：在生产执行标准 `docker image prune -f`，仅删除无标签且未被任何容器引用
+  的镜像及其层；未使用 `-a`，未删除有标签镜像、退出容器、卷、网络或 bind mount 数据。
+- **影响范围**：Docker 本地镜像缓存与旧 `sub2api` 镜像回滚能力；4 个运行容器、7 个退出
+  容器及其日志和数据均未改动。清理后仍有 2 个无标签镜像因被退出容器引用而保留。
+- **兼容性或风险**：旧悬空镜像无法再用于本机回滚，需要时必须重新拉取或构建；运行中的
+  `sub2api`、Redis、PostgreSQL 和 `gemini-web2api` 镜像未受影响。
+- **验证情况**：Docker 报告实际释放 2.277 GB，镜像总数从 26 降至 14，悬空镜像从 14
+  降至 2；根分区从 87%/5.2 GiB 可用降至 81%/7.3 GiB 可用。`sub2api`、Redis、
+  PostgreSQL 均保持 healthy，`gemini-web2api` 保持运行，`caipu-backend /readyz` 返回 200，
+  release 仍为 `20260716T043954Z-c928d193493a`。
+
 ## 2026-07-16 (后端更新健康检查脚本化)
 
 ### Changed
@@ -24,6 +66,55 @@
   生产只读执行，`/livez`、`/readyz` 均返回 200，release ID 均为
   `20260716T043954Z-c928d193493a`。本次未上传脚本、未发布后端、未注入生产故障；本机未安装
   `shellcheck`，该项未执行。
+
+## 2026-07-16 (生产 journald 容量治理)
+
+### Changed
+
+- **修改时间**：2026-07-16 13:42:26 +0800
+- **变更背景**：共享生产主机根分区使用率达到 96%，仅剩约 1.7 GiB 普通可用空间；
+  journald 占用 3.9 GiB，其中京东云 `Jdog-Monitor` 在 7 月 15 日至 16 日产生的
+  `AKEY_PROCESS` 进程审计洪峰显著放大日志量。用户明确确认无需导出历史日志，直接执行
+  全局日志清理。
+- **核心改动**：生产新增 `/etc/systemd/journald.conf.d/caipu-backend.conf`，设置
+  `SystemMaxUse=512M`、`MaxRetentionSec=14day`、`Compress=yes`；重启 journald 后执行
+  rotate 和 vacuum，不保留被清理 journal 的额外副本。未安装或启用
+  `caipu-backend-ops-health.timer`，未修改 Jdog、后端、数据库、uploads、备份或其他服务配置。
+- **影响范围**：主机全局 systemd journal，而非仅 `caipu-backend`；被回收期间的 Jdog、
+  SSH、Docker、后端及其他 systemd 服务历史日志不可恢复。Jdog 独立运行日志不受影响。
+- **兼容性或风险**：journald 从 3.9 GiB 降至 456 MiB，根分区从 96% 降至 87%，可用空间
+  从约 1.7 GiB 增至 5.2 GiB。audit 仍保持 Jdog 于 04:38 停止后的关闭状态，累计
+  `lost=15830` 不因清理重置；若 Jdog 再次开启高频进程审计，512 MiB 全局上限会限制本机
+  增长，但也会更快淘汰其他服务日志。
+- **验证情况**：`systemd-analyze cat-config systemd/journald.conf` 显示生产 drop-in 已生效；
+  `journalctl --disk-usage` 为 456 MiB，`df -hT /` 为 87%/5.2 GiB 可用；
+  `systemd-journald`、`jdog_service`、`caipu-backend` 均为 active，后端 `/readyz` 返回 200，
+  release 仍为 `20260716T043954Z-c928d193493a`。现有唯一 failed unit 仍是无关业务的
+  `motd-news.service`。
+
+## 2026-07-16 (生产 Admin Web 管理契约同步发布)
+
+### Changed
+
+- **修改时间**：2026-07-16 13:31:55 +0800
+- **变更背景**：生产后端已升级到 `c928d193493a`，管理写请求开始强制校验会话绑定的
+  CSRF token，AI 路由与运行时配置保存也要求携带 version CAS；线上旧 Admin Web 静态包
+  尚不包含 `X-CSRF-Token` 和 `expectedVersion`，会造成登录后写操作 403/冲突契约不兼容。
+- **核心改动**：在本地 Mac 对 Admin Web 执行测试、TypeScript 检查和 Vite 生产构建，
+  通过 `ssh my-cloud` 将 `dist` 上传到 `/srv/caipu-miniapp/admin-web`，以发布标识
+  `20260716-133028` 原子替换线上静态目录；保留发布前版本为
+  `dist.bak-20260716-133028`，远端仅接收构建产物，未在低配云主机执行前端编译。
+- **影响范围**：生产 `/admin/` 静态资源及管理端 CSRF、运行时配置 version CAS、AI
+  Provider version CAS 契约；后端进程、数据库、nginx 配置、sidecar 和 Hapi 服务均未改动。
+- **兼容性或风险**：新静态包与当前后端契约一致；已打开旧后台页面的浏览器标签可能仍
+  持有旧 JS，需刷新后再执行写操作。主机磁盘仍为 96% 使用率，本次保留最近 3 份 Admin
+  Web 备份，后续仍需按既有运维计划处理磁盘容量。
+- **验证情况**：`npm --prefix admin-web run test`、`npm --prefix admin-web run typecheck`
+  和本地 `vite build` 均通过，产物约 1.9 MiB；线上 `/admin/` 返回 HTTP 200，本地与远端
+  `index.html` SHA-256 同为
+  `d493c9dfbbb2f1de894ab37a313b9c065641ffb827b8fe08e7e434fc759a6e87`，线上分包确认包含
+  `X-CSRF-Token`、`expectedVersion` 和 AI Provider version 协议，上传临时包已清理且发布前
+  备份仍可用于回退。
 
 ## 2026-07-16 (生产后端版本化发布与构建身份修正)
 

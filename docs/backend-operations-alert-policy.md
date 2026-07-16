@@ -1,8 +1,9 @@
 # 后端运维告警策略
 
-- **最后更新**：2026-07-16 11:10:45 +0800
+- **最后更新**：2026-07-16 13:42:26 +0800
 - **适用范围**：单机 systemd + SQLite 的 `caipu-backend`
-- **仓库状态**：巡检脚本、systemd timer 和日志留存模板已完成；生产告警接收端待接入
+- **仓库状态**：巡检脚本、systemd timer 和日志留存模板已完成；生产 journald 留存已应用，
+  ops-health timer 与外部告警接收端待接入
 
 ## 1. 目标与边界
 
@@ -50,6 +51,10 @@ Compress=yes
 `SystemMaxUse` 是主机全局 journald 上限，不是单服务配额。共享主机应结合其他服务日志量
 调整 `JOURNAL_SYSTEM_MAX_USE` / `JOURNAL_MAX_RETENTION_SEC`，或接入集中采集后缩短本机
 保留期。后端 unit 同时设置 30 秒 1000 条的日志速率上限。
+
+生产已于 2026-07-16 13:42 应用上述 drop-in。用户确认不导出历史日志后执行全局 rotate
+与 vacuum，journal 从 3.9 GiB 降至 456 MiB，根分区从 96% 降至 87%；该操作同时回收了
+其他 systemd 服务历史日志，不能视为单服务清理。
 
 常用查询：
 

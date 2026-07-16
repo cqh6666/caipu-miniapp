@@ -4,12 +4,12 @@
 方便后续排障、发版和迁移。文档只记录结构、路径、端口、服务名和配置
 入口，不记录任何真实密钥。
 
-仓库文档更新时间：`2026-07-16 12:45 CST`
+仓库文档更新时间：`2026-07-16 14:00 CST`
 
-生产主机最后实机核对为：`2026-07-16 12:43 CST`。后端已完成版本化 release、在线备份、
-readiness、Go `1.26.5` 构建身份与最小权限 unit 的生产迁移；异机备份、故障注入、真实
-回滚、ops-health 外部告警和全局 journald 留存策略仍待执行，下文不把这些待办提前当成
-线上事实。
+生产主机最后实机核对为：`2026-07-16 14:00 CST`。后端已完成版本化 release、在线备份、
+readiness、Go `1.26.5` 构建身份与最小权限 unit 的生产迁移，并已应用主机全局 journald
+`512M/14day` 留存策略；异机备份、故障注入、真实回滚和 ops-health 外部告警仍待执行，
+下文不把这些待办提前当成线上事实。
 
 ## 1. 服务器基础信息
 
@@ -113,8 +113,13 @@ Internet
 - 当前 release 为 `20260716T043954Z-c928d193493a`，commit 为 `c928d19`，二进制实际和
   manifest/健康接口均报告 Go `1.26.5`；
 - 每日 `caipu-backend-backup.timer` 与每周 `caipu-backend-restore-drill.timer` 已启用；
-- 每五分钟 `caipu-backend-ops-health.timer` 和主机全局 journald `512M/14day` 尚未启用，
-  当前磁盘使用率 96%，接入巡检前应先确定历史日志保留和外部告警接收策略；
+- 主机全局 journald `512M/14day` 已于 2026-07-16 13:42 应用；用户确认不导出历史日志后，
+  journal 从 3.9 GiB 清理至 456 MiB，根分区从 96% 降至 87%、可用空间增至 5.2 GiB；
+- 生产 Docker 悬空镜像已于 2026-07-16 13:53 清理，释放 2.277 GB；镜像从 26 个降至
+  14 个，根分区进一步降至 81%、可用空间增至 7.3 GiB；
+- root/AstrBot npm、AstrBot uv 下载缓存和零容器引用的有标签镜像已于 2026-07-16 14:00
+  清理；根分区进一步降至 68%、可用空间增至 13 GiB，Docker 剩余镜像均有容器引用；
+- 每五分钟 `caipu-backend-ops-health.timer` 尚未安装或启用，外部告警接收策略仍待确定；
 - `HEALTH_BACKEND_SERVICE_NAME` / `HEALTH_BACKEND_BASE_URL` 与实际 unit/端口一致，
   release manifest 可映射 release、commit、build time、Go toolchain 和 migration 集合。
 
@@ -454,14 +459,17 @@ curl -i https://www.gxm1227.top/caipu-api/admin/auth/me
 11. 生产进程 UID、release/`/etc` 不可写、data/WAL 可写、字体读取、服务重启和 readiness
     已验证；仍需配置 `/etc/caipu-backend-backup.env` 的异机 rsync 目标并完成真实恢复，
     以及让告警平台订阅 `caipu-backend-ops-health.service` 的 Warning/Critical。
-12. 当前根分区使用率 96%，已清理 Go/apt 构建缓存但未删除 journal、备份或业务数据；
-    在确认日志留存后再启用 journald `512M/14day`，禁止为腾空间误删 SQLite/WAL/uploads。
+12. 当前根分区使用率为 68%，可用空间 13 GiB；journald 已限制为 `512M/14day`，Docker
+    悬空/未引用镜像和可重建下载缓存已清理。本次未删除备份或业务数据，后续仍禁止为
+    腾空间误删 SQLite/WAL/uploads，并需观察 Jdog 审计、Docker 自动更新和本地备份增长。
 
 ## 10. 推荐的后续补强
 
 1. 配置异机 rsync，记录远端副本与真实恢复结果；本机 backup/restore-drill 已验证并启用。
-2. 确认共享主机历史日志保留需求后设置 journald 上限，把磁盘使用率降到告警阈值以下。
-3. 接入 `ops-health` 失败 unit 的外部告警接收端，制造测试 5xx/worker/备份过期信号并
+2. 继续观察 journald、Jdog 审计、Docker 自动更新和本地备份增长，评估共享主机 68% 的
+   容量余量。
+3. 安装并启用 `ops-health` timer，接入失败 unit 的外部告警接收端，制造测试
+   5xx/worker/备份过期信号并
    记录真实投递结果。
 4. 实测健康失败自动回滚和关闭 DB/破坏目录权限时的 readiness/liveness 分离；进程 UID、
    沙箱、字体、WAL、重启和 Go 生产工具链已完成实机核对。
