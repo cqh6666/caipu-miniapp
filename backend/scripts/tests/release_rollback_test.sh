@@ -51,6 +51,10 @@ if [[ "${1:-}" == "test" ]]; then
   exit 0
 fi
 if [[ "${1:-}" == "env" && "${2:-}" == "GOVERSION" ]]; then
+  if [[ "$(pwd -P)" != "$(cd "${EXPECTED_GO_ENV_DIR:?}" && pwd -P)" ]]; then
+    echo "go env GOVERSION must run from the backend module: $PWD" >&2
+    exit 1
+  fi
   echo "go1.test"
   exit 0
 fi
@@ -112,6 +116,7 @@ chmod 755 "$FAKE_BIN/curl"
 
 set +e
 PATH="$FAKE_BIN:$PATH" \
+EXPECTED_GO_ENV_DIR="$BACKEND" \
 BACKEND_DIR="$BACKEND" \
 BACKUP_ENV_FILE="$TEST_ROOT/backup.env" \
 APP_ENV_FILE="$BACKEND/configs/prod.env" \
@@ -153,6 +158,10 @@ for key in git_commit built_at go_toolchain binary_sha256 migration_count migrat
     exit 1
   fi
 done
+if ! grep -q '^go_toolchain=go1.test$' "$BACKEND/releases/new-release/manifest.env"; then
+  echo "release manifest did not use the backend module toolchain" >&2
+  exit 1
+fi
 if [[ -z "$(find "$BACKEND/backups" -mindepth 1 -maxdepth 1 -type d -name 'backup-*' -print -quit)" ]]; then
   echo "pre-release backup was not created" >&2
   exit 1

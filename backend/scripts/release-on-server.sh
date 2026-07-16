@@ -196,7 +196,7 @@ fi
 git_commit="$(git -C "$BACKEND_DIR" rev-parse HEAD)"
 release_id="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)-${git_commit:0:12}}"
 build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-go_toolchain="$(go env GOVERSION)"
+go_toolchain="$(cd "$BACKEND_DIR" && go env GOVERSION)"
 if [[ ! "$release_id" =~ ^[A-Za-z0-9._-]+$ ]]; then
   fail "RELEASE_ID may only contain letters, numbers, dot, underscore, and hyphen"
 fi
