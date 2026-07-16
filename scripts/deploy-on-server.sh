@@ -8,6 +8,7 @@ ADMIN_WEB_DIR="${ADMIN_WEB_DIR:-${REPO_DIR}/admin-web}"
 SERVICE_NAME="${SERVICE_NAME:-caipu-backend}"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 APP_PORT="${APP_PORT:-8080}"
+LIVENESS_PATH="${LIVENESS_PATH:-/livez}"
 READINESS_PATH="${READINESS_PATH:-/readyz}"
 DEPLOY_SCOPE="${DEPLOY_SCOPE:-auto}"
 RUN_GIT_PULL="${RUN_GIT_PULL:-1}"
@@ -124,6 +125,7 @@ Environment variables:
   BUILD_NICE=10
   GO_BUILD_GOMAXPROCS=1
   RUN_BACKEND_TESTS=1
+  LIVENESS_PATH=/livez
   READINESS_PATH=/readyz
   ADMIN_WEB_INSTALL_MODE=auto|always|never
   ADMIN_WEB_NODE_OPTIONS=--max-old-space-size=768
@@ -291,6 +293,7 @@ if [[ "$build_backend" == "1" ]]; then
 	SERVICE_NAME="$SERVICE_NAME" \
 	SYSTEMCTL_BIN="$SYSTEMCTL_BIN" \
 	APP_PORT="$APP_PORT" \
+	LIVENESS_PATH="$LIVENESS_PATH" \
 	READINESS_PATH="$READINESS_PATH" \
 	BUILD_NICE="$BUILD_NICE" \
 	GO_BUILD_GOMAXPROCS="$GO_BUILD_GOMAXPROCS" \
@@ -321,7 +324,7 @@ if [[ "$build_admin_web" == "1" ]]; then
 fi
 
 if [[ "$restart_backend" == "1" ]]; then
-	log "backend release already restarted the service and verified readiness"
+	log "backend release already restarted the service and verified liveness, readiness, and release identity"
 else
   log "backend code unchanged, skip service restart"
 fi

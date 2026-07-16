@@ -14,7 +14,9 @@ SERVICE_NAME="${SERVICE_NAME:-caipu-backend}"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 CURL_BIN="${CURL_BIN:-curl}"
 APP_PORT="${APP_PORT:-8080}"
+LIVENESS_PATH="${LIVENESS_PATH:-/livez}"
 READINESS_PATH="${READINESS_PATH:-/readyz}"
+HEALTH_CHECK_SCRIPT="${HEALTH_CHECK_SCRIPT:-${BACKEND_DIR}/scripts/check-service-health.sh}"
 READY_ATTEMPTS="${READY_ATTEMPTS:-30}"
 READY_CONSECUTIVE_SUCCESSES="${READY_CONSECUTIVE_SUCCESSES:-3}"
 READY_INTERVAL_SECONDS="${READY_INTERVAL_SECONDS:-2}"
@@ -131,6 +133,28 @@ wait_for_release() {
   return 1
 }
 
+verify_service_health() {
+  local expected_release="$1"
+  BACKEND_BASE_URL="http://127.0.0.1:${APP_PORT}" \
+  LIVENESS_PATH="$LIVENESS_PATH" \
+  READINESS_PATH="$READINESS_PATH" \
+  EXPECTED_LIVE_STATUS=200 \
+  EXPECTED_READY_STATUS=200 \
+  EXPECTED_RELEASE_ID="$expected_release" \
+  CURL_BIN="$CURL_BIN" \
+    bash "$HEALTH_CHECK_SCRIPT"
+}
+
+report_service_health() {
+  BACKEND_BASE_URL="http://127.0.0.1:${APP_PORT}" \
+  LIVENESS_PATH="$LIVENESS_PATH" \
+  READINESS_PATH="$READINESS_PATH" \
+  EXPECTED_LIVE_STATUS=any \
+  EXPECTED_READY_STATUS=any \
+  CURL_BIN="$CURL_BIN" \
+    bash "$HEALTH_CHECK_SCRIPT" || true
+}
+
 rollback_binary() {
   local previous_target="$1"
   if [[ -n "$previous_target" && -x "$previous_target/server" ]]; then
@@ -142,7 +166,7 @@ rollback_binary() {
       echo "Previous binary was selected but its service restart failed; inspect systemd immediately." >&2
       return
     fi
-    if [[ -n "$previous_release_id" ]] && wait_for_release "$previous_release_id"; then
+    if [[ -n "$previous_release_id" ]] && wait_for_release "$previous_release_id" && verify_service_health "$previous_release_id"; then
       echo "Previous binary restored. Database migrations were not reversed; review forward compatibility before any manual SQL rollback." >&2
     else
       echo "Previous binary was selected but did not become ready; inspect service logs immediately." >&2
@@ -178,6 +202,7 @@ done
 [[ "$RUN_BACKEND_TESTS" == "0" || "$RUN_BACKEND_TESTS" == "1" ]] || fail "RUN_BACKEND_TESTS must be 0 or 1"
 [[ "$VERIFY_SYSTEMD_CURRENT" == "0" || "$VERIFY_SYSTEMD_CURRENT" == "1" ]] || fail "VERIFY_SYSTEMD_CURRENT must be 0 or 1"
 [[ -d "$BACKEND_DIR/migrations" ]] || fail "migration directory not found: $BACKEND_DIR/migrations"
+[[ -f "$HEALTH_CHECK_SCRIPT" ]] || fail "service health check script not found: $HEALTH_CHECK_SCRIPT"
 [[ -f "$APP_ENV_FILE" ]] || fail "production environment file not found: $APP_ENV_FILE"
 [[ -f "$SQLITE_PATH" ]] || fail "SQLite database not found: $SQLITE_PATH"
 [[ -d "$UPLOAD_DIR" ]] || fail "upload directory not found: $UPLOAD_DIR"
@@ -297,8 +322,15 @@ fi
 
 log "waiting for ${READY_CONSECUTIVE_SUCCESSES} consecutive readiness checks for $release_id"
 if ! wait_for_release "$release_id"; then
+  report_service_health
   rollback_binary "$previous_target"
   fail "release did not become ready; previous binary restoration was attempted"
+fi
+
+log "verifying liveness, readiness, and release identity"
+if ! verify_service_health "$release_id"; then
+  rollback_binary "$previous_target"
+  fail "release health verification failed; previous binary restoration was attempted"
 fi
 
 prune_releases

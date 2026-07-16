@@ -7,6 +7,7 @@ BACKEND="$TEST_ROOT/backend"
 FAKE_BIN="$TEST_ROOT/fake-bin"
 CURRENT="$BACKEND/current"
 SYSTEMCTL_LOG="$TEST_ROOT/systemctl.log"
+CURL_LOG="$TEST_ROOT/curl.log"
 
 cleanup() {
   rm -rf -- "$TEST_ROOT"
@@ -16,6 +17,7 @@ trap cleanup EXIT
 mkdir -p "$BACKEND/scripts" "$BACKEND/migrations" "$BACKEND/configs" \
   "$BACKEND/data/uploads" "$BACKEND/releases/previous" "$FAKE_BIN"
 cp "$SCRIPT_ROOT/backup.sh" "$BACKEND/scripts/backup.sh"
+cp "$SCRIPT_ROOT/check-service-health.sh" "$BACKEND/scripts/check-service-health.sh"
 printf '%s\n' 'CREATE TABLE fixture (id INTEGER PRIMARY KEY);' >"$BACKEND/migrations/001_fixture.sql"
 printf '%s\n' 'APP_ENV=local' >"$BACKEND/configs/prod.env"
 chmod 600 "$BACKEND/configs/prod.env"
@@ -97,20 +99,32 @@ cat >"$FAKE_BIN/curl" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 headers=""
+output=""
+write_out=""
+url=""
 while ((\$#)); do
-  if [[ "\$1" == "--dump-header" ]]; then
-    headers="\$2"
-    shift 2
-    continue
-  fi
-  shift
+  case "\$1" in
+    --dump-header) headers="\$2"; shift 2 ;;
+    --output) output="\$2"; shift 2 ;;
+    --write-out) write_out="\$2"; shift 2 ;;
+    --max-time) shift 2 ;;
+    --fail|--silent|--show-error) shift ;;
+    *) url="\$1"; shift ;;
+  esac
 done
+printf '%s\n' "\$url" >>"$CURL_LOG"
 target="\$(readlink -f "$CURRENT")"
 release_id="\$(awk -F= '\$1 == "release_id" { print \$2; exit }' "\$target/manifest.env")"
 if [[ "\$release_id" == "new-release" ]]; then
   exit 22
 fi
 printf 'HTTP/1.1 200 OK\r\nX-Release-ID: %s\r\n\r\n' "\$release_id" >"\$headers"
+if [[ -n "\$output" && "\$output" != "/dev/null" ]]; then
+  printf '{"status":"ok"}\n' >"\$output"
+fi
+if [[ -n "\$write_out" ]]; then
+  printf '200'
+fi
 EOF
 chmod 755 "$FAKE_BIN/curl"
 
@@ -142,6 +156,10 @@ if [[ "$(readlink -f "$CURRENT")" != "$(readlink -f "$BACKEND/releases/previous"
 fi
 if [[ "$(grep -c '^restart$' "$SYSTEMCTL_LOG")" != "2" ]]; then
   echo "expected new-release restart and rollback restart" >&2
+  exit 1
+fi
+if ! grep -q '/livez$' "$CURL_LOG" || ! grep -q '/readyz$' "$CURL_LOG"; then
+  echo "rollback verification did not probe both liveness and readiness" >&2
   exit 1
 fi
 if [[ ! -d "$BACKEND/releases/new-release" ]]; then

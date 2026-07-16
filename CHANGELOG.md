@@ -1,5 +1,30 @@
 # Project Changelog
 
+## 2026-07-16 (后端更新健康检查脚本化)
+
+### Changed
+
+- **修改时间**：2026-07-16 13:49:06 +0800
+- **变更背景**：版本化发布已使用 `/readyz + X-Release-ID` 判断新版本是否可用，但 Agent
+  或维护者仍需手动理解 `/livez`、`/readyz` 是 HTTP 路径而非终端指令，发布成功与回滚后
+  也缺少一条可独立复用的双端点验证命令。
+- **核心改动**：新增 `backend/scripts/check-service-health.sh`，默认通过 `curl` 验证本机
+  `/livez=200`、`/readyz=200` 并输出 release ID，支持用 `EXPECTED_READY_STATUS=503`
+  表达受控故障断言。版本化发布脚本在新版本成功和旧版本回滚后自动核对 liveness、
+  readiness 与目标 release；`LIVENESS_PATH` 已贯穿本地远程发布和服务器聚合入口。
+  `AGENTS.md` 与 Backend README 同步记录直接命令、正常/故障状态矩阵和生产破坏性操作的
+  确认边界。
+- **影响范围**：后端服务健康检查脚本、版本化发布成功/回滚验收、远程部署参数、Shell
+  集成测试及 Agent 执行约定；未修改 Go HTTP 接口、数据库、nginx、systemd 或生产服务。
+- **兼容性或风险**：正常发布现在除连续 readiness 外还会额外请求一次 `/livez` 和
+  `/readyz`，任一状态或 release ID 不符都会尝试恢复上一二进制。故障断言参数只改变健康
+  检查预期，不会主动关闭 DB、修改权限或切换 release；真实故障注入仍需维护窗口和明确确认。
+- **验证情况**：全部 Shell 脚本 `bash -n`、全部 `backend/scripts/tests/*_test.sh`、新增正常/
+  ready 503/release 不匹配测试及扩展后的回滚测试均通过；通过 SSH 将新增脚本以标准输入在
+  生产只读执行，`/livez`、`/readyz` 均返回 200，release ID 均为
+  `20260716T043954Z-c928d193493a`。本次未上传脚本、未发布后端、未注入生产故障；本机未安装
+  `shellcheck`，该项未执行。
+
 ## 2026-07-16 (生产后端版本化发布与构建身份修正)
 
 ### Fixed

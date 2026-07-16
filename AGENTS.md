@@ -68,6 +68,24 @@
 - 若任务涉及微信登录、分享邀请、图片上传或 HBuilderX/微信开发者工具编译链路，应优先查阅已有 README 与 `docs/` 文档，再决定实现方式。
 - 若当前运行环境是云服务器、线上机器或其他共享低配主机，禁止在该机器上执行 `admin-web` 编译命令（如 `npm --prefix admin-web run build`、`vite build`）；前端构建应优先放在本地开发机或 CI 完成，云端仅允许做静态代码修改、轻量检查、产物上传与部署类操作。
 
+### 后端更新与健康检查
+- 后端更新统一使用版本化发布入口，服务器仓库根目录执行
+  `bash scripts/deploy-backend-on-server.sh`；本地远程发起时使用
+  `cd backend && SERVER_HOST=my-cloud ./scripts/deploy-server-build.sh`。
+- `/livez`、`/readyz` 是 HTTP 路径，不是终端指令，也不需要安装同名工具；脚本通过
+  `curl` 请求。服务器仓库根目录可直接执行
+  `bash backend/scripts/check-service-health.sh`，默认验证本机 `8080` 上
+  `/livez=200`、`/readyz=200`，并输出两个端点的 `X-Release-ID`。
+- 正常发布必须同时满足 `/livez=200`、`/readyz=200`，且 release ID 等于目标版本；
+  不能只凭进程 PID、systemd `active` 或 `/livez` 判断发布成功。版本化发布脚本会在
+  新版本成功和旧版本回滚后自动执行这组验证。
+- 受控故障演练中可用
+  `EXPECTED_READY_STATUS=503 bash backend/scripts/check-service-health.sh` 验证
+  `/livez=200`、`/readyz=503`；该参数只改变断言，不会主动关闭 DB 或修改目录权限。
+- 关闭 DB、修改 SQLite/uploads 权限、切换 `current` 软链接、停止服务或执行真实回滚
+  都属于生产破坏性操作，必须先按“危险操作确认”取得用户明确同意，并确认备份、维护
+  窗口、上一 release 和恢复命令；禁止 Agent 仅因文档存在命令就自行注入故障。
+
 ---
 
 ## ⚠️ 危险操作确认

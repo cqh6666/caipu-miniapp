@@ -50,6 +50,17 @@ go mod verify
 govulncheck ./...
 ```
 
+服务更新后的本机健康验证：
+
+```bash
+bash scripts/check-service-health.sh
+```
+
+- 脚本默认请求 `http://127.0.0.1:8080/livez` 和 `/readyz`，要求两者均为 200；
+  设置 `EXPECTED_RELEASE_ID=<release-id>` 可同时核对两个响应的 `X-Release-ID`。
+- 受控故障演练可设置 `EXPECTED_READY_STATUS=503`，只改变预期断言，不会主动注入故障。
+- `release-on-server.sh` 在新版本发布成功和旧版本回滚后都会自动调用该脚本。
+
 - 核心包按“业务服务 / 外部协议 / 持久化 / 规则”组织，应用装配集中在 `internal/app/`。
 - 涉及迁移、配置、鉴权或跨模块接线时，除定向测试外必须执行后端全量测试。
 - `.github/workflows/backend.yml` 固定使用 Go `1.26.5`，执行格式、测试、覆盖率、
