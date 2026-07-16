@@ -1,8 +1,9 @@
 # Go 后端可维护性重构路线图
 
 - **创建时间**：2026-07-14 06:51:41 +0800
-- **最后更新**：2026-07-14 08:51:49 +0800
-- **状态**：R0～R9 已完成；后续候选项待排期
+- **最后更新**：2026-07-16 11:43:02 +0800
+- **状态**：R0～R13 已完成；审查阶段 4 的 DATA-005、DB-001、OPS-003 已按证据完成；
+  R14 告警侧已完成、统计侧保持观察，R15 保持条件观察
 - **适用范围**：`backend/` Go 服务端
 
 ## 1. 背景与目标
@@ -238,21 +239,36 @@ go vet ./...
 
 | 编号 | 优先级 | 工作包 | 建议范围 | 进入条件与验收标准 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| R10 | P0 | 核心契约测试与 CI 门禁 | 补 `admin/auth/invite/kitchen/upload/common/profile` 的 handler、service、SQLite 集成与安全边界测试；增加后端 CI，执行 `go test ./...`、`go vet ./...`、`go test -race ./...` 和覆盖率采集 | 先覆盖登录/鉴权、默认空间、邀请过期/次数/重复接受、成员退出、上传大小/MIME/路径/超时、统一错误响应；CI 在 PR 上可重复通过，不以空洞的覆盖率数字替代行为断言 | **待排期** |
-| R11 | P1 | Admin HTTP 边界收口 | 在 `admin` 包内按 auth/dashboard/audit/runtime/ai-routing 拆分 handler 文件，并以窄接口替代大范围具体类型依赖；保留统一 `Handler` 和现有路由签名 | R10 先锁定现有 JSON、状态码、cookie 和鉴权行为；拆分后各域可用 `httptest` 独立覆盖，API 契约不变 | **待排期** |
-| R12 | P1 | 外部 HTTP 适配器可测性 | 为 `airouter`、`appsettings`、`upload` 等仍缺边界测试的模块增加包内 `HTTPDoer`/Options 注入，复用 transport，并用 context 管理请求级超时；不建立跨业务的万能客户端 | 覆盖鉴权头、非 2xx、畸形 JSON、响应体上限、超时/取消和密钥解密失败；现有 Provider 与运行时配置语义不变 | **待排期** |
-| R13 | P1 | Worker 生命周期一致化 | 先补三个菜谱 worker 的启停和取消测试，再提取最小的包内循环/时钟能力，统一立即执行、ticker、停止等待和非法参数处理 | 不改变队列状态机、重试策略或默认间隔；`-race` 下重复启停测试无泄漏、无死锁、无 ticker panic | **待排期** |
-| R14 | P2 | 读模型与状态仓储按变化拆分 | 仅在继续新增统计维度或告警生命周期时，将 `spacestats/repository.go` 按总览/趋势/地点统计拆分，将 `aialert/repository.go` 按状态命令/事件查询拆分 | 先用真实迁移和代表性数据补查询结果、分页与 `EXPLAIN QUERY PLAN` 断言；事务边界和索引策略有证据再调整 | **观察** |
+| R10 | P0 | 核心契约测试与 CI 门禁 | 补 `admin/auth/invite/kitchen/upload/common/profile` 的 handler、service、SQLite 集成与安全边界测试；增加后端 CI，执行 `go test ./...`、`go vet ./...`、`go test -race ./...` 和覆盖率采集 | 先覆盖登录/鉴权、默认空间、邀请过期/次数/重复接受、成员退出、上传大小/MIME/路径/超时、统一错误响应；CI 在 PR 上可重复通过，不以空洞的覆盖率数字替代行为断言 | **已完成** |
+| R11 | P1 | Admin HTTP 边界收口 | 在 `admin` 包内按 auth/dashboard/audit/runtime/ai-routing 拆分 handler 文件，并以窄接口替代大范围具体类型依赖；保留统一 `Handler` 和现有路由签名 | R10 先锁定现有 JSON、状态码、cookie 和鉴权行为；拆分后各域可用 `httptest` 独立覆盖，API 契约不变 | **已完成** |
+| R12 | P1 | 外部 HTTP 适配器可测性 | 为 `airouter`、`appsettings`、`upload` 等仍缺边界测试的模块增加包内 `HTTPDoer`/Options 注入，复用 transport，并用 context 管理请求级超时；不建立跨业务的万能客户端 | 覆盖鉴权头、非 2xx、畸形 JSON、响应体上限、超时/取消和密钥解密失败；现有 Provider 与运行时配置语义不变 | **已完成** |
+| R13 | P1 | Worker 生命周期一致化 | 先补三个菜谱 worker 的启停和取消测试，再提取最小的包内循环/时钟能力，统一立即执行、ticker、停止等待和非法参数处理 | 不改变队列状态机、重试策略或默认间隔；`-race` 下重复启停测试无泄漏、无死锁、无 ticker panic | **已完成** |
+| R14 | P2 | 读模型与状态仓储按变化拆分 | 仅在继续新增统计维度或告警生命周期时，将 `spacestats/repository.go` 按总览/趋势/地点统计拆分，将 `aialert/repository.go` 按状态命令/事件查询拆分 | 告警 outbox 已使告警侧进入条件成立，仓储已按状态命令、查询、处置事件和 delivery 拆分；统计侧仍需真实迁移、代表性数据、分页与 `EXPLAIN QUERY PLAN` 证据后再调整 | **告警侧已完成；统计侧观察** |
 | R15 | P2 | 配置分组与装配输入收口 | 当配置继续增长或同一模块参数频繁漏接时，再把扁平 `config.Config` 映射为 Auth/AI/Linkparse/Recipe/Upload 等只读模块配置 | 保留环境变量名称和默认值；先补映射测试，不引入 DI 框架，不让业务包反向依赖全局配置 | **观察** |
 
 ### 6.3 推荐执行顺序
 
-1. 先做 R10，把关键行为和自动化门禁固定下来。
-2. R11、R12 可在 R10 相应测试完成后分别实施；二者不需要互相等待。
-3. R13 单独实施并强制跑全量竞态测试。
-4. R14、R15 保持观察，只有满足表中进入条件时再启动。
+1. R10 已固定关键行为和自动化门禁。
+2. R11、R12 已在对应契约测试后分别实施。
+3. R13 已实施并通过定向竞态；最终仍执行全量竞态门禁。
+4. R14 告警侧已随 outbox 生命周期扩展完成拆分；统计侧与 R15 继续保持观察，只有满足
+   表中进入条件时再启动。
 
-### 6.4 当前不建议做
+### 6.4 2026-07-16：证据驱动的治理工作包完成
+
+- DATA-005：B 站配置与审计原子提交；AI 告警新增持久化 outbox、claim lease、失败退避
+  与 worker；AI 路由和运行时配置使用 version CAS，值与 version 从同一 SQLite 快照读取，
+  Admin Web 在 409 后刷新且不重放。
+- DB-001：migration 记录增加 SHA-256，旧表自升级/回填；目录序号检查仅保留两个历史
+  `019_*` 例外；真实测试覆盖空库、`014` 历史库升级和 integrity check。
+- OPS-003：构建身份包含 release/commit/build time/Go toolchain，release manifest 固化
+  二进制与迁移集合；Server Health 目标配置化，bootstrap 固化 journald 与五类运维巡检。
+- R14：告警 outbox 扩展已触发告警侧进入条件，`aialert` 仓储已按状态命令、查询、处置
+  事件和 delivery 拆分；`spacestats` 尚无新增维度或查询退化证据，统计侧继续观察。
+- 没有启动 DATA-002、CFG-001、R14 统计侧和 R15：当前缺少容量、查询计划或参数漏接
+  证据，继续保持观察比机械分页、拆统计仓储或重组配置更符合本路线图的进入条件。
+
+### 6.5 当前不建议做
 
 - 不因为 `spacestats/repository.go` 为 652 行就立即拆分；它目前是内聚的只读统计仓储，覆盖率为 67.5%。
 - 不为所有 repository/service 机械创建接口；只在存在替代实现或测试边界时引入窄接口。

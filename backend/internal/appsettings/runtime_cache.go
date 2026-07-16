@@ -49,6 +49,18 @@ func (p *RuntimeProvider) loadSettings(ctx context.Context) (map[string]runtimeS
 	return copied, nil
 }
 
+func (p *RuntimeProvider) loadSettingsFresh(ctx context.Context) (map[string]runtimeSettingRecord, error) {
+	records, err := p.repo.ListRuntimeSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	settings := make(map[string]runtimeSettingRecord, len(records))
+	for _, record := range records {
+		settings[record.Key] = record
+	}
+	return settings, nil
+}
+
 func (p *RuntimeProvider) getString(ctx context.Context, key string) string {
 	value, _ := p.getValue(ctx, key)
 	return value

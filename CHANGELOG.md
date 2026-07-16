@@ -1,5 +1,322 @@
 # Project Changelog
 
+## 2026-07-16 (后端管理写并发、迁移校验与运维身份闭环)
+
+### Changed
+
+- **修改时间**：2026-07-16 11:43:02 +0800
+- **变更背景**：后端审查阶段 4 已有直接证据表明三类问题需要落地：B 站配置审计、AI
+  告警发送和管理配置保存存在事务/并发窗口；migration 只按文件名记录，已发布 SQL 可被
+  静默改写且后续序号可能重复；release 只有 release ID，健康探测目标、日志留存和五类
+  运维告警也没有形成可执行口径。
+- **核心改动**：新增 migration `028_add_config_cas_and_alert_outbox.sql`。B 站配置、旧值
+  审计和 group version 在同一事务提交；AI 路由 scene、运行时 group 与 B 站 Admin 写入
+  使用整数 version CAS，过期保存返回 409，Admin Web 刷新且不自动重放旧草稿；配置值
+  与 version 从同一 SQLite 快照读取，避免并发提交产生错配。AI 告警 failure streak 与
+  delivery outbox 同事务入队，以 claim token/lease 原子认领、失败退避并由后台 worker
+  重试；告警仓储按状态命令、查询、处置事件和 delivery 拆分。`schema_migrations` 自升级
+  增加 SHA-256，历史空值首次回填，之后
+  Run/readiness 拒绝文件不一致；序号唯一性只保留两个既有 `019_*` 白名单。构建通过
+  ldflags 注入 release/commit/build time/Go toolchain，live/ready、`server -version` 和启动
+  日志暴露同一身份；release manifest 增加逐 migration 校验清单。Server Health unit/base URL
+  配置化，bootstrap 固化 journald `512M/14day` 和 5xx、worker、磁盘、备份、恢复演练巡检。
+- **影响范围**：Admin AI Provider 与运行时设置 GET/PUT 契约、B 站配置仓储、AI 告警状态
+  与应用 worker 生命周期、SQLite migration/bootstrap/readiness、release 构建/manifest、
+  Server Health 配置、备份恢复标记、systemd/journald 模板、运维巡检脚本，以及后端审查、
+  路线图、README、部署与云服务器文档；小程序业务 API 成功结构不变。
+- **兼容性或风险**：Admin AI 路由保存必须回传 scene `version`，运行时设置保存必须回传
+  `expectedVersion`；旧 Admin Web 或直接调用方会在已有配置上收到 409，需先 GET 最新版本。
+  migration 028 和 checksum 自升级保持前向兼容，已发布 SQL 从首次回填后禁止修改；两个
+  历史 `019_*` 文件保持原名。SMTP 不支持幂等键，邮件已被上游接受但 sent 落库前进程
+  崩溃时仍可能重复投递。journald 上限是主机全局配置；外部告警接收端、真实备份恢复、
+  生产 timer/UID/权限/回滚仍需实机验收，不能凭仓库模板视为已上线。
+- **验证情况**：测试覆盖 B 站审计失败整体回滚及 stale version 409、配置值/version 并发
+  快照一致性、20 goroutine 并发失败只生成/发送一条告警、发送失败到期重试、无新请求时
+  worker 派发、lease 重领及停机/SMTP 取消、AI 路由和 runtime 双客户端同版本各一成功一
+  冲突、告警 worker 竞态、migration checksum 回填/篡改拒绝/序号白名单、空库全量与
+  `014` 历史库升级及
+  `PRAGMA integrity_check`、健康探测配置、构建身份注入、release rollback/manifest、
+  journald/bootstrap 和运维巡检。`go test ./... -count=1`、`go test -race ./... -count=1`、
+  `go vet ./...`、`go mod verify`、`govulncheck ./...`（可达漏洞 0）、根前端/Admin Web 测试、
+  Admin typecheck、JS/Shell 语法、全部 Shell 集成测试、gofmt、真实 ldflags 构建身份与
+  `git diff --check` 均通过。
+
+## 2026-07-16 (后端可恢复发布、readiness 与核心契约门禁)
+
+### Added
+
+- **修改时间**：2026-07-16 09:59:50 +0800
+- **变更背景**：运行中 WAL 数据库仍由脚本直接复制主文件，发布覆盖固定二进制且静态
+  健康接口无法识别 DB、迁移或权限故障；systemd 默认 root 且没有沙箱。后端审查剩余
+  OPS-001、OPS-002 和 TEST-001 因而缺少可恢复发布与关键契约闭环。
+- **核心改动**：分离 `/livez` 与 `/readyz`，就绪检查 DB ping、release migration 和
+  SQLite/uploads 写权限，并通过 ldflags 暴露 release ID；旧 health 路由改为兼容别名。
+  新备份包使用 `sqlite3 .backup`、uploads 归档、SHA-256、quick check、保留期与可强制
+  rsync 异机副本，bootstrap 安装每日备份/每周恢复校验 timer。服务器发布改为配置校验、
+  发布前备份、备份副本迁移预演、版本化 release、`current` 原子切换、连续 release
+  readiness 和失败二进制回滚；旧覆盖式入口废弃。systemd 改用不可登录专用用户且仅 data
+  可写，启用提权、临时目录、文件系统与 home 沙箱。补齐 profile 及 profile→空间→邀请
+  全路由真实迁移 SQLite 契约测试。
+- **影响范围**：后端健康路由与响应、migration 当前性检查、构建信息、server 配置校验
+  命令、备份/恢复/发布/bootstrap 脚本、systemd/nginx 模板、生产目录与 unit 约定、Backend
+  README、部署手册、云服务器现状文档和代码审查清单；业务 API data 结构保持不变。
+- **兼容性或风险**：旧 `/healthz`、`/api/healthz` 路径保留，但现在会在依赖未就绪时
+  返回 503/`50300`。首次版本化发布前必须用新版 bootstrap 把 ExecStart 迁到
+  `current/server`；发布只自动恢复上一二进制，不反向执行 SQL，migration 必须前向兼容。
+  服务器需安装 sqlite3/rsync，并配置 `/etc/caipu-backend-backup.env`；生产 UID/字体/WAL、
+  异机副本、真实数据恢复和失败回滚尚未实机验收，不能视为已完成上线。
+- **验证情况**：WAL 长读事务下的在线备份仍包含后续已提交记录，哈希篡改会失败；发布
+  回滚测试确认新版本不 ready 时恢复旧 symlink 并二次 restart；bootstrap contract 测试
+  锁定专用用户、沙箱、ready 代理和 timers。`go test ./... -count=1`、全量
+  `go test -race ./... -count=1`、`go vet ./...`、`go mod verify`、`govulncheck ./...`
+  （可达漏洞 0）、小程序/Admin Web 测试、Admin typecheck、JS/Shell 语法、gofmt 与
+  `git diff --check` 均通过。
+
+## 2026-07-16 (默认空间、乐观锁与成员事务边界)
+
+### Fixed
+
+- **修改时间**：2026-07-16 09:22:38 +0800
+- **变更背景**：首次并发登录可能创建多个默认空间；菜谱和地点完整更新没有版本条件，
+  两个成员基于旧快照保存时会静默丢失更新；多条写链路又在事务外检查成员，用户并发
+  退出后仍可能在检查与提交之间完成写入。菜单和邀请审查后确认存在同类窗口。
+- **核心改动**：新增 migration `027_add_consistency_versions.sql`，为默认空间增加显式
+  `is_default`、历史回填和 owner 唯一部分索引，ensure 改为事务内原子插入/回读。菜谱、
+  地点新增独立 `version` CAS，过期写返回 409；小程序保留版本，旧缓存先刷新，冲突时
+  只刷新不自动重放。菜谱/地点 create-update-delete、空间改名、菜单替换/删除和邀请创建
+  均在仓储事务内复核 membership，菜单同时复核 recipe 归属与未删除状态。
+- **影响范围**：登录后的默认空间 bootstrap、空间列表字段、菜谱/地点响应及 PUT/PATCH
+  请求、菜单与邀请写入、SQLite 迁移、小程序缓存/冲突提示和相关仓储/服务测试；worker
+  使用的 `content_version` 保持独立，异步 claim fencing 语义不变。
+- **兼容性或风险**：菜谱/地点 PUT/PATCH 现在必须携带正整数 `version`，缺失返回 400；
+  旧版小程序需升级，否则无法继续更新。新版遇到旧缓存会先拉详情；409 后要求用户基于
+  最新内容重新确认，避免自动覆盖。迁移会把每个 owner 的 auto 空间优先标为默认，若
+  没有 auto 空间则选择最早 ID，其他已拥有空间保持普通空间。
+- **验证情况**：测试覆盖 20 goroutine 同用户 ensure 只返回一个默认空间、历史多空间
+  回填与唯一索引、菜谱/地点同版本双客户端只有一个成功、退出 barrier 后菜谱/地点/
+  菜单/邀请/空间写入全部拒绝，以及菜单事务内 recipe 复核。`go test ./... -count=1`、
+  DATA-004 相关包竞态、根前端/Admin Web 测试、JS 语法与 `git diff --check` 均通过。
+
+## 2026-07-15 (AI 上游响应边界与 SSE 错误脱敏)
+
+### Fixed
+
+- **修改时间**：2026-07-15 23:28:43 +0800
+- **变更背景**：多个 AI、B 站、Sidecar、微信和地图客户端直接解码成功响应，异常上游
+  可用超大 JSON/base64 持续放大内存；饮食管家在已写 200 的 SSE 链路会把 Provider
+  错误体原样发给小程序，可能泄露 HTML、API key、内部主机名和调试信息。
+- **核心改动**：新增共享 `internal/upstream` bounded reader，以 `max+1` 精确区分到界
+  与超限并拒绝多 JSON 值；按文本、图片、B 站/Sidecar、微信、地图和分享页设置场景
+  上限。饮食管家增加普通 JSON、SSE 单事件、累计可见内容、工具块和参数限制，保留
+  context 取消；Provider/Sidecar/SMTP 探测及 SSE 只返回稳定文案，原始根因经统一脱敏
+  日志/审计记录，SSE 与小程序错误对象附带 request ID。
+- **影响范围**：AI 路由、菜谱流程图、B 站/小红书解析、运行时配置探测、饮食管家
+  普通/流式协议、微信登录、地图预览、分享页抓取、小程序 SSE 错误展示及相关测试；
+  成功响应 JSON、公开业务路由和正常流式事件结构保持兼容。
+- **兼容性或风险**：超过场景上限的历史 Provider 响应现在稳定失败为 502，不再尝试
+  全量解码；图片生成 JSON 上限 16 MiB，可覆盖默认 10 MiB 图片的 base64 膨胀和 JSON
+  开销。后续若业务确需更大响应，应基于真实容量与内存基准调整常量，不能移除边界。
+- **验证情况**：定向测试覆盖超大文本 JSON、16 MiB 以上 base64 JSON、B 站/Sidecar/
+  微信/饮食管家超限、无限 SSE 单事件、多个小事件累计、工具块/参数、context 取消及
+  含敏感字段的错误体；内存基准为 `163674 ns/op`、`2236547 B/op`、27 allocs/op。
+  `go test ./... -count=1`、`go test -race ./... -count=1`、`go vet ./...`、
+  `go mod verify`、根前端/Admin Web 测试、JS/Shell 语法和 `git diff --check` 均通过。
+
+## 2026-07-15 (统一错误观察链与结构化脱敏日志)
+
+### Changed
+
+- **修改时间**：2026-07-15 22:50:30 +0800
+- **变更背景**：服务层虽然普遍保留根因，但 `WriteError` 只写通用响应，既没有把错误链
+  交给请求日志，也无法用 request ID 定位普通 500；现有 slog 调用缺少统一脱敏门禁，
+  `WriteJSON` 还会在 Header/body 已开始后尝试追加第二个 500。
+- **核心改动**：`WriteError` 通过 ResponseWriter observer 把原始错误送入外层请求日志，
+  Router 外统一记录 request ID、路由模板、状态、耗时、错误 code/type chain 及 allowlist
+  业务 ID，并向客户端返回 `X-Request-ID`。新增全局 `logging.RedactingHandler`，集中遮蔽
+  敏感 key、Bearer/JWT、Cookie、URL 敏感部分和 AI body。`WriteJSON` 改为预编码，失败时
+  在未写 Header 前一次性降级为通用 500；未知路由/方法也统一返回 JSON envelope。
+- **影响范围**：所有后端 JSON 错误/成功响应、请求完成日志、worker/服务 slog 输出、
+  404/405 响应格式、request ID 排障口径和相关测试；业务成功 data 结构与既有错误 code/
+  message 不变。
+- **兼容性或风险**：日志级别现在按状态分为 2xx/3xx Info、4xx Warn、5xx Error，现有
+  基于纯文本 path/query 的检索需改用 route/request_id/安全对象字段；复杂 map/struct 日志
+  属性默认省略为结构化 payload 占位，若确需可观测字段应拆成经过审查的标量。客户端可
+  继续解析原 envelope，同时应优先收集 `X-Request-ID` 作为报障凭据。
+- **验证情况**：测试覆盖错误 observer 穿透、路由模板和安全业务 ID、404 未匹配请求、
+  错误类型链与 secret 脱敏、全局 slog 属性/消息脱敏、400/401/403/404/405/409/500
+  envelope、编码失败单次 500 和 SSE Flusher 保留；`go test ./... -count=1`、
+  `go test -race ./... -count=1`、`go vet ./...`、`go mod verify` 与
+  `git diff --check` 均通过。
+
+## 2026-07-15 (Admin CSRF 与用户令牌撤销)
+
+### Fixed
+
+- **修改时间**：2026-07-15 22:34:40 +0800
+- **变更背景**：Admin 已收口为 HttpOnly Cookie-only，但写接口仍缺少 CSRF 防护，
+  `SameSite=Lax + Path=/` 在同站兄弟域场景下边界过宽；用户 Bearer 默认长期有效且只有
+  到期时间，泄露后没有 logout 或服务端版本机制立即失效。
+- **核心改动**：Admin 会话生成 HMAC 绑定的 CSRF token，登录和 `me` 返回给同源前端，
+  Admin Web 自动在写方法发送 `X-CSRF-Token`；中间件同时拒绝非 same-origin Fetch
+  Metadata。Cookie 改为 `SameSite=Strict`、HttpOnly 和可配置窄 Path。新增 migration
+  `026_add_user_token_version.sql`，用户 JWT 写入随机 `jti` 与 `ver`，鉴权逐次核对数据库
+  版本；`POST /api/auth/logout` 原子递增版本并撤销该用户全部旧 token，小程序补调用封装。
+- **影响范围**：Admin 登录/恢复会话响应、全部 Admin 写接口、Admin Web HTTP 客户端、
+  用户 JWT 格式与鉴权数据库读取、用户注销 API、`users` 表、配置和部署文档；用户/管理员
+  令牌仍保持双向隔离，业务 API 成功响应结构不变。
+- **兼容性或风险**：升级后旧用户 JWT 因缺少 `jti/ver` 会返回 401，客户端需重新登录；
+  用户注销会让同账号所有设备的旧 token 同时失效。现网共享前缀必须设置
+  `ADMIN_COOKIE_PATH=/caipu-api/admin`，standalone 使用 `/api/admin`，配置错误会导致
+  浏览器登录后不携带 Cookie。用户鉴权新增一次轻量 SQLite 版本查询，符合当前单实例、
+  单连接稳定性口径，后续若切换多实例/高并发需引入可撤销 session 或缓存失效机制。
+- **验证情况**：真实 migration SQL 验证历史用户回填版本 1 和 CHECK 约束；单元/集成测试
+  覆盖 CSRF 缺失/篡改/跨站拒绝、合法同源写入、Strict/窄 Path Cookie、JWT version、
+  登录→注销→旧 token 401→重新登录及直接版本递增撤销；`go test ./... -count=1`、
+  `go test -race ./... -count=1`、`go vet ./...`、`go mod verify`、Admin Web
+  `npm run typecheck` / `npm test`、小程序认证模块语法、全量 shell 语法和
+  `git diff --check` 均通过。
+
+## 2026-07-15 (后端日志与上传公开边界收口)
+
+### Fixed
+
+- **修改时间**：2026-07-15 22:15:00 +0800
+- **变更背景**：请求日志原先记录完整 path/query，会暴露邀请 token、邀请码和菜谱分享
+  token；上传静态路由可列目录，公开 URL 又可受任意转发 Host/Proto 头影响，服务层也
+  没有独立大小门禁和半成品清理，公开图片边界不完整。
+- **核心改动**：请求完成日志改为 Chi 路由模板并删除原始 query/path；上传图片保持公开
+  资源，但静态处理器只提供当前 `年/月/img_时间戳_48位随机值.扩展名` 文件，禁止目录、
+  可预测名称和非图片访问，并为成功/失败响应设置分别适用的缓存与安全头。非 local 环境
+  强制使用合法 HTTPS `UPLOAD_PUBLIC_BASE_URL`，上传响应忽略任意转发 Host/Proto；
+  Service 以 `max+1` 再次限流，先写 `.part`，成功关闭后才原子 rename，所有失败路径
+  清理半成品。
+- **影响范围**：后端请求日志字段、`/uploads/*` 公开图片访问、上传 URL 生成、配置启动
+  校验、上传文件落盘流程、部署配置与相关单元/集成测试；上传 API 成功 JSON 和现有
+  生成图片 URL 结构不变。
+- **兼容性或风险**：非 local 部署若未配置正式 HTTPS 公网基址将按 fail-closed 拒绝
+  启动；手工放入 `UPLOAD_DIR` 且不符合现有随机命名规则的图片不再可访问，需要重新走
+  上传链路。图片仍为知道 URL 即可读取的公开资源，不提供空间成员级保密；一年 immutable
+  缓存依赖生成文件名永不覆盖，当前随机 ID 与原子落盘策略满足该约束。
+- **验证情况**：测试覆盖路由 token/query 脱敏、目录/可预测文件/非图片/猜测路径 404、
+  安全缓存头、固定公网基址、生产配置 fail-closed、服务层超限 413、失败清理与随机文件名；
+  `go test ./... -count=1`、`go test -race ./... -count=1`、`go vet ./...`、
+  `go mod verify` 和 `git diff --check` 均通过。
+
+## 2026-07-15 (后端配置加载 fail-closed)
+
+### Changed
+
+- **修改时间**：2026-07-15 21:58:49 +0800
+- **变更背景**：配置加载器原先用 `godotenv.Overload` 让 `.env` 覆盖进程环境，并静默
+  忽略显式文件和 typed 值错误；线上拼错布尔/数字或误留本地配置时可能以非预期默认值
+  启动，甚至暴露 dev-login 或全局配置写权限。
+- **核心改动**：进程环境改为最高优先级；仅进程明确设置 `APP_ENV=local` 时自动补读
+  `configs/local.env` / `.env`，显式 `APP_ENV_FILE` 作为单一文件来源且缺失、不可读、
+  格式错误或权限宽于 `0600` 均拒绝启动。int/float/bool parser 聚合错误，拒绝
+  `1O`、`NaN`、`flase` 等值且不回显原值；启动日志新增脱敏来源摘要。非 local 环境
+  禁止 `APP_SETTINGS_ACCESS_MODE=all`，并补 dev-login 404、普通用户写配置 403 集成测试。
+- **影响范围**：后端所有环境变量加载、启动校验、启动日志、本地/线上 env file 权限、
+  本地启动命令和配置文档；环境变量名称和合法值语义保持不变。
+- **兼容性或风险**：依赖 `.env` 覆盖 systemd/容器变量的旧部署必须改为直接修正进程
+  环境；本地直接 `go run` 不再隐式读取 dotenv，应使用
+  `APP_ENV_FILE=configs/local.env`。非本机 env file 已收紧为必须 `0600`，当前未跟踪的
+  `backend/configs/local.env` 权限已就地修正但内容未读取或改写。
+- **验证情况**：配置测试覆盖 OS env、local dotenv、显式文件、缺失/格式/权限错误、
+  typed 聚合错误与生产权限边界；`go test -race ./internal/config ./internal/app -count=1`、
+  `go test ./... -count=1`、`go vet ./...`、全量 shell `bash -n` 和
+  `git diff --check` 均通过。
+
+## 2026-07-15 (Admin B 站配置操作者迁移契约修复)
+
+### Fixed
+
+- **修改时间**：2026-07-15 21:47:13 +0800
+- **变更背景**：`app_bilibili_settings.updated_by` 原为非空用户外键，Admin 保存/清空却
+  固定传 `0`，真实启用外键的数据库会在首次管理操作时报
+  `FOREIGN KEY constraint failed`，而简化测试表没有复制该约束。
+- **核心改动**：新增迁移 `025_fix_app_bilibili_settings_operator.sql` 重建配置表，将
+  `updated_by` 改为可空用户外键并新增必填 `updated_by_subject`；历史 `0` 转为
+  `NULL + legacy`，真实用户保留 `user:<id>`。Service 用 `*int64` 显式表达可空用户，
+  用户操作写用户 ID，管理员操作写 `NULL + admin:<username>`，禁止空 subject。
+- **影响范围**：B 站全局 SESSDATA 用户端/Admin 更新与清空、SQLite 自动迁移、操作者
+  内部模型及 appsettings 测试；公开响应字段、密文格式和前端接口不变。
+- **兼容性或风险**：部署会重建单行 `app_bilibili_settings` 表并复制原记录；迁移在单一
+  事务中执行。管理员操作者不再伪装为用户 ID，依赖旧 `updated_by=0` 语义的外部 SQL
+  需要改读 `updated_by_subject`。
+- **验证情况**：全量迁移 SQLite 覆盖用户/Admin update 与 clear，4 次操作均成功写入
+  正确操作者并生成审计，`PRAGMA foreign_key_check` 无结果；
+  `go test -race ./internal/appsettings ./internal/admin ./internal/app -count=1`、
+  `go test ./... -count=1`、`go vet ./...` 和 `git diff --check` 均通过。
+
+## 2026-07-15 (邀请接受并发计数原子化)
+
+### Fixed
+
+- **修改时间**：2026-07-15 21:41:50 +0800
+- **变更背景**：邀请接受原先在事务外读取 `used_count`，事务内再用旧值整行覆盖；多个
+  用户并发接受同一 `maxUses=1` 邀请时可能加入多个成员，但计数仍停留在 1。
+- **核心改动**：Repository 在接受事务内重新读取邀请与成员关系，先保证已有成员幂等，
+  再用 active、剩余次数和过期时间条件原子自增，随后插入成员并更新时间；任一步失败
+  整体回滚。Service 使用 Repository 返回的提交后邀请快照，不再在事务外手工累加计数。
+- **影响范围**：邀请码 token/code 接受链路、邀请响应中的计数/状态和 invite SQLite
+  集成测试；不修改 HTTP 路由、JSON 字段、数据库结构或邀请创建/预览行为。
+- **兼容性或风险**：并发失败方现在稳定返回 409；已加入成员重复接受已用完邀请仍按
+  幂等成功处理且不消耗次数。事务策略依赖当前 SQLite 单写连接配置，条件更新仍保留
+  数据库级余量保护。
+- **验证情况**：全量迁移 SQLite 下 20 goroutine 复用同一旧邀请快照竞争
+  `maxUses=1`，仅一名新成员成功，`used_count=1`、无部分提交且外键检查通过；
+  `go test -race ./internal/invite -count=1`、`go test ./... -count=1`、`go vet ./...` 和
+  `git diff --check` 均通过。
+
+## 2026-07-15 (后端 HTTP-001 请求资源边界与入口防护)
+
+### Added
+
+- **修改时间**：2026-07-15 21:30:53 +0800
+- **变更背景**：P0 仓库内安全门禁收口后，按审查路线进入 P1 阶段；现有 JSON 解码会在
+  完整读取后才做字段校验，Server 缺少 body 读取期限，登录和邀请码入口也没有应用层
+  防刷，无法抵御大请求或高频凭据尝试。
+- **核心改动**：新增路由级 body 上限，普通请求为 1 MiB、饮食管家流式请求为 2 MiB、
+  图片上传为 `UPLOAD_MAX_IMAGE_MB + 1 MiB`，超限统一返回 413；JSON 解码严格拒绝空 body、
+  未知字段、多值和尾随垃圾；Server 增加 30 秒读取超时与 1 MiB Header 上限，同时保持
+  SSE 不受全局写超时影响。新增并发安全的单进程限流器，为管理员/微信/本地登录及邀请
+  预览、分享图、接受提供 IP + 凭据目标双维度短期封禁；仅信任本机 nginx 覆写的
+  `X-Real-IP`。bootstrap nginx 上限改为默认随上传配置联动。
+- **影响范围**：后端所有请求 body、登录和邀请码入口、HTTP Server 参数、可信代理解析、
+  图片上传错误码、nginx 初始化脚本及部署文档；不修改成功响应 JSON、数据库或前端页面。
+- **兼容性或风险**：超过新上限的请求会由原 400/业务错误改为 413，高频入口请求会返回
+  429；限流状态为单进程内存态，符合当前单实例部署，多实例部署前需改为共享状态或由
+  可信入口执行同等策略。非本机反向代理若直接连接后端，其转发 IP 头不会被信任。
+- **验证情况**：Go `1.26.5 darwin/arm64` 下 `go test ./... -count=1`、
+  `go test -race ./... -count=1`、`go vet ./...`、`go mod verify` 和
+  `govulncheck ./...` 全部通过，可达漏洞为 0；全部 shell 脚本通过 `bash -n`，Backend CI
+  workflow 通过 `actionlint v1.7.7`，`git diff --check` 通过。
+
+## 2026-07-15 (后端 P0 仓库内安全门禁收口)
+
+### Fixed
+
+- **修改时间**：2026-07-15 21:11:53 +0800
+- **变更背景**：承接当日已合入但尚未在开发机验证的 5 个后端 P0 工作包，补齐仓库内
+  剩余鉴权、SSRF 可观测性、异步任务续租、直连协议回归与 CI 门禁，确认代码具备进入
+  上线前运维收口的条件。
+- **核心改动**：Admin Web 确认只使用 HttpOnly Cookie 后删除管理员 Bearer Token 兼容
+  入口，并补用户/管理员令牌双向隔离集成测试；远程图片拒绝事件新增不记录 userinfo、
+  路径或查询参数的安全日志，补公网图片、大小、类型、超时、取消、重定向上限、混合 DNS
+  和公网转私网测试；自动解析与流程图任务新增按 claim CAS 的 lease 续租，旧 claim 不能
+  续租或写终态；新增 B 站直连长链、短链、字幕白名单和 SESSDATA 边界测试；新增固定
+  Go `1.26.5` 的 Backend CI，覆盖格式、测试、竞态、vet、模块校验与漏洞扫描。
+- **影响范围**：后端管理员鉴权中间件、远程图片下载日志、菜谱自动解析/流程图 worker、
+  P0 安全测试和 GitHub Actions；不修改前端 API、数据库结构、环境变量或小程序页面。
+- **兼容性或风险**：脚本或客户端若曾用管理员 Bearer Token 访问 `/api/admin/*`，升级后需
+  改用后台登录建立的 HttpOnly Cookie；lease 续租失败时仍由既有 fencing 丢弃过期结果。
+  线上三类密钥轮换、仓库外 sidecar 等价 SSRF 策略、CI 首次远端运行和生产二进制
+  `go version -m` 确认仍属于发布前运维项，本次不宣称线上 P0 已关闭。
+- **验证情况**：Go `1.26.5 darwin/arm64` 下 `go test ./... -count=1`、
+  `go test -race ./... -count=1`、`go vet ./...`、`go mod verify` 和
+  `govulncheck ./...` 全部通过，可达漏洞为 0；Backend CI workflow 通过
+  `actionlint v1.7.7`，`git diff --check` 通过。
+
 ## 2026-07-15 (后端 P0 安全修复代码落地与进度同步)
 
 ### Fixed

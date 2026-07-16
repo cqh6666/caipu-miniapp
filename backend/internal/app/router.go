@@ -26,9 +26,16 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
 
+const (
+	defaultRequestBodyLimit    int64 = 1 << 20
+	dietAssistantBodyLimit     int64 = 2 << 20
+	multipartOverheadAllowance int64 = 1 << 20
+)
+
 func NewRouter(
 	cfg config.Config,
 	logger *slog.Logger,
+	health *healthHandler,
 	adminHandler *admin.Handler,
 	appSettingsHandler *appsettings.Handler,
 	authHandler *auth.Handler,
@@ -52,10 +59,19 @@ func NewRouter(
 
 	r := chi.NewRouter()
 
-	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
-	r.Use(appmiddleware.RequestLogger(logger))
 	r.Use(chimiddleware.Recoverer)
+	r.Use(appmiddleware.RequestBodyLimit(defaultRequestBodyLimit, []appmiddleware.BodyLimitOverride{
+		{
+			Method:   http.MethodPost,
+			Path:     "/api/diet-assistant/chat/stream",
+			MaxBytes: dietAssistantBodyLimit,
+		},
+		{
+			Method:   http.MethodPost,
+			Path:     "/api/uploads/images",
+			MaxBytes: cfg.UploadMaxImageMB*1024*1024 + multipartOverheadAllowance,
+		},
+	}))
 	r.Use(appmiddleware.ConditionalTimeout(defaultRequestTimeout, []appmiddleware.TimeoutOverride{
 		{
 			Method:  http.MethodPost,
@@ -75,20 +91,19 @@ func NewRouter(
 			Timeout: aiTestRequestTimeout,
 		},
 	}))
+	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+		common.WriteError(w, common.ErrNotFound)
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
+		common.WriteError(w, common.ErrMethodNotAllowed)
+	})
 
-	healthHandler := func(w http.ResponseWriter, r *http.Request) {
-		common.WriteData(w, http.StatusOK, map[string]any{
-			"status": "ok",
-			"app":    cfg.AppName,
-			"env":    cfg.AppEnv,
-			"time":   time.Now().Format(time.RFC3339),
-		})
-	}
-
-	r.Get("/healthz", healthHandler)
-	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(cfg.UploadDir))))
+	r.Get("/livez", health.live)
+	r.Get("/readyz", health.ready)
+	r.Get("/healthz", health.ready)
+	r.Handle("/uploads/*", http.StripPrefix("/uploads", upload.NewPublicImageHandler(cfg.UploadDir)))
 	r.Route("/api", func(api chi.Router) {
-		api.Get("/healthz", healthHandler)
+		api.Get("/healthz", health.ready)
 
 		api.Route("/auth", func(authRouter chi.Router) {
 			authRouter.Post("/wechat/login", authHandler.WechatLogin)
@@ -100,6 +115,7 @@ func NewRouter(
 			authRouter.Group(func(protected chi.Router) {
 				protected.Use(authMiddleware)
 				protected.Get("/me", authHandler.Me)
+				protected.Post("/logout", authHandler.Logout)
 				protected.Patch("/profile", authHandler.UpdateProfile)
 			})
 		})
@@ -192,5 +208,9 @@ func NewRouter(
 		})
 	})
 
-	return r
+	var handler http.Handler = r
+	handler = appmiddleware.RequestLogger(logger)(handler)
+	handler = appmiddleware.TrustedRealIP(handler)
+	handler = chimiddleware.RequestID(handler)
+	return handler
 }

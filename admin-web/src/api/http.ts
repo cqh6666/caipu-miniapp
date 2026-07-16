@@ -1,6 +1,13 @@
 import type { ApiEnvelope } from '@/types'
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? ''
+const API_BASE = import.meta.env?.VITE_API_BASE ?? ''
+const ADMIN_CSRF_HEADER = 'X-CSRF-Token'
+
+let adminCSRFToken = ''
+
+export function setAdminCSRFToken(token: string) {
+  adminCSRFToken = token.trim()
+}
 
 export class ApiError extends Error {
   status: number
@@ -17,6 +24,10 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
   const isJsonBody = init.body && !(init.body instanceof FormData)
   if (isJsonBody && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
+  }
+  const method = (init.method ?? 'GET').toUpperCase()
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && adminCSRFToken && !headers.has(ADMIN_CSRF_HEADER)) {
+    headers.set(ADMIN_CSRF_HEADER, adminCSRFToken)
   }
 
   const response = await fetch(`${API_BASE}${url}`, {

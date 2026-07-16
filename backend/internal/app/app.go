@@ -18,6 +18,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/auth"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/bootstrap"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/buildinfo"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/config"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/db"
@@ -25,6 +26,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/invite"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/mealplan"
 	appmiddleware "github.com/cqh6666/caipu-miniapp/backend/internal/middleware"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/place"
@@ -42,6 +44,12 @@ type App struct {
 	RecipeAutoParser  *recipe.AutoParseWorker
 	RecipeFlowchart   *recipe.FlowchartWorker
 	RecipeImageMirror *recipe.ImageMirrorWorker
+	workers           []backgroundWorker
+}
+
+type backgroundWorker interface {
+	Start(context.Context) error
+	Stop(context.Context) error
 }
 
 func New(cfg config.Config) (*App, error) {
@@ -127,7 +135,7 @@ func New(cfg config.Config) (*App, error) {
 		appSettingsRef.bilibiliSessdata,
 	)
 	linkParseHandler := linkparse.NewHandler(linkParseService)
-	uploadService := upload.NewService(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB)
+	uploadService := upload.NewServiceWithLogger(cfg.UploadDir, cfg.UploadPublicBaseURL, cfg.UploadMaxImageMB, logger)
 	uploadHandler := upload.NewHandler(uploadService)
 	placeService.SetUploadService(uploadService)
 	addPreviewService := addpreview.NewService(kitchenService, linkParseService, addpreview.Options{
@@ -184,7 +192,7 @@ func New(cfg config.Config) (*App, error) {
 		cfg.AppSettingsAllowedOpenIDs,
 	)
 	authHandler := auth.NewHandler(authService)
-	authMiddleware := appmiddleware.Authenticate(tokenManager)
+	authMiddleware := appmiddleware.Authenticate(tokenManager, authRepo)
 	appSettingsService := appsettings.NewService(appSettingsRepo, cfg.CredentialsSecret, linkParseService, authService.EnsureCanManageAppSettings)
 	if err := appSettingsService.ConfigureCredentialKeys(cfg.CredentialsSecret, credentialVersion, previousCredentialKeys); err != nil {
 		_ = dbConn.Close()
@@ -193,9 +201,10 @@ func New(cfg config.Config) (*App, error) {
 	appSettingsRef.service = appSettingsService
 	appSettingsHandler := appsettings.NewHandler(appSettingsService, runtimeProvider)
 	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour, cfg.AdminUsername)
-	adminService := admin.NewService(cfg.AdminUsername, cfg.AdminPasswordHash, adminTokenManager, cfg.AppEnv != "local")
+	adminService := admin.NewService(cfg.AdminUsername, cfg.AdminPasswordHash, adminTokenManager, cfg.AppEnv != "local", cfg.AdminCookiePath)
 	serverHealthService := admin.NewServerHealthService(cfg, runtimeProvider)
 	adminHandler := admin.NewHandler(adminService, auditService, runtimeProvider, appSettingsService, serverHealthService, aiRoutingService, aiAlertService)
+	configureRequestGuards(adminHandler, authHandler, inviteHandler)
 	adminAuthMiddleware := admin.NewAuthMiddleware(adminTokenManager)
 	recipeWorkers := newRecipeWorkers(
 		cfg,
@@ -210,6 +219,7 @@ func New(cfg config.Config) (*App, error) {
 	router := NewRouter(
 		cfg,
 		logger,
+		newHealthHandler(cfg, dbConn, logger),
 		adminHandler,
 		appSettingsHandler,
 		authHandler,
@@ -231,9 +241,17 @@ func New(cfg config.Config) (*App, error) {
 		Addr:              cfg.AppAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
+	workers := []backgroundWorker{
+		aiAlertService,
+		recipeWorkers.autoParser,
+		recipeWorkers.flowchart,
+		recipeWorkers.imageMirror,
+	}
 	return &App{
 		Config:            cfg,
 		Logger:            logger,
@@ -242,41 +260,50 @@ func New(cfg config.Config) (*App, error) {
 		RecipeAutoParser:  recipeWorkers.autoParser,
 		RecipeFlowchart:   recipeWorkers.flowchart,
 		RecipeImageMirror: recipeWorkers.imageMirror,
+		workers:           workers,
 	}, nil
 }
 
 func (a *App) Start() error {
-	if a.RecipeAutoParser != nil {
-		a.RecipeAutoParser.Start(context.Background())
-	}
-	if a.RecipeFlowchart != nil {
-		a.RecipeFlowchart.Start(context.Background())
-	}
-	if a.RecipeImageMirror != nil {
-		a.RecipeImageMirror.Start(context.Background())
+	for _, worker := range a.workers {
+		if worker == nil {
+			continue
+		}
+		if err := worker.Start(context.Background()); err != nil {
+			return fmt.Errorf("start background worker: %w", err)
+		}
 	}
 
-	a.Logger.Info("http server starting", "addr", a.Config.AppAddr, "env", a.Config.AppEnv)
+	build := buildinfo.Current()
+	a.Logger.Info(
+		"http server starting",
+		"addr", a.Config.AppAddr,
+		"env", a.Config.AppEnv,
+		"configSources", a.Config.ConfigSourceSummary,
+		"releaseId", build.ReleaseID,
+		"gitCommit", build.GitCommit,
+		"buildTime", build.BuildTime,
+		"goToolchain", build.GoToolchain,
+	)
 	return a.Server.ListenAndServe()
 }
 
 func (a *App) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var joined error
 
-	if a.RecipeAutoParser != nil {
-		a.RecipeAutoParser.Stop()
-	}
-	if a.RecipeFlowchart != nil {
-		a.RecipeFlowchart.Stop()
-	}
-	if a.RecipeImageMirror != nil {
-		a.RecipeImageMirror.Stop()
-	}
-
+	// Shutdown first closes listeners and drains in-flight HTTP requests. Only
+	// after the server stops accepting traffic do workers get cancelled, all
+	// under the same caller-provided deadline.
 	if a.Server != nil {
 		if err := a.Server.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			joined = errors.Join(joined, err)
 		}
+	}
+	if err := stopBackgroundWorkers(ctx, a.workers); err != nil {
+		joined = errors.Join(joined, err)
 	}
 
 	if a.DB != nil {
@@ -289,6 +316,37 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.Logger.Info("app shutdown complete")
 	}
 
+	return joined
+}
+
+func stopBackgroundWorkers(ctx context.Context, workers []backgroundWorker) error {
+	type stopResult struct {
+		worker backgroundWorker
+		err    error
+	}
+	results := make(chan stopResult, len(workers))
+	count := 0
+	for _, worker := range workers {
+		if worker == nil {
+			continue
+		}
+		count++
+		go func(worker backgroundWorker) {
+			results <- stopResult{worker: worker, err: worker.Stop(ctx)}
+		}(worker)
+	}
+
+	var joined error
+	for range count {
+		select {
+		case result := <-results:
+			if result.err != nil {
+				joined = errors.Join(joined, fmt.Errorf("stop background worker %T: %w", result.worker, result.err))
+			}
+		case <-ctx.Done():
+			return errors.Join(joined, fmt.Errorf("stop background workers: %w", ctx.Err()))
+		}
+	}
 	return joined
 }
 
@@ -311,5 +369,9 @@ func newLogger(level string) *slog.Logger {
 		AddSource: false,
 	})
 
-	return slog.New(handler)
+	build := buildinfo.Current()
+	return slog.New(logging.NewRedactingHandler(handler)).With(
+		"release_id", build.ReleaseID,
+		"git_commit", build.GitCommit,
+	)
 }

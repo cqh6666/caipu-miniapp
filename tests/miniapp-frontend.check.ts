@@ -196,24 +196,29 @@ assertEqual(manualDecoder.flush(), "", "UTF-8 完整流无残留");
 const streamEvents: string[] = [];
 let streamMutationRecipeId = "";
 let streamErrorMessage = "";
+let streamErrorRequestId = "";
 const streamParser = createDietAssistantStreamParser({
   onDelta: (value) => streamEvents.push(`delta:${value}`),
   onStatus: (event) => {
     streamEvents.push(`status:${event.type}`);
     streamMutationRecipeId = event.mutation?.recipeId || "";
   },
-  onError: (error) => { streamErrorMessage = error.message; },
+  onError: (error) => {
+    streamErrorMessage = error.message;
+    streamErrorRequestId = String(error.requestId || "");
+  },
   onDone: () => streamEvents.push("done"),
 });
 streamParser.push('data: {"type":"delta","delta":"你');
 streamParser.push('好"}\r\n\r\ndata: {"type":"tool_done","message":"ok","mutation":{"type":"recipe_created","recipeId":"42"}}\n\n');
-streamParser.push('data: {"type":"error","message":"失败"}\n\n');
+streamParser.push('data: {"type":"error","message":"失败","requestId":"req-ai-123"}\n\n');
 streamParser.push("data: [DONE]\n\n");
 streamParser.flush();
 assertEqual(streamEvents[0], "delta:你好", "SSE JSON 半包合并");
 assertEqual(streamEvents[1], "status:tool_done", "SSE 工具状态分发");
 assertEqual(streamMutationRecipeId, "42", "SSE mutation 归一化");
-assertEqual(streamErrorMessage, "失败", "SSE 错误事件分发");
+assertEqual(streamErrorMessage, "失败（请求 ID：req-ai-123）", "SSE 错误事件附带请求 ID");
+assertEqual(streamErrorRequestId, "req-ai-123", "SSE 错误对象保留请求 ID");
 assertEqual(streamEvents.at(-1), "done", "SSE 结束事件分发");
 
 const legacyRecipe = normalizeRecipe({
@@ -222,6 +227,8 @@ const legacyRecipe = normalizeRecipe({
   imageUrls: Array.from({ length: 12 }, (_, index) => `https://img/${index}.jpg`),
   parsedContent: { ingredients: ["鸡蛋 2个", "盐 少许"], steps: ["炒熟"] },
 });
+assertEqual(normalizeRecipe({ id: "versioned", version: 3 }).version, 3, "菜谱版本号保留");
+assertEqual(normalizeRecipe({ id: "legacy-version" }).version, 0, "旧菜谱缓存缺少版本时强制刷新");
 assertEqual(legacyRecipe.imageUrls.length, MAX_RECIPE_IMAGES, "菜谱图片上限");
 assertEqual(normalizeParsedContentView(legacyRecipe.parsedContent).steps[0]?.detail, "炒熟", "旧步骤字段归一化");
 const fallbackRecipe = normalizeRecipe({ id: "fallback", title: "空菜谱" });

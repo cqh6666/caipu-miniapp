@@ -22,6 +22,7 @@ func TestRepositoryUpdateStatusDoesNotTouchRecipeUpdatedAt(t *testing.T) {
 		1,
 		"done",
 		9,
+		1,
 		"2026-04-04T13:40:00+08:00",
 	); err != nil {
 		t.Fatalf("UpdateStatus() error = %v", err)
@@ -80,7 +81,8 @@ func TestServiceUpdateStatusKeepsRecipeUpdatedAtInResponse(t *testing.T) {
 		KitchenService: kitchenpkg.NewService(kitchenpkg.NewRepository(db)),
 	})
 
-	item, err := service.UpdateStatus(context.Background(), 7, "rec_status_1", "done")
+	version := int64(1)
+	item, err := service.UpdateStatus(context.Background(), 7, "rec_status_1", "done", &version)
 	if err != nil {
 		t.Fatalf("UpdateStatus() error = %v", err)
 	}
@@ -158,6 +160,7 @@ CREATE TABLE recipes (
   parse_processing_started_at TEXT NOT NULL DEFAULT '',
   parsed_content_edited INTEGER NOT NULL DEFAULT 0,
   content_version INTEGER NOT NULL DEFAULT 0,
+	version INTEGER NOT NULL DEFAULT 1,
   parse_claim_token TEXT NOT NULL DEFAULT '',
   parse_claim_content_version INTEGER NOT NULL DEFAULT 0,
   parse_lease_expires_at TEXT NOT NULL DEFAULT '',
@@ -201,7 +204,8 @@ INSERT INTO kitchens (id, name, owner_user_id, created_at, updated_at, name_sour
 VALUES (1, '联调试吃厨房', 7, '2026-04-01T08:00:00+08:00', '2026-04-01T09:00:00+08:00', 'custom');
 
 INSERT INTO kitchen_members (kitchen_id, user_id, role, joined_at)
-VALUES (1, 7, 'owner', '2026-04-01T08:00:00+08:00');
+VALUES (1, 7, 'owner', '2026-04-01T08:00:00+08:00'),
+       (1, 9, 'member', '2026-04-01T08:00:00+08:00');
 
 INSERT INTO recipes (
   id, kitchen_id, title, meal_type, status, created_by, updated_by, created_at, updated_at

@@ -12,7 +12,7 @@ func TestHandlerGetPublicAppConfigReturnsMiniProgramFeatures(t *testing.T) {
 	t.Parallel()
 
 	provider := newRuntimeProviderForTest(t)
-	if _, err := provider.UpdateRuntimeGroup(context.Background(), "tester", "req-public-config", "miniapp.features", map[string]any{
+	if _, err := provider.UpdateRuntimeGroup(context.Background(), "tester", "req-public-config", "miniapp.features", 0, map[string]any{
 		"diet_assistant_enabled": false,
 	}, nil); err != nil {
 		t.Fatalf("UpdateRuntimeGroup(miniapp.features) error = %v", err)

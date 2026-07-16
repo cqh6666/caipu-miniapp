@@ -6,6 +6,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
 )
 
 func (c *aiClient) logCall(ctx context.Context, startedAt time.Time, endpoint string, status string, httpStatus int, err error, meta map[string]any) {
@@ -36,5 +37,5 @@ func callErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
-	return err.Error()
+	return logging.SafeErrorSummary(err)
 }

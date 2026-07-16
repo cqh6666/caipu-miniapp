@@ -2,16 +2,18 @@ package wechat
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
 )
 
 const code2SessionURL = "https://api.weixin.qq.com/sns/jscode2session"
+const maxCode2SessionResponseBytes int64 = 64 << 10
 
 type Client interface {
 	Code2Session(ctx context.Context, code string) (Code2SessionResult, error)
@@ -71,13 +73,20 @@ func (c *HTTPClient) Code2Session(ctx context.Context, code string) (Code2Sessio
 	defer resp.Body.Close()
 
 	var body code2SessionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return Code2SessionResult{}, fmt.Errorf("decode wechat response: %w", err)
+	if err := upstream.DecodeJSON(resp.Body, maxCode2SessionResponseBytes, &body); err != nil {
+		message := "invalid wechat upstream response"
+		if upstream.IsResponseTooLarge(err) {
+			message = "wechat upstream response exceeded size limit"
+		}
+		return Code2SessionResult{}, common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway).WithErr(err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return Code2SessionResult{}, common.NewAppError(common.CodeInternalServer, fmt.Sprintf("wechat upstream returned status %d", resp.StatusCode), http.StatusBadGateway)
 	}
 
 	if body.ErrCode != 0 {
 		return Code2SessionResult{}, common.NewAppError(common.CodeUnauthorized, "wechat login failed", http.StatusUnauthorized).
-			WithErr(fmt.Errorf("wechat errcode=%d errmsg=%s", body.ErrCode, body.ErrMsg))
+			WithErr(fmt.Errorf("wechat errcode=%d errmsg=%s", body.ErrCode, logging.SanitizeText(body.ErrMsg)))
 	}
 
 	if body.OpenID == "" {

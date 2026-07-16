@@ -40,16 +40,17 @@ const (
 const (
 	AdapterOpenAICompatible = "openai-compatible"
 
-	ErrorTypeTimeout         = "timeout"
-	ErrorTypeNetwork         = "network"
-	ErrorTypeRateLimit       = "rate_limit"
-	ErrorTypeAuth            = "auth"
-	ErrorTypeUpstream        = "upstream"
-	ErrorTypeInvalidResponse = "invalid_response"
-	ErrorTypeBadRequest      = "bad_request"
-	ErrorTypeBusiness        = "business_validation"
-	ErrorTypeBreakerOpen     = "breaker_open"
-	ErrorTypeUnknown         = "unknown"
+	ErrorTypeTimeout          = "timeout"
+	ErrorTypeNetwork          = "network"
+	ErrorTypeRateLimit        = "rate_limit"
+	ErrorTypeAuth             = "auth"
+	ErrorTypeUpstream         = "upstream"
+	ErrorTypeInvalidResponse  = "invalid_response"
+	ErrorTypeResponseTooLarge = "response_too_large"
+	ErrorTypeBadRequest       = "bad_request"
+	ErrorTypeBusiness         = "business_validation"
+	ErrorTypeBreakerOpen      = "breaker_open"
+	ErrorTypeUnknown          = "unknown"
 )
 
 type BreakerConfig struct {
@@ -64,25 +65,26 @@ type RequestOptions struct {
 }
 
 type ProviderConfig struct {
-	ID             string                 `json:"id"`
-	Scene          Scene                  `json:"scene,omitempty"`
-	Name           string                 `json:"name"`
-	Adapter        string                 `json:"adapter"`
-	Enabled        bool                   `json:"enabled"`
-	Priority       int                    `json:"priority"`
-	Weight         int                    `json:"weight,omitempty"`
-	BaseURL        string                 `json:"baseURL"`
-	APIKey         string                 `json:"apiKey,omitempty"`
-	APIKeyMasked   string                 `json:"apiKeyMasked,omitempty"`
-	HasAPIKey      bool                   `json:"hasAPIKey"`
-	ClearAPIKey    bool                   `json:"clearApiKey,omitempty"`
-	Model          string                 `json:"model"`
-	TimeoutSeconds int                    `json:"timeoutSeconds"`
-	EndpointMode   ProviderEndpointMode   `json:"endpointMode,omitempty"`
-	ResponseFormat ProviderResponseFormat `json:"responseFormat,omitempty"`
-	Extra          map[string]any         `json:"extra,omitempty"`
-	UpdatedBy      string                 `json:"updatedBySubject,omitempty"`
-	UpdatedAt      string                 `json:"updatedAt,omitempty"`
+	ID              string                 `json:"id"`
+	Scene           Scene                  `json:"scene,omitempty"`
+	Name            string                 `json:"name"`
+	Adapter         string                 `json:"adapter"`
+	Enabled         bool                   `json:"enabled"`
+	Priority        int                    `json:"priority"`
+	Weight          int                    `json:"weight,omitempty"`
+	BaseURL         string                 `json:"baseURL"`
+	APIKey          string                 `json:"apiKey,omitempty"`
+	APIKeyMasked    string                 `json:"apiKeyMasked,omitempty"`
+	HasAPIKey       bool                   `json:"hasAPIKey"`
+	ClearAPIKey     bool                   `json:"clearApiKey,omitempty"`
+	Model           string                 `json:"model"`
+	TimeoutSeconds  int                    `json:"timeoutSeconds"`
+	EndpointMode    ProviderEndpointMode   `json:"endpointMode,omitempty"`
+	ResponseFormat  ProviderResponseFormat `json:"responseFormat,omitempty"`
+	Extra           map[string]any         `json:"extra,omitempty"`
+	UpdatedBy       string                 `json:"updatedBySubject,omitempty"`
+	UpdatedAt       string                 `json:"updatedAt,omitempty"`
+	apiKeyEncrypted bool
 }
 
 type ImageGenerationOptions struct {
@@ -101,6 +103,7 @@ type ChatCompletionOptions struct {
 
 type SceneConfig struct {
 	Scene             Scene            `json:"scene"`
+	Version           int              `json:"version"`
 	Enabled           bool             `json:"enabled"`
 	Strategy          Strategy         `json:"strategy"`
 	MaxAttempts       int              `json:"maxAttempts"`
@@ -116,6 +119,7 @@ type SceneConfig struct {
 
 type SceneSummaryView struct {
 	Scene               Scene    `json:"scene"`
+	Version             int      `json:"version"`
 	Enabled             bool     `json:"enabled"`
 	Strategy            Strategy `json:"strategy"`
 	ProviderCount       int      `json:"providerCount"`
@@ -227,6 +231,7 @@ func DefaultRetryOn() []string {
 		ErrorTypeUpstream,
 		ErrorTypeAuth,
 		ErrorTypeInvalidResponse,
+		ErrorTypeResponseTooLarge,
 	}
 }
 

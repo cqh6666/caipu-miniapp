@@ -23,7 +23,7 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) FindByID(ctx context.Context, userID int64) (User, error) {
 	const query = `
-SELECT id, openid, COALESCE(nickname, ''), COALESCE(avatar_url, ''), created_at, updated_at
+	SELECT id, openid, COALESCE(nickname, ''), COALESCE(avatar_url, ''), token_version, created_at, updated_at
 FROM users
 WHERE id = ?
 LIMIT 1
@@ -35,6 +35,7 @@ LIMIT 1
 		&user.OpenID,
 		&user.Nickname,
 		&user.AvatarURL,
+		&user.TokenVersion,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -91,12 +92,13 @@ func (r *Repository) FindOrCreateByOpenID(ctx context.Context, openID, nickname,
 	}
 
 	return User{
-		ID:        userID,
-		OpenID:    openID,
-		Nickname:  nickname,
-		AvatarURL: avatarURL,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           userID,
+		OpenID:       openID,
+		Nickname:     nickname,
+		AvatarURL:    avatarURL,
+		TokenVersion: 1,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}, nil
 }
 
@@ -168,7 +170,7 @@ func (r *Repository) updateUserProfile(ctx context.Context, user User, nextNickn
 
 func (r *Repository) findByOpenID(ctx context.Context, openID string) (User, error) {
 	const query = `
-SELECT id, openid, COALESCE(nickname, ''), COALESCE(avatar_url, ''), created_at, updated_at
+	SELECT id, openid, COALESCE(nickname, ''), COALESCE(avatar_url, ''), token_version, created_at, updated_at
 FROM users
 WHERE openid = ?
 LIMIT 1
@@ -180,6 +182,7 @@ LIMIT 1
 		&user.OpenID,
 		&user.Nickname,
 		&user.AvatarURL,
+		&user.TokenVersion,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -188,6 +191,41 @@ LIMIT 1
 	}
 
 	return user, nil
+}
+
+func (r *Repository) TokenVersion(ctx context.Context, userID int64) (int64, error) {
+	var version int64
+	err := r.db.QueryRowContext(ctx, `SELECT token_version FROM users WHERE id = ? LIMIT 1`, userID).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, common.ErrUnauthorized.WithErr(err)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read user token version: %w", err)
+	}
+	if version <= 0 {
+		return 0, fmt.Errorf("user %d has invalid token version", userID)
+	}
+	return version, nil
+}
+
+func (r *Repository) RevokeTokens(ctx context.Context, userID int64) (int64, error) {
+	var version int64
+	err := r.db.QueryRowContext(
+		ctx,
+		`UPDATE users
+		 SET token_version = token_version + 1, updated_at = ?
+		 WHERE id = ? AND token_version > 0 AND token_version < 9223372036854775807
+		 RETURNING token_version`,
+		time.Now().Format(time.RFC3339),
+		userID,
+	).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, common.ErrUnauthorized.WithErr(err)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("revoke user tokens: %w", err)
+	}
+	return version, nil
 }
 
 func nullableString(value string) any {

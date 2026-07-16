@@ -18,15 +18,18 @@ type Service struct {
 	logger         *slog.Logger
 	resolver       ProviderStatusResolver
 	retester       ProviderRetester
+	deliveryWorker *deliveryWorker
 }
 
 func NewService(repo *Repository, configProvider ConfigProvider, sender Sender, logger *slog.Logger) *Service {
-	return &Service{
+	service := &Service{
 		repo:           repo,
 		configProvider: configProvider,
 		sender:         sender,
 		logger:         logger,
 	}
+	service.deliveryWorker = newDeliveryWorker(service, 30*time.Second)
+	return service
 }
 
 // SetProviderStatusResolver 注入 airouter 的运行时状态解析器（打破包级循环依赖）。
@@ -240,47 +243,27 @@ func (s *Service) RecordFailure(ctx context.Context, event Event) {
 		return
 	}
 
-	state, err := s.repo.RecordFailure(ctx, event)
-	if err != nil {
-		s.logWarn("record provider alert failure state failed", event, err)
-		return
-	}
-
 	cfg := Config{}
 	if s.configProvider != nil {
 		cfg = s.configProvider.AIProviderAlert(ctx)
 	}
 	cfg = cfg.Normalized()
-	if !cfg.Enabled || state.ConsecutiveFailures < cfg.FailureThreshold {
-		return
-	}
-	if state.LastAlertedFailureCount >= cfg.FailureThreshold {
-		return
-	}
-	if s.sender == nil {
-		s.logWarn("provider alert sender is not configured", event, nil)
-		return
+	alertThreshold := 0
+	if cfg.Enabled {
+		alertThreshold = cfg.FailureThreshold
 	}
 
-	recentFailures, err := s.repo.ListRecentFailures(ctx, state.ProviderID, 3)
+	_, enqueued, err := s.repo.RecordFailure(ctx, event, alertThreshold)
 	if err != nil {
-		s.logWarn("list provider recent failures failed", event, err)
-		recentFailures = nil
-	}
-
-	subject, body := BuildFailureAlertMessage(state, event, recentFailures, cfg.FailureThreshold)
-	sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := s.sender.Send(sendCtx, SendRequest{
-		Config:  cfg,
-		Subject: subject,
-		Body:    body,
-	}); err != nil {
-		s.logWarn("send provider alert email failed", event, err)
+		s.logWarn("record provider alert failure state failed", event, err)
 		return
 	}
-	if err := s.repo.MarkAlertSent(ctx, state.ProviderID, state.ConsecutiveFailures, time.Now().UTC().Format(time.RFC3339)); err != nil {
-		s.logWarn("persist provider alert sent state failed", event, err)
+	if enqueued {
+		dispatchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+		defer cancel()
+		if _, err := s.DispatchPending(dispatchCtx, 1); err != nil {
+			s.logWarn("dispatch provider alert delivery failed", event, err)
+		}
 	}
 }
 

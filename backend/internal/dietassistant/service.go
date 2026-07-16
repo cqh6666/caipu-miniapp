@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
 )
 
 type Options struct {
@@ -216,8 +218,18 @@ type finalStreamResult struct {
 func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, messages []openAIChatMessage, emit func(StreamEvent) error) (string, error) {
 	finalMessages := append([]openAIChatMessage{}, messages...)
 	var assistantContent strings.Builder
+	visibleBytes := 0
+	boundedEmit := func(event StreamEvent) error {
+		if event.Type == "delta" {
+			if visibleBytes+len(event.Delta) > maxDietAssistantVisibleBytes {
+				return dietAssistantLimitError("diet assistant visible content exceeded size limit", errVisibleTextTooLarge)
+			}
+			visibleBytes += len(event.Delta)
+		}
+		return emit(event)
+	}
 	for round := 0; round <= maxFinalToolRounds; round += 1 {
-		result, err := s.streamFinalChatOnce(ctx, chatCtx, finalMessages, emit)
+		result, err := s.streamFinalChatOnce(ctx, chatCtx, finalMessages, boundedEmit)
 		if err != nil {
 			return "", err
 		}
@@ -238,7 +250,7 @@ func (s *Service) streamFinalChat(ctx context.Context, chatCtx ChatContext, mess
 			Role:      "assistant",
 			Content:   sanitizeAssistantVisibleContent(result.VisibleContent),
 			ToolCalls: toolCalls,
-		}, toolCalls, emit)
+		}, toolCalls, boundedEmit)
 		if err != nil {
 			return "", err
 		}
@@ -275,17 +287,24 @@ func (s *Service) streamFinalChatOnce(ctx context.Context, chatCtx ChatContext, 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return finalStreamResult{}, ctxErr
+		}
 		return finalStreamResult{}, common.NewAppError(common.CodeInternalServer, "diet assistant upstream request failed", http.StatusBadGateway).WithErr(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = fmt.Sprintf("diet assistant upstream returned status %d", resp.StatusCode)
+		appErr := common.NewAppError(
+			common.CodeInternalServer,
+			fmt.Sprintf("diet assistant upstream returned status %d", resp.StatusCode),
+			http.StatusBadGateway,
+		)
+		if cause := logging.SanitizeText(string(data)); cause != "" {
+			appErr = appErr.WithErr(errors.New(cause))
 		}
-		return finalStreamResult{}, common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
+		return finalStreamResult{}, appErr
 	}
 
 	filter := newLongCatStreamFilter(func(delta string) error {

@@ -169,30 +169,9 @@ func (s *Service) decorateInvite(item Invite) Invite {
 }
 
 func (s *Service) acceptRecord(ctx context.Context, userID int64, record inviteRecord) (AcceptResult, error) {
-	status, err := effectiveStatus(record)
-	if err != nil {
-		return AcceptResult{}, err
-	}
-
-	switch status {
-	case statusExpired:
-		return AcceptResult{}, common.NewAppError(common.CodeConflict, "invite has expired", http.StatusConflict)
-	case statusUsedUp:
-		return AcceptResult{}, common.NewAppError(common.CodeConflict, "invite has reached its usage limit", http.StatusConflict)
-	case statusRevoked:
-		return AcceptResult{}, common.NewAppError(common.CodeConflict, "invite is no longer available", http.StatusConflict)
-	}
-
 	result, err := s.repo.Accept(ctx, userID, record)
 	if err != nil {
 		return AcceptResult{}, err
-	}
-
-	if !result.AlreadyMember {
-		record.UsedCount++
-		if record.UsedCount >= record.MaxUses {
-			record.Status = statusUsedUp
-		}
 	}
 
 	kitchens, err := s.kitchen.ListByUserID(ctx, userID)
@@ -201,7 +180,7 @@ func (s *Service) acceptRecord(ctx context.Context, userID int64, record inviteR
 	}
 
 	return AcceptResult{
-		Invite: s.decorateInvite(toInvite(record)),
+		Invite: s.decorateInvite(toInvite(result.Invite)),
 		Kitchen: kitchen.Summary{
 			ID:   result.KitchenID,
 			Name: result.KitchenName,

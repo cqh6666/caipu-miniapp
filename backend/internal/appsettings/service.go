@@ -60,16 +60,23 @@ func (s *Service) UpdateBilibiliSession(ctx context.Context, userID int64, rawSe
 		return BilibiliSessionSetting{}, err
 	}
 
-	return s.UpdateBilibiliSessionBySubject(ctx, fmt.Sprintf("user:%d", userID), userID, rawSessdata)
+	return s.UpdateBilibiliSessionBySubject(ctx, fmt.Sprintf("user:%d", userID), &userID, rawSessdata)
 }
 
-func (s *Service) UpdateBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy int64, rawSessdata string) (BilibiliSessionSetting, error) {
-	sessdata, err := normalizeSessdata(rawSessdata)
-	if err != nil {
-		return BilibiliSessionSetting{}, err
-	}
+func (s *Service) UpdateBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy *int64, rawSessdata string) (BilibiliSessionSetting, error) {
+	return s.updateBilibiliSessionBySubject(ctx, subject, updatedBy, nil, rawSessdata)
+}
 
-	currentRecord, err := s.repo.GetBilibiliSession(ctx)
+func (s *Service) UpdateBilibiliSessionBySubjectIfVersion(ctx context.Context, subject string, updatedBy *int64, expectedVersion int, rawSessdata string) (BilibiliSessionSetting, error) {
+	return s.updateBilibiliSessionBySubject(ctx, subject, updatedBy, &expectedVersion, rawSessdata)
+}
+
+func (s *Service) updateBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy *int64, expectedVersion *int, rawSessdata string) (BilibiliSessionSetting, error) {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
+		return BilibiliSessionSetting{}, common.ErrInternal.WithErr(fmt.Errorf("bilibili session operator subject is required"))
+	}
+	sessdata, err := normalizeSessdata(rawSessdata)
 	if err != nil {
 		return BilibiliSessionSetting{}, err
 	}
@@ -95,23 +102,22 @@ func (s *Service) UpdateBilibiliSessionBySubject(ctx context.Context, subject st
 		LastSuccessAt:      now,
 		LastError:          "",
 		UpdatedBy:          updatedBy,
+		UpdatedBySubject:   subject,
 		UpdatedAt:          now,
 	}
-	if err := s.repo.UpsertBilibiliSession(ctx, record); err != nil {
-		return BilibiliSessionSetting{}, err
-	}
-
-	_ = s.repo.InsertSettingAudit(ctx, settingAuditRecord{
+	version, err := s.repo.SaveBilibiliSessionWithAudit(ctx, record, settingAuditRecord{
 		GroupName:       "bilibili.session",
 		SettingKey:      "bilibili.session.sessdata",
 		Action:          "update",
-		OldValueMasked:  strings.TrimSpace(currentRecord.MaskedSessdata),
 		NewValueMasked:  record.MaskedSessdata,
-		OperatorSubject: strings.TrimSpace(subject),
+		OperatorSubject: subject,
 		RequestID:       common.RequestID(ctx),
 		CreatedAt:       now,
-	})
-
+	}, expectedVersion)
+	if err != nil {
+		return BilibiliSessionSetting{}, err
+	}
+	record.Version = version
 	return buildBilibiliSessionSetting(record), nil
 }
 
@@ -120,36 +126,42 @@ func (s *Service) ClearBilibiliSession(ctx context.Context, userID int64) (Bilib
 		return BilibiliSessionSetting{}, err
 	}
 
-	return s.ClearBilibiliSessionBySubject(ctx, fmt.Sprintf("user:%d", userID), userID)
+	return s.ClearBilibiliSessionBySubject(ctx, fmt.Sprintf("user:%d", userID), &userID)
 }
 
-func (s *Service) ClearBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy int64) (BilibiliSessionSetting, error) {
-	currentRecord, err := s.repo.GetBilibiliSession(ctx)
-	if err != nil {
-		return BilibiliSessionSetting{}, err
-	}
+func (s *Service) ClearBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy *int64) (BilibiliSessionSetting, error) {
+	return s.clearBilibiliSessionBySubject(ctx, subject, updatedBy, nil)
+}
 
+func (s *Service) ClearBilibiliSessionBySubjectIfVersion(ctx context.Context, subject string, updatedBy *int64, expectedVersion int) (BilibiliSessionSetting, error) {
+	return s.clearBilibiliSessionBySubject(ctx, subject, updatedBy, &expectedVersion)
+}
+
+func (s *Service) clearBilibiliSessionBySubject(ctx context.Context, subject string, updatedBy *int64, expectedVersion *int) (BilibiliSessionSetting, error) {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
+		return BilibiliSessionSetting{}, common.ErrInternal.WithErr(fmt.Errorf("bilibili session operator subject is required"))
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	record := bilibiliSessionRecord{
-		Status:    BilibiliSessionStatusUnconfigured,
-		UpdatedBy: updatedBy,
-		UpdatedAt: now,
+		Status:           BilibiliSessionStatusUnconfigured,
+		UpdatedBy:        updatedBy,
+		UpdatedBySubject: subject,
+		UpdatedAt:        now,
 	}
-	if err := s.repo.UpsertBilibiliSession(ctx, record); err != nil {
-		return BilibiliSessionSetting{}, err
-	}
-
-	_ = s.repo.InsertSettingAudit(ctx, settingAuditRecord{
+	version, err := s.repo.SaveBilibiliSessionWithAudit(ctx, record, settingAuditRecord{
 		GroupName:       "bilibili.session",
 		SettingKey:      "bilibili.session.sessdata",
 		Action:          "update",
-		OldValueMasked:  strings.TrimSpace(currentRecord.MaskedSessdata),
 		NewValueMasked:  "",
-		OperatorSubject: strings.TrimSpace(subject),
+		OperatorSubject: subject,
 		RequestID:       common.RequestID(ctx),
 		CreatedAt:       now,
-	})
-
+	}, expectedVersion)
+	if err != nil {
+		return BilibiliSessionSetting{}, err
+	}
+	record.Version = version
 	return buildBilibiliSessionSetting(record), nil
 }
 
@@ -251,6 +263,7 @@ func buildBilibiliSessionSetting(record bilibiliSessionRecord) BilibiliSessionSe
 	}
 
 	return BilibiliSessionSetting{
+		Version:        record.Version,
 		Configured:     configured,
 		Status:         status,
 		MaskedSessdata: strings.TrimSpace(record.MaskedSessdata),

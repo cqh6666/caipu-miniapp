@@ -102,11 +102,11 @@ func (s *ServerHealthService) Overview(ctx context.Context) (ServerHealthOvervie
 	sidecarConfig := s.resolveSidecarConfig(ctx)
 
 	checks := []ServerHealthCheck{
-		s.checkSystemdService(ctx, "nginx", "Nginx", true),
-		s.checkSystemdService(ctx, "caipu-backend", "Caipu Backend", true),
-		s.checkSystemdService(ctx, "caipu-linkparse-sidecar", "Linkparse Sidecar", sidecarConfig.Enabled),
-		s.checkHTTP(ctx, "backend-healthz", "Backend /healthz", "http://127.0.0.1:8080/healthz", true, ""),
-		s.checkHTTP(ctx, "backend-api-healthz", "Backend /api/healthz", "http://127.0.0.1:8080/api/healthz", true, ""),
+		s.checkSystemdService(ctx, "nginx", "Nginx", s.nginxServiceName(), s.nginxServiceName() != ""),
+		s.checkSystemdService(ctx, "caipu-backend", "Caipu Backend", s.backendServiceName(), s.backendServiceName() != ""),
+		s.checkSystemdService(ctx, "caipu-linkparse-sidecar", "Linkparse Sidecar", s.sidecarServiceName(), sidecarConfig.Enabled && s.sidecarServiceName() != ""),
+		s.checkHTTP(ctx, "backend-healthz", "Backend /healthz", s.backendHealthTarget("/healthz"), true, ""),
+		s.checkHTTP(ctx, "backend-api-healthz", "Backend /api/healthz", s.backendHealthTarget("/api/healthz"), true, ""),
 		s.checkHTTP(ctx, "sidecar-health", "Linkparse Sidecar /v1/health", sidecarHealthTarget(sidecarConfig.BaseURL), sidecarConfig.Enabled, sidecarConfig.APIKey),
 	}
 
@@ -121,6 +121,31 @@ func (s *ServerHealthService) Overview(ctx context.Context) (ServerHealthOvervie
 		Host:        hostSnapshot.Host,
 		Checks:      checks,
 	}, nil
+}
+
+func (s *ServerHealthService) nginxServiceName() string {
+	return fallbackConfigValue(s.cfg.HealthNginxServiceName, "nginx")
+}
+
+func (s *ServerHealthService) backendServiceName() string {
+	return fallbackConfigValue(s.cfg.HealthBackendServiceName, "caipu-backend")
+}
+
+func (s *ServerHealthService) sidecarServiceName() string {
+	return fallbackConfigValue(s.cfg.HealthSidecarServiceName, "caipu-linkparse-sidecar")
+}
+
+func (s *ServerHealthService) backendHealthTarget(path string) string {
+	baseURL := fallbackConfigValue(s.cfg.HealthBackendBaseURL, "http://127.0.0.1:8080")
+	return strings.TrimRight(baseURL, "/") + path
+}
+
+func fallbackConfigValue(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func (s *ServerHealthService) resolveSidecarConfig(ctx context.Context) appsettings.LinkparseSidecarConfig {
@@ -147,7 +172,7 @@ func (s *ServerHealthService) resolveDiskPath() string {
 	return path
 }
 
-func (s *ServerHealthService) checkSystemdService(ctx context.Context, key, label string, enabled bool) ServerHealthCheck {
+func (s *ServerHealthService) checkSystemdService(ctx context.Context, key, label, serviceName string, enabled bool) ServerHealthCheck {
 	checkedAt := s.now().UTC().Format(time.RFC3339)
 	if !enabled {
 		return ServerHealthCheck{
@@ -155,7 +180,7 @@ func (s *ServerHealthService) checkSystemdService(ctx context.Context, key, labe
 			Label:     label,
 			Category:  "systemd",
 			Status:    ServerHealthStatusUnknown,
-			Target:    key,
+			Target:    serviceName,
 			Detail:    "当前环境未启用该服务",
 			CheckedAt: checkedAt,
 		}
@@ -164,7 +189,7 @@ func (s *ServerHealthService) checkSystemdService(ctx context.Context, key, labe
 	commandCtx, cancel := context.WithTimeout(ctx, serverHealthProbeTimeout)
 	defer cancel()
 
-	output, err := s.execCommand(commandCtx, "systemctl", "is-active", key)
+	output, err := s.execCommand(commandCtx, "systemctl", "is-active", serviceName)
 	detail := strings.TrimSpace(string(output))
 	if detail == "" && err == nil {
 		detail = "active"
@@ -174,7 +199,7 @@ func (s *ServerHealthService) checkSystemdService(ctx context.Context, key, labe
 		Key:       key,
 		Label:     label,
 		Category:  "systemd",
-		Target:    key,
+		Target:    serviceName,
 		CheckedAt: checkedAt,
 	}
 

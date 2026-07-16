@@ -22,7 +22,7 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) ListByUserID(ctx context.Context, userID int64) ([]Summary, error) {
 	const query = `
-SELECT k.id, k.name, km.role
+SELECT k.id, k.name, km.role, COALESCE(k.is_default, 0)
 FROM kitchen_members km
 JOIN kitchens k ON k.id = km.kitchen_id
 WHERE km.user_id = ?
@@ -38,7 +38,7 @@ ORDER BY k.updated_at DESC, k.id DESC
 	items := make([]Summary, 0)
 	for rows.Next() {
 		var item Summary
-		if err := rows.Scan(&item.ID, &item.Name, &item.Role); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Role, &item.IsDefault); err != nil {
 			return nil, fmt.Errorf("scan kitchen: %w", err)
 		}
 		items = append(items, item)
@@ -126,7 +126,7 @@ func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, nam
 	now := time.Now().Format(time.RFC3339)
 	result, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO kitchens (name, owner_user_id, created_at, updated_at, name_source) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO kitchens (name, owner_user_id, created_at, updated_at, name_source, is_default) VALUES (?, ?, ?, ?, ?, 0)`,
 		name,
 		ownerUserID,
 		now,
@@ -161,22 +161,81 @@ func (r *Repository) CreateWithOwner(ctx context.Context, ownerUserID int64, nam
 	}
 
 	return Summary{
-		ID:   kitchenID,
-		Name: name,
-		Role: "owner",
+		ID:        kitchenID,
+		Name:      name,
+		Role:      "owner",
+		IsDefault: false,
 	}, nil
 }
 
-func (r *Repository) UpdateName(ctx context.Context, kitchenID int64, name string) error {
-	if _, err := r.db.ExecContext(
+func (r *Repository) EnsureDefaultWithOwner(ctx context.Context, ownerUserID int64, name string) (Summary, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Summary{}, fmt.Errorf("begin ensure default kitchen tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().Format(time.RFC3339Nano)
+	result, err := tx.ExecContext(ctx, `
+INSERT INTO kitchens (name, owner_user_id, created_at, updated_at, name_source, is_default)
+VALUES (?, ?, ?, ?, ?, 1)
+ON CONFLICT(owner_user_id) WHERE is_default = 1 DO NOTHING`,
+		name,
+		ownerUserID,
+		now,
+		now,
+		nameSourceAuto,
+	)
+	if err != nil {
+		return Summary{}, fmt.Errorf("insert default kitchen: %w", err)
+	}
+
+	var item Summary
+	item.Role = "owner"
+	item.IsDefault = true
+	if err := tx.QueryRowContext(ctx, `
+SELECT id, name
+  FROM kitchens
+ WHERE owner_user_id = ? AND is_default = 1
+ LIMIT 1`, ownerUserID).Scan(&item.ID, &item.Name); err != nil {
+		return Summary{}, fmt.Errorf("read default kitchen: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO kitchen_members (kitchen_id, user_id, role, joined_at)
+VALUES (?, ?, 'owner', ?)
+ON CONFLICT(kitchen_id, user_id) DO NOTHING`, item.ID, ownerUserID, now); err != nil {
+		return Summary{}, fmt.Errorf("ensure default kitchen owner membership: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Summary{}, fmt.Errorf("commit ensure default kitchen: %w", err)
+	}
+	_, _ = result.RowsAffected()
+	return item, nil
+}
+
+func (r *Repository) UpdateName(ctx context.Context, userID, kitchenID int64, name string) error {
+	result, err := r.db.ExecContext(
 		ctx,
-		`UPDATE kitchens SET name = ?, name_source = ?, updated_at = ? WHERE id = ?`,
+		`UPDATE kitchens
+SET name = ?, name_source = ?, updated_at = ?
+WHERE id = ?
+  AND EXISTS (
+    SELECT 1 FROM kitchen_members
+    WHERE kitchen_id = kitchens.id AND user_id = ?
+  )`,
 		name,
 		nameSourceCustom,
-		time.Now().Format(time.RFC3339),
+		time.Now().Format(time.RFC3339Nano),
 		kitchenID,
-	); err != nil {
+		userID,
+	)
+	if err != nil {
 		return fmt.Errorf("update kitchen name: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return common.ErrForbidden
 	}
 
 	return nil

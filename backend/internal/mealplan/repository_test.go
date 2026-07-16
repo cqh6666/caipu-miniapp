@@ -3,7 +3,10 @@ package mealplan
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 
 	_ "modernc.org/sqlite"
 )
@@ -140,7 +143,7 @@ VALUES
 		t.Fatalf("len(plan.Items) = %d, want %d", got, want)
 	}
 
-	deleted, err := repo.DeleteByKitchenDateStatus(ctx, 1, "2026-03-30", StatusSubmitted, "2026-03-26T10:00:00Z")
+	deleted, err := repo.DeleteByKitchenDateStatus(ctx, 7, 1, "2026-03-30", StatusSubmitted, "2026-03-26T10:00:00Z")
 	if err != nil {
 		t.Fatalf("DeleteByKitchenDateStatus() error = %v", err)
 	}
@@ -162,7 +165,7 @@ func TestRepositoryCountRecipesByKitchenID(t *testing.T) {
 	defer db.Close()
 
 	if _, err := db.Exec(`
-INSERT INTO recipes (id, kitchen_id, title, meal_type, status, created_by, updated_by, created_at, updated_at)
+INSERT OR REPLACE INTO recipes (id, kitchen_id, title, meal_type, status, created_by, updated_by, created_at, updated_at)
 VALUES
   ('rec_a', 1, '番茄炒蛋', 'main', 'wishlist', 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
   ('rec_b', 1, '蒜蓉西兰花', 'main', 'wishlist', 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
@@ -180,6 +183,32 @@ VALUES
 	}
 	if got, want := count, 2; got != want {
 		t.Fatalf("CountRecipesByKitchenID() = %d, want %d", got, want)
+	}
+}
+
+func TestRepositoryMealPlanWritesRecheckMembership(t *testing.T) {
+	db := openMealPlanTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`DELETE FROM kitchen_members WHERE kitchen_id = 1 AND user_id = 7`); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewRepository(db)
+	plan := Plan{
+		KitchenID: 1,
+		PlanDate:  "2026-03-30",
+		Status:    StatusDraft,
+		CreatedBy: 7,
+		UpdatedBy: 7,
+		CreatedAt: "2026-07-16T00:00:00Z",
+		UpdatedAt: "2026-07-16T00:00:00Z",
+		Items:     []Item{{RecipeID: "rec_a", Quantity: 1, MealTypeSnapshot: "main", TitleSnapshot: "番茄炒蛋"}},
+	}
+	if err := repo.ReplaceDraft(context.Background(), plan, plan.UpdatedAt); !errors.Is(err, common.ErrForbidden) {
+		t.Fatalf("ReplaceDraft() error = %v, want forbidden", err)
+	}
+	if _, err := repo.DeleteByKitchenDateStatus(context.Background(), 7, 1, plan.PlanDate, StatusDraft, plan.UpdatedAt); !errors.Is(err, common.ErrForbidden) {
+		t.Fatalf("DeleteByKitchenDateStatus() error = %v, want forbidden", err)
 	}
 }
 
@@ -258,6 +287,15 @@ INSERT INTO kitchen_members (kitchen_id, user_id, role, joined_at)
 VALUES
   (1, 7, 'owner', '2026-03-24T00:00:00Z'),
   (2, 8, 'owner', '2026-03-24T00:00:00Z');
+
+INSERT INTO recipes (id, kitchen_id, title, meal_type, status, created_by, updated_by, created_at, updated_at)
+VALUES
+  ('rec_a', 1, '番茄炒蛋', 'main', 'wishlist', 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
+  ('rec_b', 1, '蒜蓉西兰花', 'main', 'wishlist', 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
+  ('rec_new', 1, '新的菜单菜', 'main', 'wishlist', 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
+  ('rec_old_draft', 1, '旧草稿菜', 'main', 'wishlist', 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
+  ('rec_old_submitted', 1, '旧提交菜', 'main', 'wishlist', 7, 7, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z'),
+  ('rec_other', 2, '别的厨房', 'main', 'wishlist', 8, 8, '2026-03-24T00:00:00Z', '2026-03-24T00:00:00Z');
 `); err != nil {
 		_ = db.Close()
 		t.Fatalf("create meal plan tables error = %v", err)

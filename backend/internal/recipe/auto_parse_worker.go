@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"math"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
@@ -30,9 +29,7 @@ type AutoParseWorker struct {
 	retryBaseDelay           time.Duration
 	staleProcessingThreshold time.Duration
 
-	cancel func()
-	done   chan struct{}
-	once   sync.Once
+	lifecycle *workerLifecycle
 }
 
 type AutoParseWorkerOptions struct {
@@ -81,48 +78,31 @@ func NewAutoParseWorkerWithOptions(opts AutoParseWorkerOptions) *AutoParseWorker
 		maxAttempts:              maxAttempts,
 		retryBaseDelay:           retryBaseDelay,
 		staleProcessingThreshold: staleThreshold,
-		done:                     make(chan struct{}),
+		lifecycle:                newWorkerLifecycle(),
 	}
 }
 
-func (w *AutoParseWorker) Start(parent context.Context) {
+func (w *AutoParseWorker) Start(parent context.Context) error {
 	if w == nil || !w.enabled || w.parser == nil || w.repo == nil {
-		return
+		return nil
 	}
-
-	w.once.Do(func() {
-		ctx, cancel := context.WithCancel(parent)
-		w.cancel = cancel
-
-		go func() {
-			defer close(w.done)
-
+	return w.lifecycle.Start(
+		parent,
+		"recipe auto-parse",
+		w.interval,
+		w.runBatch,
+		func() {
 			w.logger.Info("recipe auto-parse worker started", "interval", w.interval.String(), "batchSize", w.batchSize)
-			w.runBatch(ctx)
-
-			ticker := time.NewTicker(w.interval)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					w.logger.Info("recipe auto-parse worker stopped")
-					return
-				case <-ticker.C:
-					w.runBatch(ctx)
-				}
-			}
-		}()
-	})
+		},
+		func() { w.logger.Info("recipe auto-parse worker stopped") },
+	)
 }
 
-func (w *AutoParseWorker) Stop() {
-	if w == nil || w.cancel == nil {
-		return
+func (w *AutoParseWorker) Stop(ctx context.Context) error {
+	if w == nil {
+		return nil
 	}
-
-	w.cancel()
-	<-w.done
+	return w.lifecycle.Stop(ctx, "recipe auto-parse")
 }
 
 func (w *AutoParseWorker) runBatch(parent context.Context) {
@@ -215,6 +195,20 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	if !marked {
 		return nil
 	}
+	stopLeaseRenewal := startJobLeaseRenewal(
+		ctx,
+		w.staleProcessingThreshold,
+		func(renewCtx context.Context, expiresAt string) error {
+			return w.repo.RenewAutoParseLease(renewCtx, item.ID, claimToken, expiresAt)
+		},
+		func(renewErr error) {
+			w.logger.Warn("renew recipe auto-parse lease failed", "recipeID", item.ID, "error", renewErr)
+			if errors.Is(renewErr, ErrStaleJobResult) {
+				cancel()
+			}
+		},
+	)
+	defer stopLeaseRenewal()
 
 	ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{
 		TriggerSource: "worker",

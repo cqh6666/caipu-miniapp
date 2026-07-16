@@ -3,7 +3,6 @@ package addpreview
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/kitchen"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/linkparse"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
 )
 
 type RecipeParser interface {
@@ -348,8 +348,11 @@ func (s *Service) expandShareURL(ctx context.Context, rawURL string) (string, er
 	if location != "" {
 		return location, nil
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	body, err := upstream.ReadAll(resp.Body, 256*1024)
 	if err != nil {
+		if upstream.IsResponseTooLarge(err) {
+			return "", common.NewAppError(common.CodeInternalServer, "share page response exceeded size limit", http.StatusBadGateway).WithErr(err)
+		}
 		return "", err
 	}
 	if match := firstURLPattern.FindString(string(body)); match != "" {

@@ -44,16 +44,7 @@ func (s *Service) CountMembers(ctx context.Context, kitchenID int64) (int, error
 }
 
 func (s *Service) EnsureDefaultKitchen(ctx context.Context, userID int64, nickname, openID string) (Summary, error) {
-	items, err := s.repo.ListByUserID(ctx, userID)
-	if err != nil {
-		return Summary{}, err
-	}
-
-	if len(items) > 0 {
-		return items[0], nil
-	}
-
-	return s.repo.CreateWithOwner(ctx, userID, buildAutoKitchenName(nickname, userID, openID), nameSourceAuto)
+	return s.repo.EnsureDefaultWithOwner(ctx, userID, buildAutoKitchenName(nickname, userID, openID))
 }
 
 func (s *Service) SyncOwnedAutoKitchenNames(ctx context.Context, userID int64, nickname, openID string) error {
@@ -79,7 +70,7 @@ func (s *Service) UpdateKitchen(ctx context.Context, userID, kitchenID int64, na
 		return Summary{}, err
 	}
 
-	if err := s.repo.UpdateName(ctx, kitchenID, name); err != nil {
+	if err := s.repo.UpdateName(ctx, userID, kitchenID, name); err != nil {
 		return Summary{}, err
 	}
 

@@ -11,6 +11,13 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
+)
+
+const (
+	maxAIChatResponseBytes            int64 = 2 << 20
+	maxAIImageGenerationResponseBytes int64 = 16 << 20
 )
 
 type openAIChatRequest struct {
@@ -146,22 +153,32 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 		timeout = 30 * time.Second
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(provider.BaseURL, "/")+endpointPath, bytes.NewReader(body))
+	requestCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, strings.TrimRight(provider.BaseURL, "/")+endpointPath, bytes.NewReader(body))
 	if err != nil {
 		return "", endpointPath, 0, 0, common.ErrInternal.WithErr(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(provider.APIKey) != "" {
 		plain := strings.TrimSpace(provider.APIKey)
-		decrypted, decryptErr := s.cipherBox.Decrypt(provider.APIKey)
-		if decryptErr == nil {
+		if provider.apiKeyEncrypted {
+			decrypted, decryptErr := s.cipherBox.Decrypt(provider.APIKey)
+			if decryptErr != nil {
+				return "", endpointPath, 0, time.Since(startedAt).Milliseconds(), &typedError{
+					errorType:  ErrorTypeAuth,
+					message:    "provider credential could not be decrypted",
+					httpStatus: http.StatusBadGateway,
+					cause:      decryptErr,
+				}
+			}
 			plain = strings.TrimSpace(decrypted)
 		}
 		req.Header.Set("Authorization", "Bearer "+plain)
 	}
 
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
+	doer := normalizeHTTPDoer(s.httpDoer)
+	resp, err := doer.Do(req)
 	if err != nil {
 		return "", endpointPath, 0, time.Since(startedAt).Milliseconds(), classifyRequestError(err, timeout)
 	}
@@ -175,13 +192,8 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 	switch endpointMode {
 	case EndpointModeImagesGenerations:
 		var parsed openAIImageGenerationResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
-				errorType:  ErrorTypeInvalidResponse,
-				message:    "invalid image generation response",
-				httpStatus: http.StatusBadGateway,
-				cause:      err,
-			}
+		if err := upstream.DecodeJSON(resp.Body, maxAIImageGenerationResponseBytes, &parsed); err != nil {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), invalidUpstreamResponseError("invalid image generation response", err)
 		}
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
 			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(parsed.Error.Message))
@@ -201,13 +213,8 @@ func (s *Service) callOpenAICompatible(ctx context.Context, config SceneConfig, 
 		return content, endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), nil
 	default:
 		var parsed openAIChatResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), &typedError{
-				errorType:  ErrorTypeInvalidResponse,
-				message:    "invalid chat completion response",
-				httpStatus: http.StatusBadGateway,
-				cause:      err,
-			}
+		if err := upstream.DecodeJSON(resp.Body, maxAIChatResponseBytes, &parsed); err != nil {
+			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), invalidUpstreamResponseError("invalid chat completion response", err)
 		}
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
 			return "", endpointPath, resp.StatusCode, time.Since(startedAt).Milliseconds(), classifyHTTPError(resp.StatusCode, strings.TrimSpace(parsed.Error.Message))
@@ -275,10 +282,24 @@ func (s *Service) logCall(ctx context.Context, config SceneConfig, provider orde
 		HTTPStatus:   httpStatus,
 		LatencyMS:    latencyMS,
 		ErrorType:    routeErrorType(err),
-		ErrorMessage: errorMessage(err),
+		ErrorMessage: logging.SafeErrorSummary(err),
 		RequestID:    common.RequestID(ctx),
 		Meta:         meta,
 	})
+}
+
+func invalidUpstreamResponseError(message string, err error) *typedError {
+	errorType := ErrorTypeInvalidResponse
+	if upstream.IsResponseTooLarge(err) {
+		errorType = ErrorTypeResponseTooLarge
+		message = "upstream response exceeded size limit"
+	}
+	return &typedError{
+		errorType:  errorType,
+		message:    message,
+		httpStatus: http.StatusBadGateway,
+		cause:      err,
+	}
 }
 
 func extractMessageContent(raw json.RawMessage) string {

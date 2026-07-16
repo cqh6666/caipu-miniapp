@@ -33,6 +33,26 @@ func TestTokenManagerRejectsWrongPurposeAndConfiguredSubject(t *testing.T) {
 	}
 }
 
+func TestTokenManagerBindsCSRFTokenToSessionToken(t *testing.T) {
+	t.Parallel()
+
+	manager := NewTokenManager("csrf-test-secret", time.Hour, "root-admin")
+	sessionToken, err := manager.Issue("root-admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	csrfToken := manager.CSRFToken(sessionToken)
+	if csrfToken == "" || !manager.ValidateCSRFToken(sessionToken, csrfToken) {
+		t.Fatal("expected valid CSRF token for session")
+	}
+	if manager.ValidateCSRFToken(sessionToken+"tampered", csrfToken) {
+		t.Fatal("CSRF token must be bound to the exact session token")
+	}
+	if manager.ValidateCSRFToken(sessionToken, csrfToken+"tampered") {
+		t.Fatal("tampered CSRF token must be rejected")
+	}
+}
+
 func validAdminRegisteredClaims(now time.Time, subject string) jwt.RegisteredClaims {
 	return jwt.RegisteredClaims{
 		Issuer:    adminTokenIssuer,

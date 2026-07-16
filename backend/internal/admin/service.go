@@ -10,13 +10,17 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const AdminCookieName = "caipu_admin_token"
+const (
+	AdminCookieName        = "caipu_admin_token"
+	defaultAdminCookiePath = "/api/admin"
+)
 
 type AuthService interface {
 	Login(ctx context.Context, username, password string) (string, error)
 	CurrentSubject(ctx context.Context) (string, error)
 	BuildSessionCookie(token string) *http.Cookie
 	BuildLogoutCookie() *http.Cookie
+	CSRFToken(token string) string
 }
 
 type Service struct {
@@ -24,14 +28,20 @@ type Service struct {
 	passwordHash string
 	tokens       *TokenManager
 	cookieSecure bool
+	cookiePath   string
 }
 
-func NewService(username, passwordHash string, tokens *TokenManager, cookieSecure bool) *Service {
+func NewService(username, passwordHash string, tokens *TokenManager, cookieSecure bool, cookiePath ...string) *Service {
+	path := defaultAdminCookiePath
+	if len(cookiePath) > 0 && strings.TrimSpace(cookiePath[0]) != "" {
+		path = strings.TrimSpace(cookiePath[0])
+	}
 	return &Service{
 		username:     strings.TrimSpace(username),
 		passwordHash: strings.TrimSpace(passwordHash),
 		tokens:       tokens,
 		cookieSecure: cookieSecure,
+		cookiePath:   path,
 	}
 }
 
@@ -61,9 +71,9 @@ func (s *Service) BuildSessionCookie(token string) *http.Cookie {
 	return &http.Cookie{
 		Name:     AdminCookieName,
 		Value:    token,
-		Path:     "/",
+		Path:     s.cookiePath,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   s.cookieSecure,
 		Expires:  time.Now().Add(24 * time.Hour),
 		MaxAge:   int((24 * time.Hour).Seconds()),
@@ -74,11 +84,18 @@ func (s *Service) BuildLogoutCookie() *http.Cookie {
 	return &http.Cookie{
 		Name:     AdminCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     s.cookiePath,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   s.cookieSecure,
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 	}
+}
+
+func (s *Service) CSRFToken(token string) string {
+	if s == nil || s.tokens == nil {
+		return ""
+	}
+	return s.tokens.CSRFToken(token)
 }

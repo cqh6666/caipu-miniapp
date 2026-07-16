@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	localUserJWTSecret  = "local-user-jwt-secret-change-me"
-	localAdminJWTSecret = "local-admin-jwt-secret-change-me"
-	localCredentialsKey = "local-credentials-secret-change-me"
+	localUserJWTSecret     = "local-user-jwt-secret-change-me"
+	localAdminJWTSecret    = "local-admin-jwt-secret-change-me"
+	localCredentialsKey    = "local-credentials-secret-change-me"
+	defaultAdminCookiePath = "/api/admin"
 )
 
 type Config struct {
@@ -17,10 +18,16 @@ type Config struct {
 	AppEnv                         string
 	AppAddr                        string
 	AppEnvFile                     string
+	ConfigSourceSummary            string
 	LogLevel                       string
+	HealthNginxServiceName         string
+	HealthBackendServiceName       string
+	HealthSidecarServiceName       string
+	HealthBackendBaseURL           string
 	AdminUsername                  string
 	AdminPasswordHash              string
 	AdminJWTSecret                 string
+	AdminCookiePath                string
 	AdminOpenIDs                   []string
 	AppSettingsAccessMode          string
 	AppSettingsAllowedOpenIDs      []string
@@ -99,17 +106,27 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	loadEnvFiles()
+	sourceSummary, err := loadEnvFiles()
+	if err != nil {
+		return Config{}, err
+	}
+	typedEnv := &typedEnvParser{}
 
 	cfg := Config{
 		AppName:                        getEnv("APP_NAME", "caipu-miniapp-backend"),
 		AppEnv:                         getEnv("APP_ENV", "local"),
 		AppAddr:                        getEnv("APP_ADDR", ":8080"),
 		AppEnvFile:                     os.Getenv("APP_ENV_FILE"),
+		ConfigSourceSummary:            sourceSummary,
 		LogLevel:                       getEnv("LOG_LEVEL", "info"),
+		HealthNginxServiceName:         strings.TrimSpace(getEnv("HEALTH_NGINX_SERVICE_NAME", "nginx")),
+		HealthBackendServiceName:       strings.TrimSpace(getEnv("HEALTH_BACKEND_SERVICE_NAME", "caipu-backend")),
+		HealthSidecarServiceName:       strings.TrimSpace(getEnv("HEALTH_SIDECAR_SERVICE_NAME", "caipu-linkparse-sidecar")),
+		HealthBackendBaseURL:           strings.TrimSpace(os.Getenv("HEALTH_BACKEND_BASE_URL")),
 		AdminUsername:                  strings.TrimSpace(os.Getenv("ADMIN_USERNAME")),
 		AdminPasswordHash:              strings.TrimSpace(os.Getenv("ADMIN_PASSWORD_HASH")),
 		AdminJWTSecret:                 strings.TrimSpace(getEnv("ADMIN_JWT_SECRET", localAdminJWTSecret)),
+		AdminCookiePath:                strings.TrimSpace(getEnv("ADMIN_COOKIE_PATH", defaultAdminCookiePath)),
 		AdminOpenIDs:                   splitCSV(os.Getenv("APP_ADMIN_OPENIDS")),
 		AppSettingsAccessMode:          strings.TrimSpace(strings.ToLower(getEnv("APP_SETTINGS_ACCESS_MODE", "admin"))),
 		AppSettingsAllowedOpenIDs:      splitCSV(os.Getenv("APP_SETTINGS_ALLOWED_OPENIDS")),
@@ -117,29 +134,29 @@ func Load() (Config, error) {
 		CredentialsKeyVersion:          strings.TrimSpace(getEnv("CREDENTIALS_KEY_VERSION", "local-v1")),
 		CredentialsPreviousKeys:        strings.TrimSpace(os.Getenv("CREDENTIALS_PREVIOUS_KEYS")),
 		JWTSecret:                      getEnv("JWT_SECRET", localUserJWTSecret),
-		JWTExpireHours:                 getInt("JWT_EXPIRE_HOURS", 720),
+		JWTExpireHours:                 typedEnv.Int("JWT_EXPIRE_HOURS", 720),
 		AIBaseURL:                      strings.TrimSpace(getEnv("AI_BASE_URL", "https://api.openai.com/v1")),
 		AIAPIKey:                       strings.TrimSpace(os.Getenv("AI_API_KEY")),
 		AIModel:                        strings.TrimSpace(os.Getenv("AI_MODEL")),
-		AITimeoutSeconds:               getInt("AI_TIMEOUT_SECONDS", 30),
+		AITimeoutSeconds:               typedEnv.Int("AI_TIMEOUT_SECONDS", 30),
 		AIFlowchartBaseURL:             strings.TrimSpace(os.Getenv("AI_FLOWCHART_BASE_URL")),
 		AIFlowchartAPIKey:              strings.TrimSpace(os.Getenv("AI_FLOWCHART_API_KEY")),
 		AIFlowchartModel:               strings.TrimSpace(os.Getenv("AI_FLOWCHART_MODEL")),
 		AIFlowchartEndpointMode:        strings.TrimSpace(os.Getenv("AI_FLOWCHART_ENDPOINT_MODE")),
 		AIFlowchartResponseFormat:      strings.TrimSpace(os.Getenv("AI_FLOWCHART_RESPONSE_FORMAT")),
-		AIFlowchartTimeoutSeconds:      getInt("AI_FLOWCHART_TIMEOUT_SECONDS", 45),
-		AITitleEnabled:                 getBool("AI_TITLE_ENABLED", false),
+		AIFlowchartTimeoutSeconds:      typedEnv.Int("AI_FLOWCHART_TIMEOUT_SECONDS", 45),
+		AITitleEnabled:                 typedEnv.Bool("AI_TITLE_ENABLED", false),
 		AITitleBaseURL:                 strings.TrimSpace(os.Getenv("AI_TITLE_BASE_URL")),
 		AITitleAPIKey:                  strings.TrimSpace(os.Getenv("AI_TITLE_API_KEY")),
 		AITitleModel:                   strings.TrimSpace(os.Getenv("AI_TITLE_MODEL")),
-		AITitleStream:                  getBool("AI_TITLE_STREAM", false),
-		AITitleTemperature:             getFloat("AI_TITLE_TEMPERATURE", 0),
-		AITitleMaxTokens:               getInt("AI_TITLE_MAX_TOKENS", 64),
-		AITitleTimeoutSeconds:          getInt("AI_TITLE_TIMEOUT_SECONDS", 3),
-		AIAlertEnabled:                 getBool("AI_ALERT_ENABLED", false),
-		AIAlertFailureThreshold:        getInt("AI_ALERT_FAILURE_THRESHOLD", 3),
+		AITitleStream:                  typedEnv.Bool("AI_TITLE_STREAM", false),
+		AITitleTemperature:             typedEnv.Float("AI_TITLE_TEMPERATURE", 0),
+		AITitleMaxTokens:               typedEnv.Int("AI_TITLE_MAX_TOKENS", 64),
+		AITitleTimeoutSeconds:          typedEnv.Int("AI_TITLE_TIMEOUT_SECONDS", 3),
+		AIAlertEnabled:                 typedEnv.Bool("AI_ALERT_ENABLED", false),
+		AIAlertFailureThreshold:        typedEnv.Int("AI_ALERT_FAILURE_THRESHOLD", 3),
 		AIAlertSMTPHost:                strings.TrimSpace(getEnv("AI_ALERT_SMTP_HOST", "smtp.qq.com")),
-		AIAlertSMTPPort:                getInt("AI_ALERT_SMTP_PORT", 587),
+		AIAlertSMTPPort:                typedEnv.Int("AI_ALERT_SMTP_PORT", 587),
 		AIAlertSMTPUsername:            strings.TrimSpace(os.Getenv("AI_ALERT_SMTP_USERNAME")),
 		AIAlertSMTPPassword:            strings.TrimSpace(os.Getenv("AI_ALERT_SMTP_PASSWORD")),
 		AIAlertFromEmail:               strings.TrimSpace(os.Getenv("AI_ALERT_FROM_EMAIL")),
@@ -149,42 +166,45 @@ func Load() (Config, error) {
 		DietAssistantAIModel:           strings.TrimSpace(getEnv("DIET_ASSISTANT_AI_MODEL", "LongCat-2.0-Preview")),
 		DietAssistantAIThinkingType:    strings.TrimSpace(strings.ToLower(os.Getenv("DIET_ASSISTANT_AI_THINKING_TYPE"))),
 		DietAssistantAIReasoningEffort: strings.TrimSpace(strings.ToLower(os.Getenv("DIET_ASSISTANT_AI_REASONING_EFFORT"))),
-		DietAssistantAITimeoutSec:      getInt("DIET_ASSISTANT_AI_TIMEOUT_SECONDS", 90),
-		LinkparseSidecarEnabled:        getBool("LINKPARSE_SIDECAR_ENABLED", false),
+		DietAssistantAITimeoutSec:      typedEnv.Int("DIET_ASSISTANT_AI_TIMEOUT_SECONDS", 90),
+		LinkparseSidecarEnabled:        typedEnv.Bool("LINKPARSE_SIDECAR_ENABLED", false),
 		LinkparseSidecarBaseURL:        strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_BASE_URL")),
-		LinkparseSidecarTimeoutSec:     getInt("LINKPARSE_SIDECAR_TIMEOUT_SECONDS", 150),
+		LinkparseSidecarTimeoutSec:     typedEnv.Int("LINKPARSE_SIDECAR_TIMEOUT_SECONDS", 150),
 		LinkparseSidecarAPIKey:         strings.TrimSpace(os.Getenv("LINKPARSE_SIDECAR_API_KEY")),
-		AMapPlacePreviewEnabled:        getBool("AMAP_PLACE_PREVIEW_ENABLED", false),
+		AMapPlacePreviewEnabled:        typedEnv.Bool("AMAP_PLACE_PREVIEW_ENABLED", false),
 		AMapWebServiceKey:              strings.TrimSpace(os.Getenv("AMAP_WEB_SERVICE_KEY")),
 		AMapPlacePreviewDefaultCity:    strings.TrimSpace(getEnv("AMAP_PLACE_PREVIEW_DEFAULT_CITY", "佛山")),
-		AMapPlacePreviewTimeoutSeconds: getInt("AMAP_PLACE_PREVIEW_TIMEOUT_SECONDS", 8),
-		AMapPlacePreviewMaxAttempts:    getInt("AMAP_PLACE_PREVIEW_MAX_ATTEMPTS", 4),
-		AMapPlacePreviewQPSDelayMS:     getInt("AMAP_PLACE_PREVIEW_QPS_DELAY_MS", 400),
+		AMapPlacePreviewTimeoutSeconds: typedEnv.Int("AMAP_PLACE_PREVIEW_TIMEOUT_SECONDS", 8),
+		AMapPlacePreviewMaxAttempts:    typedEnv.Int("AMAP_PLACE_PREVIEW_MAX_ATTEMPTS", 4),
+		AMapPlacePreviewQPSDelayMS:     typedEnv.Int("AMAP_PLACE_PREVIEW_QPS_DELAY_MS", 400),
 		WechatAppID:                    os.Getenv("WECHAT_APP_ID"),
 		WechatAppSecret:                os.Getenv("WECHAT_APP_SECRET"),
 		SQLitePath:                     filepath.Clean(getEnv("SQLITE_PATH", "./data/app.db")),
-		SQLiteBusyTimeoutMS:            getInt("SQLITE_BUSY_TIMEOUT_MS", 5000),
+		SQLiteBusyTimeoutMS:            typedEnv.Int("SQLITE_BUSY_TIMEOUT_MS", 5000),
 		MigrationDir:                   filepath.Clean(getEnv("MIGRATION_DIR", "./migrations")),
 		UploadDir:                      filepath.Clean(getEnv("UPLOAD_DIR", "./data/uploads")),
 		UploadPublicBaseURL:            strings.TrimSpace(os.Getenv("UPLOAD_PUBLIC_BASE_URL")),
-		UploadMaxImageMB:               int64(getInt("UPLOAD_MAX_IMAGE_MB", 10)),
-		InviteDefaultExpireHours:       getInt("INVITE_DEFAULT_EXPIRE_HOURS", 72),
-		InviteDefaultMaxUses:           getInt("INVITE_DEFAULT_MAX_USES", 10),
+		UploadMaxImageMB:               int64(typedEnv.Int("UPLOAD_MAX_IMAGE_MB", 10)),
+		InviteDefaultExpireHours:       typedEnv.Int("INVITE_DEFAULT_EXPIRE_HOURS", 72),
+		InviteDefaultMaxUses:           typedEnv.Int("INVITE_DEFAULT_MAX_USES", 10),
 		InviteShareFontPath:            strings.TrimSpace(os.Getenv("INVITE_SHARE_FONT_PATH")),
 		InviteShareFontBoldPath:        strings.TrimSpace(os.Getenv("INVITE_SHARE_FONT_BOLD_PATH")),
-		RecipeAutoParseEnabled:         getBool("RECIPE_AUTO_PARSE_ENABLED", true),
-		RecipeAutoParseInterval:        getInt("RECIPE_AUTO_PARSE_INTERVAL_SECONDS", 30),
-		RecipeAutoParseBatchSize:       getInt("RECIPE_AUTO_PARSE_BATCH_SIZE", 3),
-		RecipeAutoParseMaxAttempts:     getInt("RECIPE_AUTO_PARSE_MAX_ATTEMPTS", 3),
-		RecipeAutoParseRetryBaseSec:    getInt("RECIPE_AUTO_PARSE_RETRY_BASE_SECONDS", 60),
-		RecipeAutoParseStaleSec:        getInt("RECIPE_AUTO_PARSE_STALE_SECONDS", 600),
-		RecipeFlowchartEnabled:         getBool("RECIPE_FLOWCHART_ENABLED", true),
-		RecipeFlowchartAutoEnqueue:     getBool("RECIPE_FLOWCHART_AUTO_ENQUEUE_ENABLED", false),
-		RecipeFlowchartInterval:        getInt("RECIPE_FLOWCHART_INTERVAL_SECONDS", 5),
-		RecipeFlowchartBatchSize:       getInt("RECIPE_FLOWCHART_BATCH_SIZE", 1),
-		RecipeImageMirrorEnabled:       getBool("RECIPE_IMAGE_MIRROR_ENABLED", true),
-		RecipeImageMirrorInterval:      getInt("RECIPE_IMAGE_MIRROR_INTERVAL_SECONDS", 180),
-		RecipeImageMirrorBatchSize:     getInt("RECIPE_IMAGE_MIRROR_BATCH_SIZE", 2),
+		RecipeAutoParseEnabled:         typedEnv.Bool("RECIPE_AUTO_PARSE_ENABLED", true),
+		RecipeAutoParseInterval:        typedEnv.Int("RECIPE_AUTO_PARSE_INTERVAL_SECONDS", 30),
+		RecipeAutoParseBatchSize:       typedEnv.Int("RECIPE_AUTO_PARSE_BATCH_SIZE", 3),
+		RecipeAutoParseMaxAttempts:     typedEnv.Int("RECIPE_AUTO_PARSE_MAX_ATTEMPTS", 3),
+		RecipeAutoParseRetryBaseSec:    typedEnv.Int("RECIPE_AUTO_PARSE_RETRY_BASE_SECONDS", 60),
+		RecipeAutoParseStaleSec:        typedEnv.Int("RECIPE_AUTO_PARSE_STALE_SECONDS", 600),
+		RecipeFlowchartEnabled:         typedEnv.Bool("RECIPE_FLOWCHART_ENABLED", true),
+		RecipeFlowchartAutoEnqueue:     typedEnv.Bool("RECIPE_FLOWCHART_AUTO_ENQUEUE_ENABLED", false),
+		RecipeFlowchartInterval:        typedEnv.Int("RECIPE_FLOWCHART_INTERVAL_SECONDS", 5),
+		RecipeFlowchartBatchSize:       typedEnv.Int("RECIPE_FLOWCHART_BATCH_SIZE", 1),
+		RecipeImageMirrorEnabled:       typedEnv.Bool("RECIPE_IMAGE_MIRROR_ENABLED", true),
+		RecipeImageMirrorInterval:      typedEnv.Int("RECIPE_IMAGE_MIRROR_INTERVAL_SECONDS", 180),
+		RecipeImageMirrorBatchSize:     typedEnv.Int("RECIPE_IMAGE_MIRROR_BATCH_SIZE", 2),
+	}
+	if err := typedEnv.Err(); err != nil {
+		return Config{}, err
 	}
 
 	return validateAndFinalize(cfg)

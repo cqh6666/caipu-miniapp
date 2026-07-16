@@ -123,9 +123,11 @@ func (h *Handler) StreamChat(w http.ResponseWriter, r *http.Request) {
 		UserID:    userID,
 		KitchenID: req.KitchenID,
 	}, messages, emit); err != nil {
+		common.ObserveError(w, err)
 		_ = emit(StreamEvent{
-			Type:    "error",
-			Message: streamErrorMessage(err),
+			Type:      "error",
+			Message:   streamErrorMessage(err),
+			RequestID: common.RequestID(r.Context()),
 		})
 	}
 }
@@ -190,9 +192,5 @@ func normalizeRequestMessages(messages []ChatMessage) ([]ChatMessage, error) {
 }
 
 func streamErrorMessage(err error) string {
-	message := strings.TrimSpace(err.Error())
-	if message == "" {
-		return "饮食管家暂时不可用"
-	}
-	return message
+	return "饮食管家暂时不可用，请稍后再试"
 }

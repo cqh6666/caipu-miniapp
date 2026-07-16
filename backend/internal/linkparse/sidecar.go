@@ -133,24 +133,20 @@ func (c *sidecarClient) parse(ctx context.Context, path string, payload sidecarP
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = "linkparse sidecar request failed"
-		}
-		callErr := common.NewAppError(common.CodeBadRequest, message, http.StatusBadRequest)
+		callErr := sanitizedUpstreamError(common.CodeInternalServer, "linkparse sidecar request failed", http.StatusBadGateway, string(data))
 		logCall(audit.CallStatusFailed, resp.StatusCode, callErr, nil)
 		return sidecarParseResponse{}, callErr
 	}
 
 	var parsed sidecarParseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		callErr := common.NewAppError(common.CodeBadRequest, "failed to decode linkparse sidecar response", http.StatusBadRequest).WithErr(err)
+	if err := decodeBoundedUpstreamJSON(resp.Body, maxSidecarResponseBytes, "linkparse sidecar", &parsed); err != nil {
+		callErr := err
 		logCall(audit.CallStatusFailed, resp.StatusCode, callErr, nil)
 		return sidecarParseResponse{}, callErr
 	}
 	if !parsed.OK {
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
-			callErr := common.NewAppError(common.CodeBadRequest, strings.TrimSpace(parsed.Error.Message), http.StatusBadRequest)
+			callErr := sanitizedUpstreamError(common.CodeBadRequest, "linkparse sidecar parse failed", http.StatusBadRequest, parsed.Error.Message)
 			logCall(audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
 				"provider_used": strings.TrimSpace(parsed.ProviderUsed),
 			})

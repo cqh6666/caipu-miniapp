@@ -337,6 +337,7 @@ export function normalizeRecipe(recipe = {}) {
 	const normalized = {
 		id: recipe.id || '',
 		kitchenId: Number(recipe.kitchenId) || 0,
+		version: Number(recipe.version) > 0 ? Number(recipe.version) : 0,
 		title: (recipe.title || '').trim(),
 		ingredient: (recipe.ingredient || '').trim(),
 		summary: (recipe.summary || '').trim(),
@@ -405,6 +406,9 @@ export function buildRecipePayload(recipe = {}) {
 	}
 	if (Object.prototype.hasOwnProperty.call(recipe, 'titleSource')) {
 		payload.titleSource = String(recipe.titleSource || '').trim()
+	}
+	if (normalized.version > 0) {
+		payload.version = normalized.version
 	}
 
 	return payload

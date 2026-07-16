@@ -71,6 +71,7 @@ type RuntimeSettingFieldView struct {
 
 type RuntimeSettingGroupView struct {
 	Name        string                    `json:"name"`
+	Version     int                       `json:"version"`
 	Title       string                    `json:"title"`
 	Description string                    `json:"description"`
 	Fields      []RuntimeSettingFieldView `json:"fields"`

@@ -67,7 +67,7 @@ func (r *Repository) FindByShareToken(ctx context.Context, token string) (Recipe
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 	WHERE share_token = ? AND deleted_at IS NULL
 	LIMIT 1

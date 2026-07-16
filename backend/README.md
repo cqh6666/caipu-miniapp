@@ -9,7 +9,8 @@
 - 日志：标准库 `slog`
 - 数据库：`SQLite`
 - 迁移：启动时自动执行 `migrations/*.sql`
-- 健康检查：`GET /healthz`、`GET /api/healthz`
+- 健康检查：`GET /livez`（进程存活）、`GET /readyz`（依赖就绪）；
+  `/healthz`、`/api/healthz` 是 readiness 兼容别名
 - 已实现首批业务闭环：`auth + kitchens + invite + recipe + upload`
 - 已新增后台能力：`/api/admin/* + AI 审计日志 + 运行时配置中心`
 
@@ -25,8 +26,18 @@
 ```bash
 cd backend
 cp configs/example.env configs/local.env
-go run ./cmd/server
+chmod 600 configs/local.env
+APP_ENV_FILE=configs/local.env go run ./cmd/server
 ```
+
+- 进程环境变量优先于 env file；`APP_ENV_FILE` 指向的文件缺失、格式错误或权限宽于
+  `0600` 时拒绝启动。
+- 只有进程明确设置 `APP_ENV=local` 且未设置 `APP_ENV_FILE` 时，才自动补读
+  `configs/local.env` / `.env`；非 local 环境不会自动读取本地 dotenv。
+- typed 环境变量若格式非法会在监听端口前聚合报错，错误只包含变量名，不回显值。
+- 可用 `APP_ENV_FILE=... go run ./cmd/server -check-config` 只校验配置，不打开数据库。
+- 可用 `go run ./cmd/server -version` 输出 JSON 构建身份；开发构建回退为
+  `releaseId=dev`、`gitCommit/buildTime=unknown`，正式 release 由 ldflags 注入。
 
 开发与重构自验：
 
@@ -35,14 +46,66 @@ cd backend
 go test ./...
 go vet ./...
 go test -race ./...
+go mod verify
+govulncheck ./...
 ```
 
 - 核心包按“业务服务 / 外部协议 / 持久化 / 规则”组织，应用装配集中在 `internal/app/`。
 - 涉及迁移、配置、鉴权或跨模块接线时，除定向测试外必须执行后端全量测试。
+- `.github/workflows/backend.yml` 固定使用 Go `1.26.5`，执行格式、测试、覆盖率、
+  `vet`、竞态、模块校验和可达漏洞扫描。
+- 请求 body 默认限制为 1 MiB；饮食管家流式请求限制为 2 MiB；图片上传限制为
+  `UPLOAD_MAX_IMAGE_MB + 1 MiB`，超限统一返回 413。
+- 所有 HTTP 响应带 `X-Request-ID`；请求完成日志使用路由模板并记录状态、耗时、
+  error code/type chain 和 allowlist 业务 ID，不记录原始 path/query。客户端 500 保持
+  通用文案，可用 request ID 关联后端脱敏错误链。
+- 全局 `slog` handler 会集中遮蔽 Bearer/JWT、Cookie、API Key、SESSDATA、URL 敏感部分
+  和 AI request body；新增日志字段必须继续复用该 logger，不直接输出请求体。
+- 所有外部成功响应都有场景化字节上限：文本 AI 为 2 MiB、饮食管家/B 站/Sidecar
+  为 4 MiB、图片 base64 JSON 为 16 MiB、微信登录为 64 KiB；超限统一按 502 处理，
+  原始 Provider 响应只进入脱敏日志/审计，不作为公开错误文案。
+- 管理员/用户登录和邀请码预览/接受启用 IP + 凭据目标双维度短期限流；只有本机
+  反向代理提供的 `X-Real-IP` 会被信任。
+- 每个 owner 只有一个显式默认空间；菜谱和地点响应包含从 1 开始的 `version`，对应
+  PUT/PATCH 必须回传该值。过期版本返回 409，客户端应刷新后由用户确认重试，禁止自动
+  重放旧表单。菜谱、地点、菜单、邀请和空间关键写入会在提交事务内再次检查 membership。
+- AI 路由 scene 与运行时配置 group（含 B 站配置）同样返回整数 `version`；管理端保存
+  必须携带 `expectedVersion/version`，过期写返回 409。B 站配置、旧值审计和版本递增在
+  同一事务提交，审计失败整体回滚。
+- AI Provider 邮件告警以 failure streak + SQLite outbox 持久化；跨阈值记录和 enqueue
+  同事务，原子 claim 防止并发重复认领，失败退避并由后台 worker 重试。SMTP 不支持
+  幂等键，若邮件已发送而 sent 状态尚未落库时进程崩溃，仍存在极小重复投递窗口。
+- `schema_migrations` 保存 migration 文件 SHA-256；历史表首次启动会回填，之后文件字节
+  改变即拒绝启动/readiness。新增 migration 序号必须唯一，两个既有 `019_*` 是唯一例外。
+
+生产运维约定：
+
+- `GET /livez` 只证明进程仍在；`GET /readyz` 会在 2 秒上限内检查 DB ping、当前
+  release 的迁移是否全部应用、SQLite 父目录和 uploads 是否可写。就绪响应头
+  `X-Release-ID` 与 JSON 的 release/commit/build time/Go toolchain 由构建时 ldflags 注入。
+- 服务器源码发布统一使用仓库根目录的
+  `bash scripts/deploy-backend-on-server.sh`。脚本先测试和校验配置，再做 SQLite Online
+  Backup、在备份副本预演迁移、构建 `releases/<release-id>`、原子切换 `current`，重启后
+  要求连续 readiness 成功且 release ID 相符；失败恢复上一二进制，不自动反向执行 SQL。
+  每个 release 的 `manifest.env` 同时记录二进制 SHA-256、Git commit、构建时间、Go
+  toolchain、migration 数量和集合摘要，`migrations.sha256` 保存逐文件校验和。
+- `backend/scripts/deploy.sh` 已废弃，禁止再覆盖运行中的固定二进制。
+- `scripts/backup.sh` 使用 `sqlite3 .backup` 打包 `app.db + uploads.tar.gz + metadata +
+  SHA256SUMS`；`scripts/verify-backup.sh` 会校验哈希、`PRAGMA quick_check` 并在临时目录
+  解包 uploads。初始化脚本安装每日备份与每周恢复校验 timer；生产应通过
+  `/etc/caipu-backend-backup.env` 配置 `OFFSITE_BACKUP_TARGET`，并建议设置
+  `REQUIRE_OFFSITE_BACKUP=1`。
+- bootstrap 默认将 journald 全局上限设为 `512M`、最长保留 `14day`（可用
+  `JOURNAL_SYSTEM_MAX_USE` / `JOURNAL_MAX_RETENTION_SEC` 覆盖），并安装
+  `caipu-backend-ops-health.timer`。巡检覆盖 5xx、worker error、磁盘、备份年龄和恢复
+  演练年龄；生产仍需让监控平台订阅失败 unit，详见
+  [后端运维告警策略](../docs/backend-operations-alert-policy.md)。
 - 当前后端可维护性重构范围、优先级、进度与验证记录见
   [Go 后端可维护性重构路线图](../docs/backend-refactor-roadmap-2026-07-14.md)。
-- R0～R9 已完成；后续候选项见路线图第 6 节。推荐先补核心契约测试与 CI，再处理 Admin HTTP 边界、
-  外部 HTTP 适配器和 worker 生命周期；统计仓储与配置分组仅在满足进入条件后启动，避免机械拆分。
+- R0～R13 已完成：核心契约/CI、Admin HTTP 域边界、airouter/appsettings HTTP 注入和
+  recipe worker deadline 生命周期均已落地；DATA-005、DB-001、OPS-003 也已按并发和
+  运维证据完成。R14/R15 的统计仓储与配置分组继续保持条件
+  观察，只有出现查询计划或模块参数漏接证据时才启动，避免机械拆分。
 
 和 B 站自动解析相关的可选配置：
 
@@ -64,6 +127,12 @@ go test -race ./...
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD_HASH`
 - `ADMIN_JWT_SECRET`
+- `ADMIN_COOKIE_PATH`（开发/standalone 为 `/api/admin`；当前线上共享前缀为
+  `/caipu-api/admin`）
+- `HEALTH_NGINX_SERVICE_NAME`
+- `HEALTH_BACKEND_SERVICE_NAME`
+- `HEALTH_SIDECAR_SERVICE_NAME`
+- `HEALTH_BACKEND_BASE_URL`（留空时按 `APP_ADDR` 端口生成本机探测地址）
 - `AI_BASE_URL`
 - `AI_API_KEY`
 - `AI_MODEL`
@@ -127,6 +196,8 @@ go test -race ./...
 调用工具，执行工具阶段会通过 SSE 发送 `status` / `tool_start` / `tool_done`
 等状态事件；写库类工具成功时，`tool_done` 会附带 `mutation`，例如
 `recipe_created`。随后后端会把工具结果交给模型，并以 `delta` 流式返回最终回复。
+单 SSE 事件和累计可见内容各限制为 256 KiB，工具块和工具参数各限制为 64 KiB；
+流式失败只返回稳定文案与 `requestId`，小程序会把该 ID 附到错误提示中用于排障。
 已支持的工具：
 
 - `get_recipe_count`：按当前空间统计菜谱数量，支持餐别和状态过滤
@@ -225,6 +296,7 @@ B 站自动解析 POC 说明见：[docs/bilibili-link-parser-poc.md](./docs/bili
 - `GET /api/admin/runtime-settings/audits`
 - `POST /api/auth/wechat/login`
 - `GET /api/auth/me`
+- `POST /api/auth/logout`
 - `PATCH /api/auth/profile`
 - `GET /api/app-settings/bilibili-session`
 - `PUT /api/app-settings/bilibili-session`
@@ -310,7 +382,7 @@ curl -s -X POST http://127.0.0.1:8080/api/uploads/images \
 
 ```bash
 cd backend
-go run ./cmd/server -migrate-only
+APP_ENV_FILE=configs/local.env go run ./cmd/server -migrate-only
 ```
 
 当前邀请策略：
@@ -328,8 +400,16 @@ go run ./cmd/server -migrate-only
 
 - 图片接口为 `POST /api/uploads/images`
 - 默认支持 `jpg`、`png`、`webp`、`gif`
-- `UPLOAD_PUBLIC_BASE_URL` 为空时，会按当前请求域名自动拼接图片地址
-- 上传后的静态资源通过 `/uploads/*` 提供访问
+- 图片继续是无需登录即可读取的公开资源；文件名包含密码学随机后缀，静态路由不提供
+  目录列表，也不会暴露不符合当前生成规则的人工文件或非图片文件
+- `APP_ENV=local` 时 `UPLOAD_PUBLIC_BASE_URL` 可留空，并按直连请求域名拼接地址；
+  非 local 环境必须显式配置无凭据、query、fragment 的正式 HTTPS 基址，否则拒绝启动
+- 上传响应不信任 `X-Forwarded-Host` / `X-Forwarded-Proto`；非 local 环境始终使用
+  `UPLOAD_PUBLIC_BASE_URL`，避免 Host Header 污染持久化 URL
+- 上传后的静态资源通过 `/uploads/*` 提供访问；成功响应带一年 immutable 缓存和
+  `nosniff`、CSP、referrer/CORP 安全头，404/405 使用 `no-store`
+- Handler 请求上限之外，上传 Service 会再次执行单文件大小限制；写入采用 `.part`
+  临时文件，失败或超限会清理，成功后才原子切换为公开文件名
 - 小红书/B 站自动解析拿到的第三方图片会先以外链形式写入，随后由后台低频任务异步转存到本地 uploads
 - 图片转存频率由 `RECIPE_IMAGE_MIRROR_INTERVAL_SECONDS` 和 `RECIPE_IMAGE_MIRROR_BATCH_SIZE` 控制
 
@@ -351,6 +431,11 @@ go run ./cmd/server -migrate-only
   - `ADMIN_USERNAME`
   - `ADMIN_PASSWORD_HASH`
   - `ADMIN_JWT_SECRET`（非 `local` 环境必须配置，且必须与 `JWT_SECRET`、`CREDENTIALS_SECRET` 独立）
+  - `ADMIN_COOKIE_PATH`（必须匹配浏览器实际 Admin API 前缀）
+- 后台只接受 HttpOnly Cookie；Cookie 使用 `SameSite=Strict` 和窄 Path，所有写接口还需
+  携带与会话绑定的 `X-CSRF-Token`，Admin Web 会在登录或恢复会话后自动维护该值
+- 用户 Bearer 包含 `jti` 和数据库 `token_version`；`POST /api/auth/logout` 会递增版本，
+  立即撤销该用户所有旧 token，重新登录后签发新版本 token
 - `app_runtime_settings` 支持在线覆盖 `AI / sidecar` 相关配置，并在更新后自动失效本地缓存
 - `app_setting_audits` 记录后台保存、测试，以及移动端 `Bilibili SESSDATA` 更新动作
 

@@ -35,6 +35,7 @@ type Place struct {
 	UpdatedBy        int64    `json:"updatedBy"`
 	CreatedAt        string   `json:"createdAt"`
 	UpdatedAt        string   `json:"updatedAt"`
+	Version          int64    `json:"version"`
 }
 
 type ListFilter struct {
@@ -43,6 +44,7 @@ type ListFilter struct {
 }
 
 type placeRequest struct {
+	Version          *int64   `json:"version"`
 	Name             *string  `json:"name"`
 	Type             *string  `json:"type"`
 	Address          *string  `json:"address"`
@@ -72,6 +74,7 @@ type placeRequest struct {
 
 type updateStatusRequest struct {
 	Status           string   `json:"status"`
+	Version          *int64   `json:"version"`
 	VisitedAt        *string  `json:"visitedAt"`
 	RevisitRating    *int     `json:"revisitRating"`
 	RecommendedItems []string `json:"recommendedItems"`

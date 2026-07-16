@@ -14,6 +14,7 @@ type Repository struct {
 
 type sceneRecord struct {
 	Scene                   Scene
+	Version                 int
 	Enabled                 bool
 	Strategy                Strategy
 	MaxAttempts             int
@@ -47,14 +48,36 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) loadScene(ctx context.Context, scene Scene) (sceneRecord, []providerRecord, bool, error) {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return sceneRecord{}, nil, false, err
+	}
+	record, providers, found, err := loadSceneSnapshot(ctx, tx, scene)
+	if err != nil {
+		_ = tx.Rollback()
+		return sceneRecord{}, nil, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return sceneRecord{}, nil, false, err
+	}
+	return record, providers, found, nil
+}
+
+type sceneQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func loadSceneSnapshot(ctx context.Context, queryer sceneQueryer, scene Scene) (sceneRecord, []providerRecord, bool, error) {
 	var record sceneRecord
 	var retryPolicyJSON string
 	var requestOptionsJSON string
 	var enabledInt int
 
-	err := r.db.QueryRowContext(ctx, `
+	err := queryer.QueryRowContext(ctx, `
 SELECT
 	scene,
+	version,
 	enabled,
 	COALESCE(strategy, ''),
 	max_attempts,
@@ -69,6 +92,7 @@ WHERE scene = ?
 LIMIT 1
 `, string(scene)).Scan(
 		&record.Scene,
+		&record.Version,
 		&enabledInt,
 		&record.Strategy,
 		&record.MaxAttempts,
@@ -93,7 +117,7 @@ LIMIT 1
 		record.RequestOptions = RequestOptions{}
 	}
 
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := queryer.QueryContext(ctx, `
 SELECT
 	id,
 	scene,
@@ -155,9 +179,26 @@ ORDER BY priority ASC, id ASC
 }
 
 func (r *Repository) listSceneRecords(ctx context.Context) (map[Scene]sceneRecord, map[Scene][]providerRecord, error) {
-	sceneRows, err := r.db.QueryContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	scenes, providers, err := listSceneRecordsSnapshot(ctx, tx)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return scenes, providers, nil
+}
+
+func listSceneRecordsSnapshot(ctx context.Context, queryer sceneQueryer) (map[Scene]sceneRecord, map[Scene][]providerRecord, error) {
+	sceneRows, err := queryer.QueryContext(ctx, `
 SELECT
 	scene,
+	version,
 	enabled,
 	COALESCE(strategy, ''),
 	max_attempts,
@@ -182,6 +223,7 @@ FROM ai_route_scenes
 		var enabledInt int
 		if err := sceneRows.Scan(
 			&item.Scene,
+			&item.Version,
 			&enabledInt,
 			&item.Strategy,
 			&item.MaxAttempts,
@@ -203,7 +245,7 @@ FROM ai_route_scenes
 		return nil, nil, err
 	}
 
-	providerRows, err := r.db.QueryContext(ctx, `
+	providerRows, err := queryer.QueryContext(ctx, `
 SELECT
 	id,
 	scene,

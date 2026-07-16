@@ -71,6 +71,7 @@ type createInviteParams struct {
 }
 
 type acceptInviteResult struct {
+	Invite        inviteRecord
 	KitchenID     int64
 	KitchenName   string
 	Role          string

@@ -82,6 +82,7 @@ export function normalizePlace(place = {}) {
 	return {
 		id: normalizeString(place.id),
 		kitchenId: Number(place.kitchenId) || 0,
+		version: Number(place.version) > 0 ? Number(place.version) : 0,
 		name: normalizeString(place.name),
 		type,
 		address: normalizeString(place.address),
@@ -194,7 +195,7 @@ export async function getPlaceById(placeId, options = {}) {
 }
 
 function buildPlacePayload(draft = {}) {
-	return {
+	const payload = {
 		name: normalizeString(draft.name),
 		type: normalizeOption(draft.type, placeTypeOptions, 'food'),
 		address: normalizeString(draft.address),
@@ -221,6 +222,9 @@ function buildPlacePayload(draft = {}) {
 		companionTags: normalizeTextList(draft.companionTags, 6),
 		parkingNote: normalizeString(draft.parkingNote)
 	}
+	const version = Number(draft.version) || 0
+	if (version > 0) payload.version = version
+	return payload
 }
 
 export async function createPlaceFromDraft(draft = {}) {
@@ -236,7 +240,10 @@ export async function createPlaceFromDraft(draft = {}) {
 }
 
 export async function updatePlaceById(placeId, updates = {}) {
-	const current = await getPlaceById(placeId)
+	let current = await getPlaceById(placeId)
+	if (Number(current?.version) < 1) {
+		current = await getPlaceById(placeId, { preferCache: false })
+	}
 	const hasImages =
 		Object.prototype.hasOwnProperty.call(updates, 'images') ||
 		Object.prototype.hasOwnProperty.call(updates, 'imageUrls')
@@ -248,13 +255,25 @@ export async function updatePlaceById(placeId, updates = {}) {
 		...updates,
 		imageUrls
 	})
-	const item = await updatePlace(placeId, payload)
-	return upsertPlaceInCache(item)
+	try {
+		const item = await updatePlace(placeId, payload)
+		return upsertPlaceInCache(item)
+	} catch (error) {
+		return handlePlaceVersionConflict(placeId, error)
+	}
 }
 
 export async function updatePlaceStatusById(placeId, nextStatus, experienceData = {}) {
-	const item = await updatePlaceStatus(placeId, nextStatus, experienceData)
-	return upsertPlaceInCache(item)
+	let current = await getPlaceById(placeId)
+	if (Number(current?.version) < 1) {
+		current = await getPlaceById(placeId, { preferCache: false })
+	}
+	try {
+		const item = await updatePlaceStatus(placeId, nextStatus, current.version, experienceData)
+		return upsertPlaceInCache(item)
+	} catch (error) {
+		return handlePlaceVersionConflict(placeId, error)
+	}
 }
 
 export async function deletePlaceById(placeId) {
@@ -262,4 +281,17 @@ export async function deletePlaceById(placeId) {
 	await ensureSession()
 	await deletePlace(placeId)
 	removePlaceFromCache(placeId, current?.kitchenId || getCurrentKitchenId())
+}
+
+async function handlePlaceVersionConflict(placeId, error) {
+	if (Number(error?.code) !== 40900) throw error
+	try {
+		const latest = await getPlaceDetail(placeId)
+		upsertPlaceInCache(latest)
+	} catch (_) {}
+	const conflict = new Error('地点已被其他成员更新，已刷新最新内容，请确认后重试')
+	conflict.code = 40900
+	conflict.statusCode = 409
+	conflict.originalError = error
+	throw conflict
 }

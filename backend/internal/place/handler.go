@@ -150,6 +150,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.service.UpdateStatus(r.Context(), userID, placeID, statusUpdateInput{
 		Status:           req.Status,
+		Version:          req.Version,
 		VisitedAt:        req.VisitedAt,
 		RevisitRating:    req.RevisitRating,
 		RecommendedItems: req.RecommendedItems,

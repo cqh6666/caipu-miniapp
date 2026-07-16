@@ -228,7 +228,7 @@ func TestRetestRecoversAndFails(t *testing.T) {
 	service := NewService(repo, staticConfigProvider{Config: lifecycleConfig()}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	recent := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
-	insertAlertState(t, db, State{ProviderID: "p1", Scene: "summary", ConsecutiveFailures: 4, LastStatus: "failed", LastFailedAt: recent})
+	insertAlertState(t, db, State{ProviderID: "p1", FailureStreakID: "streak-p1", Scene: "summary", ConsecutiveFailures: 4, LastStatus: "failed", LastFailedAt: recent})
 
 	// 复测成功 -> recovered。
 	service.SetProviderRetester(&fakeRetester{outcome: ProviderRetestOutcome{OK: true, RequestID: "rq-ok"}, found: true})
@@ -246,6 +246,9 @@ func TestRetestRecoversAndFails(t *testing.T) {
 	state, _, _ := repo.GetState(context.Background(), "p1")
 	if state.ConsecutiveFailures != 0 {
 		t.Fatalf("after retest success consecutive = %d, want 0", state.ConsecutiveFailures)
+	}
+	if state.FailureStreakID != "" {
+		t.Fatalf("after retest success failure streak = %q, want empty", state.FailureStreakID)
 	}
 
 	// 再造一个失败节点，复测失败 -> 计数不变，仍 active。

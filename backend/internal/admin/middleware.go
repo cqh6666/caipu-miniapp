@@ -7,6 +7,8 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
+const AdminCSRFHeader = "X-CSRF-Token"
+
 type Middleware interface {
 	Require(next http.Handler) http.Handler
 }
@@ -37,9 +39,29 @@ func (m *AuthMiddleware) Require(next http.Handler) http.Handler {
 			common.WriteError(w, err)
 			return
 		}
+		if adminCSRFRequired(r.Method) {
+			fetchSite := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")))
+			if fetchSite != "" && fetchSite != "same-origin" {
+				common.WriteError(w, common.NewAppError(common.CodeForbidden, "cross-site admin request is forbidden", http.StatusForbidden))
+				return
+			}
+			if !m.tokens.ValidateCSRFToken(token, r.Header.Get(AdminCSRFHeader)) {
+				common.WriteError(w, common.NewAppError(common.CodeForbidden, "invalid admin CSRF token", http.StatusForbidden))
+				return
+			}
+		}
 
 		next.ServeHTTP(w, r.WithContext(common.WithCurrentAdminSubject(r.Context(), subject)))
 	})
+}
+
+func adminCSRFRequired(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	default:
+		return true
+	}
 }
 
 func readAdminToken(r *http.Request) string {
@@ -50,14 +72,5 @@ func readAdminToken(r *http.Request) string {
 	if cookie, err := r.Cookie(AdminCookieName); err == nil {
 		return strings.TrimSpace(cookie.Value)
 	}
-
-	header := strings.TrimSpace(r.Header.Get("Authorization"))
-	if header == "" {
-		return ""
-	}
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return ""
-	}
-	return strings.TrimSpace(parts[1])
+	return ""
 }

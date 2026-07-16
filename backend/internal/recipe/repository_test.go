@@ -112,6 +112,47 @@ INSERT INTO recipes (
 	assertAutoParseState(t, db, "attempt-track", ParseStatusProcessing, "xiaohongshu", "", "", "", "", "", "2026-05-01T00:02:00Z", 2)
 }
 
+func TestRepositoryRenewAutoParseLeaseRequiresCurrentClaim(t *testing.T) {
+	db := openRecipeCreateTestDB(t)
+	defer db.Close()
+
+	if _, err := db.Exec(`
+INSERT INTO recipes (id, title, parse_status, created_by, updated_by, created_at, updated_at)
+VALUES ('renew-parse', '续租测试', 'pending', 1, 1, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
+`); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewRepository(db)
+	claimA, marked, err := repo.MarkAutoParseProcessing(
+		context.Background(), "renew-parse", "bilibili", "2026-05-01T00:01:00Z", "2026-05-01T00:02:00Z",
+	)
+	if err != nil || !marked {
+		t.Fatalf("claim A marked=%t error=%v", marked, err)
+	}
+	if err := repo.RenewAutoParseLease(context.Background(), "renew-parse", claimA, "2026-05-01T00:10:00Z"); err != nil {
+		t.Fatalf("renew claim A error=%v", err)
+	}
+	if requeued, err := repo.RequeueStaleAutoParse(context.Background(), "2026-05-01T00:05:00Z", "2026-05-01T00:06:00Z"); err != nil || requeued != 0 {
+		t.Fatalf("fresh lease requeued=%d error=%v", requeued, err)
+	}
+	if requeued, err := repo.RequeueStaleAutoParse(context.Background(), "2026-05-01T00:11:00Z", "2026-05-01T00:12:00Z"); err != nil || requeued != 1 {
+		t.Fatalf("expired lease requeued=%d error=%v", requeued, err)
+	}
+	claimB, marked, err := repo.MarkAutoParseProcessing(
+		context.Background(), "renew-parse", "bilibili", "2026-05-01T00:13:00Z", "2026-05-01T00:20:00Z",
+	)
+	if err != nil || !marked {
+		t.Fatalf("claim B marked=%t error=%v", marked, err)
+	}
+	if err := repo.RenewAutoParseLease(context.Background(), "renew-parse", claimA, "2026-05-01T00:30:00Z"); !errors.Is(err, ErrStaleJobResult) {
+		t.Fatalf("old claim renewal error=%v, want stale result", err)
+	}
+	if err := repo.RenewAutoParseLease(context.Background(), "renew-parse", claimB, "2026-05-01T00:30:00Z"); err != nil {
+		t.Fatalf("current claim renewal error=%v", err)
+	}
+}
+
 func TestRepositoryMarkAutoParseRetryPendingStoresNextAttempt(t *testing.T) {
 	db := openRecipeCreateTestDB(t)
 	defer db.Close()
@@ -291,6 +332,8 @@ func TestRepositoryAutoParsePreservesHumanUpdateDuringClaim(t *testing.T) {
 	if _, err := db.Exec(`
 INSERT INTO kitchens (id, name, owner_user_id, created_at, updated_at, name_source)
 VALUES (1, '人工编辑厨房', 7, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'custom');
+INSERT INTO kitchen_members (kitchen_id, user_id, role, joined_at)
+VALUES (1, 7, 'owner', '2026-05-01T00:00:00Z');
 INSERT INTO recipes (
   id, kitchen_id, title, title_source, meal_type, status, parse_status,
   created_by, updated_by, created_at, updated_at

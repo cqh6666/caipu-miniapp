@@ -8,10 +8,21 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/ratelimit"
 )
 
 type Handler struct {
-	service *Service
+	service      *Service
+	previewGuard *ratelimit.Guard
+	acceptGuard  *ratelimit.Guard
+}
+
+func (h *Handler) SetRequestGuards(previewGuard, acceptGuard *ratelimit.Guard) {
+	if h == nil {
+		return
+	}
+	h.previewGuard = previewGuard
+	h.acceptGuard = acceptGuard
 }
 
 func NewHandler(service *Service) *Handler {
@@ -54,6 +65,10 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite token is required", http.StatusBadRequest))
 		return
 	}
+	if err := h.previewGuard.Check(r, token); err != nil {
+		common.WriteError(w, err)
+		return
+	}
 
 	item, err := h.service.Preview(r.Context(), token)
 	if err != nil {
@@ -72,6 +87,10 @@ func (h *Handler) PreviewByCode(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite code is required", http.StatusBadRequest))
 		return
 	}
+	if err := h.previewGuard.Check(r, code); err != nil {
+		common.WriteError(w, err)
+		return
+	}
 
 	item, err := h.service.PreviewByCode(r.Context(), code)
 	if err != nil {
@@ -88,6 +107,10 @@ func (h *Handler) ShareImage(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimSpace(chi.URLParam(r, "token"))
 	if token == "" {
 		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite token is required", http.StatusBadRequest))
+		return
+	}
+	if err := h.previewGuard.Check(r, token); err != nil {
+		common.WriteError(w, err)
 		return
 	}
 
@@ -117,6 +140,10 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite token is required", http.StatusBadRequest))
 		return
 	}
+	if err := h.acceptGuard.Check(r, token); err != nil {
+		common.WriteError(w, err)
+		return
+	}
 
 	result, err := h.service.Accept(r.Context(), userID, token)
 	if err != nil {
@@ -137,6 +164,10 @@ func (h *Handler) AcceptByCode(w http.ResponseWriter, r *http.Request) {
 	code := strings.TrimSpace(chi.URLParam(r, "code"))
 	if code == "" {
 		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invite code is required", http.StatusBadRequest))
+		return
+	}
+	if err := h.acceptGuard.Check(r, code); err != nil {
+		common.WriteError(w, err)
 		return
 	}
 

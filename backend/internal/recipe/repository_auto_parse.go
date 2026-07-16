@@ -17,7 +17,7 @@ func (r *Repository) ListPendingAutoParse(ctx context.Context, limit int) ([]Rec
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 	WHERE deleted_at IS NULL AND parse_status = ?
 	  AND (
@@ -93,7 +93,7 @@ func (r *Repository) ListLegacyAutoParseCandidates(ctx context.Context, limit in
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 WHERE deleted_at IS NULL
   AND COALESCE(parse_status, '') = ''
@@ -163,6 +163,30 @@ func (r *Repository) MarkAutoParseProcessing(ctx context.Context, recipeID, pars
 		return "", false, nil
 	}
 	return claimToken, true, nil
+}
+
+func (r *Repository) RenewAutoParseLease(ctx context.Context, recipeID, claimToken, leaseExpiresAt string) error {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+	SET parse_lease_expires_at = ?
+	WHERE id = ? AND deleted_at IS NULL AND parse_status = ? AND parse_claim_token = ?`,
+		nonNullableTrimmedString(leaseExpiresAt),
+		recipeID,
+		ParseStatusProcessing,
+		claimToken,
+	)
+	if err != nil {
+		return fmt.Errorf("renew recipe auto parse lease: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read auto parse lease renewal rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrStaleJobResult
+	}
+	return nil
 }
 
 func (r *Repository) MarkAutoParsePending(ctx context.Context, recipeID, parseSource, requestedAt string) (bool, error) {

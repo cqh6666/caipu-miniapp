@@ -37,20 +37,21 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 		if found {
 			for _, provider := range rawProviders {
 				item := ProviderConfig{
-					ID:             provider.ID,
-					Scene:          provider.Scene,
-					Name:           provider.Name,
-					Enabled:        provider.Enabled,
-					Priority:       provider.Priority,
-					Adapter:        provider.Adapter,
-					BaseURL:        provider.BaseURL,
-					Model:          provider.Model,
-					TimeoutSeconds: provider.TimeoutSeconds,
-					EndpointMode:   NormalizeProviderEndpointMode(extraStringValue(provider.Extra, providerExtraKeyEndpointMode)),
-					ResponseFormat: NormalizeProviderResponseFormat(extraStringValue(provider.Extra, providerExtraKeyResponseFormat)),
-					Extra:          cloneProviderExtra(provider.Extra),
-					APIKey:         provider.APIKeyCipher,
-					HasAPIKey:      strings.TrimSpace(provider.APIKeyCipher) != "",
+					ID:              provider.ID,
+					Scene:           provider.Scene,
+					Name:            provider.Name,
+					Enabled:         provider.Enabled,
+					Priority:        provider.Priority,
+					Adapter:         provider.Adapter,
+					BaseURL:         provider.BaseURL,
+					Model:           provider.Model,
+					TimeoutSeconds:  provider.TimeoutSeconds,
+					EndpointMode:    NormalizeProviderEndpointMode(extraStringValue(provider.Extra, providerExtraKeyEndpointMode)),
+					ResponseFormat:  NormalizeProviderResponseFormat(extraStringValue(provider.Extra, providerExtraKeyResponseFormat)),
+					Extra:           cloneProviderExtra(provider.Extra),
+					APIKey:          provider.APIKeyCipher,
+					apiKeyEncrypted: strings.TrimSpace(provider.APIKeyCipher) != "",
+					HasAPIKey:       strings.TrimSpace(provider.APIKeyCipher) != "",
 				}
 				if item.HasAPIKey {
 					plain, decryptErr := s.cipherBox.Decrypt(provider.APIKeyCipher)
@@ -74,6 +75,7 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 				return SceneConfig{}, nil, common.ErrInternal.WithErr(err)
 			}
 			item.APIKey = cipher
+			item.apiKeyEncrypted = true
 		}
 		currentPersistedMap[item.ID] = item
 	}
@@ -163,25 +165,30 @@ func (s *Service) prepareSceneMutation(ctx context.Context, scene Scene, input S
 		switch {
 		case provider.ClearAPIKey:
 			provider.APIKey = ""
+			provider.apiKeyEncrypted = false
 		case strings.TrimSpace(provider.APIKey) != "":
 			cipher, err := s.cipherBox.Encrypt(strings.TrimSpace(provider.APIKey))
 			if err != nil {
 				return SceneConfig{}, nil, common.ErrInternal.WithErr(err)
 			}
 			provider.APIKey = cipher
+			provider.apiKeyEncrypted = true
 			provider.APIKeyMasked = maskSecret(strings.TrimSpace(input.Providers[index].APIKey))
 			provider.HasAPIKey = true
 		case existing.HasAPIKey:
 			provider.APIKey = existing.APIKey
+			provider.apiKeyEncrypted = existing.apiKeyEncrypted
 			provider.APIKeyMasked = existing.APIKeyMasked
 			provider.HasAPIKey = true
 		default:
 			provider.APIKey = ""
+			provider.apiKeyEncrypted = false
 			provider.APIKeyMasked = ""
 			provider.HasAPIKey = false
 		}
 		if existing.APIKey != "" && provider.APIKey == "" && !provider.ClearAPIKey {
 			provider.APIKey = existing.APIKey
+			provider.apiKeyEncrypted = existing.apiKeyEncrypted
 			provider.APIKeyMasked = existing.APIKeyMasked
 			provider.HasAPIKey = true
 		}

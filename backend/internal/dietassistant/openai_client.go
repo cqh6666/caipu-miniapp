@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
 )
 
 type openAIChatRequest struct {
@@ -104,20 +106,30 @@ func (s *Service) createChatCompletion(ctx context.Context, payload openAIChatRe
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return openAIChatResponse{}, ctxErr
+		}
 		return openAIChatResponse{}, common.NewAppError(common.CodeInternalServer, "diet assistant upstream request failed", http.StatusBadGateway).WithErr(err)
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+	data, err := upstream.ReadAll(resp.Body, maxDietAssistantJSONResponseBytes)
 	if err != nil {
+		if upstream.IsResponseTooLarge(err) {
+			return openAIChatResponse{}, dietAssistantLimitError("diet assistant upstream response exceeded size limit", err)
+		}
 		return openAIChatResponse{}, common.NewAppError(common.CodeInternalServer, "diet assistant upstream response failed", http.StatusBadGateway).WithErr(err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = fmt.Sprintf("diet assistant upstream returned status %d", resp.StatusCode)
+		appErr := common.NewAppError(
+			common.CodeInternalServer,
+			fmt.Sprintf("diet assistant upstream returned status %d", resp.StatusCode),
+			http.StatusBadGateway,
+		)
+		if cause := logging.SanitizeText(string(data)); cause != "" {
+			appErr = appErr.WithErr(errors.New(cause))
 		}
-		return openAIChatResponse{}, common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
+		return openAIChatResponse{}, appErr
 	}
 
 	var result openAIChatResponse
@@ -125,7 +137,8 @@ func (s *Service) createChatCompletion(ctx context.Context, payload openAIChatRe
 		return openAIChatResponse{}, common.NewAppError(common.CodeInternalServer, "invalid diet assistant upstream response", http.StatusBadGateway).WithErr(err)
 	}
 	if result.Error != nil && strings.TrimSpace(result.Error.Message) != "" {
-		return openAIChatResponse{}, common.NewAppError(common.CodeInternalServer, strings.TrimSpace(result.Error.Message), http.StatusBadGateway)
+		return openAIChatResponse{}, common.NewAppError(common.CodeInternalServer, "diet assistant upstream returned an error", http.StatusBadGateway).
+			WithErr(errors.New(logging.SanitizeText(result.Error.Message)))
 	}
 	return result, nil
 }
@@ -198,11 +211,23 @@ type openAIStreamChunk struct {
 }
 
 func consumeOpenAIStream(reader io.Reader, emit func(StreamEvent) error) error {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	buffered := bufio.NewReaderSize(reader, 64*1024)
+	for {
+		rawLine, err := readBoundedStreamLine(buffered, maxDietAssistantStreamEventBytes)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			if errors.Is(err, errStreamEventTooLarge) {
+				return dietAssistantLimitError("diet assistant stream event exceeded size limit", err)
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			return common.NewAppError(common.CodeInternalServer, "diet assistant stream interrupted", http.StatusBadGateway).WithErr(err)
+		}
 
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := strings.TrimSpace(string(rawLine))
 		if line == "" || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "event:") {
 			continue
 		}
@@ -223,7 +248,8 @@ func consumeOpenAIStream(reader io.Reader, emit func(StreamEvent) error) error {
 			return common.NewAppError(common.CodeInternalServer, "invalid diet assistant stream chunk", http.StatusBadGateway).WithErr(err)
 		}
 		if chunk.Error != nil && strings.TrimSpace(chunk.Error.Message) != "" {
-			return common.NewAppError(common.CodeInternalServer, strings.TrimSpace(chunk.Error.Message), http.StatusBadGateway)
+			return common.NewAppError(common.CodeInternalServer, "diet assistant upstream stream returned an error", http.StatusBadGateway).
+				WithErr(errors.New(logging.SanitizeText(chunk.Error.Message)))
 		}
 
 		for _, choice := range chunk.Choices {
@@ -237,13 +263,28 @@ func consumeOpenAIStream(reader io.Reader, emit func(StreamEvent) error) error {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return err
-		}
-		return common.NewAppError(common.CodeInternalServer, "diet assistant stream interrupted", http.StatusBadGateway).WithErr(err)
-	}
 	return emit(StreamEvent{Type: "done"})
+}
+
+func readBoundedStreamLine(reader *bufio.Reader, maxBytes int) ([]byte, error) {
+	line := make([]byte, 0, min(maxBytes, 64*1024))
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		if len(line)+len(fragment) > maxBytes {
+			return nil, errStreamEventTooLarge
+		}
+		line = append(line, fragment...)
+		switch {
+		case err == nil:
+			return line, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF) && len(line) > 0:
+			return line, nil
+		default:
+			return nil, err
+		}
+	}
 }
 
 func extractDeltaContent(raw json.RawMessage) string {

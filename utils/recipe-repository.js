@@ -87,7 +87,10 @@ export async function createRecipeFromDraft(draft = {}) {
 }
 
 export async function updateRecipeById(recipeId, updates = {}) {
-	const current = await getRecipeById(recipeId)
+	let current = await getRecipeById(recipeId)
+	if (Number(current?.version) < 1) {
+		current = await getRecipeById(recipeId, { preferCache: false })
+	}
 	const hasImageArray = Object.prototype.hasOwnProperty.call(updates, 'images') || Object.prototype.hasOwnProperty.call(updates, 'imageUrls')
 	const hasSingleImage = Object.prototype.hasOwnProperty.call(updates, 'image') || Object.prototype.hasOwnProperty.call(updates, 'imageUrl')
 	const imageSources = hasImageArray
@@ -98,18 +101,37 @@ export async function updateRecipeById(recipeId, updates = {}) {
 		? mergeUpdatedParsedContent(current.parsedContent, updates.parsedContent || {})
 		: current.parsedContent
 	const payload = buildRecipePayload({ ...current, ...updates, parsedContent, images: imageUrls })
-	const item = await updateRecipe(recipeId, payload)
-	return upsertRecipeInCache(item)
+	try {
+		const item = await updateRecipe(recipeId, payload)
+		return upsertRecipeInCache(item)
+	} catch (error) {
+		return handleRecipeVersionConflict(recipeId, error)
+	}
 }
 
 export async function toggleRecipeStatusById(recipeId) {
-	const current = await getRecipeById(recipeId)
-	const item = await updateRecipeStatus(recipeId, current.status === 'done' ? 'wishlist' : 'done')
-	return upsertRecipeInCache(item)
+	let current = await getRecipeById(recipeId)
+	if (Number(current?.version) < 1) {
+		current = await getRecipeById(recipeId, { preferCache: false })
+	}
+	try {
+		const item = await updateRecipeStatus(recipeId, current.status === 'done' ? 'wishlist' : 'done', current.version)
+		return upsertRecipeInCache(item)
+	} catch (error) {
+		return handleRecipeVersionConflict(recipeId, error)
+	}
 }
 
 export async function setRecipePinnedById(recipeId, pinned) {
-	return upsertRecipeInCache(await updateRecipePinned(recipeId, pinned))
+	let current = await getRecipeById(recipeId)
+	if (Number(current?.version) < 1) {
+		current = await getRecipeById(recipeId, { preferCache: false })
+	}
+	try {
+		return upsertRecipeInCache(await updateRecipePinned(recipeId, pinned, current.version))
+	} catch (error) {
+		return handleRecipeVersionConflict(recipeId, error)
+	}
 }
 
 export async function reparseRecipeById(recipeId) {
@@ -125,4 +147,17 @@ export async function deleteRecipeById(recipeId) {
 	await deleteRecipe(recipeId)
 	removeRecipeFromCache(recipeId, current?.kitchenId || getCurrentKitchenId())
 	return true
+}
+
+async function handleRecipeVersionConflict(recipeId, error) {
+	if (Number(error?.code) !== 40900) throw error
+	try {
+		const latest = await getRecipeDetail(recipeId)
+		upsertRecipeInCache(latest)
+	} catch (_) {}
+	const conflict = new Error('菜谱已被其他成员更新，已刷新最新内容，请确认后重试')
+	conflict.code = 40900
+	conflict.statusCode = 409
+	conflict.originalError = error
+	throw conflict
 }

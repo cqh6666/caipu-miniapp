@@ -64,6 +64,7 @@ func scanRecipe(s scanner) (Recipe, error) {
 		&item.UpdatedBy,
 		&item.CreatedAt,
 		&item.UpdatedAt,
+		&item.Version,
 	)
 	if err != nil {
 		return Recipe{}, err
@@ -120,8 +121,8 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 	flowchart_status, flowchart_error, flowchart_requested_at, flowchart_finished_at,
 	parse_status, parse_source, parse_error, parse_requested_at, parse_finished_at,
 	parse_attempts, parse_next_attempt_at, parse_last_error_type, parse_processing_started_at, parsed_content_edited,
-	pinned_at, done_at, created_by, updated_by, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	pinned_at, done_at, created_by, updated_by, created_at, updated_at, version
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID,
 		item.KitchenID,
 		item.Title,
@@ -162,6 +163,7 @@ func insertRecipe(ctx context.Context, tx *sql.Tx, item Recipe) error {
 		item.UpdatedBy,
 		item.CreatedAt,
 		item.UpdatedAt,
+		item.Version,
 	); err != nil {
 		return fmt.Errorf("insert recipe: %w", err)
 	}
@@ -177,7 +179,7 @@ func findRecipeByIDTx(ctx context.Context, tx *sql.Tx, recipeID string) (Recipe,
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 WHERE id = ? AND deleted_at IS NULL
 LIMIT 1`

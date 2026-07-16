@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,18 +33,34 @@ type Service struct {
 	publicBaseURL     string
 	maxImageSizeBytes int64
 	httpClient        *http.Client
+	logger            *slog.Logger
 }
 
 func NewService(uploadDir, publicBaseURL string, maxImageSizeMB int64) *Service {
+	return newService(uploadDir, publicBaseURL, maxImageSizeMB, nil, nil)
+}
+
+func NewServiceWithLogger(uploadDir, publicBaseURL string, maxImageSizeMB int64, logger *slog.Logger) *Service {
+	return newService(uploadDir, publicBaseURL, maxImageSizeMB, nil, logger)
+}
+
+func newService(uploadDir, publicBaseURL string, maxImageSizeMB int64, client *http.Client, logger *slog.Logger) *Service {
 	if maxImageSizeMB <= 0 {
 		maxImageSizeMB = 10
+	}
+	if client == nil {
+		client = securehttp.NewClient(20 * time.Second)
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	return &Service{
 		uploadDir:         uploadDir,
 		publicBaseURL:     strings.TrimRight(strings.TrimSpace(publicBaseURL), "/"),
 		maxImageSizeBytes: maxImageSizeMB * 1024 * 1024,
-		httpClient:        securehttp.NewClient(20 * time.Second),
+		httpClient:        client,
+		logger:            logger,
 	}
 }
 
@@ -51,11 +68,7 @@ func NewService(uploadDir, publicBaseURL string, maxImageSizeMB int64) *Service 
 // tests. Production code should use NewService so untrusted destinations pass
 // through the guarded DNS and redirect policy.
 func NewServiceWithHTTPClient(uploadDir, publicBaseURL string, maxImageSizeMB int64, client *http.Client) *Service {
-	service := NewService(uploadDir, publicBaseURL, maxImageSizeMB)
-	if client != nil {
-		service.httpClient = client
-	}
-	return service
+	return newService(uploadDir, publicBaseURL, maxImageSizeMB, client, nil)
 }
 
 func (s *Service) MaxImageSizeBytes() int64 {
@@ -93,8 +106,13 @@ func (s *Service) SaveRemoteImage(ctx context.Context, sourceURL string) (Image,
 	}
 
 	parsedURL, err := url.Parse(sourceURL)
-	if err != nil || securehttp.ValidateURL(parsedURL) != nil {
-		return Image{}, common.NewAppError(common.CodeBadRequest, "remote image URL is not allowed", http.StatusBadRequest)
+	if err != nil {
+		s.logRemoteImageRejection(nil, err)
+		return Image{}, common.NewAppError(common.CodeBadRequest, "remote image URL is not allowed", http.StatusBadRequest).WithErr(err)
+	}
+	if err := securehttp.ValidateURL(parsedURL); err != nil {
+		s.logRemoteImageRejection(parsedURL, err)
+		return Image{}, common.NewAppError(common.CodeBadRequest, "remote image URL is not allowed", http.StatusBadRequest).WithErr(err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
 	if err != nil {
@@ -105,6 +123,7 @@ func (s *Service) SaveRemoteImage(ctx context.Context, sourceURL string) (Image,
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if errors.Is(err, securehttp.ErrBlockedAddress) || errors.Is(err, securehttp.ErrInvalidURL) {
+			s.logRemoteImageRejection(parsedURL, err)
 			return Image{}, common.NewAppError(common.CodeBadRequest, "remote image URL is not allowed", http.StatusBadRequest).WithErr(err)
 		}
 		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("download remote image: %w", err))
@@ -132,6 +151,36 @@ func (s *Service) SaveRemoteImage(ctx context.Context, sourceURL string) (Image,
 	}
 
 	return s.saveImageReader("", nopReadSeekCloser{Reader: bytes.NewReader(data)}, contentType)
+}
+
+func (s *Service) logRemoteImageRejection(target *url.URL, err error) {
+	logger := s.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	reason := "invalid_url"
+	if errors.Is(err, securehttp.ErrBlockedAddress) {
+		reason = "blocked_address"
+	}
+	fields := []any{
+		"securityEvent", "outbound_request_blocked",
+		"reason", reason,
+	}
+	if target != nil {
+		fields = append(fields,
+			"scheme", strings.ToLower(strings.TrimSpace(target.Scheme)),
+			"host", truncateLogValue(strings.ToLower(strings.TrimSpace(target.Hostname())), 255),
+		)
+	}
+	logger.Warn("blocked remote image download", fields...)
+}
+
+func truncateLogValue(value string, maxRunes int) string {
+	runes := []rune(value)
+	if maxRunes <= 0 || len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
 }
 
 func (s *Service) IsManagedImageURL(raw string) bool {
@@ -193,16 +242,41 @@ func (s *Service) saveImageReader(requestBaseURL string, file readSeekCloser, co
 
 	fileName := fileID + extension
 	absolutePath := filepath.Join(absoluteDir, fileName)
-	dst, err := os.Create(absolutePath)
+	dst, err := os.CreateTemp(absoluteDir, "."+fileName+".*.part")
 	if err != nil {
 		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("create upload file: %w", err))
 	}
-	defer dst.Close()
+	temporaryPath := dst.Name()
+	committed := false
+	defer func() {
+		_ = dst.Close()
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
 
 	hasher := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(dst, hasher), file); err != nil {
+	written, err := io.Copy(io.MultiWriter(dst, hasher), io.LimitReader(file, s.maxImageSizeBytes+1))
+	if err != nil {
 		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("save upload file: %w", err))
 	}
+	if written > s.maxImageSizeBytes {
+		return Image{}, common.NewAppError(
+			common.CodePayloadTooLarge,
+			"image exceeds upload size limit",
+			http.StatusRequestEntityTooLarge,
+		)
+	}
+	if err := dst.Chmod(0o644); err != nil {
+		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("set upload file permissions: %w", err))
+	}
+	if err := dst.Close(); err != nil {
+		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("close upload file: %w", err))
+	}
+	if err := os.Rename(temporaryPath, absolutePath); err != nil {
+		return Image{}, common.ErrInternal.WithErr(fmt.Errorf("commit upload file: %w", err))
+	}
+	committed = true
 
 	relativePath := "/" + strings.TrimLeft(filepath.ToSlash(filepath.Join(relativeDir, fileName)), "/")
 	return Image{

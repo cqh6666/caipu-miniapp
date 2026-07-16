@@ -18,11 +18,12 @@ type ChatStreamRequest struct {
 }
 
 type StreamEvent struct {
-	Type     string          `json:"type"`
-	Delta    string          `json:"delta,omitempty"`
-	Message  string          `json:"message,omitempty"`
-	ToolName string          `json:"toolName,omitempty"`
-	Mutation *StreamMutation `json:"mutation,omitempty"`
+	Type      string          `json:"type"`
+	Delta     string          `json:"delta,omitempty"`
+	Message   string          `json:"message,omitempty"`
+	ToolName  string          `json:"toolName,omitempty"`
+	RequestID string          `json:"requestId,omitempty"`
+	Mutation  *StreamMutation `json:"mutation,omitempty"`
 }
 
 type StreamMutation struct {

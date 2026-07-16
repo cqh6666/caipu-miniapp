@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 type Repository struct {
@@ -146,6 +149,10 @@ func (r *Repository) ReplaceDraft(ctx context.Context, plan Plan, touchedAt stri
 	if err != nil {
 		return fmt.Errorf("begin replace meal draft tx: %w", err)
 	}
+	if err := ensureMealPlanWriteAccessTx(ctx, tx, plan.UpdatedBy, plan.KitchenID, plan.Items); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 
 	if _, err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusDraft); err != nil {
 		_ = tx.Rollback()
@@ -176,6 +183,10 @@ func (r *Repository) ReplaceSubmitted(ctx context.Context, plan Plan, touchedAt 
 	if err != nil {
 		return fmt.Errorf("begin replace submitted meal plan tx: %w", err)
 	}
+	if err := ensureMealPlanWriteAccessTx(ctx, tx, plan.UpdatedBy, plan.KitchenID, plan.Items); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 
 	if _, err := deletePlanByKitchenDateStatusTx(ctx, tx, plan.KitchenID, plan.PlanDate, StatusSubmitted); err != nil {
 		_ = tx.Rollback()
@@ -201,10 +212,14 @@ func (r *Repository) ReplaceSubmitted(ctx context.Context, plan Plan, touchedAt 
 	return nil
 }
 
-func (r *Repository) DeleteByKitchenDateStatus(ctx context.Context, kitchenID int64, planDate, status, touchedAt string) (bool, error) {
+func (r *Repository) DeleteByKitchenDateStatus(ctx context.Context, userID, kitchenID int64, planDate, status, touchedAt string) (bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin delete meal plan tx: %w", err)
+	}
+	if err := ensureMealPlanWriteAccessTx(ctx, tx, userID, kitchenID, nil); err != nil {
+		_ = tx.Rollback()
+		return false, err
 	}
 
 	deletedCount, err := deletePlanByKitchenDateStatusTx(ctx, tx, kitchenID, planDate, status)
@@ -226,6 +241,50 @@ func (r *Repository) DeleteByKitchenDateStatus(ctx context.Context, kitchenID in
 	}
 
 	return true, nil
+}
+
+func ensureMealPlanWriteAccessTx(ctx context.Context, tx *sql.Tx, userID, kitchenID int64, items []Item) error {
+	var membership int
+	err := tx.QueryRowContext(
+		ctx,
+		`SELECT 1 FROM kitchen_members WHERE kitchen_id = ? AND user_id = ? LIMIT 1`,
+		kitchenID,
+		userID,
+	).Scan(&membership)
+	if errors.Is(err, sql.ErrNoRows) {
+		return common.ErrForbidden
+	}
+	if err != nil {
+		return fmt.Errorf("check meal plan write membership: %w", err)
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		recipeID := strings.TrimSpace(item.RecipeID)
+		if recipeID == "" {
+			return common.NewAppError(common.CodeBadRequest, "recipeId is required", http.StatusBadRequest)
+		}
+		seen[recipeID] = struct{}{}
+	}
+	for recipeID := range seen {
+		var exists int
+		err := tx.QueryRowContext(
+			ctx,
+			`SELECT 1 FROM recipes WHERE id = ? AND kitchen_id = ? AND deleted_at IS NULL LIMIT 1`,
+			recipeID,
+			kitchenID,
+		).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return common.NewAppError(common.CodeBadRequest, "recipeId must belong to the current kitchen", http.StatusBadRequest)
+		}
+		if err != nil {
+			return fmt.Errorf("check meal plan recipe: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *Repository) listItemsByPlanIDs(ctx context.Context, planIDs []int64) (map[int64][]Item, error) {

@@ -149,7 +149,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.service.UpdateStatus(r.Context(), userID, recipeID, req.Status)
+	item, err := h.service.UpdateStatus(r.Context(), userID, recipeID, req.Status, req.Version)
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -179,7 +179,7 @@ func (h *Handler) UpdatePinned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.service.UpdatePinned(r.Context(), userID, recipeID, req.Pinned)
+	item, err := h.service.UpdatePinned(r.Context(), userID, recipeID, req.Pinned, req.Version)
 	if err != nil {
 		common.WriteError(w, err)
 		return

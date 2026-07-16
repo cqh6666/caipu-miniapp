@@ -2,6 +2,7 @@ package wechat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -84,8 +86,30 @@ func TestCode2SessionReportsTransportAndDecodeErrors(t *testing.T) {
 	client.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return jsonResponse(req, http.StatusOK, "not-json"), nil
 	})
-	if _, err := client.Code2Session(context.Background(), "code"); err == nil || !strings.Contains(err.Error(), "decode wechat response") {
-		t.Fatalf("expected decode error, got %v", err)
+	_, err := client.Code2Session(context.Background(), "code")
+	var appErr *common.AppError
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &appErr) || appErr.HTTPStatus != http.StatusBadGateway || appErr.Message != "invalid wechat upstream response" {
+		t.Fatalf("expected stable decode AppError, got %T %v", err, err)
+	}
+	if !errors.As(err, &syntaxErr) {
+		t.Fatalf("expected retained JSON cause, got %T %v", err, err)
+	}
+}
+
+func TestCode2SessionRejectsOversizedResponse(t *testing.T) {
+	client := NewClient("app", "secret")
+	client.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return jsonResponse(req, http.StatusOK, strings.Repeat("x", int(maxCode2SessionResponseBytes)+1)), nil
+	})
+
+	_, err := client.Code2Session(context.Background(), "code")
+	var appErr *common.AppError
+	if !errors.As(err, &appErr) || appErr.HTTPStatus != http.StatusBadGateway || appErr.Message != "wechat upstream response exceeded size limit" {
+		t.Fatalf("unexpected error: %T %v", err, err)
+	}
+	if !errors.Is(err, upstream.ErrResponseTooLarge) {
+		t.Fatalf("error does not retain size cause: %v", err)
 	}
 }
 

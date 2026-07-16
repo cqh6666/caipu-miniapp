@@ -90,6 +90,7 @@ type Event struct {
 
 type State struct {
 	ProviderID              string
+	FailureStreakID         string
 	Scene                   string
 	ProviderName            string
 	Model                   string
@@ -111,6 +112,26 @@ type State struct {
 	MuteReason              string
 	LastConfigChangedAt     string
 	UpdatedAt               string
+}
+
+type Delivery struct {
+	EventID         string
+	FailureStreakID string
+	ProviderID      string
+	Scene           string
+	TriggerSource   string
+	TargetType      string
+	TargetID        string
+	RequestID       string
+	Status          string
+	AttemptCount    int
+	ClaimToken      string
+	ClaimExpiresAt  string
+	AvailableAt     string
+	LastError       string
+	CreatedAt       string
+	UpdatedAt       string
+	SentAt          string
 }
 
 type Overview struct {

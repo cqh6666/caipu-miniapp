@@ -9,6 +9,7 @@ type User struct {
 	AvatarURL            string `json:"avatarUrl,omitempty"`
 	IsAdmin              bool   `json:"isAdmin"`
 	CanManageAppSettings bool   `json:"canManageAppSettings"`
+	TokenVersion         int64  `json:"-"`
 	CreatedAt            string `json:"createdAt,omitempty"`
 	UpdatedAt            string `json:"updatedAt,omitempty"`
 }

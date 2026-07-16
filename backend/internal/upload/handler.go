@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -20,6 +21,11 @@ func (h *Handler) UploadImage(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 
 	if err := r.ParseMultipartForm(bodyLimit); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			common.WriteError(w, common.ErrPayloadTooLarge.WithErr(err))
+			return
+		}
 		common.WriteError(w, common.NewAppError(common.CodeBadRequest, "invalid upload payload", http.StatusBadRequest).WithErr(err))
 		return
 	}
@@ -45,14 +51,5 @@ func requestBaseURL(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if forwardedProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
-		scheme = forwardedProto
-	}
-
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = r.Host
-	}
-
-	return scheme + "://" + host
+	return scheme + "://" + strings.TrimSpace(r.Host)
 }

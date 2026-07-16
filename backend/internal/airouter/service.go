@@ -39,6 +39,7 @@ type Service struct {
 	testInputBuilder TestInputBuilder
 	tracker          audit.Tracker
 	alertTracker     aialert.Tracker
+	httpDoer         HTTPDoer
 	breaker          *breakerStore
 	roundRobinMu     sync.Mutex
 	roundRobinNext   map[Scene]int
@@ -54,12 +55,24 @@ func (s *Service) ConfigureCredentialKeys(secret, version string, previous []cre
 }
 
 func NewService(repo *Repository, secret string, compatibility CompatibilityLoader, tracker audit.Tracker, alertTracker aialert.Tracker) *Service {
+	return NewServiceWithOptions(repo, secret, compatibility, tracker, alertTracker, ServiceOptions{})
+}
+
+func NewServiceWithOptions(
+	repo *Repository,
+	secret string,
+	compatibility CompatibilityLoader,
+	tracker audit.Tracker,
+	alertTracker aialert.Tracker,
+	opts ServiceOptions,
+) *Service {
 	return &Service{
 		repo:           repo,
 		cipherBox:      newCipherBox(secret),
 		compatibility:  compatibility,
 		tracker:        tracker,
 		alertTracker:   alertTracker,
+		httpDoer:       normalizeHTTPDoer(opts.HTTPDoer),
 		breaker:        newBreakerStore(),
 		roundRobinNext: make(map[Scene]int),
 	}
@@ -82,6 +95,7 @@ func (s *Service) ListScenes(ctx context.Context) ([]SceneSummaryView, error) {
 		activeCount := len(enabledProviders(config.Providers))
 		items = append(items, SceneSummaryView{
 			Scene:               scene,
+			Version:             config.Version,
 			Enabled:             config.Enabled,
 			Strategy:            config.Strategy,
 			ProviderCount:       len(config.Providers),
@@ -147,6 +161,9 @@ func (s *Service) SaveScene(ctx context.Context, subject, requestID string, scen
 	if err != nil {
 		return SceneConfig{}, err
 	}
+	if normalized.Version < 0 {
+		return SceneConfig{}, common.NewAppError(common.CodeBadRequest, "version must not be negative", http.StatusBadRequest)
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	tx, err := s.repo.db.BeginTx(ctx, nil)
@@ -156,9 +173,10 @@ func (s *Service) SaveScene(ctx context.Context, subject, requestID string, scen
 
 	retryPolicyJSON, _ := json.Marshal(normalized.RetryOn)
 	requestOptionsJSON, _ := json.Marshal(normalized.RequestOptions)
-	_, err = tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 INSERT INTO ai_route_scenes (
 	scene,
+	version,
 	enabled,
 	strategy,
 	max_attempts,
@@ -168,8 +186,11 @@ INSERT INTO ai_route_scenes (
 	request_options_json,
 	updated_by_subject,
 	updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+)
+SELECT ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?
+WHERE ? = 0 OR EXISTS (SELECT 1 FROM ai_route_scenes WHERE scene = ?)
 ON CONFLICT(scene) DO UPDATE SET
+	version = ai_route_scenes.version + 1,
 	enabled = excluded.enabled,
 	strategy = excluded.strategy,
 	max_attempts = excluded.max_attempts,
@@ -179,6 +200,7 @@ ON CONFLICT(scene) DO UPDATE SET
 	request_options_json = excluded.request_options_json,
 	updated_by_subject = excluded.updated_by_subject,
 	updated_at = excluded.updated_at
+WHERE ai_route_scenes.version = ?
 `,
 		string(scene),
 		boolToInt(normalized.Enabled),
@@ -190,10 +212,22 @@ ON CONFLICT(scene) DO UPDATE SET
 		string(requestOptionsJSON),
 		strings.TrimSpace(subject),
 		now,
+		normalized.Version,
+		string(scene),
+		normalized.Version,
 	)
 	if err != nil {
 		_ = tx.Rollback()
 		return SceneConfig{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return SceneConfig{}, err
+	}
+	if affected != 1 {
+		_ = tx.Rollback()
+		return SceneConfig{}, common.NewAppError(common.CodeConflict, "AI 路由配置已被其他会话更新，请刷新后重试", http.StatusConflict)
 	}
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM ai_route_providers WHERE scene = ?`, string(scene)); err != nil {
@@ -393,6 +427,7 @@ func (s *Service) compatibilityScene(ctx context.Context, scene Scene) SceneConf
 func (s *Service) buildSceneConfig(record sceneRecord, providers []providerRecord) (SceneConfig, error) {
 	config := SceneConfig{
 		Scene:       record.Scene,
+		Version:     record.Version,
 		Enabled:     record.Enabled,
 		Strategy:    record.Strategy,
 		MaxAttempts: record.MaxAttempts,
@@ -408,23 +443,24 @@ func (s *Service) buildSceneConfig(record sceneRecord, providers []providerRecor
 	}
 	for _, provider := range providers {
 		view := ProviderConfig{
-			ID:             provider.ID,
-			Scene:          provider.Scene,
-			Name:           provider.Name,
-			Adapter:        provider.Adapter,
-			Enabled:        provider.Enabled,
-			Priority:       provider.Priority,
-			Weight:         provider.Weight,
-			BaseURL:        strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/"),
-			APIKey:         provider.APIKeyCipher,
-			Model:          strings.TrimSpace(provider.Model),
-			TimeoutSeconds: provider.TimeoutSeconds,
-			EndpointMode:   NormalizeProviderEndpointMode(extraStringValue(provider.Extra, providerExtraKeyEndpointMode)),
-			ResponseFormat: NormalizeProviderResponseFormat(extraStringValue(provider.Extra, providerExtraKeyResponseFormat)),
-			Extra:          cloneProviderExtra(provider.Extra),
-			UpdatedBy:      provider.UpdatedBy,
-			UpdatedAt:      provider.UpdatedAt,
-			HasAPIKey:      strings.TrimSpace(provider.APIKeyCipher) != "",
+			ID:              provider.ID,
+			Scene:           provider.Scene,
+			Name:            provider.Name,
+			Adapter:         provider.Adapter,
+			Enabled:         provider.Enabled,
+			Priority:        provider.Priority,
+			Weight:          provider.Weight,
+			BaseURL:         strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/"),
+			APIKey:          provider.APIKeyCipher,
+			apiKeyEncrypted: strings.TrimSpace(provider.APIKeyCipher) != "",
+			Model:           strings.TrimSpace(provider.Model),
+			TimeoutSeconds:  provider.TimeoutSeconds,
+			EndpointMode:    NormalizeProviderEndpointMode(extraStringValue(provider.Extra, providerExtraKeyEndpointMode)),
+			ResponseFormat:  NormalizeProviderResponseFormat(extraStringValue(provider.Extra, providerExtraKeyResponseFormat)),
+			Extra:           cloneProviderExtra(provider.Extra),
+			UpdatedBy:       provider.UpdatedBy,
+			UpdatedAt:       provider.UpdatedAt,
+			HasAPIKey:       strings.TrimSpace(provider.APIKeyCipher) != "",
 		}
 		if view.HasAPIKey {
 			plain, err := s.cipherBox.Decrypt(provider.APIKeyCipher)

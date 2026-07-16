@@ -43,7 +43,7 @@ func (r *Repository) ListPendingFlowcharts(ctx context.Context, limit int) ([]Re
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 	WHERE deleted_at IS NULL AND flowchart_status = ?
 ORDER BY COALESCE(NULLIF(flowchart_requested_at, ''), updated_at, created_at) ASC, id ASC
@@ -118,7 +118,7 @@ func (r *Repository) ListAutoFlowchartCandidates(ctx context.Context, limit int)
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 WHERE deleted_at IS NULL
   AND COALESCE(flowchart_status, '') IN (?, ?)
@@ -199,6 +199,30 @@ func (r *Repository) MarkFlowchartProcessing(ctx context.Context, recipeID, leas
 		return "", false, nil
 	}
 	return claimToken, true, nil
+}
+
+func (r *Repository) RenewFlowchartLease(ctx context.Context, recipeID, claimToken, leaseExpiresAt string) error {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE recipes
+	SET flowchart_lease_expires_at = ?
+	WHERE id = ? AND deleted_at IS NULL AND flowchart_status = ? AND flowchart_claim_token = ?`,
+		nonNullableTrimmedString(leaseExpiresAt),
+		recipeID,
+		FlowchartStatusProcessing,
+		claimToken,
+	)
+	if err != nil {
+		return fmt.Errorf("renew recipe flowchart lease: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read flowchart lease renewal rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrStaleJobResult
+	}
+	return nil
 }
 
 func (r *Repository) MarkAutoFlowchartPending(ctx context.Context, recipeID, requestedAt string) (bool, error) {

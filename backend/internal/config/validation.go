@@ -3,6 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"path"
 	"strings"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
@@ -66,6 +69,9 @@ func validateAndFinalize(cfg Config) (Config, error) {
 		cfg.AppEnv = "local"
 	}
 	if cfg.AppEnv != "local" {
+		if cfg.AppSettingsAccessMode == "all" {
+			return Config{}, errors.New("APP_SETTINGS_ACCESS_MODE=all is only allowed in local mode")
+		}
 		secrets := []struct {
 			name  string
 			value string
@@ -83,6 +89,21 @@ func validateAndFinalize(cfg Config) (Config, error) {
 			return Config{}, errors.New("JWT_SECRET, ADMIN_JWT_SECRET, and CREDENTIALS_SECRET must be independent outside local mode")
 		}
 	}
+	adminCookiePath, err := normalizeAdminCookiePath(cfg.AdminCookiePath)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.AdminCookiePath = adminCookiePath
+	uploadPublicBaseURL, err := normalizeUploadPublicBaseURL(cfg.UploadPublicBaseURL, cfg.AppEnv != "local")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.UploadPublicBaseURL = uploadPublicBaseURL
+	healthBackendBaseURL, err := normalizeHealthBackendBaseURL(cfg.HealthBackendBaseURL, cfg.AppAddr)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.HealthBackendBaseURL = healthBackendBaseURL
 	previousKeys, err := credentialcipher.ParsePreviousKeys(cfg.CredentialsPreviousKeys)
 	if err != nil {
 		return Config{}, err
@@ -101,6 +122,67 @@ func validateAndFinalize(cfg Config) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func normalizeHealthBackendBaseURL(raw, appAddr string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		_, port, err := net.SplitHostPort(strings.TrimSpace(appAddr))
+		if err != nil || strings.TrimSpace(port) == "" {
+			port = "8080"
+		}
+		raw = "http://127.0.0.1:" + port
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("HEALTH_BACKEND_BASE_URL must be an absolute HTTP(S) URL without credentials, query, or fragment")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("HEALTH_BACKEND_BASE_URL must use HTTP or HTTPS")
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return "", errors.New("HEALTH_BACKEND_BASE_URL must not contain a path")
+	}
+	parsed.Path = ""
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func normalizeAdminCookiePath(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		raw = defaultAdminCookiePath
+	}
+	if raw == "/" || !strings.HasPrefix(raw, "/") || path.Clean(raw) != raw || strings.ContainsAny(raw, ";\r\n") || !strings.HasSuffix(raw, "/admin") {
+		return "", errors.New("ADMIN_COOKIE_PATH must be an absolute normalized path ending in /admin")
+	}
+	return raw, nil
+}
+
+func normalizeUploadPublicBaseURL(raw string, requireHTTPS bool) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		if requireHTTPS {
+			return "", errors.New("UPLOAD_PUBLIC_BASE_URL is required outside local mode")
+		}
+		return "", nil
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || !parsed.IsAbs() || parsed.Opaque != "" || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("UPLOAD_PUBLIC_BASE_URL must be an absolute HTTP(S) URL without credentials, query, or fragment")
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", errors.New("UPLOAD_PUBLIC_BASE_URL must use HTTP or HTTPS")
+	}
+	if requireHTTPS && scheme != "https" {
+		return "", errors.New("UPLOAD_PUBLIC_BASE_URL must use HTTPS outside local mode")
+	}
+
+	parsed.Scheme = scheme
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	parsed.RawPath = strings.TrimRight(parsed.RawPath, "/")
+	return parsed.String(), nil
 }
 
 func isWeakProductionSecret(value string) bool {

@@ -16,6 +16,13 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
+)
+
+const (
+	maxFlowchartChatResponseBytes  int64 = 2 << 20
+	maxFlowchartImageResponseBytes int64 = 16 << 20
 )
 
 const defaultFlowchartImageOutputFormat = "png"
@@ -181,18 +188,26 @@ func (c *flowchartClient) generate(ctx context.Context, prompt string) (string, 
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = fmt.Sprintf("flowchart request failed with status %d", resp.StatusCode)
+		cause := logging.SanitizeText(string(data))
+		callErr := common.NewAppError(
+			common.CodeInternalServer,
+			fmt.Sprintf("flowchart upstream returned status %d", resp.StatusCode),
+			http.StatusBadGateway,
+		)
+		if cause != "" {
+			callErr = callErr.WithErr(errors.New(cause))
 		}
-		callErr := common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway)
 		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
 		return "", callErr
 	}
 
 	content, err := c.decodeResponse(resp)
 	if err != nil {
-		callErr := common.NewAppError(common.CodeInternalServer, err.Error(), http.StatusBadGateway).WithErr(err)
+		message := "invalid flowchart upstream response"
+		if upstream.IsResponseTooLarge(err) {
+			message = "flowchart upstream response exceeded size limit"
+		}
+		callErr := common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway).WithErr(err)
 		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
 		return "", callErr
 	}
@@ -206,7 +221,7 @@ func (c *flowchartClient) decodeResponse(resp *http.Response) (string, error) {
 	switch c.endpointMode {
 	case airouter.EndpointModeImagesGenerations:
 		var parsed flowchartImageGenerationResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := upstream.DecodeJSON(resp.Body, maxFlowchartImageResponseBytes, &parsed); err != nil {
 			return "", fmt.Errorf("invalid flowchart image response: %w", err)
 		}
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
@@ -223,7 +238,7 @@ func (c *flowchartClient) decodeResponse(resp *http.Response) (string, error) {
 		return content, nil
 	default:
 		var parsed flowchartChatResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := upstream.DecodeJSON(resp.Body, maxFlowchartChatResponseBytes, &parsed); err != nil {
 			return "", fmt.Errorf("invalid flowchart response: %w", err)
 		}
 		if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
@@ -244,25 +259,17 @@ func (c *flowchartClient) decodeResponse(resp *http.Response) (string, error) {
 }
 
 func newFlowchartRequestError(err error, timeout time.Duration) error {
-	cause := flowchartErrorCause(err)
 	if isFlowchartTimeoutError(err) {
 		message := "流程图生成超时，上游生图响应较慢"
 		if timeout > 0 {
 			message = fmt.Sprintf("%s（已等待 %s）", message, timeout.Round(time.Second))
 		}
-		if cause != "" {
-			message += ": " + cause
-		}
 		return common.NewAppError(common.CodeInternalServer, message, http.StatusBadGateway).WithErr(err)
-	}
-
-	if cause == "" {
-		cause = "unknown error"
 	}
 
 	return common.NewAppError(
 		common.CodeInternalServer,
-		"flowchart request failed: "+truncateString(cause, 180),
+		"flowchart upstream request failed",
 		http.StatusBadGateway,
 	).WithErr(err)
 }
@@ -304,7 +311,7 @@ func flowchartErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
-	return err.Error()
+	return logging.SafeErrorSummary(err)
 }
 
 func deepestError(err error) string {

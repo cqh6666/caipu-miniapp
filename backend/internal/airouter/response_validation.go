@@ -12,6 +12,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
 )
 
 var (
@@ -53,22 +54,22 @@ func classifyRequestError(err error, timeout time.Duration) error {
 }
 
 func classifyHTTPError(status int, message string) error {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		message = fmt.Sprintf("upstream returned status %d", status)
+	var cause error
+	if sanitized := logging.SanitizeText(message); sanitized != "" {
+		cause = errors.New(sanitized)
 	}
 
 	switch {
 	case status == http.StatusTooManyRequests:
-		return &typedError{errorType: ErrorTypeRateLimit, message: message, httpStatus: http.StatusBadGateway}
+		return &typedError{errorType: ErrorTypeRateLimit, message: "upstream rate limited request", httpStatus: http.StatusBadGateway, cause: cause}
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
-		return &typedError{errorType: ErrorTypeAuth, message: message, httpStatus: http.StatusBadGateway}
+		return &typedError{errorType: ErrorTypeAuth, message: "upstream authentication failed", httpStatus: http.StatusBadGateway, cause: cause}
 	case status >= 500:
-		return &typedError{errorType: ErrorTypeUpstream, message: message, httpStatus: http.StatusBadGateway}
+		return &typedError{errorType: ErrorTypeUpstream, message: fmt.Sprintf("upstream service returned status %d", status), httpStatus: http.StatusBadGateway, cause: cause}
 	case status >= 400:
-		return &typedError{errorType: ErrorTypeBadRequest, message: message, httpStatus: http.StatusBadGateway}
+		return &typedError{errorType: ErrorTypeBadRequest, message: fmt.Sprintf("upstream rejected request with status %d", status), httpStatus: http.StatusBadGateway, cause: cause}
 	default:
-		return &typedError{errorType: ErrorTypeUnknown, message: message, httpStatus: http.StatusBadGateway}
+		return &typedError{errorType: ErrorTypeUnknown, message: "upstream returned an error response", httpStatus: http.StatusBadGateway, cause: cause}
 	}
 }
 

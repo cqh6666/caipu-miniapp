@@ -3,10 +3,12 @@ package aialert
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,8 +56,8 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 		insertFailureCallLog(t, db, current)
 		service.RecordFailure(context.Background(), current)
 	}
-	if len(sender.requests) != 0 {
-		t.Fatalf("sender.requests = %d, want 0", len(sender.requests))
+	if sender.Count() != 0 {
+		t.Fatalf("sender.requests = %d, want 0", sender.Count())
 	}
 
 	current := event
@@ -64,13 +66,14 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 	current.OccurredAt = "2026-04-15T08:00:03Z"
 	insertFailureCallLog(t, db, current)
 	service.RecordFailure(context.Background(), current)
-	if len(sender.requests) != 1 {
-		t.Fatalf("sender.requests = %d, want 1", len(sender.requests))
+	if sender.Count() != 1 {
+		t.Fatalf("sender.requests = %d, want 1", sender.Count())
 	}
-	if got := sender.requests[0].Subject; !strings.Contains(got, "做法总结") || !strings.Contains(got, "主节点(summary-main)") {
+	requests := sender.Requests()
+	if got := requests[0].Subject; !strings.Contains(got, "做法总结") || !strings.Contains(got, "主节点(summary-main)") {
 		t.Fatalf("sender.requests[0].Subject = %q, want scene/provider label", got)
 	}
-	body := sender.requests[0].Body
+	body := requests[0].Body
 	for _, want := range []string{
 		"触发来源: 后台 Worker",
 		"目标对象: recipe / recipe-123",
@@ -91,8 +94,8 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 	current.OccurredAt = "2026-04-15T08:00:04Z"
 	insertFailureCallLog(t, db, current)
 	service.RecordFailure(context.Background(), current)
-	if len(sender.requests) != 1 {
-		t.Fatalf("sender.requests = %d, want still 1", len(sender.requests))
+	if sender.Count() != 1 {
+		t.Fatalf("sender.requests = %d, want still 1", sender.Count())
 	}
 
 	state, found, err := repo.GetState(context.Background(), "summary-main")
@@ -129,6 +132,9 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 	if state.LastAlertedFailureCount != 0 {
 		t.Fatalf("state.LastAlertedFailureCount = %d, want 0", state.LastAlertedFailureCount)
 	}
+	if state.FailureStreakID != "" {
+		t.Fatalf("state.FailureStreakID = %q, want empty after success", state.FailureStreakID)
+	}
 
 	for attempt := 5; attempt <= 7; attempt++ {
 		current = event
@@ -138,8 +144,220 @@ func TestServiceSendsAlertOncePerFailureStreak(t *testing.T) {
 		insertFailureCallLog(t, db, current)
 		service.RecordFailure(context.Background(), current)
 	}
-	if len(sender.requests) != 2 {
-		t.Fatalf("sender.requests = %d, want 2 after new streak", len(sender.requests))
+	if sender.Count() != 2 {
+		t.Fatalf("sender.requests = %d, want 2 after new streak", sender.Count())
+	}
+}
+
+func TestServiceConcurrentFailuresCreateAndSendOneDelivery(t *testing.T) {
+	db := openAlertTestDB(t)
+	repo := NewRepository(db)
+	sender := &fakeSender{}
+	service := NewService(repo, staticConfigProvider{Config: lifecycleConfig()}, sender, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	const concurrency = 20
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for index := 0; index < concurrency; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			service.RecordFailure(context.Background(), Event{
+				Scene:        "summary",
+				ProviderID:   "summary-concurrent",
+				ProviderName: "并发节点",
+				Model:        "gpt-test",
+				ErrorType:    "timeout",
+				ErrorMessage: "request timeout",
+				RequestID:    fmt.Sprintf("req-concurrent-%d", index),
+				HTTPStatus:   504,
+			})
+		}(index)
+	}
+	close(start)
+	wg.Wait()
+
+	if got := sender.Count(); got != 1 {
+		t.Fatalf("sender.Count() = %d, want 1", got)
+	}
+	var deliveryCount, sentCount int
+	if err := db.QueryRow(`SELECT COUNT(*), SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) FROM ai_provider_alert_deliveries`).Scan(&deliveryCount, &sentCount); err != nil {
+		t.Fatalf("query deliveries: %v", err)
+	}
+	if deliveryCount != 1 || sentCount != 1 {
+		t.Fatalf("deliveries total/sent = %d/%d, want 1/1", deliveryCount, sentCount)
+	}
+}
+
+func TestServiceFailedDeliveryReturnsToPendingAndRetries(t *testing.T) {
+	db := openAlertTestDB(t)
+	repo := NewRepository(db)
+	sender := &failOnceSender{}
+	service := NewService(repo, staticConfigProvider{Config: lifecycleConfig()}, sender, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		service.RecordFailure(context.Background(), Event{
+			Scene:        "summary",
+			ProviderID:   "summary-retry",
+			ProviderName: "重试节点",
+			Model:        "gpt-test",
+			ErrorType:    "timeout",
+			ErrorMessage: "request timeout",
+			RequestID:    fmt.Sprintf("req-retry-%d", attempt),
+			HTTPStatus:   504,
+		})
+	}
+
+	var status string
+	var attemptCount int
+	var lastError string
+	if err := db.QueryRow(`
+SELECT status, attempt_count, last_error
+FROM ai_provider_alert_deliveries
+WHERE provider_id = 'summary-retry'
+`).Scan(&status, &attemptCount, &lastError); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || attemptCount != 1 || !strings.Contains(lastError, "temporary SMTP failure") {
+		t.Fatalf("delivery after failed send = status=%q attempts=%d error=%q", status, attemptCount, lastError)
+	}
+	if _, err := db.Exec(`
+UPDATE ai_provider_alert_deliveries
+SET available_at = '1970-01-01T00:00:00Z'
+WHERE provider_id = 'summary-retry'
+`); err != nil {
+		t.Fatal(err)
+	}
+	dispatched, err := service.DispatchPending(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DispatchPending() error = %v", err)
+	}
+	if dispatched != 1 {
+		t.Fatalf("DispatchPending() = %d, want 1", dispatched)
+	}
+	if err := db.QueryRow(`
+SELECT status, attempt_count
+FROM ai_provider_alert_deliveries
+WHERE provider_id = 'summary-retry'
+`).Scan(&status, &attemptCount); err != nil {
+		t.Fatal(err)
+	}
+	if status != "sent" || attemptCount != 2 || sender.SuccessCount() != 1 {
+		t.Fatalf("delivery after retry = status=%q attempts=%d successes=%d", status, attemptCount, sender.SuccessCount())
+	}
+	state, found, err := repo.GetState(context.Background(), "summary-retry")
+	if err != nil || !found {
+		t.Fatalf("GetState() found=%t error=%v", found, err)
+	}
+	if state.LastAlertedFailureCount != 3 || state.LastAlertedAt == "" {
+		t.Fatalf("alerted state after retry = %#v", state)
+	}
+}
+
+func TestDeliveryWorkerDispatchesQueuedAlertWithoutNewFailure(t *testing.T) {
+	db := openAlertTestDB(t)
+	repo := NewRepository(db)
+	for attempt := 1; attempt <= 3; attempt++ {
+		_, _, err := repo.RecordFailure(context.Background(), Event{
+			Scene:        "summary",
+			ProviderID:   "summary-worker",
+			ProviderName: "Worker 节点",
+			Model:        "gpt-test",
+			ErrorType:    "timeout",
+			RequestID:    fmt.Sprintf("req-worker-%d", attempt),
+		}, 3)
+		if err != nil {
+			t.Fatalf("RecordFailure(%d) error = %v", attempt, err)
+		}
+	}
+
+	sender := &fakeSender{}
+	service := NewService(repo, staticConfigProvider{Config: lifecycleConfig()}, sender, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	service.deliveryWorker.interval = 5 * time.Millisecond
+	if err := service.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = service.Stop(stopCtx)
+	})
+
+	deadline := time.Now().Add(time.Second)
+	for sender.Count() != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if sender.Count() != 1 {
+		t.Fatalf("worker sender.Count() = %d, want 1", sender.Count())
+	}
+	var status string
+	if err := db.QueryRow(`SELECT status FROM ai_provider_alert_deliveries WHERE provider_id = 'summary-worker'`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "sent" {
+		t.Fatalf("worker delivery status = %q, want sent", status)
+	}
+	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := service.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestRepositoryReclaimsExpiredDeliveryLease(t *testing.T) {
+	db := openAlertTestDB(t)
+	repo := NewRepository(db)
+	for attempt := 1; attempt <= 3; attempt++ {
+		if _, _, err := repo.RecordFailure(context.Background(), Event{
+			Scene:      "summary",
+			ProviderID: "summary-expired-claim",
+			RequestID:  fmt.Sprintf("req-claim-%d", attempt),
+		}, 3); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, found, err := repo.ClaimNextDelivery(context.Background(), time.Millisecond)
+	if err != nil || !found {
+		t.Fatalf("first ClaimNextDelivery() found=%t error=%v", found, err)
+	}
+	time.Sleep(3 * time.Millisecond)
+	second, found, err := repo.ClaimNextDelivery(context.Background(), time.Second)
+	if err != nil || !found {
+		t.Fatalf("second ClaimNextDelivery() found=%t error=%v", found, err)
+	}
+	if first.EventID != second.EventID || first.ClaimToken == second.ClaimToken || second.AttemptCount != 2 {
+		t.Fatalf("reclaimed delivery first=%#v second=%#v", first, second)
+	}
+}
+
+func TestDeliveryWorkerStopCancelsInFlightSender(t *testing.T) {
+	db := openAlertTestDB(t)
+	repo := NewRepository(db)
+	for attempt := 1; attempt <= 3; attempt++ {
+		if _, _, err := repo.RecordFailure(context.Background(), Event{
+			Scene:      "summary",
+			ProviderID: "summary-stop",
+			RequestID:  fmt.Sprintf("req-stop-%d", attempt),
+		}, 3); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sender := &contextBlockingSender{started: make(chan struct{})}
+	service := NewService(repo, staticConfigProvider{Config: lifecycleConfig()}, sender, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	service.deliveryWorker.interval = time.Hour
+	if err := service.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	select {
+	case <-sender.started:
+	case <-time.After(time.Second):
+		t.Fatal("sender did not start")
+	}
+	stopCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := service.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop() error = %v", err)
 	}
 }
 
@@ -288,12 +506,61 @@ func (p staticConfigProvider) AIProviderAlert(context.Context) Config {
 }
 
 type fakeSender struct {
+	mu       sync.Mutex
 	requests []SendRequest
 }
 
+type failOnceSender struct {
+	mu        sync.Mutex
+	attempts  int
+	successes int
+}
+
+type contextBlockingSender struct {
+	started chan struct{}
+	once    sync.Once
+}
+
+func (s *contextBlockingSender) Send(ctx context.Context, _ SendRequest) error {
+	s.once.Do(func() { close(s.started) })
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (f *failOnceSender) Send(context.Context, SendRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attempts++
+	if f.attempts == 1 {
+		return errors.New("temporary SMTP failure")
+	}
+	f.successes++
+	return nil
+}
+
+func (f *failOnceSender) SuccessCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.successes
+}
+
 func (f *fakeSender) Send(_ context.Context, request SendRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.requests = append(f.requests, request)
 	return nil
+}
+
+func (f *fakeSender) Count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.requests)
+}
+
+func (f *fakeSender) Requests() []SendRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]SendRequest(nil), f.requests...)
 }
 
 func openAlertTestDB(t *testing.T) *sql.DB {
@@ -303,6 +570,7 @@ func openAlertTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() {
 		_ = db.Close()
 	})
@@ -310,6 +578,7 @@ func openAlertTestDB(t *testing.T) *sql.DB {
 	statement := `
 CREATE TABLE ai_provider_alert_states (
 	provider_id TEXT PRIMARY KEY,
+	failure_streak_id TEXT NOT NULL DEFAULT '',
 	scene TEXT NOT NULL DEFAULT '',
 	provider_name TEXT NOT NULL DEFAULT '',
 	model TEXT NOT NULL DEFAULT '',
@@ -331,6 +600,25 @@ CREATE TABLE ai_provider_alert_states (
 	mute_reason TEXT NOT NULL DEFAULT '',
 	last_config_changed_at TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE ai_provider_alert_deliveries (
+	event_id TEXT PRIMARY KEY,
+	failure_streak_id TEXT NOT NULL UNIQUE,
+	provider_id TEXT NOT NULL,
+	scene TEXT NOT NULL DEFAULT '',
+	trigger_source TEXT NOT NULL DEFAULT '',
+	target_type TEXT NOT NULL DEFAULT '',
+	target_id TEXT NOT NULL DEFAULT '',
+	request_id TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'pending',
+	attempt_count INTEGER NOT NULL DEFAULT 0,
+	claim_token TEXT NOT NULL DEFAULT '',
+	claim_expires_at TEXT NOT NULL DEFAULT '',
+	available_at TEXT NOT NULL,
+	last_error TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	sent_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE ai_provider_alert_events (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -404,6 +692,7 @@ func insertAlertState(t *testing.T, db *sql.DB, state State) {
 	if _, err := db.Exec(`
 INSERT INTO ai_provider_alert_states (
 	provider_id,
+	failure_streak_id,
 	scene,
 	provider_name,
 	model,
@@ -418,9 +707,10 @@ INSERT INTO ai_provider_alert_states (
 	last_alerted_at,
 	last_alerted_failure_count,
 	updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `,
 		state.ProviderID,
+		state.FailureStreakID,
 		state.Scene,
 		state.ProviderName,
 		state.Model,

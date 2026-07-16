@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 type Repository struct {
 	db *sql.DB
 }
+
+var errRecipeVersionConflict = errors.New("recipe version conflict")
 
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
@@ -24,7 +28,7 @@ func (r *Repository) ListByKitchenID(ctx context.Context, kitchenID int64, filte
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 	WHERE kitchen_id = ? AND deleted_at IS NULL
 	`
@@ -96,7 +100,7 @@ func (r *Repository) FindByID(ctx context.Context, recipeID string) (Recipe, err
 	       meal_type, status, COALESCE(note, ''), ingredients_json, steps_json,
 	       COALESCE(parse_status, ''), COALESCE(parse_source, ''), COALESCE(parse_error, ''),
 	       COALESCE(parse_requested_at, ''), COALESCE(parse_finished_at, ''), COALESCE(parse_attempts, 0), COALESCE(parse_next_attempt_at, ''), COALESCE(parse_last_error_type, ''), COALESCE(parse_processing_started_at, ''), COALESCE(parsed_content_edited, 0), COALESCE(pinned_at, ''), COALESCE(done_at, ''),
-	       created_by, updated_by, created_at, updated_at
+	       created_by, updated_by, created_at, updated_at, COALESCE(version, 1)
 	FROM recipes
 	WHERE id = ? AND deleted_at IS NULL
 	LIMIT 1
@@ -121,6 +125,13 @@ func (r *Repository) Create(ctx context.Context, item Recipe) (Recipe, error) {
 	}
 
 	item.DoneAt = resolveRecipeDoneAt("", item.Status, item.CreatedAt)
+	if item.Version < 1 {
+		item.Version = 1
+	}
+	if err := ensureRecipeMembershipTx(ctx, tx, item.CreatedBy, item.KitchenID); err != nil {
+		_ = tx.Rollback()
+		return Recipe{}, err
+	}
 
 	if err := insertRecipe(ctx, tx, item); err != nil {
 		_ = tx.Rollback()
@@ -155,6 +166,14 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		_ = tx.Rollback()
 		return Recipe{}, err
 	}
+	if err := ensureRecipeMembershipTx(ctx, tx, item.UpdatedBy, current.KitchenID); err != nil {
+		_ = tx.Rollback()
+		return Recipe{}, err
+	}
+	if current.Version != item.Version {
+		_ = tx.Rollback()
+		return Recipe{}, errRecipeVersionConflict
+	}
 	item.DoneAt = resolveRecipeDoneAt(current.DoneAt, item.Status, item.UpdatedAt)
 
 	imageMetas := normalizeRecipeImageMetas(item.ImageURLs, item.ImageMetas)
@@ -181,8 +200,13 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		`UPDATE recipes
 	SET title = ?, title_source = ?, ingredient = ?, summary = ?, link = ?, image_url = ?, image_urls_json = ?, image_meta_json = ?, meal_type = ?, status = ?, note = ?,
 	    ingredients_json = ?, steps_json = ?, parsed_content_edited = ?, pinned_at = ?, done_at = ?,
-	    updated_by = ?, updated_at = ?, content_version = COALESCE(content_version, 0) + 1
-	WHERE id = ? AND deleted_at IS NULL`,
+	    updated_by = ?, updated_at = ?, content_version = COALESCE(content_version, 0) + 1,
+	    version = version + 1
+	WHERE id = ? AND deleted_at IS NULL AND version = ?
+	  AND EXISTS (
+	    SELECT 1 FROM kitchen_members
+	    WHERE kitchen_id = recipes.kitchen_id AND user_id = ?
+	  )`,
 		item.Title,
 		normalizeTitleSource(item.TitleSource),
 		nullableString(item.Ingredient),
@@ -202,6 +226,8 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 		item.UpdatedBy,
 		item.UpdatedAt,
 		item.ID,
+		item.Version,
+		item.UpdatedBy,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -215,7 +241,7 @@ func (r *Repository) Update(ctx context.Context, item Recipe) (Recipe, error) {
 	}
 	if rowsAffected == 0 {
 		_ = tx.Rollback()
-		return Recipe{}, sql.ErrNoRows
+		return Recipe{}, errRecipeVersionConflict
 	}
 
 	if autoParseStateChanged(current, item) {
@@ -279,7 +305,7 @@ func autoParseStateChanged(current, next Recipe) bool {
 		current.ParseProcessingStartedAt != next.ParseProcessingStartedAt
 }
 
-func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenID int64, status string, updatedBy int64, touchedAt string) error {
+func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenID int64, status string, updatedBy, expectedVersion int64, touchedAt string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin update status tx: %w", err)
@@ -290,15 +316,31 @@ func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenI
 		_ = tx.Rollback()
 		return err
 	}
+	if err := ensureRecipeMembershipTx(ctx, tx, updatedBy, current.KitchenID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if current.Version != expectedVersion {
+		_ = tx.Rollback()
+		return errRecipeVersionConflict
+	}
 	doneAt := resolveRecipeDoneAt(current.DoneAt, status, touchedAt)
 
 	result, err := tx.ExecContext(
 		ctx,
-		`UPDATE recipes SET status = ?, done_at = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL`,
+		`UPDATE recipes
+		 SET status = ?, done_at = ?, updated_by = ?, version = version + 1
+		 WHERE id = ? AND deleted_at IS NULL AND version = ?
+		   AND EXISTS (
+		     SELECT 1 FROM kitchen_members
+		     WHERE kitchen_id = recipes.kitchen_id AND user_id = ?
+		   )`,
 		status,
 		doneAt,
 		updatedBy,
 		recipeID,
+		expectedVersion,
+		updatedBy,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -312,7 +354,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenI
 	}
 	if rowsAffected == 0 {
 		_ = tx.Rollback()
-		return sql.ErrNoRows
+		return errRecipeVersionConflict
 	}
 
 	if current.Status != status {
@@ -334,10 +376,23 @@ func (r *Repository) UpdateStatus(ctx context.Context, recipeID string, kitchenI
 	return nil
 }
 
-func (r *Repository) UpdatePinned(ctx context.Context, recipeID string, kitchenID int64, pinned bool, updatedBy int64, touchedAt string) error {
+func (r *Repository) UpdatePinned(ctx context.Context, recipeID string, kitchenID int64, pinned bool, updatedBy, expectedVersion int64, touchedAt string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin update pinned tx: %w", err)
+	}
+	current, err := findRecipeByIDTx(ctx, tx, recipeID)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := ensureRecipeMembershipTx(ctx, tx, updatedBy, current.KitchenID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if current.Version != expectedVersion {
+		_ = tx.Rollback()
+		return errRecipeVersionConflict
 	}
 
 	var pinnedAtValue any
@@ -347,10 +402,18 @@ func (r *Repository) UpdatePinned(ctx context.Context, recipeID string, kitchenI
 
 	result, err := tx.ExecContext(
 		ctx,
-		`UPDATE recipes SET pinned_at = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL`,
+		`UPDATE recipes
+		 SET pinned_at = ?, updated_by = ?, version = version + 1
+		 WHERE id = ? AND deleted_at IS NULL AND version = ?
+		   AND EXISTS (
+		     SELECT 1 FROM kitchen_members
+		     WHERE kitchen_id = recipes.kitchen_id AND user_id = ?
+		   )`,
 		pinnedAtValue,
 		updatedBy,
 		recipeID,
+		expectedVersion,
+		updatedBy,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -364,7 +427,7 @@ func (r *Repository) UpdatePinned(ctx context.Context, recipeID string, kitchenI
 	}
 	if rowsAffected == 0 {
 		_ = tx.Rollback()
-		return sql.ErrNoRows
+		return errRecipeVersionConflict
 	}
 
 	if err := bumpKitchenUpdatedAt(ctx, tx, kitchenID, touchedAt); err != nil {
@@ -383,6 +446,10 @@ func (r *Repository) SoftDelete(ctx context.Context, recipeID string, kitchenID 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin delete recipe tx: %w", err)
+	}
+	if err := ensureRecipeMembershipTx(ctx, tx, deletedBy, kitchenID); err != nil {
+		_ = tx.Rollback()
+		return err
 	}
 
 	result, err := tx.ExecContext(
@@ -419,5 +486,22 @@ WHERE id = ? AND deleted_at IS NULL`,
 		return fmt.Errorf("commit delete recipe: %w", err)
 	}
 
+	return nil
+}
+
+func ensureRecipeMembershipTx(ctx context.Context, tx *sql.Tx, userID, kitchenID int64) error {
+	var exists int
+	err := tx.QueryRowContext(
+		ctx,
+		`SELECT 1 FROM kitchen_members WHERE user_id = ? AND kitchen_id = ? LIMIT 1`,
+		userID,
+		kitchenID,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return common.ErrForbidden
+	}
+	if err != nil {
+		return fmt.Errorf("check recipe write membership: %w", err)
+	}
 	return nil
 }

@@ -15,6 +15,8 @@ func TestRepositoryCreatePersistsRecipeAndBumpsKitchenUpdatedAt(t *testing.T) {
 	if _, err := db.Exec(`
 INSERT INTO kitchens (id, name, owner_user_id, created_at, updated_at, name_source)
 VALUES (1, '联调试吃厨房', 7, '2026-04-01T08:00:00+08:00', '2026-04-01T09:00:00+08:00', 'custom');
+INSERT INTO kitchen_members (kitchen_id, user_id, role, joined_at)
+VALUES (1, 7, 'owner', '2026-04-01T08:00:00+08:00');
 `); err != nil {
 		t.Fatalf("seed kitchen error = %v", err)
 	}
@@ -149,6 +151,7 @@ CREATE TABLE recipes (
   parse_processing_started_at TEXT NOT NULL DEFAULT '',
   parsed_content_edited INTEGER NOT NULL DEFAULT 0,
   content_version INTEGER NOT NULL DEFAULT 0,
+	version INTEGER NOT NULL DEFAULT 1,
   parse_claim_token TEXT NOT NULL DEFAULT '',
   parse_claim_content_version INTEGER NOT NULL DEFAULT 0,
   parse_lease_expires_at TEXT NOT NULL DEFAULT '',
@@ -164,6 +167,15 @@ CREATE TABLE recipes (
   deleted_at TEXT,
   share_token TEXT NOT NULL DEFAULT '',
   share_token_created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE kitchen_members (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kitchen_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  joined_at TEXT NOT NULL,
+  UNIQUE(kitchen_id, user_id)
 );
 
 CREATE TABLE recipe_status_events (

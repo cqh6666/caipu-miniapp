@@ -4,13 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 type Repository struct {
 	db *sql.DB
 }
+
+var errPlaceVersionConflict = errors.New("place version conflict")
 
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
@@ -36,7 +41,8 @@ SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, 
        image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
        price_amount_cents, price_currency, price_type,
        phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
-       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
+       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at,
+       COALESCE(version, 1)
   FROM places
  WHERE `+strings.Join(clauses, " AND ")+`
  ORDER BY
@@ -70,12 +76,16 @@ SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, 
        image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
        price_amount_cents, price_currency, price_type,
        phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
-       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
+       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at,
+       COALESCE(version, 1)
   FROM places
  WHERE id = ? AND deleted_at IS NULL`, placeID))
 }
 
 func (r *Repository) Create(ctx context.Context, item Place) (Place, error) {
+	if item.Version < 1 {
+		item.Version = 1
+	}
 	imageURLsJSON, err := marshalStringList(item.ImageURLs)
 	if err != nil {
 		return Place{}, fmt.Errorf("marshal place image urls: %w", err)
@@ -101,6 +111,10 @@ func (r *Repository) Create(ctx context.Context, item Place) (Place, error) {
 	if err != nil {
 		return Place{}, fmt.Errorf("begin create place tx: %w", err)
 	}
+	if err := ensurePlaceMembershipTx(ctx, tx, item.CreatedBy, item.KitchenID); err != nil {
+		_ = tx.Rollback()
+		return Place{}, err
+	}
 
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO places (
@@ -108,14 +122,15 @@ INSERT INTO places (
   image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
   price_amount_cents, price_currency, price_type,
   phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time, duration,
-  companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at, version
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID, item.KitchenID, item.Name, item.Type, item.Address, item.Latitude, item.Longitude,
 		item.Price, item.Source, item.SourceURL, imageURLsJSON, item.Status, tagsJSON, item.Note,
 		item.VisitedAt, item.RevisitRating, recommendedItemsJSON, item.PriceAmountCents, item.PriceCurrency, item.PriceType,
 		item.Phone, item.ExternalProvider,
 		item.ExternalPOIID, item.Rating, item.DiningTips, scenesJSON, item.BestTime, item.Duration,
 		companionTagsJSON, item.ParkingNote, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt,
+		item.Version,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -165,6 +180,14 @@ func (r *Repository) Update(ctx context.Context, item Place) (Place, error) {
 		_ = tx.Rollback()
 		return Place{}, err
 	}
+	if err := ensurePlaceMembershipTx(ctx, tx, item.UpdatedBy, current.KitchenID); err != nil {
+		_ = tx.Rollback()
+		return Place{}, err
+	}
+	if current.Version != item.Version {
+		_ = tx.Rollback()
+		return Place{}, errPlaceVersionConflict
+	}
 
 	result, err := tx.ExecContext(ctx, `
 UPDATE places
@@ -196,15 +219,20 @@ UPDATE places
        duration = ?,
        companion_tags_json = ?,
        parking_note = ?,
-       updated_by = ?,
-       updated_at = ?
- WHERE id = ? AND deleted_at IS NULL`,
+	   updated_by = ?,
+	   updated_at = ?,
+	   version = version + 1
+	WHERE id = ? AND deleted_at IS NULL AND version = ?
+	  AND EXISTS (
+	    SELECT 1 FROM kitchen_members
+	    WHERE kitchen_id = places.kitchen_id AND user_id = ?
+	  )`,
 		item.Name, item.Type, item.Address, item.Latitude, item.Longitude, item.Price, item.Source,
 		item.SourceURL, imageURLsJSON, item.Status, tagsJSON, item.Note, item.VisitedAt,
 		item.RevisitRating, recommendedItemsJSON, item.PriceAmountCents, item.PriceCurrency, item.PriceType,
 		item.Phone, item.ExternalProvider, item.ExternalPOIID,
 		item.Rating, item.DiningTips, scenesJSON, item.BestTime, item.Duration, companionTagsJSON, item.ParkingNote,
-		item.UpdatedBy, item.UpdatedAt, item.ID,
+		item.UpdatedBy, item.UpdatedAt, item.ID, item.Version, item.UpdatedBy,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -213,7 +241,7 @@ UPDATE places
 
 	if count, _ := result.RowsAffected(); count == 0 {
 		_ = tx.Rollback()
-		return Place{}, sql.ErrNoRows
+		return Place{}, errPlaceVersionConflict
 	}
 
 	if current.Status != item.Status {
@@ -230,19 +258,32 @@ UPDATE places
 	return r.FindByID(ctx, item.ID)
 }
 
-func (r *Repository) Delete(ctx context.Context, placeID string, userID int64, deletedAt string) error {
-	result, err := r.db.ExecContext(ctx, `
+func (r *Repository) Delete(ctx context.Context, placeID string, kitchenID, userID int64, deletedAt string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete place tx: %w", err)
+	}
+	if err := ensurePlaceMembershipTx(ctx, tx, userID, kitchenID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `
 UPDATE places
    SET deleted_at = ?,
        updated_by = ?,
        updated_at = ?
  WHERE id = ? AND deleted_at IS NULL`, deletedAt, userID, deletedAt, placeID)
 	if err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("delete place: %w", err)
 	}
 
 	if count, _ := result.RowsAffected(); count == 0 {
+		_ = tx.Rollback()
 		return sql.ErrNoRows
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete place: %w", err)
 	}
 
 	return nil
@@ -295,6 +336,7 @@ func scanPlace(s scanner) (Place, error) {
 		&item.UpdatedBy,
 		&item.CreatedAt,
 		&item.UpdatedAt,
+		&item.Version,
 	); err != nil {
 		return Place{}, err
 	}
@@ -313,9 +355,27 @@ SELECT id, kitchen_id, name, type, address, latitude, longitude, price, source, 
        image_urls_json, status, tags_json, note, visited_at, revisit_rating, recommended_items_json,
        price_amount_cents, price_currency, price_type,
        phone, external_provider, external_poi_id, rating, dining_tips, scenes_json, best_time,
-       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at
+       duration, companion_tags_json, parking_note, created_by, updated_by, created_at, updated_at,
+       COALESCE(version, 1)
   FROM places
  WHERE id = ? AND deleted_at IS NULL`, placeID))
+}
+
+func ensurePlaceMembershipTx(ctx context.Context, tx *sql.Tx, userID, kitchenID int64) error {
+	var exists int
+	err := tx.QueryRowContext(
+		ctx,
+		`SELECT 1 FROM kitchen_members WHERE user_id = ? AND kitchen_id = ? LIMIT 1`,
+		userID,
+		kitchenID,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return common.ErrForbidden
+	}
+	if err != nil {
+		return fmt.Errorf("check place write membership: %w", err)
+	}
+	return nil
 }
 
 func insertPlaceStatusEvent(ctx context.Context, tx *sql.Tx, kitchenID int64, placeID string, fromStatus string, toStatus string, changedBy int64, changedAt string, source string) error {

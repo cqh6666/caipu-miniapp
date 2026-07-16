@@ -120,12 +120,16 @@ func (f *longCatStreamFilter) Push(delta string) error {
 				if keep >= len(f.pending) {
 					return nil
 				}
-				f.block.WriteString(f.pending[:len(f.pending)-keep])
+				if err := f.writeToolBlock(f.pending[:len(f.pending)-keep]); err != nil {
+					return err
+				}
 				f.pending = f.pending[len(f.pending)-keep:]
 				return nil
 			}
 
-			f.block.WriteString(f.pending[:end])
+			if err := f.writeToolBlock(f.pending[:end]); err != nil {
+				return err
+			}
 			call, ok := parseLongCatToolCallBlock(f.block.String(), len(f.toolCalls))
 			if ok {
 				f.toolCalls = append(f.toolCalls, call)
@@ -177,11 +181,25 @@ func (f *longCatStreamFilter) writeVisible(delta string) error {
 	if delta == "" {
 		return nil
 	}
+	if f.visible.Len()+len(delta) > maxDietAssistantVisibleBytes {
+		return dietAssistantLimitError("diet assistant visible content exceeded size limit", errVisibleTextTooLarge)
+	}
 	f.visible.WriteString(delta)
 	if f.emitVisible == nil {
 		return nil
 	}
 	return f.emitVisible(delta)
+}
+
+func (f *longCatStreamFilter) writeToolBlock(delta string) error {
+	if delta == "" {
+		return nil
+	}
+	if f.block.Len()+len(delta) > maxDietAssistantToolBlockBytes {
+		return dietAssistantLimitError("diet assistant tool payload exceeded size limit", errToolPayloadTooLarge)
+	}
+	f.block.WriteString(delta)
+	return nil
 }
 
 func (f *longCatStreamFilter) VisibleContent() string {

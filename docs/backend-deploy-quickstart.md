@@ -1,539 +1,251 @@
-# 后端快速部署指令
+# 后端部署、备份与回滚手册
 
-这份文档按 `Ubuntu 22.04/24.04 + systemd + nginx` 编写，目标是把当前 `backend/` 服务快速部署到云服务器，并通过你自己的 `HTTPS` 域名对外提供接口。
+更新时间：`2026-07-16 10:00 CST`
 
-说明：
+本文档是 `Ubuntu 22.04/24.04 + systemd + nginx + SQLite WAL` 的仓库内标准口径。
+线上仍需在维护窗口执行首次 unit 迁移、异机备份和真实回滚演练，仓库测试不能替代这些
+外部验收。
 
-- 这套方案不要求服务器安装 Go
-- 推荐在本地先编译 Linux 二进制，再上传到服务器
-- 真实 `WECHAT_APP_SECRET` 不要写进 Git，只在服务器 `.env` 中填写
-- 如果你担心密钥已经暴露，建议后续去微信公众平台重置一次
-- 仓库里已经提供了几份部署相关脚本：
-  - `backend/scripts/bootstrap-server.sh` 用于首次初始化服务器
-  - `backend/scripts/deploy.sh` 用于后续每次发版
-  - `scripts/build-admin-web.sh` 用于本地构建 `admin-web`
-- 如果你当前线上环境是“服务器拉源码并本机编译”，还可以使用：
-  - `backend/scripts/deploy-server-build.sh`
-- 这些脚本都支持按环境变量覆盖默认值；最常用的是 `SERVER_HOST`，其余变量按脚本场景分别使用
-- `backend/scripts/bootstrap-server.sh` 当前默认按共享域名方案生成 nginx 路由：
-  - `/admin/`
-  - `/caipu-api/`
-  - `/caipu-uploads/`
-  - `/caipu-healthz`
-- 如果你明确要让当前域名直接由本项目独占根路径，可显式带
-  `NGINX_SITE_MODE=standalone`
+## 1. 标准目录与入口
 
-## 0.5 更快的脚本方式
+```text
+/srv/caipu-miniapp/backend/
+├── configs/prod.env          # 0600，owner=caipu-backend
+├── current -> releases/...   # 原子切换的当前 release
+├── releases/<release-id>/
+│   ├── server
+│   ├── migrations/
+│   └── manifest.env
+├── data/
+│   ├── app.db                # 同目录还会有 WAL/SHM
+│   └── uploads/
+└── backups/backup-.../
+    ├── app.db
+    ├── uploads.tar.gz
+    ├── metadata.txt
+    └── SHA256SUMS
+```
 
-如果你想少敲命令，可以直接用仓库里的脚本。
+统一入口：
 
-## 0.6 当前线上实际部署方式
+- 已登录服务器：`bash scripts/deploy-backend-on-server.sh`
+- 从本地经 SSH：`bash backend/scripts/deploy-server-build.sh`
+- 聚合发布：`bash scripts/deploy-on-server.sh`，只在确实要联动多个模块时使用
+- `backend/scripts/deploy.sh` 已废弃，不再允许固定路径覆盖二进制
 
-如果当前云服务器还是按源码拉取再本机编译的方式部署，实际命令如下：
+## 2. 首次初始化
+
+先确保服务器已克隆仓库到 `/srv/caipu-miniapp`，再从本地执行：
+
+```bash
+cd backend
+SERVER_HOST=root@your-server \
+DOMAIN=your-domain.example \
+SERVICE_NAME=caipu-backend \
+ENABLE_UFW=1 \
+bash scripts/bootstrap-server.sh
+```
+
+初始化脚本会：
+
+- 安装 nginx、curl、sqlite3、rsync 和 certbot；
+- 创建不可登录用户/组 `caipu-backend`；
+- 生成 `ExecStart=/srv/caipu-miniapp/backend/current/server` 的 unit；
+- 仅授权应用写 `backend/data`，并启用 `NoNewPrivileges`、`PrivateTmp`、
+  `ProtectSystem=strict`、`ProtectHome=true`、`UMask=0077` 和 15 秒停止上限；
+- 把外部 `/caipu-healthz` 转发到内部 `/readyz`；
+- 安装每日一致性备份与每周恢复校验 timer。
+
+初始化不会在 `current` 尚不存在时强行启动后端。创建生产配置后再执行首次发布：
+
+```bash
+sudo cp backend/configs/example.env backend/configs/prod.env
+sudoedit backend/configs/prod.env
+sudo chown caipu-backend:caipu-backend backend/configs/prod.env
+sudo chmod 600 backend/configs/prod.env
+cd backend
+APP_ENV_FILE=configs/prod.env go run ./cmd/server -check-config
+```
+
+首次发布前 `current/server` 还不存在，因此先在源码目录校验；填入真实独立密钥后再运行
+发布脚本。非 local 环境至少确认：
+
+- `APP_ENV=prod`、`APP_ADDR=127.0.0.1:8080`；
+- `JWT_SECRET`、`ADMIN_JWT_SECRET`、`CREDENTIALS_SECRET` 是三个不同的强密钥；
+- `ADMIN_COOKIE_PATH=/caipu-api/admin`（共享前缀部署）；
+- `UPLOAD_PUBLIC_BASE_URL` 是正式 HTTPS 上传前缀；
+- `HEALTH_BACKEND_SERVICE_NAME` 与实际 unit 一致，`HEALTH_BACKEND_BASE_URL` 指向本机
+  后端监听地址；
+- `WECHAT_APP_ID` 与小程序 manifest 一致，真实密钥不进入 Git。
+
+## 3. 一次后端发布会做什么
 
 ```bash
 cd /srv/caipu-miniapp
-git pull
+bash scripts/deploy-backend-on-server.sh
+```
 
+顺序固定为：
+
+1. `git pull --ff-only` 并运行 `go test ./...`；
+2. 构建注入 release ID、commit、build time、Go toolchain 的临时 release，并执行
+   `-check-config`；
+3. 用 `sqlite3 .backup` 创建发布前一致性备份；
+4. 在备份数据库副本上运行全部迁移，预先发现 SQL/数据兼容问题；
+5. 对生产数据库执行前向迁移；
+6. 完成包含二进制 SHA-256 与逐文件 migration 集合的 release manifest，原子切换
+   `current` 后 restart；
+7. `/readyz` 连续 3 次成功且 `X-Release-ID` 等于目标 release 才算发布成功；
+8. 失败时把 `current` 恢复到上一 release 并再次 restart/readiness。
+
+自动回滚只恢复二进制。SQLite migration 必须保持前向兼容；脚本不会猜测或执行反向
+SQL。若新迁移本身破坏旧二进制兼容性，应停止自动发布并按备份做人工数据恢复。
+
+常用覆盖项：
+
+```bash
+PLAN_ONLY=1 bash scripts/deploy-backend-on-server.sh
+RUN_BACKEND_TESTS=0 bash scripts/deploy-backend-on-server.sh   # 仅紧急窗口，需另有 CI 证据
+READY_ATTEMPTS=45 READY_CONSECUTIVE_SUCCESSES=5 \
+  bash scripts/deploy-backend-on-server.sh
+```
+
+发布脚本会校验 systemd `ExecStart` 必须指向 `current/server`。旧 unit 未迁移时会在备份和
+迁移前失败，不会静默覆盖 `bin/server`。
+
+## 4. 健康接口
+
+| 路径 | 语义 | 失败状态 |
+| --- | --- | --- |
+| `/livez` | 进程仍能处理 HTTP，不访问 DB | 仅进程不可用时失败 |
+| `/readyz` | DB ping、当前 release 迁移、SQLite/uploads 可写 | `503` |
+| `/healthz` | `/readyz` 兼容别名 | `503` |
+| `/api/healthz` | `/readyz` 兼容别名 | `503` |
+
+```bash
+curl -i http://127.0.0.1:8080/livez
+curl -i http://127.0.0.1:8080/readyz
+curl -i https://your-domain.example/caipu-healthz
+```
+
+就绪响应头包含 release ID，JSON 同时包含 release ID、commit、build time 和 Go
+toolchain。发布判断不能只看进程 PID 或 `/livez`。可用
+`current/server -version` 直接核对二进制身份。
+
+## 5. 备份、异机副本与恢复演练
+
+手工创建并验证：
+
+```bash
 cd /srv/caipu-miniapp/backend
-go build -o bin/server ./cmd/server
-systemctl restart caipu-backend
+bash scripts/backup.sh
+bash scripts/verify-latest-backup.sh
+systemctl list-timers 'caipu-backend-*'
 ```
 
-如果你已经启用了后台管理平台，同一轮发版还需要把 `admin-web` 构建出来：
+`backup.sh` 禁止复制运行中的 `app.db`，使用 SQLite Online Backup 协议捕获已提交 WAL
+页面；随后对快照执行 `PRAGMA quick_check`，归档 uploads，并生成 SHA-256 清单。备份目录
+在同一文件系统内由隐藏 staging 目录原子 rename 完成。
+
+生产建议创建 `/etc/caipu-backend-backup.env`：
 
 ```bash
-cd /srv/caipu-miniapp/admin-web
-npm install
-npm run build
+sudo install -m 600 -o root -g root /dev/null /etc/caipu-backend-backup.env
+sudoedit /etc/caipu-backend-backup.env
 ```
 
-说明：
+内容示例：
 
-- 这是当前线上环境的“实际生效流程”，和下面那套本地交叉编译 + 上传二进制的方案不同
-- 如果下次要快速重发版，优先先按这组命令检查
-- 现在仓库里已经补了一份同逻辑脚本：`backend/scripts/deploy-server-build.sh`
+```dotenv
+RETENTION_DAYS=14
+OFFSITE_BACKUP_TARGET=backup-user@backup-host:/srv/backups/caipu-miniapp
+REQUIRE_OFFSITE_BACKUP=1
+RSYNC_RSH="ssh -i /etc/caipu-backend-backup-ed25519 -o BatchMode=yes"
+```
 
-脚本角色区分：
+SSH 私钥需让 `caipu-backend` 用户可读且保持 `0600`，远端账号只授予目标备份目录写权限。
+设置 `REQUIRE_OFFSITE_BACKUP=1` 后，缺少异机目标会让备份明确失败并由 systemd 记录。
 
-- `backend/scripts/deploy-server-build.sh`
-  - 适合你人在 **Mac 本地**
-  - 会先通过 `ssh` 连到远端服务器
-  - 默认在远端进入 `/srv/caipu-miniapp`
-  - 然后在服务器上执行 `bash scripts/deploy-backend-on-server.sh`
-- `scripts/deploy-backend-on-server.sh`
-  - 适合你已经 **登录到服务器**
-  - 只会在当前机器执行，不会自动帮你从 Mac 再发起一层 `ssh`
+定时任务：
 
-可以直接在本地执行：
+- `caipu-backend-backup.timer`：每日一致性备份；
+- `caipu-backend-restore-drill.timer`：每周校验 SHA-256、SQLite quick check，并在
+  `PrivateTmp` 中实际解包 uploads。
+- `caipu-backend-ops-health.timer`：每五分钟检查 5xx、worker error、磁盘、备份年龄和
+  恢复演练年龄；非零退出码需由生产监控平台订阅。
+
+检查日志：
 
 ```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=<ssh主机别名或user@host> \
-./scripts/deploy-server-build.sh
+journalctl -u caipu-backend-backup.service -n 100 --no-pager
+journalctl -u caipu-backend-restore-drill.service -n 100 --no-pager
+journalctl -u caipu-backend-ops-health.service -n 100 --no-pager
 ```
 
-说明：
+bootstrap 默认把主机 journald 全局容量限制为 `512M`、最长保留 `14day`；共享主机可用
+`JOURNAL_SYSTEM_MAX_USE`、`JOURNAL_MAX_RETENTION_SEC` 覆盖。完整阈值、退出码和生产
+接收端验收见 [后端运维告警策略](backend-operations-alert-policy.md)。
 
-- `SERVER_HOST` 可以是 `root@你的服务器IP`
-- 也可以是你本机 `~/.ssh/config` 中已配置的主机别名
-- `my-cloud` 只是本文档里的示例别名，不是固定值
+## 6. 人工恢复步骤
 
-如果你本机 `~/.ssh/config` 已经配了别名，也可以直接写别名，例如：
+恢复会覆盖线上数据，只能在维护窗口、确认目标 backup 后执行。先验证，不要直接操作：
 
 ```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=my-cloud \
-./scripts/deploy-server-build.sh
+BACKUP=/srv/caipu-miniapp/backend/backups/backup-YYYYMMDDTHHMMSSZ-release-pid
+bash /srv/caipu-miniapp/backend/scripts/verify-backup.sh "$BACKUP"
 ```
 
-只想先确认会不会真正构建和重启，可先执行：
+确认后停止服务，把当前数据整体保留为时间戳目录，再从已验证包恢复：
 
 ```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=<ssh主机别名或user@host> \
-PLAN_ONLY=1 \
-./scripts/deploy-server-build.sh
+sudo systemctl stop caipu-backend
+cd /srv/caipu-miniapp/backend
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+sudo mkdir -m 700 "data.before-${stamp}"
+sudo mv data/app.db data/app.db-wal data/app.db-shm "data.before-${stamp}/" 2>/dev/null || true
+sudo mv data/uploads "data.before-${stamp}/uploads"
+sudo install -m 600 -o caipu-backend -g caipu-backend "$BACKUP/app.db" data/app.db
+sudo install -d -m 750 -o caipu-backend -g caipu-backend data/uploads
+sudo tar -xzf "$BACKUP/uploads.tar.gz" -C data/uploads
+sudo chown -R caipu-backend:caipu-backend data/uploads
+sudo systemctl start caipu-backend
+curl -fsS http://127.0.0.1:8080/readyz
 ```
 
-默认值对应当前线上约定：
+若当前 release 需要备份中不存在的迁移，应先把 `current` 切到与备份 release 匹配的目录，
+或经过评审后重新执行前向迁移。不要在不清楚 schema 的情况下删除 `schema_migrations`。
 
-- `REPO_DIR=/srv/caipu-miniapp`
-- `BACKEND_DIR=/srv/caipu-miniapp/backend`
-- `BINARY_PATH=/srv/caipu-miniapp/backend/bin/server`
-- `SERVICE_NAME=caipu-backend`
-- `APP_PORT=8080`
-- 当前线上机的 Go 若安装在 `/usr/local/go/bin`，发布脚本也会自动兜底补上
-  该路径，避免非交互式 `ssh` shell 找不到 `go`
+## 7. 最小权限验收
 
-如果以后线上目录或服务名改了，可以通过环境变量覆盖：
+部署后执行：
 
 ```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=root@你的服务器IP \
-REPO_DIR=/srv/caipu-miniapp \
-SERVICE_NAME=caipu-backend \
-APP_PORT=8080 \
-./scripts/deploy-server-build.sh
+systemctl show caipu-backend -p User -p Group -p ExecStart -p FragmentPath
+pid="$(systemctl show caipu-backend -p MainPID --value)"
+ps -o user,group,pid,command -p "$pid"
+sudo -u caipu-backend test ! -w /etc
+sudo -u caipu-backend test ! -w /srv/caipu-miniapp/backend/current
+sudo -u caipu-backend test -w /srv/caipu-miniapp/backend/data
+systemd-analyze security caipu-backend.service
 ```
 
-首次初始化服务器：
+预期进程 UID 非 0，只能写 SQLite/WAL/SHM 与 uploads；release、源码、`/etc` 不可写。
+字体路径若配置在 release 外，必须只读可访问。权限或 DB 故障时 `/readyz` 应返回 503，
+`/livez` 仍返回 200；真实破坏性演练必须先备份并安排维护窗口。
+
+## 8. 常用排查
 
 ```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=root@你的服务器IP \
-DOMAIN=your-domain.example \
-ENABLE_UFW=1 \
-./scripts/bootstrap-server.sh
+systemctl status caipu-backend --no-pager
+journalctl -u caipu-backend -n 200 --no-pager
+readlink -f /srv/caipu-miniapp/backend/current
+cat /srv/caipu-miniapp/backend/current/manifest.env
+cat /srv/caipu-miniapp/backend/current/migrations.sha256
+/srv/caipu-miniapp/backend/current/server -version
+curl -i http://127.0.0.1:8080/readyz
+ls -lah /srv/caipu-miniapp/backend/releases
+ls -lah /srv/caipu-miniapp/backend/backups
 ```
 
-默认会生成共享域名前缀路由；如果你需要兼容旧的“`/api` + `/uploads` + 根路径”
-独占站点模式，可改为：
-
-```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=root@你的服务器IP \
-DOMAIN=your-domain.example \
-NGINX_SITE_MODE=standalone \
-ENABLE_UFW=1 \
-./scripts/bootstrap-server.sh
-```
-
-如果你还想自动申请证书，可以额外带上邮箱：
-
-```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=root@你的服务器IP \
-DOMAIN=your-domain.example \
-CERTBOT_EMAIL=你的邮箱 \
-./scripts/bootstrap-server.sh
-```
-
-后续每次部署：
-
-```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST=root@你的服务器IP \
-DOMAIN=your-domain.example \
-ENV_FILE=configs/local.env \
-./scripts/deploy.sh
-```
-
-说明：
-
-- `ENV_FILE` 是可选的；如果服务器上已经有正确的 `.env`，后续部署可以不传
-- 由于 `configs/local.env` 已被 Git 忽略，用它上传不会把密钥带进仓库
-- 如果你的服务不是监听 `127.0.0.1:8080`，可以额外传入 `APP_PORT=你的端口`
-- 默认还会同时本地构建并上传 `admin-web/dist`；如果这次只想发后端，可额外带上 `BUILD_ADMIN_WEB=0`
-
-## 0. 准备项
-
-先确认以下条件都满足：
-
-- 域名已经把 A 记录指向云服务器公网 IP
-- 服务器系统为 Ubuntu
-- 服务器已开放 `80` 和 `443`
-- 你本地可以 `ssh` 到服务器
-
-下面命令默认使用这些变量，请先替换：
-
-```bash
-export SERVER_HOST="root@你的服务器IP"
-export APP_DIR="/opt/caipu-miniapp/backend"
-export ADMIN_WEB_DIR="/opt/caipu-miniapp/admin-web"
-export DOMAIN="your-domain.example"
-export APP_PORT="8080"
-```
-
-## 1. 本地编译并上传
-
-在你本机 `backend/` 目录执行：
-
-```bash
-cd /path/to/caipu-miniapp/backend
-mkdir -p dist
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/caipu-miniapp-server ./cmd/server
-```
-
-创建服务器目录：
-
-```bash
-ssh "$SERVER_HOST" "mkdir -p $APP_DIR"
-ssh "$SERVER_HOST" "mkdir -p $APP_DIR/data/uploads"
-```
-
-上传二进制和迁移文件：
-
-```bash
-scp dist/caipu-miniapp-server "$SERVER_HOST:$APP_DIR/"
-scp -r migrations "$SERVER_HOST:$APP_DIR/"
-```
-
-如果你还想把演示数据脚本一并传上去，可以额外上传源码；如果只是正式运行服务，上面这两步就够了。
-
-## 2. 服务器安装 nginx 和证书工具
-
-在服务器执行：
-
-```bash
-sudo apt update
-sudo apt install -y nginx certbot python3-certbot-nginx curl
-```
-
-如果你用的是 `ufw`，再执行：
-
-```bash
-sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw --force enable
-```
-
-## 3. 写服务器环境变量
-
-在服务器执行下面命令创建运行配置：
-
-```bash
-sudo tee "$APP_DIR/.env" >/dev/null <<'EOF'
-APP_NAME=caipu-miniapp-backend
-APP_ENV=production
-APP_ADDR=127.0.0.1:8080
-LOG_LEVEL=info
-
-JWT_SECRET=请替换成openssl生成的随机字符串
-JWT_EXPIRE_HOURS=720
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD_HASH=请填写 bcrypt 哈希
-ADMIN_JWT_SECRET=请替换成另一条openssl生成的随机字符串
-CREDENTIALS_SECRET=请替换成第三条openssl生成的随机字符串
-CREDENTIALS_KEY_VERSION=prod-v1
-CREDENTIALS_PREVIOUS_KEYS=
-
-WECHAT_APP_ID=wxafe7c4144c9c063e
-WECHAT_APP_SECRET=请填写真实微信小程序密钥
-
-SQLITE_PATH=/opt/caipu-miniapp/backend/data/app.db
-SQLITE_BUSY_TIMEOUT_MS=5000
-MIGRATION_DIR=/opt/caipu-miniapp/backend/migrations
-
-UPLOAD_DIR=/opt/caipu-miniapp/backend/data/uploads
-UPLOAD_PUBLIC_BASE_URL=https://your-domain.example/uploads
-UPLOAD_MAX_IMAGE_MB=10
-
-INVITE_DEFAULT_EXPIRE_HOURS=72
-INVITE_DEFAULT_MAX_USES=10
-EOF
-```
-
-其中这两项要按你的实际环境替换：
-
-- `APP_ADDR` 默认写的是 `127.0.0.1:8080`，如果你改了 `APP_PORT`，这里也要一起改
-- `UPLOAD_PUBLIC_BASE_URL` 要改成你的正式 `HTTPS` 域名
-
-分别生成 `JWT_SECRET`、`ADMIN_JWT_SECRET` 和 `CREDENTIALS_SECRET`：
-
-```bash
-openssl rand -hex 32
-openssl rand -hex 32
-openssl rand -hex 32
-```
-
-把三次生成结果依次填回上面的 `.env` 文件。三者必须独立，不能复用；轮换
-`CREDENTIALS_SECRET` 时再临时填写 `CREDENTIALS_PREVIOUS_KEYS=旧版本=旧密钥`。
-
-生成后台密码哈希示例：
-
-```bash
-cat >/tmp/bcrypt-hash.go <<'EOF'
-package main
-
-import (
-  "fmt"
-  "golang.org/x/crypto/bcrypt"
-)
-
-func main() {
-  hash, err := bcrypt.GenerateFromPassword([]byte("你的后台密码"), bcrypt.DefaultCost)
-  if err != nil {
-    panic(err)
-  }
-  fmt.Println(string(hash))
-}
-EOF
-go run /tmp/bcrypt-hash.go
-```
-
-再把目录权限收紧一点：
-
-```bash
-sudo chmod 600 "$APP_DIR/.env"
-```
-
-## 4. 先手动跑一次迁移和启动验证
-
-在服务器执行：
-
-```bash
-cd "$APP_DIR"
-set -a
-source .env
-set +a
-./caipu-miniapp-server -migrate-only
-./caipu-miniapp-server
-```
-
-保持这个终端不要关，再开一个新终端验证：
-
-```bash
-curl "http://127.0.0.1:${APP_PORT}/healthz"
-curl "http://127.0.0.1:${APP_PORT}/api/healthz"
-```
-
-确认正常后，回到服务终端按 `Ctrl + C` 停掉。
-
-如果你只是想先放一些测试数据，再额外走一次本地种子工具上传源码部署，或者我后面再给你补一版“服务器执行 seed-demo”的方式。
-
-## 5. 配置 systemd 常驻运行
-
-在服务器执行：
-
-```bash
-sudo tee /etc/systemd/system/caipu-miniapp-backend.service >/dev/null <<'EOF'
-[Unit]
-Description=Caipu Miniapp Backend
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/caipu-miniapp/backend
-ExecStart=/opt/caipu-miniapp/backend/caipu-miniapp-server
-Restart=always
-RestartSec=3
-EnvironmentFile=/opt/caipu-miniapp/backend/.env
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-启动并设为开机自启：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now caipu-miniapp-backend
-sudo systemctl status caipu-miniapp-backend --no-pager
-```
-
-查看日志：
-
-```bash
-sudo journalctl -u caipu-miniapp-backend -f
-```
-
-## 6. 配置 nginx 反向代理
-
-在服务器执行：
-
-```bash
-sudo tee /etc/nginx/sites-available/caipu-miniapp-backend >/dev/null <<'EOF'
-server {
-    listen 80;
-    server_name your-domain.example;
-
-    client_max_body_size 20m;
-
-    location = /admin {
-        return 301 /admin/;
-    }
-
-    location ^~ /admin/ {
-        alias /opt/caipu-miniapp/admin-web/dist/;
-        try_files $uri $uri/ /admin/index.html;
-    }
-
-    location = /caipu-healthz {
-        proxy_pass http://127.0.0.1:8080/healthz;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location ^~ /caipu-api/ {
-        proxy_pass http://127.0.0.1:8080/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location ^~ /caipu-uploads/ {
-        proxy_pass http://127.0.0.1:8080/uploads/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location / {
-        return 404;
-    }
-}
-EOF
-```
-
-如果你前面把 `APP_PORT` 改成了别的端口，这里的 `proxy_pass` 也要一起改掉。
-
-说明：
-
-- 上面的 nginx 片段和 `backend/scripts/bootstrap-server.sh` 当前默认模板一致，
-  适用于共享域名或你不想让后端直接占用根路径 `/` 的场景
-- 如果你还需要在同一域名上承载别的根站点，可在脚本初始化时显式带
-  `ROOT_PROXY_PASS=http://127.0.0.1:其他端口`，让 `location /` 反代到目标服务
-- 如果你明确要让当前域名完全由本项目独占，可在初始化时带
-  `NGINX_SITE_MODE=standalone`，脚本会生成旧的 `/api/`、`/uploads/` 和根路径
-  `/` 反代模板
-
-启用配置并检查：
-
-```bash
-sudo ln -sf /etc/nginx/sites-available/caipu-miniapp-backend /etc/nginx/sites-enabled/caipu-miniapp-backend
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-## 7. 申请 HTTPS 证书
-
-在服务器执行：
-
-```bash
-sudo certbot --nginx -d "$DOMAIN"
-```
-
-证书安装完成后，再检查自动续期：
-
-```bash
-sudo systemctl status certbot.timer --no-pager
-sudo certbot renew --dry-run
-```
-
-## 8. 最终验证
-
-在服务器执行：
-
-```bash
-curl "https://$DOMAIN/caipu-healthz"
-curl "https://$DOMAIN/caipu-api/healthz"
-```
-
-如果你采用的是本节前面的默认共享域名前缀方案，返回 `status=ok`
-就说明后端已经对外可用了。
-
-如果你采用的是 `NGINX_SITE_MODE=standalone`，请改成：
-
-```bash
-curl "https://$DOMAIN/healthz"
-curl "https://$DOMAIN/api/healthz"
-```
-
-再访问：
-
-```bash
-curl -I "https://$DOMAIN/admin/"
-```
-
-如果返回 `200` 或 `301/302` 跳转到 `/admin/`，说明后台静态资源也已经挂上。
-
-再到微信小程序后台确认：
-
-- `https://你的域名` 已加入“服务器域名”
-- 前端已使用 [utils/app-config.js](../utils/app-config.js) 里的正式配置
-- 服务器 `.env` 中的 `WECHAT_APP_SECRET` 正确
-
-## 9. 后续更新代码
-
-以后你每次发布后端，可以直接重复下面几步：
-
-如果你已经用了上面的脚本，通常直接再次执行下面这条就够了：
-
-```bash
-cd /path/to/caipu-miniapp/backend
-SERVER_HOST="$SERVER_HOST" \
-DOMAIN="$DOMAIN" \
-APP_PORT="$APP_PORT" \
-ENV_FILE=configs/local.env \
-./scripts/deploy.sh
-```
-
-如果你想手动发布，也可以按下面步骤走：
-
-本地重新编译上传：
-
-```bash
-cd /path/to/caipu-miniapp/backend
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/caipu-miniapp-server ./cmd/server
-scp dist/caipu-miniapp-server "$SERVER_HOST:$APP_DIR/"
-scp -r migrations "$SERVER_HOST:$APP_DIR/"
-```
-
-服务器重启服务：
-
-```bash
-ssh "$SERVER_HOST" "cd $APP_DIR && ./caipu-miniapp-server -migrate-only"
-ssh "$SERVER_HOST" "sudo systemctl restart caipu-miniapp-backend"
-ssh "$SERVER_HOST" "sudo systemctl status caipu-miniapp-backend --no-pager"
-```
-
-## 10. 常用排查命令
-
-```bash
-sudo systemctl status caipu-miniapp-backend --no-pager
-sudo journalctl -u caipu-miniapp-backend -n 200 --no-pager
-sudo nginx -t
-curl -I "https://$DOMAIN/healthz"
-ls -lah /opt/caipu-miniapp/backend/data
-ls -lah /opt/caipu-miniapp/backend/data/uploads
-```
+线上首次执行 bootstrap、备份异机复制、最小权限和真实回滚演练后，应把结果与时间回写
+到 `docs/cloud-server-config-overview.md`，避免把仓库目标状态误写成已验证生产事实。

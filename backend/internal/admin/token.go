@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -75,4 +78,20 @@ func (m *TokenManager) Parse(tokenString string) (string, error) {
 		return "", common.NewAppError(common.CodeUnauthorized, "invalid admin token", http.StatusUnauthorized)
 	}
 	return claims.Subject, nil
+}
+
+func (m *TokenManager) CSRFToken(tokenString string) string {
+	if m == nil || len(m.secret) == 0 || strings.TrimSpace(tokenString) == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, m.secret)
+	_, _ = mac.Write([]byte("admin-csrf\x00"))
+	_, _ = mac.Write([]byte(tokenString))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func (m *TokenManager) ValidateCSRFToken(tokenString, csrfToken string) bool {
+	expected := m.CSRFToken(tokenString)
+	provided := strings.TrimSpace(csrfToken)
+	return expected != "" && provided != "" && hmac.Equal([]byte(expected), []byte(provided))
 }

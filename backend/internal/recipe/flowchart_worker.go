@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
@@ -24,9 +23,7 @@ type FlowchartWorker struct {
 	interval           time.Duration
 	batchSize          int
 
-	cancel func()
-	done   chan struct{}
-	once   sync.Once
+	lifecycle *workerLifecycle
 }
 
 func NewFlowchartWorker(logger *slog.Logger, repo *Repository, generator *FlowchartGenerator, tracker audit.Tracker, enabled bool, autoEnqueueEnabled bool, interval time.Duration, batchSize int) *FlowchartWorker {
@@ -39,22 +36,20 @@ func NewFlowchartWorker(logger *slog.Logger, repo *Repository, generator *Flowch
 		autoEnqueueEnabled: autoEnqueueEnabled,
 		interval:           interval,
 		batchSize:          batchSize,
-		done:               make(chan struct{}),
+		lifecycle:          newWorkerLifecycle(),
 	}
 }
 
-func (w *FlowchartWorker) Start(parent context.Context) {
+func (w *FlowchartWorker) Start(parent context.Context) error {
 	if w == nil || !w.enabled || w.repo == nil || w.generator == nil || !w.generator.IsConfigured() {
-		return
+		return nil
 	}
-
-	w.once.Do(func() {
-		ctx, cancel := context.WithCancel(parent)
-		w.cancel = cancel
-
-		go func() {
-			defer close(w.done)
-
+	return w.lifecycle.Start(
+		parent,
+		"recipe flowchart",
+		w.interval,
+		w.runBatch,
+		func() {
 			w.logger.Info(
 				"recipe flowchart worker started",
 				"interval",
@@ -64,31 +59,16 @@ func (w *FlowchartWorker) Start(parent context.Context) {
 				"autoEnqueueEnabled",
 				w.autoEnqueueEnabled,
 			)
-			w.runBatch(ctx)
-
-			ticker := time.NewTicker(w.interval)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					w.logger.Info("recipe flowchart worker stopped")
-					return
-				case <-ticker.C:
-					w.runBatch(ctx)
-				}
-			}
-		}()
-	})
+		},
+		func() { w.logger.Info("recipe flowchart worker stopped") },
+	)
 }
 
-func (w *FlowchartWorker) Stop() {
-	if w == nil || w.cancel == nil {
-		return
+func (w *FlowchartWorker) Stop(ctx context.Context) error {
+	if w == nil {
+		return nil
 	}
-
-	w.cancel()
-	<-w.done
+	return w.lifecycle.Stop(ctx, "recipe flowchart")
 }
 
 func (w *FlowchartWorker) runBatch(parent context.Context) {
@@ -195,6 +175,20 @@ func (w *FlowchartWorker) processOne(parent context.Context, recipeID string) er
 	if !marked {
 		return nil
 	}
+	stopLeaseRenewal := startJobLeaseRenewal(
+		ctx,
+		staleFlowchartProcessingThreshold,
+		func(renewCtx context.Context, expiresAt string) error {
+			return w.repo.RenewFlowchartLease(renewCtx, recipeID, claimToken, expiresAt)
+		},
+		func(renewErr error) {
+			w.logger.Warn("renew recipe flowchart lease failed", "recipeID", recipeID, "error", renewErr)
+			if errors.Is(renewErr, ErrStaleJobResult) {
+				cancel()
+			}
+		},
+	)
+	defer stopLeaseRenewal()
 
 	finish := audit.FinishFunc(func(context.Context, audit.JobResult) error { return nil })
 	if w != nil && w.tracker != nil {

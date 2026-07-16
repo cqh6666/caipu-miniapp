@@ -117,6 +117,16 @@ func (s *Service) CurrentSession(ctx context.Context, userID int64) (SessionResp
 	return s.buildSession(ctx, user, false)
 }
 
+func (s *Service) Logout(ctx context.Context, userID int64) error {
+	if s == nil || s.repo == nil {
+		return common.ErrInternal.WithErr(fmt.Errorf("auth repository is required"))
+	}
+	if _, err := s.repo.RevokeTokens(ctx, userID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) UpdateProfile(ctx context.Context, userID int64, nickname, avatarURL string) (User, error) {
 	if err := validateProfileAvatarURL(avatarURL); err != nil {
 		return User{}, err
@@ -177,7 +187,7 @@ func (s *Service) buildSession(ctx context.Context, user User, includeToken bool
 	}
 
 	if includeToken {
-		token, err := s.tokenManager.Issue(user.ID)
+		token, err := s.tokenManager.Issue(user.ID, user.TokenVersion)
 		if err != nil {
 			return SessionResponse{}, fmt.Errorf("issue token: %w", err)
 		}

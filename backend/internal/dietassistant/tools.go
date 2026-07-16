@@ -459,6 +459,13 @@ func parseToolArguments(value any) (map[string]any, error) {
 	case string:
 		return parseToolArgumentBytes([]byte(v))
 	case map[string]any:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > maxDietAssistantToolArgumentsBytes {
+			return nil, dietAssistantLimitError("diet assistant tool arguments exceeded size limit", errToolPayloadTooLarge)
+		}
 		return v, nil
 	default:
 		data, err := json.Marshal(v)
@@ -470,6 +477,9 @@ func parseToolArguments(value any) (map[string]any, error) {
 }
 
 func parseToolArgumentBytes(data []byte) (map[string]any, error) {
+	if len(data) > maxDietAssistantToolArgumentsBytes {
+		return nil, dietAssistantLimitError("diet assistant tool arguments exceeded size limit", errToolPayloadTooLarge)
+	}
 	var args map[string]any
 	if err := json.Unmarshal(data, &args); err != nil {
 		return nil, fmt.Errorf("invalid tool arguments: %w", err)

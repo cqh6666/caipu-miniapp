@@ -106,7 +106,7 @@ func TestServiceUpdateStatusManagesVisitedAt(t *testing.T) {
 		t.Fatalf("created.VisitedAt = %q, want empty", created.VisitedAt)
 	}
 
-	visited, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{Status: StatusVisited})
+	visited, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{Status: StatusVisited, Version: &created.Version})
 	if err != nil {
 		t.Fatalf("UpdateStatus(visited) error = %v", err)
 	}
@@ -129,7 +129,7 @@ WHERE place_id = ? AND to_status = ?
 		t.Fatalf("visited event to_status = %q, want %q", got, want)
 	}
 
-	want, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{Status: StatusWant})
+	want, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{Status: StatusWant, Version: &visited.Version})
 	if err != nil {
 		t.Fatalf("UpdateStatus(want) error = %v", err)
 	}
@@ -240,8 +240,9 @@ func TestServicePartialUpdatePreservesExistingEnhancementFields(t *testing.T) {
 	}
 
 	updated, err := service.Update(ctx, 7, created.ID, placeRequest{
-		Name:  ptrString("旺记碳烤肥牛"),
-		Phone: ptrString("17303028852"),
+		Version: &created.Version,
+		Name:    ptrString("旺记碳烤肥牛"),
+		Phone:   ptrString("17303028852"),
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -278,6 +279,7 @@ func TestServiceUpdateStatusStoresExperienceFields(t *testing.T) {
 	visitedAt := "2026-06-25T18:30:00+08:00"
 	visited, err := service.UpdateStatus(ctx, 7, created.ID, statusUpdateInput{
 		Status:           StatusVisited,
+		Version:          &created.Version,
 		VisitedAt:        &visitedAt,
 		RevisitRating:    ptrInt(5),
 		RecommendedItems: []string{"碳烤肥牛", "烤鸡翅"},
@@ -364,6 +366,7 @@ CREATE TABLE places (
   updated_by INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+	version INTEGER NOT NULL DEFAULT 1,
   deleted_at TEXT
 );
 

@@ -2,7 +2,6 @@ package linkparse
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -619,8 +618,8 @@ func (s *Service) doJSON(req *http.Request, dst any) error {
 		return common.NewAppError(common.CodeBadRequest, "bilibili request failed", http.StatusBadRequest)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
-		return common.NewAppError(common.CodeBadRequest, "failed to decode bilibili response", http.StatusBadRequest).WithErr(err)
+	if err := decodeBoundedUpstreamJSON(resp.Body, maxBilibiliResponseBytes, "bilibili upstream", dst); err != nil {
+		return err
 	}
 
 	return nil

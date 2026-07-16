@@ -2116,7 +2116,13 @@ async function saveCurrentScene(successMessage = "场景配置已保存") {
     ElMessage.success(successMessage);
     return true;
   } catch (error) {
-    ElMessage.error(extractMessage(error));
+    if (typeof error === "object" && error !== null && "status" in error && error.status === 409) {
+      await loadCurrentScene();
+      await loadSceneSummaries();
+      ElMessage.warning("配置已被其他会话更新，已刷新，请重新确认后保存");
+    } else {
+      ElMessage.error(extractMessage(error));
+    }
     return false;
   } finally {
     savingScene.value = false;

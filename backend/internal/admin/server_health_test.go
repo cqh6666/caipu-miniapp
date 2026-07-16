@@ -259,6 +259,49 @@ func TestServerHealthOverviewUsesSidecarAPIKeyForHealthProbe(t *testing.T) {
 	}
 }
 
+func TestServerHealthOverviewUsesConfiguredServiceNamesAndBackendBaseURL(t *testing.T) {
+	t.Parallel()
+
+	service := newTestServerHealthService()
+	service.cfg.HealthNginxServiceName = "nginx-custom"
+	service.cfg.HealthBackendServiceName = "caipu-custom"
+	service.cfg.HealthSidecarServiceName = "sidecar-custom"
+	service.cfg.HealthBackendBaseURL = "http://127.0.0.1:9080"
+	service.collectHostSnapshot = func(context.Context, string) serverHealthHostSnapshot {
+		return serverHealthHostSnapshot{Signals: []ServerHealthStatus{
+			ServerHealthStatusHealthy,
+			ServerHealthStatusHealthy,
+			ServerHealthStatusHealthy,
+		}}
+	}
+	services := make(map[string]bool)
+	service.execCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 {
+			services[args[1]] = true
+		}
+		return []byte("active\n"), nil
+	}
+	targets := make(map[string]bool)
+	service.httpClient = newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		targets[r.URL.String()] = true
+		return newTestResponse(r, http.StatusOK), nil
+	})
+
+	if _, err := service.Overview(context.Background()); err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	for _, name := range []string{"nginx-custom", "caipu-custom", "sidecar-custom"} {
+		if !services[name] {
+			t.Fatalf("systemd service %q was not probed: %#v", name, services)
+		}
+	}
+	for _, target := range []string{"http://127.0.0.1:9080/healthz", "http://127.0.0.1:9080/api/healthz"} {
+		if !targets[target] {
+			t.Fatalf("backend target %q was not probed: %#v", target, targets)
+		}
+	}
+}
+
 func TestServerHealthOverviewCountsResourceThresholds(t *testing.T) {
 	t.Parallel()
 

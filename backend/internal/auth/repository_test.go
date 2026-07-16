@@ -60,6 +60,26 @@ func TestRepositoryUpdateProfileAllowsReplacingNicknameAndAvatar(t *testing.T) {
 	assertAuthUser(t, db, 2, "新昵称", "https://cdn.example.com/avatar-new.png")
 }
 
+func TestRepositoryRevokeTokensAtomicallyIncrementsVersion(t *testing.T) {
+	db := openAuthTestDB(t)
+	defer db.Close()
+	repo := NewRepository(db)
+	seedAuthUser(t, db, User{ID: 3, OpenID: "wx-openid-3", TokenVersion: 1})
+
+	version, err := repo.TokenVersion(context.Background(), 3)
+	if err != nil || version != 1 {
+		t.Fatalf("initial token version=%d err=%v", version, err)
+	}
+	version, err = repo.RevokeTokens(context.Background(), 3)
+	if err != nil || version != 2 {
+		t.Fatalf("revoked token version=%d err=%v", version, err)
+	}
+	storedVersion, err := repo.TokenVersion(context.Background(), 3)
+	if err != nil || storedVersion != 2 {
+		t.Fatalf("stored token version=%d err=%v", storedVersion, err)
+	}
+}
+
 func openAuthTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -74,6 +94,7 @@ CREATE TABLE users (
   openid TEXT NOT NULL UNIQUE,
   nickname TEXT,
   avatar_url TEXT,
+	  token_version INTEGER NOT NULL DEFAULT 1 CHECK (token_version > 0),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -90,13 +111,17 @@ func seedAuthUser(t *testing.T, db *sql.DB, user User) User {
 
 	user.CreatedAt = "2026-04-04T00:00:00Z"
 	user.UpdatedAt = "2026-04-04T00:00:00Z"
+	if user.TokenVersion <= 0 {
+		user.TokenVersion = 1
+	}
 
 	if _, err := db.Exec(
-		`INSERT INTO users (id, openid, nickname, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (id, openid, nickname, avatar_url, token_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		user.ID,
 		user.OpenID,
 		nullableString(user.Nickname),
 		nullableString(user.AvatarURL),
+		user.TokenVersion,
 		user.CreatedAt,
 		user.UpdatedAt,
 	); err != nil {

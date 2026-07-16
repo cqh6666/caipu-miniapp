@@ -152,6 +152,7 @@ type Recipe struct {
 	UpdatedBy                int64             `json:"updatedBy"`
 	CreatedAt                string            `json:"createdAt"`
 	UpdatedAt                string            `json:"updatedAt"`
+	Version                  int64             `json:"version"`
 
 	// 仅在 EnsureShareToken / GetByShareToken 路径下填充；scanRecipe 主流程不扫描，
 	// 普通 List/Detail 接口返回不包含此字段（omitempty）
@@ -200,6 +201,7 @@ type createRecipeRequest struct {
 }
 
 type updateRecipeRequest struct {
+	Version             *int64        `json:"version"`
 	Title               string        `json:"title"`
 	TitleSource         string        `json:"titleSource"`
 	Ingredient          string        `json:"ingredient"`
@@ -215,9 +217,11 @@ type updateRecipeRequest struct {
 }
 
 type updateStatusRequest struct {
-	Status string `json:"status"`
+	Status  string `json:"status"`
+	Version *int64 `json:"version"`
 }
 
 type updatePinnedRequest struct {
-	Pinned bool `json:"pinned"`
+	Pinned  bool   `json:"pinned"`
+	Version *int64 `json:"version"`
 }

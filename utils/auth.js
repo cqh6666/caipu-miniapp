@@ -385,3 +385,16 @@ export function getFriendlySessionErrorMessage(error) {
 export function clearSession() {
 	clearSessionState()
 }
+
+export async function logoutCurrentSession() {
+	try {
+		if (getAccessToken()) {
+			await request({
+				url: '/caipu-api/auth/logout',
+				method: 'POST'
+			})
+		}
+	} finally {
+		clearSessionState()
+	}
+}

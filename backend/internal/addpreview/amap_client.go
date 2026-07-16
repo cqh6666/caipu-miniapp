@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
 )
 
 type poiSearcher interface {
@@ -69,8 +71,11 @@ func (c *AMapClient) SearchPOIs(ctx context.Context, input poiSearchInput) ([]po
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	body, err := upstream.ReadAll(resp.Body, 2<<20)
 	if err != nil {
+		if upstream.IsResponseTooLarge(err) {
+			return nil, common.NewAppError(common.CodeInternalServer, "amap upstream response exceeded size limit", http.StatusBadGateway).WithErr(err)
+		}
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

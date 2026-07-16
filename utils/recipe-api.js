@@ -55,19 +55,19 @@ export function generateRecipeFlowchart(recipeId) {
 	}).then((data) => data?.recipe || null)
 }
 
-export function updateRecipeStatus(recipeId, status) {
+export function updateRecipeStatus(recipeId, status, version) {
 	return request({
 		url: `/caipu-api/recipes/${recipeId}/status`,
 		method: 'PATCH',
-		data: { status }
+		data: { status, version }
 	}).then((data) => data?.recipe || null)
 }
 
-export function updateRecipePinned(recipeId, pinned) {
+export function updateRecipePinned(recipeId, pinned, version) {
 	return request({
 		url: `/caipu-api/recipes/${recipeId}/pin`,
 		method: 'PATCH',
-		data: { pinned: !!pinned }
+		data: { pinned: !!pinned, version }
 	}).then((data) => data?.recipe || null)
 }
 

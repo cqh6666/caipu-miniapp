@@ -18,14 +18,18 @@ func TestTokenManagerRejectsWrongTokenPurposeAndSubject(t *testing.T) {
 	}{
 		{
 			name:   "wrong token use",
-			claims: Claims{UserID: 42, TokenUse: "admin_access", RegisteredClaims: validUserRegisteredClaims(now, "42")},
+			claims: Claims{UserID: 42, TokenVersion: 1, TokenUse: "admin_access", RegisteredClaims: validUserRegisteredClaims(now, "42")},
 		},
 		{
 			name:   "subject mismatch",
-			claims: Claims{UserID: 42, TokenUse: userTokenUse, RegisteredClaims: validUserRegisteredClaims(now, "43")},
+			claims: Claims{UserID: 42, TokenVersion: 1, TokenUse: userTokenUse, RegisteredClaims: validUserRegisteredClaims(now, "43")},
 		},
 		{
 			name:   "wrong issuer",
+			claims: Claims{UserID: 42, TokenVersion: 1, TokenUse: userTokenUse, RegisteredClaims: validUserRegisteredClaims(now, "42")},
+		},
+		{
+			name:   "missing token version",
 			claims: Claims{UserID: 42, TokenUse: userTokenUse, RegisteredClaims: validUserRegisteredClaims(now, "42")},
 		},
 	}
@@ -42,6 +46,23 @@ func TestTokenManagerRejectsWrongTokenPurposeAndSubject(t *testing.T) {
 				t.Fatal("expected token rejection")
 			}
 		})
+	}
+}
+
+func TestTokenManagerRoundTripIncludesTokenVersion(t *testing.T) {
+	t.Parallel()
+
+	manager := NewTokenManager("user-token-test-secret", 1)
+	token, err := manager.Issue(42, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := manager.Parse(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.UserID != 42 || identity.TokenVersion != 7 {
+		t.Fatalf("identity=%+v", identity)
 	}
 }
 

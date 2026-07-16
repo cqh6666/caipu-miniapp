@@ -1,12 +1,15 @@
 package securehttp
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -59,6 +62,84 @@ func TestGuardedDialPinsValidatedPublicAddress(t *testing.T) {
 	}
 }
 
+func TestGuardedDialRejectsMixedPublicAndPrivateDNSAnswers(t *testing.T) {
+	t.Parallel()
+
+	dialed := false
+	dial := guardedDialContext(
+		func(context.Context, string) ([]netip.Addr, error) {
+			return []netip.Addr{
+				netip.MustParseAddr("93.184.216.34"),
+				netip.MustParseAddr("10.0.0.8"),
+			}, nil
+		},
+		func(context.Context, string, string) (net.Conn, error) {
+			dialed = true
+			return nil, errors.New("unexpected dial")
+		},
+	)
+
+	_, err := dial(context.Background(), "tcp", "images.example.com:443")
+	if !errors.Is(err, ErrBlockedAddress) || dialed {
+		t.Fatalf("dial error = %v, dialed = %t", err, dialed)
+	}
+}
+
+func TestClientRejectsPublicRedirectToPrivateDestination(t *testing.T) {
+	t.Parallel()
+
+	dialCount := 0
+	client := NewClientWithOptions(Options{
+		Timeout: time.Second,
+		LookupIP: func(_ context.Context, host string) ([]netip.Addr, error) {
+			switch host {
+			case "public.example":
+				return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+			case "private.example":
+				return []netip.Addr{netip.MustParseAddr("10.0.0.9")}, nil
+			default:
+				return nil, errors.New("unexpected host")
+			}
+		},
+		DialContext: func(_ context.Context, _, address string) (net.Conn, error) {
+			dialCount++
+			if address != "93.184.216.34:80" {
+				return nil, errors.New("unexpected dial address")
+			}
+			clientConn, serverConn := net.Pipe()
+			go func() {
+				defer serverConn.Close()
+				request, err := http.ReadRequest(bufio.NewReader(serverConn))
+				if err != nil {
+					return
+				}
+				_, _ = io.Copy(io.Discard, request.Body)
+				_ = request.Body.Close()
+				_, _ = io.WriteString(serverConn, strings.Join([]string{
+					"HTTP/1.1 302 Found",
+					"Location: http://private.example/secret",
+					"Content-Length: 0",
+					"Connection: close",
+					"",
+					"",
+				}, "\r\n"))
+			}()
+			return clientConn, nil
+		},
+	})
+
+	response, err := client.Get("http://public.example/start")
+	if response != nil {
+		response.Body.Close()
+	}
+	if !errors.Is(err, ErrBlockedAddress) {
+		t.Fatalf("request error = %v, want blocked address", err)
+	}
+	if dialCount != 1 {
+		t.Fatalf("dial count = %d, want 1", dialCount)
+	}
+}
+
 func TestClientRevalidatesRedirectsAndRejectsDowngrade(t *testing.T) {
 	client := NewClient(time.Second)
 	previous := &http.Request{URL: mustURL(t, "https://example.com/start")}
@@ -68,6 +149,20 @@ func TestClientRevalidatesRedirectsAndRejectsDowngrade(t *testing.T) {
 	}
 	if err := client.CheckRedirect(&http.Request{URL: mustURL(t, "https://user@example.com/next")}, []*http.Request{previous}); !errors.Is(err, ErrInvalidURL) {
 		t.Fatalf("userinfo error = %v", err)
+	}
+}
+
+func TestClientRejectsRedirectsBeyondConfiguredLimit(t *testing.T) {
+	t.Parallel()
+
+	client := NewClientWithOptions(Options{Timeout: time.Second, MaxRedirects: 2})
+	via := []*http.Request{
+		{URL: mustURL(t, "https://example.com/one")},
+		{URL: mustURL(t, "https://example.com/two")},
+	}
+	err := client.CheckRedirect(&http.Request{URL: mustURL(t, "https://example.com/three")}, via)
+	if !errors.Is(err, ErrInvalidURL) {
+		t.Fatalf("redirect error = %v, want invalid URL", err)
 	}
 }
 

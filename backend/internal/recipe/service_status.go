@@ -11,10 +11,17 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
-func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID string, status string) (Recipe, error) {
+func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID string, status string, version *int64) (Recipe, error) {
+	expectedVersion, err := requireRecipeVersion(version)
+	if err != nil {
+		return Recipe{}, err
+	}
 	current, err := s.GetByID(ctx, userID, recipeID)
 	if err != nil {
 		return Recipe{}, err
+	}
+	if current.Version != expectedVersion {
+		return Recipe{}, recipeVersionConflictError()
 	}
 
 	status = strings.TrimSpace(status)
@@ -23,8 +30,10 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID strin
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	if err := s.repo.UpdateStatus(ctx, recipeID, current.KitchenID, status, userID, now); errors.Is(err, sql.ErrNoRows) {
+	if err := s.repo.UpdateStatus(ctx, recipeID, current.KitchenID, status, userID, expectedVersion, now); errors.Is(err, sql.ErrNoRows) {
 		return Recipe{}, common.ErrNotFound
+	} else if errors.Is(err, errRecipeVersionConflict) {
+		return Recipe{}, recipeVersionConflictError()
 	} else if err != nil {
 		return Recipe{}, err
 	}
@@ -32,6 +41,7 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, recipeID strin
 	current.Status = status
 	current.DoneAt = resolveRecipeStatusDoneAt(current.DoneAt, status, now)
 	current.UpdatedBy = userID
+	current.Version++
 	return current, nil
 }
 
@@ -45,10 +55,17 @@ func resolveRecipeStatusDoneAt(currentDoneAt string, status string, touchedAt st
 	return touchedAt
 }
 
-func (s *Service) UpdatePinned(ctx context.Context, userID int64, recipeID string, pinned bool) (Recipe, error) {
+func (s *Service) UpdatePinned(ctx context.Context, userID int64, recipeID string, pinned bool, version *int64) (Recipe, error) {
+	expectedVersion, err := requireRecipeVersion(version)
+	if err != nil {
+		return Recipe{}, err
+	}
 	current, err := s.GetByID(ctx, userID, recipeID)
 	if err != nil {
 		return Recipe{}, err
+	}
+	if current.Version != expectedVersion {
+		return Recipe{}, recipeVersionConflictError()
 	}
 
 	currentPinned := strings.TrimSpace(current.PinnedAt) != ""
@@ -57,8 +74,10 @@ func (s *Service) UpdatePinned(ctx context.Context, userID int64, recipeID strin
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	if err := s.repo.UpdatePinned(ctx, recipeID, current.KitchenID, pinned, userID, now); errors.Is(err, sql.ErrNoRows) {
+	if err := s.repo.UpdatePinned(ctx, recipeID, current.KitchenID, pinned, userID, expectedVersion, now); errors.Is(err, sql.ErrNoRows) {
 		return Recipe{}, common.ErrNotFound
+	} else if errors.Is(err, errRecipeVersionConflict) {
+		return Recipe{}, recipeVersionConflictError()
 	} else if err != nil {
 		return Recipe{}, err
 	}
@@ -69,6 +88,7 @@ func (s *Service) UpdatePinned(ctx context.Context, userID int64, recipeID strin
 		current.PinnedAt = ""
 	}
 	current.UpdatedBy = userID
+	current.Version++
 	return current, nil
 }
 

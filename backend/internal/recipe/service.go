@@ -138,6 +138,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req creat
 	item.UpdatedBy = userID
 	item.CreatedAt = now
 	item.UpdatedAt = now
+	item.Version = 1
 	item.TitleSource = normalizeTitleSource(req.TitleSource)
 	item.ImageMetas = buildSubmittedImageMetas(item.ImageURLs, Recipe{}, s.upload)
 	item.ImageURLs = recipeImageURLsFromMetas(item.ImageMetas)
@@ -169,9 +170,16 @@ func (s *Service) GetByID(ctx context.Context, userID int64, recipeID string) (R
 }
 
 func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req updateRecipeRequest) (Recipe, error) {
+	expectedVersion, err := requireRecipeVersion(req.Version)
+	if err != nil {
+		return Recipe{}, err
+	}
 	current, err := s.GetByID(ctx, userID, recipeID)
 	if err != nil {
 		return Recipe{}, err
+	}
+	if current.Version != expectedVersion {
+		return Recipe{}, recipeVersionConflictError()
 	}
 
 	summary := req.Summary
@@ -201,6 +209,7 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	next.CreatedAt = current.CreatedAt
 	next.UpdatedBy = userID
 	next.UpdatedAt = time.Now().Format(time.RFC3339)
+	next.Version = expectedVersion
 	next.ImageMetas = buildSubmittedImageMetas(next.ImageURLs, current, s.upload)
 	next.ImageURLs = recipeImageURLsFromMetas(next.ImageMetas)
 	next.ImageURL = firstImageURL(next.ImageURLs)
@@ -211,9 +220,27 @@ func (s *Service) Update(ctx context.Context, userID int64, recipeID string, req
 	if errors.Is(err, sql.ErrNoRows) {
 		return Recipe{}, common.ErrNotFound
 	}
+	if errors.Is(err, errRecipeVersionConflict) {
+		return Recipe{}, recipeVersionConflictError()
+	}
 	if err != nil {
 		return Recipe{}, err
 	}
 
 	return s.decorateRecipeRuntimeState(ctx, updated), nil
+}
+
+func requireRecipeVersion(version *int64) (int64, error) {
+	if version == nil || *version < 1 {
+		return 0, common.NewAppError(common.CodeBadRequest, "version is required", http.StatusBadRequest)
+	}
+	return *version, nil
+}
+
+func recipeVersionConflictError() error {
+	return common.NewAppError(
+		common.CodeConflict,
+		"recipe has been updated; reload and try again",
+		http.StatusConflict,
+	)
 }

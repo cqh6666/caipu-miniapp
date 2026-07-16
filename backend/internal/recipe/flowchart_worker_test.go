@@ -252,6 +252,43 @@ WHERE id = 'apply-result'
 	}
 }
 
+func TestRepositoryRenewFlowchartLeaseRequiresCurrentClaim(t *testing.T) {
+	db := openFlowchartTestDB(t)
+	defer db.Close()
+
+	if _, err := db.Exec(`
+INSERT INTO recipes (id, title, flowchart_status, flowchart_requested_at, created_at, updated_at)
+VALUES ('renew-flow', '续租流程图', 'pending', '2026-03-25T00:00:00Z', '2026-03-25T00:00:00Z', '2026-03-25T00:00:00Z');
+`); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewRepository(db)
+	claimA, marked, err := repo.MarkFlowchartProcessing(context.Background(), "renew-flow", "2026-03-25T00:02:00Z")
+	if err != nil || !marked {
+		t.Fatalf("claim A marked=%t error=%v", marked, err)
+	}
+	if err := repo.RenewFlowchartLease(context.Background(), "renew-flow", claimA, "2026-03-25T00:10:00Z"); err != nil {
+		t.Fatalf("renew claim A error=%v", err)
+	}
+	if requeued, err := repo.RequeueStaleFlowcharts(context.Background(), "2026-03-25T00:05:00Z", "2026-03-25T00:06:00Z"); err != nil || requeued != 0 {
+		t.Fatalf("fresh lease requeued=%d error=%v", requeued, err)
+	}
+	if requeued, err := repo.RequeueStaleFlowcharts(context.Background(), "2026-03-25T00:11:00Z", "2026-03-25T00:12:00Z"); err != nil || requeued != 1 {
+		t.Fatalf("expired lease requeued=%d error=%v", requeued, err)
+	}
+	claimB, marked, err := repo.MarkFlowchartProcessing(context.Background(), "renew-flow", "2026-03-25T00:20:00Z")
+	if err != nil || !marked {
+		t.Fatalf("claim B marked=%t error=%v", marked, err)
+	}
+	if err := repo.RenewFlowchartLease(context.Background(), "renew-flow", claimA, "2026-03-25T00:30:00Z"); !errors.Is(err, ErrStaleJobResult) {
+		t.Fatalf("old claim renewal error=%v, want stale result", err)
+	}
+	if err := repo.RenewFlowchartLease(context.Background(), "renew-flow", claimB, "2026-03-25T00:30:00Z"); err != nil {
+		t.Fatalf("current claim renewal error=%v", err)
+	}
+}
+
 func TestRepositoryFlowchartClaimRejectsReclaimedWorkerResult(t *testing.T) {
 	db := openFlowchartTestDB(t)
 	defer db.Close()
@@ -327,6 +364,7 @@ CREATE TABLE recipes (
   parse_processing_started_at TEXT NOT NULL DEFAULT '',
   parsed_content_edited INTEGER NOT NULL DEFAULT 0,
   content_version INTEGER NOT NULL DEFAULT 0,
+	version INTEGER NOT NULL DEFAULT 1,
   parse_claim_token TEXT NOT NULL DEFAULT '',
   parse_claim_content_version INTEGER NOT NULL DEFAULT 0,
   parse_lease_expires_at TEXT NOT NULL DEFAULT '',

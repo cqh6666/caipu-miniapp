@@ -128,6 +128,8 @@
     `PLAN_ONLY=1 bash scripts/deploy-backend-on-server.sh`
   - 当前 `scripts/deploy-on-server.sh` 保留为聚合入口，只有在你明确需要
     同时处理 `backend + admin-web` 时再用
+  - 后端入口执行配置校验、在线一致性备份、备份副本迁移预检、版本化 release
+    原子切换和连续 `/readyz` 校验；失败时恢复上一二进制，但不会反向回滚数据库迁移
   - 对当前这台 `2 vCPU / 1.9 GiB RAM / 0 swap` 的线上机：
     - 默认允许 `backend` 单独构建
     - 默认拒绝 `admin-web` 构建
@@ -579,6 +581,12 @@ Authorization: Bearer <token>
   }
 }
 ```
+
+##### `POST /api/auth/logout`
+
+用途：
+递增当前用户的 `token_version`，撤销该用户此前签发的全部 Bearer token。调用成功后，
+客户端应清理本地 token 并重新登录；旧 token 再访问受保护接口会返回 `401`。
 
 #### 2. 空间
 

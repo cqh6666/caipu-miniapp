@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
@@ -47,11 +48,28 @@ VALUES (1, '厨友青柠27的厨房', 7, '2026-03-22T00:00:00Z', '2026-03-22T00:
 	}
 
 	repo := NewRepository(db)
-	if err := repo.UpdateName(context.Background(), 1, "夜宵小厨房"); err != nil {
+	if _, err := db.Exec(`INSERT INTO kitchen_members (kitchen_id, user_id, role, joined_at) VALUES (1, 7, 'owner', '2026-03-22T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateName(context.Background(), 7, 1, "夜宵小厨房"); err != nil {
 		t.Fatalf("UpdateName() error = %v", err)
 	}
 
 	assertKitchenName(t, db, 1, "夜宵小厨房", nameSourceCustom)
+}
+
+func TestRepositoryUpdateNameRechecksMembership(t *testing.T) {
+	db := openKitchenTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`
+INSERT INTO kitchens (id, name, owner_user_id, created_at, updated_at, name_source)
+VALUES (1, '原空间', 7, '2026-07-16T00:00:00Z', '2026-07-16T00:00:00Z', 'custom');`); err != nil {
+		t.Fatal(err)
+	}
+	err := NewRepository(db).UpdateName(context.Background(), 7, 1, "不应成功")
+	if !errors.Is(err, common.ErrForbidden) {
+		t.Fatalf("UpdateName() error = %v, want forbidden", err)
+	}
 }
 
 func TestRepositoryLeaveDeletesMembershipAndRevokesOwnActiveInvites(t *testing.T) {
@@ -112,6 +130,59 @@ VALUES (1, 7, 'owner', '2026-03-22T00:00:00Z');
 	assertKitchenMemberRole(t, db, 1, 7, "owner")
 }
 
+func TestRepositoryEnsureDefaultWithOwnerIsConcurrentAndIdempotent(t *testing.T) {
+	db := openKitchenTestDB(t)
+	defer db.Close()
+
+	repo := NewRepository(db)
+	const workers = 20
+	ids := make(chan int64, workers)
+	errs := make(chan error, workers)
+	var wait sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			item, err := repo.EnsureDefaultWithOwner(context.Background(), 7, "厨友青柠27的厨房")
+			if err != nil {
+				errs <- err
+				return
+			}
+			ids <- item.ID
+		}()
+	}
+	wait.Wait()
+	close(ids)
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("EnsureDefaultWithOwner() error = %v", err)
+	}
+	var firstID int64
+	for id := range ids {
+		if firstID == 0 {
+			firstID = id
+		}
+		if id != firstID {
+			t.Fatalf("default kitchen id = %d, want %d", id, firstID)
+		}
+	}
+	var kitchenCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM kitchens WHERE owner_user_id = 7 AND is_default = 1`).Scan(&kitchenCount); err != nil {
+		t.Fatal(err)
+	}
+	if kitchenCount != 1 {
+		t.Fatalf("default kitchen count = %d, want 1", kitchenCount)
+	}
+	var membershipCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM kitchen_members WHERE kitchen_id = ? AND user_id = 7`, firstID).Scan(&membershipCount); err != nil {
+		t.Fatal(err)
+	}
+	if membershipCount != 1 {
+		t.Fatalf("owner membership count = %d, want 1", membershipCount)
+	}
+}
+
 func openKitchenTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -119,6 +190,7 @@ func openKitchenTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
+	db.SetMaxOpenConns(1)
 
 	if _, err := db.Exec(`
 CREATE TABLE kitchens (
@@ -126,9 +198,12 @@ CREATE TABLE kitchens (
   name TEXT NOT NULL,
   owner_user_id INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  name_source TEXT NOT NULL DEFAULT 'custom'
-);
+	  updated_at TEXT NOT NULL,
+	  name_source TEXT NOT NULL DEFAULT 'custom',
+	  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1))
+	);
+	CREATE UNIQUE INDEX idx_kitchens_one_default_per_owner
+	  ON kitchens(owner_user_id) WHERE is_default = 1;
 CREATE TABLE kitchen_members (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kitchen_id INTEGER NOT NULL,

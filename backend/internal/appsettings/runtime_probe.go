@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,7 +15,16 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
 )
+
+const maxRuntimeProbeResponseBytes int64 = 64 << 10
+
+type runtimeProbeResponse struct {
+	status int
+	body   []byte
+}
 
 func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, requestID, groupName string, values map[string]any, clearKeys []string) (GroupTestResult, error) {
 	group, ok := p.groupIndex[groupName]
@@ -58,7 +68,7 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 		if timeoutSeconds <= 0 {
 			timeoutSeconds = 10
 		}
-		result = testOpenAICompatible(ctx, resolved["base_url"], resolved["api_key"], resolved["model"], time.Duration(timeoutSeconds)*time.Second)
+		result = testOpenAICompatible(ctx, p.httpDoer, resolved["base_url"], resolved["api_key"], resolved["model"], time.Duration(timeoutSeconds)*time.Second)
 	case "ai.flowchart":
 		timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(resolved["timeout_seconds"]))
 		if timeoutSeconds <= 0 {
@@ -66,6 +76,7 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 		}
 		result = testFlowchartCompatible(
 			ctx,
+			p.httpDoer,
 			resolved["base_url"],
 			resolved["api_key"],
 			resolved["model"],
@@ -78,7 +89,7 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 		if timeoutSeconds <= 0 {
 			timeoutSeconds = 10
 		}
-		result = testSidecarHealth(ctx, resolved["base_url"], resolved["api_key"], time.Duration(timeoutSeconds)*time.Second)
+		result = testSidecarHealth(ctx, p.httpDoer, resolved["base_url"], resolved["api_key"], time.Duration(timeoutSeconds)*time.Second)
 	case "ai.provider_alert":
 		alertConfig := aialert.Config{
 			Enabled:          strings.EqualFold(strings.TrimSpace(resolved["enabled"]), "true"),
@@ -105,7 +116,13 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 			Message: "测试邮件已发送，请检查收件箱和垃圾箱",
 		}
 		if err != nil {
-			result.Message = err.Error()
+			result = runtimeProbeFailure(
+				ctx,
+				"ai-provider-alert-smtp",
+				"测试邮件发送失败，请检查 SMTP 配置和服务状态。",
+				0,
+				err,
+			)
 		}
 	default:
 		return GroupTestResult{}, common.ErrNotFound
@@ -139,7 +156,7 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 	return result, nil
 }
 
-func testOpenAICompatible(ctx context.Context, baseURL, apiKey, model string, timeout time.Duration) GroupTestResult {
+func testOpenAICompatible(ctx context.Context, doer HTTPDoer, baseURL, apiKey, model string, timeout time.Duration) GroupTestResult {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	model = strings.TrimSpace(model)
 	if baseURL == "" || model == "" {
@@ -159,33 +176,35 @@ func testOpenAICompatible(ctx context.Context, baseURL, apiKey, model string, ti
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return GroupTestResult{OK: false, Message: "创建测试请求失败: " + err.Error()}
+		return runtimeProbeFailure(ctx, "openai-compatible", "创建测试请求失败，请检查 base_url。", 0, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(apiKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
 
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
+	resp, err := executeRuntimeProbe(ctx, doer, req, timeout)
 	if err != nil {
-		return GroupTestResult{OK: false, Message: "请求失败: " + err.Error()}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = "状态码 " + strconv.Itoa(resp.StatusCode)
+		if upstream.IsResponseTooLarge(err) {
+			return runtimeProbeFailure(ctx, "openai-compatible", "测试失败：上游响应超过大小限制。", 0, err)
 		}
-		return GroupTestResult{OK: false, Message: "测试失败: " + message}
+		return runtimeProbeFailure(ctx, "openai-compatible", "测试请求失败，请检查地址、网络和超时配置。", 0, err)
+	}
+
+	if resp.status < 200 || resp.status >= 300 {
+		return runtimeProbeFailure(
+			ctx,
+			"openai-compatible",
+			"测试失败：上游返回状态码 "+strconv.Itoa(resp.status)+"。",
+			resp.status,
+			runtimeProbeBodyError(resp.body),
+		)
 	}
 
 	return GroupTestResult{OK: true, Message: "连接成功"}
 }
 
-func testFlowchartCompatible(ctx context.Context, baseURL, apiKey, model, endpointMode, responseFormat string, timeout time.Duration) GroupTestResult {
+func testFlowchartCompatible(ctx context.Context, doer HTTPDoer, baseURL, apiKey, model, endpointMode, responseFormat string, timeout time.Duration) GroupTestResult {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	model = strings.TrimSpace(model)
 	if baseURL == "" || model == "" {
@@ -234,33 +253,35 @@ func testFlowchartCompatible(ctx context.Context, baseURL, apiKey, model, endpoi
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return GroupTestResult{OK: false, Message: "创建测试请求失败: " + err.Error()}
+		return runtimeProbeFailure(ctx, "flowchart-compatible", "创建测试请求失败，请检查 base_url。", 0, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(apiKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
 
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
+	resp, err := executeRuntimeProbe(ctx, doer, req, timeout)
 	if err != nil {
-		return GroupTestResult{OK: false, Message: "请求失败: " + err.Error()}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = "状态码 " + strconv.Itoa(resp.StatusCode)
+		if upstream.IsResponseTooLarge(err) {
+			return runtimeProbeFailure(ctx, "flowchart-compatible", "测试失败：上游响应超过大小限制。", 0, err)
 		}
-		return GroupTestResult{OK: false, Message: "测试失败: " + message}
+		return runtimeProbeFailure(ctx, "flowchart-compatible", "测试请求失败，请检查地址、网络和超时配置。", 0, err)
+	}
+
+	if resp.status < 200 || resp.status >= 300 {
+		return runtimeProbeFailure(
+			ctx,
+			"flowchart-compatible",
+			"测试失败：上游返回状态码 "+strconv.Itoa(resp.status)+"。",
+			resp.status,
+			runtimeProbeBodyError(resp.body),
+		)
 	}
 
 	return GroupTestResult{OK: true, Message: "连接成功"}
 }
 
-func testSidecarHealth(ctx context.Context, baseURL, apiKey string, timeout time.Duration) GroupTestResult {
+func testSidecarHealth(ctx context.Context, doer HTTPDoer, baseURL, apiKey string, timeout time.Duration) GroupTestResult {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		return GroupTestResult{OK: false, Message: "缺少 sidecar base_url，无法测试。"}
@@ -271,29 +292,70 @@ func testSidecarHealth(ctx context.Context, baseURL, apiKey string, timeout time
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/health", nil)
 	if err != nil {
-		return GroupTestResult{OK: false, Message: "创建测试请求失败: " + err.Error()}
+		return runtimeProbeFailure(ctx, "linkparse-sidecar", "创建测试请求失败，请检查 base_url。", 0, err)
 	}
 	if strings.TrimSpace(apiKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
 
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
+	resp, err := executeRuntimeProbe(ctx, doer, req, timeout)
 	if err != nil {
-		return GroupTestResult{OK: false, Message: "请求失败: " + err.Error()}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			message = "状态码 " + strconv.Itoa(resp.StatusCode)
+		if upstream.IsResponseTooLarge(err) {
+			return runtimeProbeFailure(ctx, "linkparse-sidecar", "sidecar 健康检查失败：上游响应超过大小限制。", 0, err)
 		}
-		return GroupTestResult{OK: false, Message: "sidecar 健康检查失败: " + message}
+		return runtimeProbeFailure(ctx, "linkparse-sidecar", "测试请求失败，请检查地址、网络和超时配置。", 0, err)
+	}
+
+	if resp.status < 200 || resp.status >= 300 {
+		return runtimeProbeFailure(
+			ctx,
+			"linkparse-sidecar",
+			"sidecar 健康检查失败：上游返回状态码 "+strconv.Itoa(resp.status)+"。",
+			resp.status,
+			runtimeProbeBodyError(resp.body),
+		)
 	}
 
 	return GroupTestResult{OK: true, Message: "sidecar 健康检查通过"}
+}
+
+func executeRuntimeProbe(ctx context.Context, doer HTTPDoer, req *http.Request, timeout time.Duration) (runtimeProbeResponse, error) {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req = req.WithContext(requestCtx)
+
+	response, err := normalizeHTTPDoer(doer).Do(req)
+	if err != nil {
+		return runtimeProbeResponse{}, err
+	}
+	defer response.Body.Close()
+	body, err := upstream.ReadAll(response.Body, maxRuntimeProbeResponseBytes)
+	if err != nil {
+		return runtimeProbeResponse{}, err
+	}
+	return runtimeProbeResponse{status: response.StatusCode, body: body}, nil
+}
+
+func runtimeProbeFailure(ctx context.Context, probe, message string, status int, err error) GroupTestResult {
+	attrs := []any{"probe", strings.TrimSpace(probe)}
+	if status > 0 {
+		attrs = append(attrs, "http_status", status)
+	}
+	if summary := logging.SafeErrorSummary(err); summary != "" {
+		attrs = append(attrs, "error", errors.New(summary))
+	}
+	slog.WarnContext(ctx, "runtime configuration probe failed", attrs...)
+	return GroupTestResult{OK: false, Message: message}
+}
+
+func runtimeProbeBodyError(data []byte) error {
+	if strings.TrimSpace(string(data)) == "" {
+		return nil
+	}
+	return errors.New(string(data))
 }
 
 func boolToInt(value bool) int {

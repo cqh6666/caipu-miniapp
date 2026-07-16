@@ -1,9 +1,10 @@
 package kitchen
 
 type Summary struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-	Role string `json:"role"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	IsDefault bool   `json:"isDefault"`
 }
 
 type Member struct {

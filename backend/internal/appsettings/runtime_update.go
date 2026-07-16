@@ -9,12 +9,12 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
-func (p *RuntimeProvider) UpdateRuntimeGroup(ctx context.Context, subject, requestID, groupName string, values map[string]any, clearKeys []string) (RuntimeSettingGroupView, error) {
+func (p *RuntimeProvider) UpdateRuntimeGroup(ctx context.Context, subject, requestID, groupName string, expectedVersion int, values map[string]any, clearKeys []string) (RuntimeSettingGroupView, error) {
 	group, ok := p.groupIndex[groupName]
 	if !ok {
 		return RuntimeSettingGroupView{}, common.ErrNotFound
 	}
-	settings, err := p.loadSettings(ctx)
+	settings, err := p.loadSettingsFresh(ctx)
 	if err != nil {
 		return RuntimeSettingGroupView{}, err
 	}
@@ -25,6 +25,11 @@ func (p *RuntimeProvider) UpdateRuntimeGroup(ctx context.Context, subject, reque
 	}
 
 	clearSet := buildEffectiveClearSet(clearKeys, values)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := bumpRuntimeGroupVersionTx(ctx, tx, groupName, &expectedVersion, subject, now); err != nil {
+		_ = tx.Rollback()
+		return RuntimeSettingGroupView{}, err
+	}
 
 	for _, field := range group.Fields {
 		fullKey := field.Group + "." + field.Key
@@ -50,7 +55,7 @@ func (p *RuntimeProvider) UpdateRuntimeGroup(ctx context.Context, subject, reque
 				NewValueMasked:  "",
 				OperatorSubject: subject,
 				RequestID:       requestID,
-				CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+				CreatedAt:       now,
 			}); err != nil {
 				_ = tx.Rollback()
 				return RuntimeSettingGroupView{}, err
@@ -73,7 +78,7 @@ func (p *RuntimeProvider) UpdateRuntimeGroup(ctx context.Context, subject, reque
 			IsRestartRequired: field.IsRestartRequired,
 			Description:       field.Description,
 			UpdatedBySubject:  strings.TrimSpace(subject),
-			UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
+			UpdatedAt:         now,
 		}
 		if field.IsSecret {
 			ciphertext, err := p.cipherBox.Encrypt(normalized)

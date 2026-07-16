@@ -12,20 +12,16 @@ func DecodeJSON(r *http.Request, dst any) error {
 		return NewAppError(CodeBadRequest, "request body is required", http.StatusBadRequest)
 	}
 
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-
+	decoder := newRequestJSONDecoder(r.Body)
 	if err := decoder.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {
 			return NewAppError(CodeBadRequest, "request body is required", http.StatusBadRequest)
 		}
-		return NewAppError(CodeBadRequest, "invalid request body", http.StatusBadRequest).WithErr(err)
+		return requestDecodeError(err)
 	}
-
-	if decoder.More() {
-		return NewAppError(CodeBadRequest, "request body must contain a single JSON object", http.StatusBadRequest)
+	if err := ensureSingleJSONValue(decoder); err != nil {
+		return err
 	}
-
 	return nil
 }
 
@@ -36,19 +32,54 @@ func DecodeJSONAllowEmpty(r *http.Request, dst any) error {
 		return nil
 	}
 
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-
+	decoder := newRequestJSONDecoder(r.Body)
 	if err := decoder.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		return NewAppError(CodeBadRequest, "invalid request body", http.StatusBadRequest).WithErr(err)
+		return requestDecodeError(err)
 	}
-
-	if decoder.More() {
-		return NewAppError(CodeBadRequest, "request body must contain a single JSON object", http.StatusBadRequest)
+	if err := ensureSingleJSONValue(decoder); err != nil {
+		return err
 	}
-
 	return nil
+}
+
+func newRequestJSONDecoder(body io.Reader) *json.Decoder {
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+	return decoder
+}
+
+func ensureSingleJSONValue(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); errors.Is(err, io.EOF) {
+		return nil
+	} else if err != nil {
+		if isRequestBodyTooLarge(err) {
+			return ErrPayloadTooLarge.WithErr(err)
+		}
+		return NewAppError(
+			CodeBadRequest,
+			"request body must contain a single JSON object",
+			http.StatusBadRequest,
+		).WithErr(err)
+	}
+	return NewAppError(
+		CodeBadRequest,
+		"request body must contain a single JSON object",
+		http.StatusBadRequest,
+	)
+}
+
+func requestDecodeError(err error) error {
+	if isRequestBodyTooLarge(err) {
+		return ErrPayloadTooLarge.WithErr(err)
+	}
+	return NewAppError(CodeBadRequest, "invalid request body", http.StatusBadRequest).WithErr(err)
+}
+
+func isRequestBodyTooLarge(err error) bool {
+	var maxBytesError *http.MaxBytesError
+	return errors.As(err, &maxBytesError)
 }

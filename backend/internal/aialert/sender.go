@@ -34,6 +34,15 @@ func (s *SMTPSender) Send(ctx context.Context, request SendRequest) error {
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
+	watchDone := make(chan struct{})
+	go func(rawConn net.Conn) {
+		select {
+		case <-ctx.Done():
+			_ = rawConn.Close()
+		case <-watchDone:
+		}
+	}(conn)
+	defer close(watchDone)
 
 	if cfg.SMTPPort == 465 {
 		tlsConn := tls.Client(conn, &tls.Config{

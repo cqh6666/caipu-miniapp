@@ -108,6 +108,10 @@ func (s stubAuthService) BuildLogoutCookie() *http.Cookie {
 	return &http.Cookie{}
 }
 
+func (s stubAuthService) CSRFToken(string) string {
+	return "test-csrf-token"
+}
+
 type stubAlertOverviewProvider struct {
 	overview aialert.Overview
 	err      error

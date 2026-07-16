@@ -3,14 +3,18 @@ package common
 import "net/http"
 
 const (
-	CodeOK             = 0
-	CodeBadRequest     = 40000
-	CodeUnauthorized   = 40001
-	CodeForbidden      = 40003
-	CodeNotFound       = 40400
-	CodeConflict       = 40900
-	CodeUnprocessable  = 42200
-	CodeInternalServer = 50000
+	CodeOK                 = 0
+	CodeBadRequest         = 40000
+	CodeUnauthorized       = 40001
+	CodeForbidden          = 40003
+	CodeNotFound           = 40400
+	CodeMethodNotAllowed   = 40500
+	CodeConflict           = 40900
+	CodePayloadTooLarge    = 41300
+	CodeTooManyRequests    = 42900
+	CodeUnprocessable      = 42200
+	CodeInternalServer     = 50000
+	CodeServiceUnavailable = 50300
 )
 
 type AppError struct {
@@ -46,10 +50,13 @@ func NewAppError(code int, message string, httpStatus int) *AppError {
 }
 
 var (
-	ErrBadRequest   = NewAppError(CodeBadRequest, "bad request", http.StatusBadRequest)
-	ErrUnauthorized = NewAppError(CodeUnauthorized, "unauthorized", http.StatusUnauthorized)
-	ErrForbidden    = NewAppError(CodeForbidden, "forbidden", http.StatusForbidden)
-	ErrNotFound     = NewAppError(CodeNotFound, "not found", http.StatusNotFound)
-	ErrConflict     = NewAppError(CodeConflict, "conflict", http.StatusConflict)
-	ErrInternal     = NewAppError(CodeInternalServer, "internal server error", http.StatusInternalServerError)
+	ErrBadRequest       = NewAppError(CodeBadRequest, "bad request", http.StatusBadRequest)
+	ErrUnauthorized     = NewAppError(CodeUnauthorized, "unauthorized", http.StatusUnauthorized)
+	ErrForbidden        = NewAppError(CodeForbidden, "forbidden", http.StatusForbidden)
+	ErrNotFound         = NewAppError(CodeNotFound, "not found", http.StatusNotFound)
+	ErrMethodNotAllowed = NewAppError(CodeMethodNotAllowed, "method not allowed", http.StatusMethodNotAllowed)
+	ErrConflict         = NewAppError(CodeConflict, "conflict", http.StatusConflict)
+	ErrPayloadTooLarge  = NewAppError(CodePayloadTooLarge, "request body is too large", http.StatusRequestEntityTooLarge)
+	ErrTooManyRequests  = NewAppError(CodeTooManyRequests, "too many requests", http.StatusTooManyRequests)
+	ErrInternal         = NewAppError(CodeInternalServer, "internal server error", http.StatusInternalServerError)
 )

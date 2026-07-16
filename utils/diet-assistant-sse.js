@@ -50,7 +50,11 @@ export function createDietAssistantStreamParser(callbacks = {}) {
 			return
 		}
 		if (event?.type === 'error') {
-			callStreamCallback(callbacks.onError, new Error(event.message || '饮食管家暂时不可用'))
+			const requestId = String(event.requestId || '').trim()
+			const baseMessage = String(event.message || '饮食管家暂时不可用，请稍后再试').trim()
+			const error = new Error(requestId ? `${baseMessage}（请求 ID：${requestId}）` : baseMessage)
+			error.requestId = requestId
+			callStreamCallback(callbacks.onError, error)
 			return
 		}
 		if (event?.type === 'done') callStreamCallback(callbacks.onDone)

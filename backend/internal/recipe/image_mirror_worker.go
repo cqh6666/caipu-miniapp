@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
@@ -21,9 +20,7 @@ type ImageMirrorWorker struct {
 	interval  time.Duration
 	batchSize int
 
-	cancel func()
-	done   chan struct{}
-	once   sync.Once
+	lifecycle *workerLifecycle
 }
 
 func NewImageMirrorWorker(logger *slog.Logger, repo *Repository, uploadService *upload.Service, enabled bool, interval time.Duration, batchSize int) *ImageMirrorWorker {
@@ -34,48 +31,31 @@ func NewImageMirrorWorker(logger *slog.Logger, repo *Repository, uploadService *
 		enabled:   enabled,
 		interval:  interval,
 		batchSize: batchSize,
-		done:      make(chan struct{}),
+		lifecycle: newWorkerLifecycle(),
 	}
 }
 
-func (w *ImageMirrorWorker) Start(parent context.Context) {
+func (w *ImageMirrorWorker) Start(parent context.Context) error {
 	if w == nil || !w.enabled || w.repo == nil || w.upload == nil {
-		return
+		return nil
 	}
-
-	w.once.Do(func() {
-		ctx, cancel := context.WithCancel(parent)
-		w.cancel = cancel
-
-		go func() {
-			defer close(w.done)
-
+	return w.lifecycle.Start(
+		parent,
+		"recipe image mirror",
+		w.interval,
+		w.runBatch,
+		func() {
 			w.logger.Info("recipe image mirror worker started", "interval", w.interval.String(), "batchSize", w.batchSize)
-			w.runBatch(ctx)
-
-			ticker := time.NewTicker(w.interval)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					w.logger.Info("recipe image mirror worker stopped")
-					return
-				case <-ticker.C:
-					w.runBatch(ctx)
-				}
-			}
-		}()
-	})
+		},
+		func() { w.logger.Info("recipe image mirror worker stopped") },
+	)
 }
 
-func (w *ImageMirrorWorker) Stop() {
-	if w == nil || w.cancel == nil {
-		return
+func (w *ImageMirrorWorker) Stop(ctx context.Context) error {
+	if w == nil {
+		return nil
 	}
-
-	w.cancel()
-	<-w.done
+	return w.lifecycle.Stop(ctx, "recipe image mirror")
 }
 
 func (w *ImageMirrorWorker) runBatch(parent context.Context) {

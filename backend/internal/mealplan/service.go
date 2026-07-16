@@ -178,6 +178,7 @@ func (s *Service) DeleteDraft(ctx context.Context, userID, kitchenID int64, plan
 
 	_, err = s.repo.DeleteByKitchenDateStatus(
 		ctx,
+		userID,
 		kitchenID,
 		normalizedDate,
 		StatusDraft,
@@ -202,6 +203,7 @@ func (s *Service) DeleteSubmitted(ctx context.Context, userID, kitchenID int64, 
 
 	_, err = s.repo.DeleteByKitchenDateStatus(
 		ctx,
+		userID,
 		kitchenID,
 		normalizedDate,
 		StatusSubmitted,

@@ -541,6 +541,7 @@ async function handleSave(groupName: string) {
   savingGroups[groupName] = true
   try {
     await adminApi.updateRuntimeGroup(groupName, {
+      expectedVersion: getGroupByName(groupName)?.version ?? 0,
       values: payload.values,
       clearKeys: payload.clearKeys
     })
@@ -548,7 +549,12 @@ async function handleSave(groupName: string) {
     testResults[groupName] = null
     await Promise.all([loadGroups(), loadAudits()])
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '保存失败')
+    if (typeof error === 'object' && error !== null && 'status' in error && error.status === 409) {
+      await loadGroups()
+      ElMessage.warning('配置已被其他会话更新，已刷新，请重新确认后保存')
+    } else {
+      ElMessage.error(error instanceof Error ? error.message : '保存失败')
+    }
   } finally {
     savingGroups[groupName] = false
   }

@@ -89,6 +89,7 @@ CREATE TABLE recipes (
   parse_processing_started_at TEXT NOT NULL DEFAULT '',
   parsed_content_edited INTEGER NOT NULL DEFAULT 0,
   content_version INTEGER NOT NULL DEFAULT 0,
+	version INTEGER NOT NULL DEFAULT 1,
   parse_claim_token TEXT NOT NULL DEFAULT '',
   parse_claim_content_version INTEGER NOT NULL DEFAULT 0,
   parse_lease_expires_at TEXT NOT NULL DEFAULT '',

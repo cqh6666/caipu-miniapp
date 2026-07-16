@@ -31,8 +31,8 @@ export function updatePlace(placeId, payload) {
 	}).then((data) => data?.place || null)
 }
 
-export function updatePlaceStatus(placeId, status, experienceData = {}) {
-	const payload = { status }
+export function updatePlaceStatus(placeId, status, version, experienceData = {}) {
+	const payload = { status, version }
 
 	// 如果切换到"去过"且提供了体验数据，一并提交
 	if (status === 'visited' && experienceData) {

@@ -4,7 +4,11 @@
 方便后续排障、发版和迁移。文档只记录结构、路径、端口、服务名和配置
 入口，不记录任何真实密钥。
 
-最后核对时间：`2026-04-23 17:34 CST`
+仓库文档更新时间：`2026-07-16 10:00 CST`
+
+生产主机最后实机核对仍为：`2026-04-23 17:34 CST`。2026-07-16 已在仓库完成版本化
+release、在线备份、readiness 和最小权限 unit，但尚未在生产执行 bootstrap 迁移与演练；
+下文明确区分“已核对现状”和“仓库目标”，不得把后者提前当成线上事实。
 
 ## 1. 服务器基础信息
 
@@ -35,7 +39,7 @@ Internet
      -> /admin/              -> admin-web dist          -> /srv/caipu-miniapp/admin-web/dist
      -> /caipu-api/          -> caipu-backend /api/*    -> 127.0.0.1:8080
      -> /caipu-uploads/      -> caipu-backend /uploads/*-> 127.0.0.1:8080
-     -> /caipu-healthz       -> caipu-backend /healthz  -> 127.0.0.1:8080
+     -> /caipu-healthz       -> caipu-backend readiness -> 127.0.0.1:8080
 ```
 
 当前监听端口：
@@ -62,7 +66,7 @@ Internet
 | `/admin/` | `/srv/caipu-miniapp/admin-web/dist/` | 后台管理前端静态资源 |
 | `/caipu-api/` | `http://127.0.0.1:8080/api/` | 小程序后端 API 与后台 API，`proxy_read_timeout / proxy_send_timeout = 300s` |
 | `/caipu-uploads/` | `http://127.0.0.1:8080/uploads/` | 上传文件访问 |
-| `/caipu-healthz` | `http://127.0.0.1:8080/healthz` | 后端健康检查 |
+| `/caipu-healthz` | 现网待复核；仓库模板为 `http://127.0.0.1:8080/readyz` | 后端 readiness |
 
 关键约束：
 
@@ -91,11 +95,28 @@ Internet
 
 - `/etc/systemd/system/caipu-backend.service`
 
-当前关键配置：
+2026-04-23 最后一次实机核对的旧配置：
 
 - `WorkingDirectory=/srv/caipu-miniapp/backend`
 - `Environment=APP_ENV_FILE=/srv/caipu-miniapp/backend/configs/prod.env`
 - `ExecStart=/srv/caipu-miniapp/backend/bin/server`
+
+2026-07-16 仓库已提供、但生产待迁移验证的目标配置：
+
+- `User/Group=caipu-backend`，进程 UID 非 0；
+- `WorkingDirectory=/srv/caipu-miniapp/backend/current`；
+- `ExecStart=/srv/caipu-miniapp/backend/current/server`；
+- `current` 原子指向 `releases/<release-id>`；
+- 只允许写 `backend/data`，启用 `NoNewPrivileges`、`PrivateTmp`、
+  `ProtectSystem=strict`、`ProtectHome=true` 和 `UMask=0077`；
+- 每日 `caipu-backend-backup.timer`、每周 `caipu-backend-restore-drill.timer` 与每五分钟
+  `caipu-backend-ops-health.timer`；仓库巡检策略覆盖 5xx、worker、磁盘、备份和恢复年龄；
+- journald 目标为主机全局 `512M` / `14day`，后端 unit 另有日志速率上限；
+- `HEALTH_BACKEND_SERVICE_NAME` / `HEALTH_BACKEND_BASE_URL` 与实际 unit/端口一致，
+  release manifest 可映射 release、commit、build time、Go toolchain 和 migration 集合。
+
+`configs/prod.env` 必须为 `0600`；后端会拒绝读取权限更宽、缺失或格式错误的显式
+env file。若 systemd 同时注入同名变量，进程环境值优先，文件只补缺失项。
 
 常用命令：
 
@@ -185,8 +206,10 @@ journalctl -u hapi-runner -n 200 --no-pager
 | --- | --- |
 | `/srv/caipu-miniapp` | 仓库根目录 |
 | `/srv/caipu-miniapp/backend` | Go 后端源码 |
-| `/srv/caipu-miniapp/backend/bin/server` | 后端编译产物 |
+| `/srv/caipu-miniapp/backend/current` | 当前版本原子符号链接（生产待迁移） |
+| `/srv/caipu-miniapp/backend/releases/<release-id>` | 版本化二进制、迁移和 manifest |
 | `/srv/caipu-miniapp/backend/data` | SQLite 和上传目录 |
+| `/srv/caipu-miniapp/backend/backups` | 原子备份包与校验清单 |
 | `/srv/caipu-miniapp/admin-web` | 后台前端工程 |
 | `/srv/caipu-miniapp/admin-web/dist` | 后台前端生产构建产物 |
 | `/srv/caipu-miniapp/runtime/linkparse-sidecar` | sidecar 运行时配置 |
@@ -202,6 +225,9 @@ journalctl -u hapi-runner -n 200 --no-pager
 | `admin-web/.env.production` | 是 | 后台生产环境 API 前缀 |
 | `/etc/nginx/conf.d/www.gxm1227.top.conf` | 否 | 当前 nginx 站点配置 |
 
+后端 env file（包括本地 `configs/local.env` 和线上 `configs/prod.env`）统一使用
+`chmod 600`，禁止组用户或其他用户读取。
+
 ## 6. 环境变量口径
 
 ### 6.1 后端 `backend/configs/prod.env`
@@ -212,7 +238,7 @@ journalctl -u hapi-runner -n 200 --no-pager
   `APP_NAME`、`APP_ENV`、`APP_ADDR`、`LOG_LEVEL`
 - 鉴权与后台登录：
   `JWT_SECRET`、`JWT_EXPIRE_HOURS`、`ADMIN_USERNAME`、
-  `ADMIN_PASSWORD_HASH`、`ADMIN_JWT_SECRET`
+  `ADMIN_PASSWORD_HASH`、`ADMIN_JWT_SECRET`、`ADMIN_COOKIE_PATH`
 - 微信登录：
   `WECHAT_APP_ID`、`WECHAT_APP_SECRET`
 - SQLite 与上传：
@@ -232,6 +258,11 @@ journalctl -u hapi-runner -n 200 --no-pager
 
 - 该文件目前位于仓库目录中，但未纳入 Git。
 - 修改后需要重启 `caipu-backend` 才会生效。
+- 当前共享域名经 `/caipu-api/admin/*` 访问后台 API，故生产
+  `ADMIN_COOKIE_PATH` 必须为 `/caipu-api/admin`；standalone `/api/*` 部署改用
+  `/api/admin`。Admin Cookie 为 Strict/HttpOnly，写请求另有会话绑定 CSRF 校验。
+- 非 local 环境的 `UPLOAD_PUBLIC_BASE_URL` 是必填项，必须为不含凭据、query、fragment
+  的正式 HTTPS 地址；上传图片仍为公开资源，但应用禁止目录列表和非随机生成文件访问。
 
 ### 6.2 sidecar `runtime/linkparse-sidecar/linkparse-sidecar.env`
 
@@ -262,6 +293,12 @@ journalctl -u hapi-runner -n 200 --no-pager
 cd /srv/caipu-miniapp
 bash scripts/deploy-backend-on-server.sh
 ```
+
+仓库脚本的新发布契约：执行后端测试和配置校验，使用 `sqlite3 .backup` 创建发布前快照，
+在快照副本预演 migration，再构建版本化 release、原子切换 `current`；只有 `/readyz`
+连续成功且 `X-Release-ID` 与目标一致才成功。失败恢复上一二进制，不自动反向执行 SQL。
+生产首次使用前必须先运行新版 `backend/scripts/bootstrap-server.sh` 迁移旧 unit，否则脚本
+会因 `ExecStart` 仍指向 `bin/server` 而在备份/迁移前安全失败。
 
 说明：
 
@@ -384,6 +421,8 @@ curl -i https://www.gxm1227.top/caipu-api/admin/auth/me
 
 - `/caipu-api/admin/auth/me` 未登录时返回 `401`，这是正常现象。
 - 如果这里返回 `404`，通常表示后端二进制还没更新到带后台 API 的版本。
+- `/caipu-healthz` 应返回 readiness，并在响应头包含 `X-Release-ID`；进程存活但 DB、迁移
+  或数据目录异常时应返回 `503`。内部单独用 `/livez` 判断进程存活。
 
 ## 9. 当前运维注意事项
 
@@ -393,8 +432,8 @@ curl -i https://www.gxm1227.top/caipu-api/admin/auth/me
    `location /`，否则会影响 Hapi 根站点。
 3. 当前小程序和后台前端都依赖现网的 `/caipu-api` 前缀，统一改口径前要
    先做全链路评估。
-4. 后端代码更新后，只有 `git pull` 不够，必须重新 `go build` 并重启
-   `caipu-backend`。
+4. 后端代码更新后，只有 `git pull` 不够；统一执行
+   `bash scripts/deploy-backend-on-server.sh`，禁止手工覆盖 `bin/server`。
 5. 后台前端代码更新后，只有拉代码不够，必须重新构建 `admin-web/dist`。
 6. 如果只改了 `admin-web` 页面代码，一般不需要重启 `caipu-backend`。
 7. 当前线上机器只有 `2 vCPU / 1.9 GiB RAM / 0 swap`，不要在业务高峰期
@@ -410,12 +449,15 @@ curl -i https://www.gxm1227.top/caipu-api/admin/auth/me
 10. 如果确实要在服务器上强制构建 `admin-web`、执行 sidecar 依赖安装，
     或前后端一起构建，必须显式带 `ALLOW_LOW_RESOURCE_BUILD=1`，并尽量放到
     维护窗口执行。
+11. 生产迁移新版 unit 后必须验证：进程 UID 非 0、release 和 `/etc` 不可写、data
+    可写；配置 `/etc/caipu-backend-backup.env` 的异机 rsync 目标并实际完成一次恢复演练；
+    让告警平台订阅 `caipu-backend-ops-health.service` 的 Warning/Critical。
 
 ## 10. 推荐的后续补强
 
-1. 把当前 nginx 站点配置模板同步沉淀到仓库 `docs/` 或部署脚本里，减少
-   “服务器真实配置”和“仓库文档”漂移。
-2. 考虑为 `admin-web` 补一个专门的发布脚本，例如：
-   `scripts/deploy-admin-web.sh`，把安装依赖、构建和必要校验串起来。
-3. 如果后续服务继续增多，建议把“路径路由图 + 服务清单 + 配置文件入口”
-   维护成固定更新的运维基线文档。
+1. 在维护窗口运行新版 bootstrap，核对生成 unit/nginx diff 后执行首次版本化发布。
+2. 配置异机 rsync、手工触发 backup/restore-drill service，并记录远端副本与恢复结果。
+3. 接入 `ops-health` 失败 unit 的外部告警接收端，制造测试 5xx/worker/备份过期信号并
+   记录真实投递结果。
+4. 实测健康失败自动回滚、进程 UID/沙箱、journald 容量和 Go 生产工具链，随后更新本文件
+   “实机核对时间”。

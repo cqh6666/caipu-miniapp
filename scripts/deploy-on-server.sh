@@ -5,11 +5,10 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_DIR="${REPO_DIR:-$ROOT_DIR}"
 BACKEND_DIR="${BACKEND_DIR:-${REPO_DIR}/backend}"
 ADMIN_WEB_DIR="${ADMIN_WEB_DIR:-${REPO_DIR}/admin-web}"
-BINARY_PATH="${BINARY_PATH:-${BACKEND_DIR}/bin/server}"
 SERVICE_NAME="${SERVICE_NAME:-caipu-backend}"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 APP_PORT="${APP_PORT:-8080}"
-HEALTHCHECK_PATH="${HEALTHCHECK_PATH:-/healthz}"
+READINESS_PATH="${READINESS_PATH:-/readyz}"
 DEPLOY_SCOPE="${DEPLOY_SCOPE:-auto}"
 RUN_GIT_PULL="${RUN_GIT_PULL:-1}"
 BUILD_NICE="${BUILD_NICE:-10}"
@@ -124,6 +123,8 @@ Environment variables:
   RUN_GIT_PULL=1|0
   BUILD_NICE=10
   GO_BUILD_GOMAXPROCS=1
+  RUN_BACKEND_TESTS=1
+  READINESS_PATH=/readyz
   ADMIN_WEB_INSTALL_MODE=auto|always|never
   ADMIN_WEB_NODE_OPTIONS=--max-old-space-size=768
   PLAN_ONLY=1
@@ -283,15 +284,19 @@ if is_low_resource_host && [[ "$build_backend" == "1" ]] && [[ "$build_admin_web
 fi
 
 if [[ "$build_backend" == "1" ]]; then
-  log "building backend binary with low priority"
-  cd "$BACKEND_DIR"
-  mkdir -p "$(dirname "$BINARY_PATH")"
-  ensure_go_in_path
-  run_low_priority env \
-    GOMAXPROCS="$GO_BUILD_GOMAXPROCS" \
-    GOCACHE="$GOCACHE_DIR" \
-    go build -o "$BINARY_PATH" ./cmd/server
-  restart_backend=1
+	log "running versioned backend release"
+	cd "$REPO_DIR"
+	ensure_go_in_path
+	BACKEND_DIR="$BACKEND_DIR" \
+	SERVICE_NAME="$SERVICE_NAME" \
+	SYSTEMCTL_BIN="$SYSTEMCTL_BIN" \
+	APP_PORT="$APP_PORT" \
+	READINESS_PATH="$READINESS_PATH" \
+	BUILD_NICE="$BUILD_NICE" \
+	GO_BUILD_GOMAXPROCS="$GO_BUILD_GOMAXPROCS" \
+	GOCACHE_DIR="$GOCACHE_DIR" \
+		bash "$BACKEND_DIR/scripts/release-on-server.sh"
+	restart_backend=1
 fi
 
 if [[ "$build_admin_web" == "1" ]]; then
@@ -316,12 +321,7 @@ if [[ "$build_admin_web" == "1" ]]; then
 fi
 
 if [[ "$restart_backend" == "1" ]]; then
-  log "restarting backend service"
-  "$SYSTEMCTL_BIN" restart "$SERVICE_NAME"
-  "$SYSTEMCTL_BIN" status "$SERVICE_NAME" --no-pager
-
-  log "checking backend health"
-  curl --fail --silent "http://127.0.0.1:${APP_PORT}${HEALTHCHECK_PATH}" >/dev/null
+	log "backend release already restarted the service and verified readiness"
 else
   log "backend code unchanged, skip service restart"
 fi

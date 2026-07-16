@@ -50,9 +50,14 @@ type RuntimeProvider struct {
 	cachedSettings   map[string]runtimeSettingRecord
 	bilibiliVerifier func(context.Context, string) error
 	alertSender      aialert.Sender
+	httpDoer         HTTPDoer
 }
 
 func NewRuntimeProvider(repo *Repository, secret string, cfg config.Config) *RuntimeProvider {
+	return NewRuntimeProviderWithOptions(repo, secret, cfg, RuntimeProviderOptions{})
+}
+
+func NewRuntimeProviderWithOptions(repo *Repository, secret string, cfg config.Config, opts RuntimeProviderOptions) *RuntimeProvider {
 	groups := buildRuntimeGroups(cfg)
 	groupIndex := make(map[string]runtimeGroupDefinition, len(groups))
 	fieldIndex := make(map[string]runtimeFieldDefinition)
@@ -72,6 +77,7 @@ func NewRuntimeProvider(repo *Repository, secret string, cfg config.Config) *Run
 		groupIndex:     groupIndex,
 		fieldIndex:     fieldIndex,
 		cachedSettings: make(map[string]runtimeSettingRecord),
+		httpDoer:       normalizeHTTPDoer(opts.HTTPDoer),
 	}
 }
 
@@ -146,9 +152,13 @@ func (p *RuntimeProvider) MiniProgramFeatures(ctx context.Context) MiniProgramFe
 }
 
 func (p *RuntimeProvider) ListRuntimeGroups(ctx context.Context) ([]RuntimeSettingGroupView, error) {
-	settings, err := p.loadSettings(ctx)
+	records, versions, err := p.repo.ListRuntimeSettingsSnapshot(ctx)
 	if err != nil {
 		return nil, err
+	}
+	settings := make(map[string]runtimeSettingRecord, len(records))
+	for _, record := range records {
+		settings[record.Key] = record
 	}
 
 	groups := make([]RuntimeSettingGroupView, 0, len(p.groupIndex))
@@ -158,6 +168,7 @@ func (p *RuntimeProvider) ListRuntimeGroups(ctx context.Context) ([]RuntimeSetti
 		}
 		view := RuntimeSettingGroupView{
 			Name:        group.Name,
+			Version:     versions[group.Name],
 			Title:       group.Title,
 			Description: group.Description,
 			Fields:      make([]RuntimeSettingFieldView, 0, len(group.Fields)),

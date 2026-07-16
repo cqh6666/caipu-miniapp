@@ -134,6 +134,7 @@ export interface RuntimeSettingFieldView {
 
 export interface RuntimeSettingGroupView {
   name: string;
+  version: number;
   title: string;
   description: string;
   fields: RuntimeSettingFieldView[];
@@ -213,6 +214,7 @@ export interface AIRoutingProviderConfig {
 
 export interface AIRoutingSceneConfig {
   scene: AIRoutingSceneKey;
+  version: number;
   enabled: boolean;
   strategy: AIRoutingStrategy;
   maxAttempts: number;
@@ -228,6 +230,7 @@ export interface AIRoutingSceneConfig {
 
 export interface AIRoutingSceneSummary {
   scene: AIRoutingSceneKey;
+  version: number;
   enabled: boolean;
   strategy: AIRoutingStrategy;
   providerCount: number;

@@ -14,6 +14,7 @@ import (
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 var (
@@ -339,14 +340,12 @@ func (c *aiClient) refineTitle(ctx context.Context, rawTitle string) (string, er
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		if strings.TrimSpace(string(data)) != "" {
-			callErr := fmt.Errorf("title ai request failed: %s", strings.TrimSpace(string(data)))
-			c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-				"content_kind": "title_refine",
-			})
-			return "", callErr
-		}
-		callErr := fmt.Errorf("title ai request failed with status %d", resp.StatusCode)
+		callErr := sanitizedUpstreamError(
+			common.CodeInternalServer,
+			fmt.Sprintf("title AI upstream returned status %d", resp.StatusCode),
+			http.StatusBadGateway,
+			string(data),
+		)
 		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
 			"content_kind": "title_refine",
 		})
@@ -354,14 +353,14 @@ func (c *aiClient) refineTitle(ctx context.Context, rawTitle string) (string, er
 	}
 
 	var parsed openAIChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := decodeBoundedUpstreamJSON(resp.Body, maxLinkparseAIResponseBytes, "title AI upstream", &parsed); err != nil {
 		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
 			"content_kind": "title_refine",
 		})
 		return "", err
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
-		callErr := fmt.Errorf("title ai error: %s", parsed.Error.Message)
+		callErr := sanitizedUpstreamError(common.CodeInternalServer, "title AI upstream returned an error", http.StatusBadGateway, parsed.Error.Message)
 		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
 			"content_kind": "title_refine",
 		})

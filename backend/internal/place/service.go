@@ -58,6 +58,7 @@ type Service struct {
 
 type statusUpdateInput struct {
 	Status           string
+	Version          *int64
 	VisitedAt        *string
 	RevisitRating    *int
 	RecommendedItems []string
@@ -111,6 +112,7 @@ func (s *Service) Create(ctx context.Context, userID, kitchenID int64, req place
 	item.UpdatedBy = userID
 	item.CreatedAt = now
 	item.UpdatedAt = now
+	item.Version = 1
 	item.VisitedAt = resolveVisitedAt("", item.Status, now)
 	applyPlacePriceStatsFields(&item)
 
@@ -133,9 +135,16 @@ func (s *Service) GetByID(ctx context.Context, userID int64, placeID string) (Pl
 }
 
 func (s *Service) Update(ctx context.Context, userID int64, placeID string, req placeRequest) (Place, error) {
+	expectedVersion, err := requirePlaceVersion(req.Version)
+	if err != nil {
+		return Place{}, err
+	}
 	current, err := s.GetByID(ctx, userID, placeID)
 	if err != nil {
 		return Place{}, err
+	}
+	if current.Version != expectedVersion {
+		return Place{}, placeVersionConflictError()
 	}
 
 	next, err := normalizePlaceUpdateInput(current, req)
@@ -154,12 +163,16 @@ func (s *Service) Update(ctx context.Context, userID int64, placeID string, req 
 	next.CreatedAt = current.CreatedAt
 	next.UpdatedBy = userID
 	next.UpdatedAt = now
+	next.Version = expectedVersion
 	next.VisitedAt = resolveVisitedAt(firstNonEmpty(next.VisitedAt, current.VisitedAt), next.Status, now)
 	applyPlacePriceStatsFields(&next)
 
 	updated, err := s.repo.Update(ctx, next)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Place{}, common.ErrNotFound
+	}
+	if errors.Is(err, errPlaceVersionConflict) {
+		return Place{}, placeVersionConflictError()
 	}
 	if err != nil {
 		return Place{}, err
@@ -169,9 +182,16 @@ func (s *Service) Update(ctx context.Context, userID int64, placeID string, req 
 }
 
 func (s *Service) UpdateStatus(ctx context.Context, userID int64, placeID string, input statusUpdateInput) (Place, error) {
+	expectedVersion, err := requirePlaceVersion(input.Version)
+	if err != nil {
+		return Place{}, err
+	}
 	current, err := s.GetByID(ctx, userID, placeID)
 	if err != nil {
 		return Place{}, err
+	}
+	if current.Version != expectedVersion {
+		return Place{}, placeVersionConflictError()
 	}
 
 	status := strings.TrimSpace(input.Status)
@@ -201,11 +221,15 @@ func (s *Service) UpdateStatus(ctx context.Context, userID int64, placeID string
 	}
 	current.UpdatedBy = userID
 	current.UpdatedAt = now
+	current.Version = expectedVersion
 	applyPlacePriceStatsFields(&current)
 
 	updated, err := s.repo.Update(ctx, current)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Place{}, common.ErrNotFound
+	}
+	if errors.Is(err, errPlaceVersionConflict) {
+		return Place{}, placeVersionConflictError()
 	}
 	if err != nil {
 		return Place{}, err
@@ -220,7 +244,7 @@ func (s *Service) Delete(ctx context.Context, userID int64, placeID string) erro
 		return err
 	}
 
-	if err := s.repo.Delete(ctx, current.ID, userID, time.Now().Format(time.RFC3339)); err != nil {
+	if err := s.repo.Delete(ctx, current.ID, current.KitchenID, userID, time.Now().Format(time.RFC3339)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return common.ErrNotFound
 		}
@@ -228,6 +252,21 @@ func (s *Service) Delete(ctx context.Context, userID int64, placeID string) erro
 	}
 
 	return nil
+}
+
+func requirePlaceVersion(version *int64) (int64, error) {
+	if version == nil || *version < 1 {
+		return 0, common.NewAppError(common.CodeBadRequest, "version is required", http.StatusBadRequest)
+	}
+	return *version, nil
+}
+
+func placeVersionConflictError() error {
+	return common.NewAppError(
+		common.CodeConflict,
+		"place has been updated; reload and try again",
+		http.StatusConflict,
+	)
 }
 
 func (s *Service) mirrorExternalImages(ctx context.Context, imageURLs []string) ([]string, error) {

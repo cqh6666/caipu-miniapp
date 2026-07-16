@@ -6,6 +6,7 @@ const (
 )
 
 type BilibiliSessionSetting struct {
+	Version        int    `json:"version"`
 	Configured     bool   `json:"configured"`
 	Status         string `json:"status"`
 	MaskedSessdata string `json:"maskedSessdata"`
@@ -16,13 +17,15 @@ type BilibiliSessionSetting struct {
 }
 
 type bilibiliSessionRecord struct {
+	Version            int
 	SessdataCiphertext string
 	MaskedSessdata     string
 	Status             string
 	LastCheckedAt      string
 	LastSuccessAt      string
 	LastError          string
-	UpdatedBy          int64
+	UpdatedBy          *int64
+	UpdatedBySubject   string
 	UpdatedAt          string
 }
 

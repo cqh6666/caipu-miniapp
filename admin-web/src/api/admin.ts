@@ -1,4 +1,4 @@
-import { request } from "./http";
+import { request, setAdminCSRFToken } from "./http";
 import type {
   AIRoutingAlertMutationResult,
   AIRoutingAlertOverview,
@@ -16,21 +16,29 @@ import type {
   TrendBucket,
 } from "@/types";
 
-export function login(username: string, password: string) {
-  return request<{ username: string }>("/admin/auth/login", {
+type AdminSession = { username: string; csrfToken: string };
+
+export async function login(username: string, password: string) {
+  const session = await request<AdminSession>("/admin/auth/login", {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
+  setAdminCSRFToken(session.csrfToken);
+  return session;
 }
 
-export function logout() {
-  return request<{ ok: boolean }>("/admin/auth/logout", {
-    method: "POST",
-  });
+export async function logout() {
+	const result = await request<{ ok: boolean }>("/admin/auth/logout", {
+		method: "POST",
+	});
+	setAdminCSRFToken("");
+	return result;
 }
 
-export function getMe() {
-  return request<{ username: string }>("/admin/auth/me");
+export async function getMe() {
+  const session = await request<AdminSession>("/admin/auth/me");
+  setAdminCSRFToken(session.csrfToken);
+  return session;
 }
 
 export function getDashboardOverview(windowHours?: number) {
@@ -79,7 +87,7 @@ export function getRuntimeSettings() {
 
 export function updateRuntimeGroup(
   group: string,
-  payload: { values?: Record<string, unknown>; clearKeys?: string[] },
+  payload: { expectedVersion: number; values?: Record<string, unknown>; clearKeys?: string[] },
 ) {
   return request<{ group: RuntimeSettingGroupView }>(
     `/admin/runtime-settings/groups/${encodeURIComponent(group)}`,
