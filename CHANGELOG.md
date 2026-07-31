@@ -1,5 +1,64 @@
 # Project Changelog
 
+## 2026-07-31 (linkparse 出站安全边界与审查整改)
+
+### Fixed
+
+- **修改时间**：2026-07-31 15:22:36 +0800
+- **变更背景**：2026-07-30 的全项目冗余审查确认 linkparse sidecar 重复维护 URL
+  安全策略且已经漂移；后续 reviewer 又发现 HTTPS/端口、IPv6 内嵌地址、DNS 固定、
+  重定向回收、总截止时间、响应体大小和浏览器子资源边界需要一并收口。初始报告同时
+  错误描述了 Go B 站 sidecar 调用的校验顺序，需要保留审计轨迹并校正事实。
+- **核心改动**：分两批提交 `83bf5ae` 与 `00efaab`。新增统一
+  `sidecars/linkparse-sidecar/lib/url-policy.js` 和 `lib/safe-fetch.js`，逐跳执行
+  HTTPS、默认端口、域名、DNS 公网地址、重定向、跨源凭据、总截止时间和响应体上限
+  约束；B 站仅允许两个固定 API 路径携带 `SESSDATA` 且禁止重定向；Importer、
+  RedNote、媒体下载与 Go sidecar 调用方完成接入。同步更新 sidecar README 和
+  `docs/code-redundancy-review-2026-07-30.md`，明确原 Go 路径已先校验 URL，真实缺口
+  是仍跨进程发送 `rawInput` 以及 sidecar 自身安全策略漂移。
+- **影响范围**：影响 B 站与小红书链接解析、短链展开、字幕/媒体下载、RedNote
+  浏览器网络请求及 Go 到 sidecar 的请求体；不修改外部 HTTP API、数据库结构、
+  登录协议、部署脚本或生产配置。
+- **兼容性或风险**：默认端口 HTTP 分享链接会先升级为 HTTPS；非默认端口、无法
+  安全规范化的目标、伪后缀、私网 DNS 目标和不受信媒体域将被拒绝，属于预期收紧。
+  Playwright 的 `context.route` 无法固定 Chromium 实际 DNS，生产仍需容器、防火墙
+  或受控代理提供出站隔离。本次未执行部署或生产变更。
+- **验证情况**：安全请求层定向测试 26 项、sidecar 全量测试 58 项通过；
+  `go test ./internal/linkparse -count=1`、相关 Node 语法检查与 `git diff --check`
+  通过。2026-07-31 再次执行 `npm test`、`npm --prefix admin-web run typecheck`、
+  `npm --prefix sidecars/linkparse-sidecar test`、`cd backend && go test ./... -count=1`
+  和 `cd backend && go vet ./...`，均通过。两轮代码 reviewer 最终未发现阻塞问题；
+  文档 reviewer 提出的 HTTP 规范化表述偏差已修正。
+
+## 2026-07-30 (全项目代码冗余设计审查)
+
+### Added
+
+- **修改时间**：2026-07-30 21:20:14 +0800
+- **变更背景**：用户要求使用至多 5 个 Agent 审查当前项目的冗余代码设计，并输出
+  可追踪 Markdown 报告；历史前后端审查已完成多轮收口，本次需以当前 HEAD 重新取证，
+  避免复述已解决问题或按文件行数机械拆分。
+- **核心改动**：新增 `docs/code-redundancy-review-2026-07-30.md`。由主 Agent 与
+  前端、后端、工程三个子 Agent 并行审查小程序、Admin Web、Go 后端、linkparse
+  sidecar、发布脚本、依赖与测试入口，再以精确重复块扫描、全仓符号引用、生产装配调用链
+  和最小运行复现交叉核实。报告确认 1 项 P0、5 项 P1、8 项 P2、1 项 P3；其中 P0 为
+  Go/sidecar 重复 URL 策略已发生漂移，B 站 sidecar 在直接调用场景会接受伪后缀
+  域名并把 SESSDATA 附到该请求。报告同时给出分批整改顺序、条件清理项和明确不应
+  误删的兼容/事务边界。
+- **影响范围**：仅新增审查文档与项目变更记录；未修改小程序、Admin Web、Go 服务、
+  sidecar、数据库、接口契约、依赖锁文件、部署脚本或生产配置。
+- **兼容性或风险**：本次不改变运行行为。报告中的 P0 是 sidecar 静态代码与 fake
+  fetch 复现确认的安全边界问题；初始版本曾误判 Go 入口的校验顺序，已在 2026-07-31
+  校正并完成 S0 整改。废弃部署入口、研究 POC 与旧启动文档可能存在仓库外使用，已明确
+  要求取得外部证据后再删除。
+- **验证情况**：`npm run test:miniapp`、`npm test`、
+  `npm --prefix admin-web run typecheck` 和
+  `npm --prefix sidecars/linkparse-sidecar test`（17 项）、
+  `cd backend && go test ./... -count=1`、`cd backend && go vet ./...` 均通过；
+  全仓符号与导入检索、精确重复块扫描、现有本地 WXSS 体积核对及 sidecar 伪后缀
+  fake fetch 复现完成。未连接生产服务或使用真实 SESSDATA，未重新执行 HBuilderX
+  微信编译；小程序产物节省量需在后续整改后重编译确认。
+
 ## 2026-07-16 (生产可重建缓存与未引用镜像清理)
 
 ### Changed

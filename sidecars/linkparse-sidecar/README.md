@@ -25,6 +25,35 @@
 - 也已经可以接 RedNote 登录态路线
 - 但整体还不适合直接当生产级小红书解析服务
 
+## 出站请求安全边界
+
+sidecar 会把用户输入 URL 和上游返回的媒体 URL 视为不可信数据。当前 Node
+HTTP(S) 抓取链路执行以下限制：
+
+- 域名按 DNS label 做 exact/subdomain 匹配，不使用字符串包含判断。
+- 默认端口 HTTP 输入会先规范化为 HTTPS；最终输入、媒体和 B 站 API 出站请求必须
+  使用 HTTPS 与默认端口，非默认端口会被拒绝。
+- 每一跳重定向都重新校验协议、域名和端口，HTTPS 不允许降级。
+- DNS 的全部答案都必须是公网地址，并将请求固定到已验证 IP；拒绝 loopback、
+  RFC1918、link-local、metadata、CGNAT、ULA 及可嵌入私网 IPv4 的 IPv6 地址。
+- 跨源重定向会移除 Cookie、Authorization 和 Proxy-Authorization。
+- 请求总截止时间覆盖 DNS、响应头和响应体，响应体同时受字节数上限保护。
+
+B 站 `SESSDATA` 只允许发送到以下两个固定 HTTPS API 路径，且携带凭据的请求
+禁止重定向：
+
+- `https://api.bilibili.com/x/web-interface/view`
+- `https://api.bilibili.com/x/player/v2`
+
+B 站短链展开和字幕文件下载不会携带 `SESSDATA`。Go 主服务也只会把已校验的
+规范化 URL 发送给 sidecar，不再发送原始分享文本。
+
+RedNote 使用 Playwright，已禁用 Service Worker，并通过 `context.route` 限制
+导航、子资源、跳转次数和非预期 popup。但路由回调只能看到 URL，无法固定 Chromium
+实际使用的 DNS 解析结果。生产环境必须额外使用容器网络、防火墙或受控出站代理，拒绝
+浏览器访问 loopback、RFC1918、link-local、metadata、CGNAT 和 ULA 地址。仅监听
+`127.0.0.1` 不能替代这层出站隔离。
+
 RedNote 登录态现在支持两种来源：
 
 - `XHS_REDNOTE_COOKIE_PATH`：`cookies.json` 文件
