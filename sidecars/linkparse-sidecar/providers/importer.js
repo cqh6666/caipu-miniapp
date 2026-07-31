@@ -1,4 +1,10 @@
 const { buildNormalized, extractTags, guessTitle, stripUrlFromInput } = require("../lib/normalize");
+const { safeFetch } = require("../lib/safe-fetch");
+const {
+  XIAOHONGSHU_INPUT_DOMAINS,
+  XIAOHONGSHU_MEDIA_DOMAINS,
+  isHTTPSURLAllowed
+} = require("../lib/url-policy");
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
@@ -145,7 +151,7 @@ function extractImages(note) {
   return unique(
     imageList
       .map((img) => normalizeMediaUrl(img?.urlDefault || img?.urlPre || img?.url || ""))
-      .filter((url) => /^https?:\/\//i.test(url))
+      .filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
   );
 }
 
@@ -163,7 +169,7 @@ function extractVideo(note) {
     candidates.push(normalizeMediaUrl(item?.masterUrl || item?.backupUrl || ""));
   }
 
-  return unique(candidates.filter((url) => /^https?:\/\//i.test(url)));
+  return unique(candidates.filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS)));
 }
 
 function extractAuthor(note, detail) {
@@ -183,24 +189,28 @@ function extractCounters(note) {
   };
 }
 
-async function fetchHTML(inputUrl) {
-  const response = await fetch(inputUrl, {
+async function fetchHTML(inputUrl, config) {
+  const { response, finalURL } = await safeFetch(inputUrl, {
+    allowedDomains: XIAOHONGSHU_INPUT_DOMAINS,
+    lookupImpl: config.lookupImpl,
+    maxResponseBytes: 8 * 1024 * 1024,
     headers: {
       "User-Agent": USER_AGENT,
       Referer: "https://www.xiaohongshu.com/"
     },
-    redirect: "follow"
+    requestImpl: config.requestImpl,
+    requireHTTPS: true
   });
 
   const html = await response.text();
   return {
     status: response.status,
-    finalUrl: response.url || inputUrl,
+    finalUrl: finalURL,
     html
   };
 }
 
-async function parseViaImporter(input) {
+async function parseViaImporter(input, config) {
   const normalizedInput = buildNormalized(input);
   if (!normalizedInput) {
     return {
@@ -210,7 +220,7 @@ async function parseViaImporter(input) {
     };
   }
 
-  const fetched = await fetchHTML(normalizedInput.shareUrl);
+  const fetched = await fetchHTML(normalizedInput.shareUrl, config);
   const fetchedNormalized = buildNormalized(fetched.finalUrl) || normalizedInput;
   const normalized = {
     shareUrl: normalizedInput.shareUrl,
@@ -303,7 +313,7 @@ function createImporterProvider(config) {
         return { ok: true, ...buildDemoNote(input, normalized) };
       }
 
-      const live = await parseViaImporter(input).catch((error) => ({
+      const live = await parseViaImporter(input, config).catch((error) => ({
         ok: false,
         errorCode: "internal_error",
         errorMessage: error instanceof Error ? error.message : String(error || "importer failed"),

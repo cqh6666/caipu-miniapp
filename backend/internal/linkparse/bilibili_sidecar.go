@@ -25,7 +25,7 @@ func (s *Service) fetchBilibiliViaSidecar(ctx context.Context, rawInput string, 
 	}
 
 	parsed, err := sidecar.parse(ctx, "/v1/parse/bilibili", sidecarParseRequest{
-		Input:             rawInput,
+		Input:             inputURL,
 		IncludeDebug:      false,
 		IncludeTranscript: opts.IncludeTranscript,
 	}, map[string]string{

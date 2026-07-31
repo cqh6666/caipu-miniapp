@@ -1,5 +1,10 @@
 const { buildNormalized, extractTags, guessTitle, stripUrlFromInput } = require("../lib/normalize");
 const {
+  XIAOHONGSHU_INPUT_DOMAINS,
+  XIAOHONGSHU_MEDIA_DOMAINS,
+  isHTTPSURLAllowed
+} = require("../lib/url-policy");
+const {
   buildBrowserLaunchOptions,
   canUsePlaywright,
   defaultCookiePath,
@@ -24,6 +29,25 @@ function normalizeMediaUrl(value) {
     return `https://${raw.slice("http://".length)}`;
   }
   return raw;
+}
+
+function isAllowedRednoteRequest(rawURL, navigation = false) {
+  return isHTTPSURLAllowed(
+    rawURL,
+    navigation ? XIAOHONGSHU_INPUT_DOMAINS : XIAOHONGSHU_MEDIA_DOMAINS
+  );
+}
+
+function redirectCount(request) {
+  let count = 0;
+  let current = request;
+  while (current && typeof current.redirectedFrom === "function") {
+    current = current.redirectedFrom();
+    if (current) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function buildEchoNote(input, normalized, reason) {
@@ -163,7 +187,7 @@ async function extractNoteFromPage(page) {
 
 async function parseViaRednote(input, config) {
   const normalized = buildNormalized(input);
-  if (!normalized) {
+  if (!normalized || !isHTTPSURLAllowed(normalized.shareUrl, XIAOHONGSHU_INPUT_DOMAINS)) {
     return {
       ok: false,
       errorCode: "invalid_input",
@@ -192,7 +216,7 @@ async function parseViaRednote(input, config) {
     return {
       ok: false,
       errorCode: "provider_unavailable",
-        errorMessage: "playwright is not installed; run npm install in sidecars/linkparse-sidecar and prepare a browser"
+      errorMessage: "playwright is not installed; run npm install in sidecars/linkparse-sidecar and prepare a browser"
     };
   }
 
@@ -201,7 +225,7 @@ async function parseViaRednote(input, config) {
   let page;
   try {
     browser = await playwright.chromium.launch(buildBrowserLaunchOptions(config));
-    context = await browser.newContext();
+    context = await browser.newContext({ serviceWorkers: "block" });
     try {
       await context.addCookies(cookieState.cookies);
     } catch (error) {
@@ -213,15 +237,35 @@ async function parseViaRednote(input, config) {
     }
     page = await context.newPage();
     page.setDefaultTimeout(config.rednoteTimeoutMS);
+    context.on("page", (candidate) => {
+      if (candidate !== page) {
+        void candidate.close().catch(() => {});
+      }
+    });
+    await context.route("**/*", async (route) => {
+      const request = route.request();
+      if (redirectCount(request) > 5 || !isAllowedRednoteRequest(request.url(), request.isNavigationRequest())) {
+        await route.abort("blockedbyclient");
+        return;
+      }
+      await route.continue();
+    });
 
     await page.goto(normalized.shareUrl, {
       waitUntil: "domcontentloaded",
       timeout: config.rednoteTimeoutMS
     });
+    if (!isHTTPSURLAllowed(page.url(), XIAOHONGSHU_INPUT_DOMAINS)) {
+      throw new Error("rednote navigation left the allowed xiaohongshu domains");
+    }
 
     const extracted = await extractNoteFromPage(page);
-    const images = unique(extracted.images.map(normalizeMediaUrl).filter((url) => /^https?:\/\//i.test(url)));
-    const videos = unique(extracted.videos.map(normalizeMediaUrl).filter((url) => /^https?:\/\//i.test(url)));
+    const images = unique(
+      extracted.images.map(normalizeMediaUrl).filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
+    );
+    const videos = unique(
+      extracted.videos.map(normalizeMediaUrl).filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
+    );
     const tags = unique((extracted.tags || []).concat(extractTags(extracted.content)));
 
     if (!String(extracted.content || "").trim() && images.length === 0 && videos.length === 0) {
@@ -245,7 +289,9 @@ async function parseViaRednote(input, config) {
         coverUrl: images[0] || "",
         author: {
           name: String(extracted.author || "").trim(),
-          avatarUrl: normalizeMediaUrl(extracted.avatarUrl || "")
+          avatarUrl: isHTTPSURLAllowed(normalizeMediaUrl(extracted.avatarUrl || ""), XIAOHONGSHU_MEDIA_DOMAINS)
+            ? normalizeMediaUrl(extracted.avatarUrl || "")
+            : ""
         },
         noteType: videos.length > 0 ? "video" : "image",
         likes: parseChineseCounter(extracted.likes),
@@ -336,5 +382,6 @@ function createRednoteProvider(config) {
 
 module.exports = {
   createRednoteProvider,
-  defaultCookiePath
+  defaultCookiePath,
+  isAllowedRednoteRequest
 };

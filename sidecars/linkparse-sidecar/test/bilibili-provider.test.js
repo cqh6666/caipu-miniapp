@@ -4,9 +4,91 @@ const assert = require("node:assert/strict");
 const {
   buildSubtitleText,
   createBilibiliProvider,
+  isSupportedBilibiliUrl,
   parseVideoRefFromURL,
   selectSubtitle
 } = require("../providers/bilibili");
+
+const PUBLIC_LOOKUP = async () => [{ address: "8.8.8.8", family: 4 }];
+
+test("isSupportedBilibiliUrl rejects pseudo-suffix and userinfo confusion", () => {
+  assert.equal(isSupportedBilibiliUrl("https://www.bilibili.com/video/BV1xx411c7mD"), true);
+  assert.equal(isSupportedBilibiliUrl("http://b23.tv/demo"), true);
+  assert.equal(isSupportedBilibiliUrl("https://b23.tv:8443/demo"), false);
+  assert.equal(isSupportedBilibiliUrl("https://bilibili.com.attacker.example/share"), false);
+  assert.equal(isSupportedBilibiliUrl("https://bilibili.com@attacker.example/share"), false);
+  assert.equal(isSupportedBilibiliUrl("https://attacker.example@www.bilibili.com/share"), false);
+});
+
+test("bilibili provider upgrades an HTTP short link before fetching", async () => {
+  const calls = [];
+  const provider = createBilibiliProvider({
+    bilibiliOpenAPIEnabled: true,
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async (url) => {
+      calls.push(url);
+      throw new Error("stop after capturing normalized URL");
+    }
+  });
+
+  await assert.rejects(provider.parse("http://b23.tv/demo", { includeTranscript: false }), /stop after capturing/);
+  assert.deepEqual(calls, ["https://b23.tv/demo"]);
+});
+
+test("bilibili provider rejects an unsupported host before sending credentials", async () => {
+  const calls = [];
+  const provider = createBilibiliProvider({
+    bilibiliOpenAPIEnabled: true,
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async (url, init) => {
+      calls.push({ url, init });
+      throw new Error("fetch should not be called");
+    }
+  });
+
+  await assert.rejects(
+    provider.parse("https://bilibili.com.attacker.example/share", {
+      includeTranscript: false,
+      sessdata: "TOP_SECRET"
+    }),
+    /only bilibili links are supported/
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("bilibili provider validates every redirect before following it", async () => {
+  const calls = [];
+  const provider = createBilibiliProvider({
+    bilibiliOpenAPIEnabled: true,
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async (url, init) => {
+      calls.push({ url, init });
+      return {
+        status: 302,
+        url,
+        headers: {
+          get(name) {
+            return name.toLowerCase() === "location" ? "https://bilibili.com.attacker.example/video/BV1xx411c7mD" : "";
+          }
+        },
+        async text() {
+          return "";
+        }
+      };
+    }
+  });
+
+  await assert.rejects(
+    provider.parse("https://b23.tv/demo123", {
+      includeTranscript: false,
+      sessdata: "TOP_SECRET"
+    }),
+    /URL host is not allowed/
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.redirect, "manual");
+  assert.equal(calls[0].init.headers.Cookie, undefined);
+});
 
 test("parseVideoRefFromURL extracts bvid and page", () => {
   assert.deepEqual(parseVideoRefFromURL("https://www.bilibili.com/video/BV1xx411c7mD?p=2"), {
@@ -42,7 +124,8 @@ test("bilibili provider returns normalized transcript content", async () => {
   const calls = [];
   const provider = createBilibiliProvider({
     bilibiliOpenAPIEnabled: true,
-    fetchImpl: async (url, init) => {
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async (url, init) => {
       calls.push({ url, init });
       if (url.includes("/x/web-interface/view")) {
         return {
@@ -105,19 +188,39 @@ test("bilibili provider returns normalized transcript content", async () => {
   assert.equal(result.content.subtitleLanguage, "中文");
   assert.equal(result.content.subtitleSegments, 2);
   assert.match(calls[0].init.headers.Cookie, /SESSDATA=sess-123/);
+  assert.match(calls[1].init.headers.Cookie, /SESSDATA=sess-123/);
+  assert.equal(calls[2].init.headers.Cookie, undefined);
+  assert.ok(calls.every((call) => call.init.redirect === "manual"));
 });
 
 test("bilibili provider accepts resolved short url even when final page responds 412", async () => {
   const calls = [];
   const provider = createBilibiliProvider({
     bilibiliOpenAPIEnabled: true,
-    fetchImpl: async (url, init) => {
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async (url, init) => {
       calls.push({ url, init });
       if (url === "https://b23.tv/demo123") {
         return {
+          status: 302,
+          url,
+          headers: {
+            get(name) {
+              return name.toLowerCase() === "location"
+                ? "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
+                : "";
+            }
+          },
+          async text() {
+            return "";
+          }
+        };
+      }
+      if (url === "https://www.bilibili.com/video/BV1xx411c7mD?p=2") {
+        return {
           ok: false,
           status: 412,
-          url: "https://www.bilibili.com/video/BV1xx411c7mD?p=2",
+          url,
           async text() {
             return "";
           }
@@ -157,4 +260,67 @@ test("bilibili provider accepts resolved short url even when final page responds
   assert.equal(result.normalized.page, 2);
   assert.match(result.warnings.join("\n"), /已自动展开 B 站短链接/);
   assert.equal(calls[0].url, "https://b23.tv/demo123");
+  assert.equal(calls[0].init.headers.Cookie, undefined);
+  assert.equal(calls[1].init.headers.Cookie, undefined);
+  assert.equal(calls[2].url.includes("/x/web-interface/view"), true);
+});
+
+test("bilibili provider rejects an untrusted subtitle URL without leaking SESSDATA", async () => {
+  const calls = [];
+  const provider = createBilibiliProvider({
+    bilibiliOpenAPIEnabled: true,
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async (url, init) => {
+      calls.push({ url, init });
+      if (url.includes("/x/web-interface/view")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              code: 0,
+              data: {
+                title: "番茄牛腩",
+                desc: "",
+                pic: "",
+                bvid: "BV1xx411c7mD",
+                aid: 10086,
+                owner: { name: "厨房UP" },
+                pages: [{ cid: 20086, page: 1, part: "正片" }]
+              }
+            };
+          }
+        };
+      }
+      if (url.includes("/x/player/v2")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              code: 0,
+              data: {
+                need_login_subtitle: false,
+                subtitle: {
+                  subtitles: [{ lan: "zh-CN", subtitle_url: "https://attacker.example/subtitle.json" }]
+                }
+              }
+            };
+          }
+        };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }
+  });
+
+  await assert.rejects(
+    provider.parse("https://www.bilibili.com/video/BV1xx411c7mD", {
+      includeTranscript: true,
+      sessdata: "TOP_SECRET"
+    }),
+    /URL host is not allowed/
+  );
+
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((call) => call.init.headers.Cookie === "SESSDATA=TOP_SECRET"));
 });

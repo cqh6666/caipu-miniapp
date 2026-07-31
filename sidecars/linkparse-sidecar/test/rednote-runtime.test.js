@@ -2,10 +2,28 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  filterXiaohongshuCookies,
   loadCookiesFromHeader,
   normalizeCookieHeader,
   summarizeRuntime
 } = require("../lib/rednote-runtime");
+
+test("filterXiaohongshuCookies removes cookies for unrelated domains", () => {
+  const cookies = filterXiaohongshuCookies([
+    { name: "a1", domain: ".xiaohongshu.com" },
+    { name: "web_session", domain: "www.xiaohongshu.com" },
+    { name: "secret", domain: "xiaohongshu.com.attacker.example" }
+  ]);
+
+  assert.deepEqual(cookies.map((cookie) => cookie.name), ["a1", "web_session"]);
+});
+
+test("loadCookiesFromHeader rejects an unrelated configured cookie domain", () => {
+  const state = loadCookiesFromHeader("a1=secret", ".attacker.example");
+
+  assert.equal(state.cookies.length, 0);
+  assert.match(state.parseError, /cookie domain must be xiaohongshu\.com/);
+});
 
 test("normalizeCookieHeader strips leading Cookie prefix", () => {
   assert.equal(

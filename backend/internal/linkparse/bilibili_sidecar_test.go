@@ -3,11 +3,14 @@ package linkparse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 func TestParseBilibiliUsesSidecar(t *testing.T) {
@@ -30,6 +33,9 @@ func TestParseBilibiliUsesSidecar(t *testing.T) {
 		}
 		if !req.IncludeTranscript {
 			t.Fatal("ParseBilibili should request transcript")
+		}
+		if got, want := req.Input, "https://b23.tv/demo123"; got != want {
+			t.Fatalf("Input = %q, want normalized %q", got, want)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -83,7 +89,7 @@ func TestParseBilibiliUsesSidecar(t *testing.T) {
 		},
 	})
 
-	result, err := svc.ParseBilibili(context.Background(), "https://b23.tv/demo123")
+	result, err := svc.ParseBilibili(context.Background(), "看看 https://b23.tv/demo123。")
 	if err != nil {
 		t.Fatalf("ParseBilibili returned error: %v", err)
 	}
@@ -178,5 +184,74 @@ func TestParseBilibiliFallsBackWithoutTranscriptViaSidecar(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "字幕") {
 		t.Fatalf("Warnings should mention transcript fallback: %#v", result.Warnings)
+	}
+}
+
+func TestBilibiliSidecarRejectsInvalidURLBeforeRequest(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "bilibili pseudo suffix", input: "https://bilibili.com.attacker.example/video/BV1xx411c7mD"},
+		{name: "short link pseudo suffix", input: "https://b23.tv.attacker.example/demo"},
+		{name: "userinfo", input: "https://user@www.bilibili.com/video/BV1xx411c7mD"},
+		{name: "loopback", input: "http://127.0.0.1/video/BV1xx411c7mD"},
+		{name: "invalid port", input: "https://b23.tv:bad/demo"},
+	}
+	operations := []struct {
+		name string
+		run  func(*Service, string) error
+	}{
+		{
+			name: "parse",
+			run: func(service *Service, input string) error {
+				_, err := service.ParseBilibili(context.Background(), input)
+				return err
+			},
+		},
+		{
+			name: "preview",
+			run: func(service *Service, input string) error {
+				_, err := service.PreviewBilibili(context.Background(), input)
+				return err
+			},
+		},
+	}
+
+	for _, operation := range operations {
+		for _, tt := range tests {
+			t.Run(operation.name+"/"+tt.name, func(t *testing.T) {
+				sidecarCalls := 0
+				sessdataCalls := 0
+				service := NewService(Options{
+					LinkparseSidecarEnabled: true,
+					LinkparseSidecarBaseURL: "http://sidecar.test",
+					LinkparseSidecarTimeout: time.Second,
+					BilibiliSessdataProvider: func(context.Context) string {
+						sessdataCalls++
+						return "TOP_SECRET"
+					},
+				})
+				service.sidecar.client.Transport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+					sidecarCalls++
+					return nil, errors.New("unexpected sidecar request")
+				})
+
+				err := operation.run(service, tt.input)
+				var appErr *common.AppError
+				if !errors.As(err, &appErr) {
+					t.Fatalf("error = %v, want *common.AppError", err)
+				}
+				if appErr.Code != common.CodeBadRequest || appErr.HTTPStatus != http.StatusBadRequest || appErr.Message != "invalid bilibili url" {
+					t.Fatalf("AppError = %#v", appErr)
+				}
+				if sidecarCalls != 0 {
+					t.Fatalf("sidecar calls = %d, want 0", sidecarCalls)
+				}
+				if sessdataCalls != 0 {
+					t.Fatalf("SESSDATA provider calls = %d, want 0", sessdataCalls)
+				}
+			})
+		}
 	}
 }

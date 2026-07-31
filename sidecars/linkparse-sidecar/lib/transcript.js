@@ -7,6 +7,8 @@ const { spawn } = require("node:child_process");
 const { performance } = require("node:perf_hooks");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
+const { discardResponse, safeFetch } = require("./safe-fetch");
+const { XIAOHONGSHU_MEDIA_DOMAINS } = require("./url-policy");
 
 const DEFAULT_PROVIDER = "siliconflow";
 const DEFAULT_ENDPOINT = "https://api.siliconflow.cn/v1/audio/transcriptions";
@@ -161,28 +163,37 @@ async function runFFmpeg(inputPath, outputPath, config) {
 }
 
 async function downloadFile(url, outputPath, config) {
-  const fetchImpl = config.fetchImpl || globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
-    throw new Error("fetch is not available");
-  }
-
   const maxVideoMB = Number(config.transcriptMaxVideoMB) > 0 ? Number(config.transcriptMaxVideoMB) : DEFAULT_MAX_VIDEO_MB;
   const maxBytes = Math.round(maxVideoMB * 1024 * 1024);
   const timeoutMS = resolveTranscriptTimeoutMS(config);
   const timeout = createTimeoutSignal(timeoutMS);
 
   try {
-    const response = await fetchImpl(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: timeout.signal,
-      headers: {
-        "User-Agent": TRANSCRIPT_USER_AGENT,
-        Referer: "https://www.xiaohongshu.com/"
+    let response;
+    try {
+      ({ response } = await safeFetch(url, {
+        allowedDomains: XIAOHONGSHU_MEDIA_DOMAINS,
+        lookupImpl: config.lookupImpl,
+        maxResponseBytes: maxBytes,
+        method: "GET",
+        signal: timeout.signal,
+        headers: {
+          "User-Agent": TRANSCRIPT_USER_AGENT,
+          Referer: "https://www.xiaohongshu.com/"
+        },
+        requestImpl: config.downloadRequestImpl,
+        requireHTTPS: true,
+        timeoutMS
+      }));
+    } catch (error) {
+      if (/response body exceeded size limit/i.test(error instanceof Error ? error.message : String(error))) {
+        throw new Error(`video too large: exceeds ${maxVideoMB}MB`);
       }
-    });
+      throw error;
+    }
 
     if (!response || !response.ok) {
+      await discardResponse(response);
       throw new Error(`video download failed: HTTP ${response ? response.status : 0}`);
     }
 
@@ -265,6 +276,7 @@ async function transcribeMultipartAudio(mp3Path, config) {
   try {
     const response = await fetchImpl(endpoint, {
       method: "POST",
+      redirect: "error",
       signal: timeout.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`

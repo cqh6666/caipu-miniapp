@@ -1,31 +1,14 @@
+const {
+  XIAOHONGSHU_INPUT_DOMAINS,
+  extractInputURL,
+  hostMatches,
+  normalizeToHTTPSURL
+} = require("./url-policy");
+
 const FIRST_URL_PATTERN = /https?:\/\/[^\s]+/i;
-const XHS_HOST_PATTERN = /(xiaohongshu\.com|xhslink\.com)/i;
 
 function extractInputUrl(input) {
-  const raw = String(input || "").trim();
-  if (!raw) {
-    return { ok: false, error: "url is required" };
-  }
-
-  let value = raw;
-  const match = raw.match(FIRST_URL_PATTERN);
-  if (match) {
-    value = match[0].replace(/[。；;，,）)\]】>]+$/g, "");
-  }
-
-  if (!/^https?:\/\//i.test(value)) {
-    value = `https://${value}`;
-  }
-
-  try {
-    const parsed = new URL(value);
-    if (!parsed.host) {
-      return { ok: false, error: "invalid url" };
-    }
-    return { ok: true, url: parsed.toString() };
-  } catch (error) {
-    return { ok: false, error: "invalid url" };
-  }
+  return extractInputURL(input);
 }
 
 function isSupportedXHSUrl(input) {
@@ -33,7 +16,12 @@ function isSupportedXHSUrl(input) {
   if (!result.ok) {
     return false;
   }
-  return XHS_HOST_PATTERN.test(new URL(result.url).host);
+  try {
+    normalizeToHTTPSURL(result.url, XIAOHONGSHU_INPUT_DOMAINS);
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
 function stripUrlFromInput(input) {
@@ -68,12 +56,12 @@ function guessTitle(input) {
 
 function detectNoteId(inputUrl) {
   const result = extractInputUrl(inputUrl);
-  if (!result.ok) {
+  if (!result.ok || !isSupportedXHSUrl(result.url)) {
     return "";
   }
 
   try {
-    const parsed = new URL(result.url);
+    const parsed = normalizeToHTTPSURL(result.url, XIAOHONGSHU_INPUT_DOMAINS);
     const redirected = extractRedirectPath(parsed);
     if (parsed.pathname === "/404" && redirected) {
       return detectNoteId(redirected);
@@ -88,24 +76,28 @@ function detectNoteId(inputUrl) {
 
 function buildNormalized(input) {
   const result = extractInputUrl(input);
-  if (!result.ok) {
+  if (!result.ok || !isSupportedXHSUrl(result.url)) {
     return null;
   }
 
-  let resolvedUrl = result.url;
+  const normalizedInputURL = normalizeToHTTPSURL(result.url, XIAOHONGSHU_INPUT_DOMAINS).toString();
+  let resolvedUrl = normalizedInputURL;
   try {
-    const parsed = new URL(result.url);
+    const parsed = new URL(normalizedInputURL);
     const redirectPath = extractRedirectPath(parsed);
     if (parsed.pathname === "/404" && redirectPath) {
-      resolvedUrl = redirectPath;
+      const redirectURL = normalizeToHTTPSURL(new URL(redirectPath, parsed), XIAOHONGSHU_INPUT_DOMAINS).toString();
+      if (isSupportedXHSUrl(redirectURL)) {
+        resolvedUrl = redirectURL;
+      }
     }
   } catch (error) {
-    resolvedUrl = result.url;
+    resolvedUrl = normalizedInputURL;
   }
 
   const noteId = detectNoteId(resolvedUrl);
   let canonicalUrl = resolvedUrl;
-  if (noteId && /xiaohongshu\.com/i.test(canonicalUrl)) {
+  if (noteId && hostMatches(new URL(canonicalUrl).hostname, ["xiaohongshu.com"])) {
     canonicalUrl = `https://www.xiaohongshu.com/explore/${noteId}`;
   }
 
@@ -117,7 +109,7 @@ function buildNormalized(input) {
   }
 
   return {
-    shareUrl: result.url,
+    shareUrl: normalizedInputURL,
     canonicalUrl,
     noteId,
     xsecToken

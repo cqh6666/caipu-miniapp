@@ -12,6 +12,8 @@ const {
   transcribeWithInfiniteAI
 } = require("../lib/transcript");
 
+const PUBLIC_LOOKUP = async () => [{ address: "8.8.8.8", family: 4 }];
+
 test("enrichTranscriptIfNeeded marks transcript as disabled when feature flag is off", async () => {
   const note = await enrichTranscriptIfNeeded(
     {
@@ -51,9 +53,9 @@ test("downloadFile rejects oversized video before writing to disk", async () => 
 
   await assert.rejects(
     () =>
-      downloadFile("https://cdn.example.com/demo.mp4", outputPath, {
+      downloadFile("https://sns-video-hw.xhscdn.com/demo.mp4", outputPath, {
         transcriptMaxVideoMB: 0.0001,
-        fetchImpl: async () => ({
+        downloadRequestImpl: async () => ({
           ok: true,
           status: 200,
           headers: {
@@ -62,7 +64,8 @@ test("downloadFile rejects oversized video before writing to disk", async () => 
             }
           },
           body: Readable.from([Buffer.alloc(1024)])
-        })
+        }),
+        lookupImpl: PUBLIC_LOOKUP
       }),
     /video too large/i
   );
@@ -82,6 +85,7 @@ test("transcribeWithInfiniteAI returns normalized transcript text", async () => 
       called = true;
       assert.equal(url, "https://api.infiniteai.cc/v1/audio/transcriptions");
       assert.equal(init.method, "POST");
+      assert.equal(init.redirect, "error");
       assert.equal(init.headers.Authorization, "Bearer secret");
       assert.ok(init.body instanceof FormData);
       return {
@@ -113,6 +117,7 @@ test("transcribeWithSiliconFlow posts model and returns normalized transcript te
       called = true;
       assert.equal(url, "https://api.siliconflow.cn/v1/audio/transcriptions");
       assert.equal(init.method, "POST");
+      assert.equal(init.redirect, "error");
       assert.equal(init.headers.Authorization, "Bearer secret");
       assert.ok(init.body instanceof FormData);
       return {
@@ -135,14 +140,14 @@ test("enrichTranscriptIfNeeded degrades to failed when ffmpeg is unavailable", a
   const note = await enrichTranscriptIfNeeded(
     {
       title: "视频笔记",
-      videos: ["https://cdn.example.com/demo.mp4"]
+      videos: ["https://sns-video-hw.xhscdn.com/demo.mp4"]
     },
     {
       transcriptEnabled: true,
       transcriptProvider: "siliconflow",
       transcriptAPIKey: "secret",
       ffmpegPath: path.join(os.tmpdir(), "missing-ffmpeg-binary"),
-      fetchImpl: async () => ({
+      downloadRequestImpl: async () => ({
         ok: true,
         status: 200,
         headers: {
@@ -151,11 +156,28 @@ test("enrichTranscriptIfNeeded degrades to failed when ffmpeg is unavailable", a
           }
         },
         body: Readable.from([Buffer.from("fake")])
-      })
+      }),
+      lookupImpl: PUBLIC_LOOKUP
     }
   );
 
   assert.equal(note.transcript, "");
   assert.equal(note.transcriptStatus, "failed");
   assert.match(note.transcriptError, /missing-ffmpeg-binary|enoent/i);
+});
+
+test("downloadFile rejects an untrusted media host before fetching", async () => {
+  let called = false;
+
+  await assert.rejects(
+    downloadFile("http://127.0.0.1/internal.mp4", path.join(os.tmpdir(), "should-not-exist.mp4"), {
+      downloadRequestImpl: async () => {
+        called = true;
+        throw new Error("fetch should not be called");
+      }
+    }),
+    /URL host is not allowed/
+  );
+
+  assert.equal(called, false);
 });

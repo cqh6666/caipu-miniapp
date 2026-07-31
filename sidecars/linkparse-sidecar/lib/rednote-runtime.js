@@ -1,6 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { hostMatches } = require("./url-policy");
 
 const SET_COOKIE_ATTRIBUTES = new Set([
   "path",
@@ -48,6 +49,18 @@ function getCookieUpdatedAt(cookiePath) {
   }
 }
 
+function normalizeCookieDomain(domain) {
+  return String(domain || "").trim().toLowerCase().replace(/^\./, "").replace(/\.$/, "");
+}
+
+function isXiaohongshuCookieDomain(domain) {
+  return hostMatches(normalizeCookieDomain(domain), ["xiaohongshu.com"]);
+}
+
+function filterXiaohongshuCookies(cookies) {
+  return (Array.isArray(cookies) ? cookies : []).filter((cookie) => isXiaohongshuCookieDomain(cookie && cookie.domain));
+}
+
 function loadCookiesFromFile(cookiePath) {
   if (!fs.existsSync(cookiePath)) {
     return {
@@ -61,12 +74,17 @@ function loadCookiesFromFile(cookiePath) {
 
   try {
     const raw = fs.readFileSync(cookiePath, "utf8");
-    const cookies = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    const cookies = filterXiaohongshuCookies(parsed);
     return {
-      cookies: Array.isArray(cookies) ? cookies : [],
+      cookies,
       exists: true,
       updatedAt: getCookieUpdatedAt(cookiePath),
-      parseError: "",
+      parseError: !Array.isArray(parsed)
+        ? "cookie file must contain an array"
+        : parsed.length > 0 && cookies.length === 0
+          ? "cookie file does not contain xiaohongshu cookies"
+          : "",
       source: "file"
     };
   } catch (error) {
@@ -175,7 +193,17 @@ function parseCookieHeader(rawHeader, domain) {
 }
 
 function loadCookiesFromHeader(rawHeader, cookieDomain) {
-  const cookies = parseCookieHeader(rawHeader, cookieDomain || ".xiaohongshu.com");
+  const domain = cookieDomain || ".xiaohongshu.com";
+  if (!isXiaohongshuCookieDomain(domain)) {
+    return {
+      cookies: [],
+      exists: false,
+      updatedAt: "",
+      parseError: "cookie domain must be xiaohongshu.com or a subdomain",
+      source: "header"
+    };
+  }
+  const cookies = filterXiaohongshuCookies(parseCookieHeader(rawHeader, domain));
   return {
     cookies,
     exists: cookies.length > 0,
@@ -206,7 +234,7 @@ function ensureCookieDir(cookiePath) {
 
 function writeCookies(cookiePath, cookies) {
   ensureCookieDir(cookiePath);
-  fs.writeFileSync(cookiePath, `${JSON.stringify(cookies, null, 2)}\n`, "utf8");
+  fs.writeFileSync(cookiePath, `${JSON.stringify(filterXiaohongshuCookies(cookies), null, 2)}\n`, "utf8");
 }
 
 function buildBrowserLaunchOptions(config, overrides = {}) {
@@ -266,6 +294,7 @@ module.exports = {
   buildBrowserLaunchOptions,
   canUsePlaywright,
   defaultCookiePath,
+  filterXiaohongshuCookies,
   ensureCookieDir,
   hasLikelyLoginCookies,
   loadCookies,

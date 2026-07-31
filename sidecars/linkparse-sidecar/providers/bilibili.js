@@ -1,4 +1,13 @@
-const FIRST_URL_PATTERN = /https?:\/\/[^\s]+/i;
+const { discardResponse, safeFetch } = require("../lib/safe-fetch");
+const {
+  BILIBILI_ASSET_DOMAINS,
+  BILIBILI_INPUT_DOMAINS,
+  extractInputURL,
+  hostMatches,
+  isTrustedBilibiliAPIURL,
+  normalizeToHTTPSURL
+} = require("../lib/url-policy");
+
 const BVID_PATTERN = /(BV[0-9A-Za-z]{10})/i;
 const AVID_PATTERN = /(?:^|\/|[?&])av([0-9]+)/i;
 const PREFERRED_SUBTITLE_LANGS = ["zh-CN", "zh-Hans", "zh-Hant", "zh", "ai-zh"];
@@ -10,35 +19,11 @@ function safeTrim(value) {
 }
 
 function extractInputUrl(input) {
-  const raw = safeTrim(input);
-  if (!raw) {
-    return { ok: false, error: "url is required" };
-  }
-
-  let value = raw;
-  const match = raw.match(FIRST_URL_PATTERN);
-  if (match) {
-    value = match[0].replace(/[。；;，,）)\]】>]+$/g, "");
-  }
-
-  if (!/^https?:\/\//i.test(value)) {
-    value = `https://${value}`;
-  }
-
-  try {
-    const parsed = new URL(value);
-    if (!parsed.host) {
-      return { ok: false, error: "invalid url" };
-    }
-    return { ok: true, url: parsed.toString() };
-  } catch (error) {
-    return { ok: false, error: "invalid url" };
-  }
+  return extractInputURL(input);
 }
 
 function isResolvableBilibiliHost(host) {
-  const value = safeTrim(host).toLowerCase();
-  return value.includes("bilibili.com") || value.includes("b23.tv") || value.includes("bili2233.cn");
+  return hostMatches(host, BILIBILI_INPUT_DOMAINS);
 }
 
 function isSupportedBilibiliUrl(input) {
@@ -48,7 +33,8 @@ function isSupportedBilibiliUrl(input) {
   }
 
   try {
-    return isResolvableBilibiliHost(new URL(extracted.url).host);
+    normalizeToHTTPSURL(extracted.url, BILIBILI_INPUT_DOMAINS);
+    return true;
   } catch (error) {
     return false;
   }
@@ -56,10 +42,7 @@ function isSupportedBilibiliUrl(input) {
 
 function parseVideoRefFromURL(rawURL) {
   try {
-    const parsed = new URL(rawURL);
-    if (!isResolvableBilibiliHost(parsed.host)) {
-      return null;
-    }
+    const parsed = normalizeToHTTPSURL(rawURL, BILIBILI_INPUT_DOMAINS);
 
     let page = Number(parsed.searchParams.get("p") || 1);
     if (!(page > 0)) {
@@ -93,73 +76,63 @@ function parseVideoRefFromURL(rawURL) {
   }
 }
 
-function buildHeaders(sessdata) {
+function buildHeaders(sessdata, targetURL) {
   const headers = {
     "User-Agent": USER_AGENT,
     Referer: "https://www.bilibili.com/"
   };
-  if (safeTrim(sessdata)) {
+  if (safeTrim(sessdata) && isTrustedBilibiliAPIURL(targetURL)) {
     headers.Cookie = `SESSDATA=${safeTrim(sessdata)}`;
   }
   return headers;
 }
 
-async function resolveFinalURL(rawURL, sessdata, config) {
-  const fetchImpl = config.fetchImpl || globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
-    throw new Error("fetch is not available");
-  }
-
-  const response = await fetchImpl(rawURL, {
+async function resolveFinalURL(rawURL, config) {
+  const { response, finalURL } = await safeFetch(rawURL, {
+    allowedDomains: BILIBILI_INPUT_DOMAINS,
+    lookupImpl: config.lookupImpl,
+    maxResponseBytes: 1024 * 1024,
     method: "GET",
-    redirect: "follow",
-    headers: buildHeaders(sessdata)
+    headers: buildHeaders("", rawURL),
+    requestImpl: config.requestImpl,
+    requireHTTPS: true
   });
-
-  const resolvedURL = safeTrim(response?.url);
 
   // B 站短链有时会在最终视频页返回 412，但 fetch 仍然已经跟到了可解析
   // 的 canonical URL。这里优先使用最终 URL，而不是把 412 直接视为失败。
-  if (resolvedURL) {
-    if (typeof response.text === "function") {
-      await response.text().catch(() => {});
-    }
-    return resolvedURL;
-  }
-
   if (!response) {
-    throw new Error(`failed to resolve bilibili url: HTTP ${response ? response.status : 0}`);
+    throw new Error("failed to resolve bilibili url: HTTP 0");
   }
-
-  if (typeof response.text === "function") {
-    await response.text().catch(() => {});
-  }
-
-  throw new Error(`failed to resolve bilibili url: HTTP ${response.status || 0}`);
+  await discardResponse(response);
+  return finalURL;
 }
 
-async function resolveVideoRef(input, sessdata, config) {
+async function resolveVideoRef(input, config) {
   const extracted = extractInputUrl(input);
   if (!extracted.ok) {
     throw new Error("invalid bilibili url");
   }
+  if (!isSupportedBilibiliUrl(extracted.url)) {
+    throw new Error("only bilibili links are supported");
+  }
+  const normalizedInputURL = normalizeToHTTPSURL(extracted.url, BILIBILI_INPUT_DOMAINS).toString();
 
-  const directRef = parseVideoRefFromURL(extracted.url);
+  const directRef = parseVideoRefFromURL(normalizedInputURL);
   if (directRef) {
-    return { ref: directRef, shareUrl: extracted.url, warnings: [] };
+    return { ref: directRef, shareUrl: normalizedInputURL, warnings: [] };
   }
 
   let parsed;
   try {
-    parsed = new URL(extracted.url);
+    parsed = new URL(normalizedInputURL);
   } catch (error) {
     throw new Error("invalid bilibili url");
   }
-  if (!isResolvableBilibiliHost(parsed.host)) {
+  if (!isResolvableBilibiliHost(parsed.hostname)) {
     throw new Error("only bilibili links are supported");
   }
 
-  const resolvedURL = await resolveFinalURL(extracted.url, sessdata, config);
+  const resolvedURL = await resolveFinalURL(normalizedInputURL, config);
   const resolvedRef = parseVideoRefFromURL(resolvedURL);
   if (!resolvedRef) {
     throw new Error("could not extract BV/AV id from bilibili url");
@@ -167,24 +140,29 @@ async function resolveVideoRef(input, sessdata, config) {
 
   return {
     ref: resolvedRef,
-    shareUrl: extracted.url,
+    shareUrl: normalizedInputURL,
     warnings: ["已自动展开 B 站短链接。"]
   };
 }
 
-async function fetchJSON(url, sessdata, config) {
-  const fetchImpl = config.fetchImpl || globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
-    throw new Error("fetch is not available");
+async function fetchJSON(url, options, config) {
+  const credentialed = !!options.credentialed;
+  if (credentialed && !isTrustedBilibiliAPIURL(url)) {
+    throw new Error("credentials are not allowed for this bilibili URL");
   }
-
-  const response = await fetchImpl(url, {
+  const { response } = await safeFetch(url, {
+    allowedDomains: BILIBILI_ASSET_DOMAINS,
+    lookupImpl: config.lookupImpl,
+    maxResponseBytes: 4 * 1024 * 1024,
     method: "GET",
-    redirect: "follow",
-    headers: buildHeaders(sessdata)
+    redirectMode: credentialed ? "error" : "follow",
+    headers: (targetURL) => buildHeaders(credentialed ? options.sessdata : "", targetURL),
+    requestImpl: config.requestImpl,
+    requireHTTPS: true
   });
 
   if (!response || !response.ok) {
+    await discardResponse(response);
     throw new Error(`bilibili request failed: HTTP ${response ? response.status : 0}`);
   }
 
@@ -200,7 +178,11 @@ async function fetchView(ref, sessdata, config) {
     params.set("aid", String(ref.aid));
   }
 
-  const payload = await fetchJSON(`https://api.bilibili.com/x/web-interface/view?${params.toString()}`, sessdata, config);
+  const payload = await fetchJSON(
+    `https://api.bilibili.com/x/web-interface/view?${params.toString()}`,
+    { credentialed: true, sessdata },
+    config
+  );
   if (Number(payload.code) !== 0) {
     throw new Error(safeTrim(payload.message) || "failed to fetch bilibili video info");
   }
@@ -229,7 +211,7 @@ function pickPage(pages, requestedPage) {
 async function fetchSubtitles(bvid, cid, sessdata, config) {
   const payload = await fetchJSON(
     `https://api.bilibili.com/x/player/v2?bvid=${encodeURIComponent(bvid)}&cid=${encodeURIComponent(cid)}`,
-    sessdata,
+    { credentialed: true, sessdata },
     config
   );
   if (Number(payload.code) !== 0) {
@@ -260,15 +242,16 @@ function selectSubtitle(items) {
   return null;
 }
 
-async function fetchSubtitleFile(subtitleURL, sessdata, config) {
+async function fetchSubtitleFile(subtitleURL, config) {
   let resolvedURL = safeTrim(subtitleURL);
   if (resolvedURL.startsWith("//")) {
     resolvedURL = `https:${resolvedURL}`;
   } else if (resolvedURL.startsWith("/")) {
     resolvedURL = `https://api.bilibili.com${resolvedURL}`;
   }
+  resolvedURL = normalizeToHTTPSURL(resolvedURL, BILIBILI_ASSET_DOMAINS).toString();
 
-  return fetchJSON(resolvedURL, sessdata, config);
+  return fetchJSON(resolvedURL, { credentialed: false, sessdata: "" }, config);
 }
 
 function buildSubtitleText(file) {
@@ -295,7 +278,7 @@ function createBilibiliProvider(config) {
       const sessdata = safeTrim(options.sessdata);
       const includeTranscript = !!options.includeTranscript;
 
-      const { ref, shareUrl, warnings: resolveWarnings } = await resolveVideoRef(input, sessdata, config);
+      const { ref, shareUrl, warnings: resolveWarnings } = await resolveVideoRef(input, config);
       const view = await fetchView(ref, sessdata, config);
       const { page, warnings: pageWarnings } = pickPage(view.data.pages, ref.page);
       const warnings = resolveWarnings.concat(pageWarnings);
@@ -318,7 +301,7 @@ function createBilibiliProvider(config) {
             warnings.push("当前视频没有可直接访问的字幕。");
           }
         } else {
-          const subtitleFile = await fetchSubtitleFile(selectedSubtitle.subtitle_url, sessdata, config);
+          const subtitleFile = await fetchSubtitleFile(selectedSubtitle.subtitle_url, config);
           const built = buildSubtitleText(subtitleFile);
           transcript = built.text;
           subtitleSegments = built.segments;
