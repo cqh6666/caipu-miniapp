@@ -1,22 +1,23 @@
 # 项目代码冗余设计审查报告
 
 - **审查时间**：2026-07-30 21:15:48 +0800
-- **整改更新时间**：2026-08-12 17:02:11 +0800
+- **整改更新时间**：2026-08-12 22:37:07 +0800
 - **审查基线**：`46d327da1adc46cf568f15968406de23cf930205`
 - **S0 整改落点**：`00efaab71e8fed51be470fbfc2387fd674eb6828`
 - **审查范围**：微信小程序、Admin Web、Go 后端、linkparse sidecar、发布脚本、
   根依赖与测试入口
 - **协作方式**：共 4 个 Agent 参与（主 Agent 1 个、前端/后端/工程子 Agent
   各 1 个）
-- **交付性质**：初始只读审查报告，并追加 S0～S2 整改追踪；未连接或修改生产环境
+- **交付性质**：初始只读审查报告，并追加 S0～S5 完整整改追踪；未连接或修改生产环境
 
 ---
 
 ## 整改状态（更新至 2026-08-12）
 
-RD-001 已按独立安全批次完成整改；第一阶段 S1 的 RD-007、RD-010、RD-014 与
-RD-012 中的无效 stub 分支，以及第二阶段 S2 的 RD-006、RD-008 均已完成。其余问题
-仍保持本报告中的待办状态。
+RD-001～RD-015 已按 S0～S5 全部完成整改，并由对应独立 reviewer 复审通过。
+C-001～C-003 因缺少服务器 cron、外部 CI、个人别名或历史审计价值等仓外证据，未做
+破坏性删除；已分别收口为安全 tombstone、frozen/unsupported 和 archived 标记，避免
+继续被误认为现行入口。这三项只剩“取得外部证据后是否物理删除”的条件决策。
 
 | 提交 | 内容 | 状态 |
 | --- | --- | --- |
@@ -24,6 +25,8 @@ RD-012 中的无效 stub 分支，以及第二阶段 S2 的 RD-006、RD-008 均�
 | `00efaab` | B 站、小红书、视频转写及 Go sidecar 调用方接入安全边界 | 已完成并通过独立复审 |
 | `eeee960` | 删除 S1 死代码、无引用样式、遗留函数、无用依赖与无效 stub 分支 | 已完成并通过独立复审 |
 | `0a0fbb4` | 拆分点菜弹层样式并抽取智能识别共享展示组件 | 已完成并通过独立复审 |
+| `b217aef` | 统一 S3 领域/凭据事实来源并完成 S4 B 站与 AI 协议 owner 收口 | 已完成并通过 S3/S4 独立复审 |
+| `d6c0606` | 完成 S5 Handler、Admin、sidecar、脚本、日期与测试设施去重 | 已完成并通过独立复审 |
 
 ### 事实校正
 
@@ -105,6 +108,43 @@ HTTP 入口直接把伪后缀 URL 转发给 sidecar”。
   `cd backend && go test -p 1 ./... -count=1`、`cd backend && go vet ./...`、
   HBuilderX 微信小程序纯编译、静态契约守卫与 `git diff --check`。微信开发者工具 CLI
   当次 auto-preview 返回 code 10，未完成六个弹层的截图/点击回归，也未预览、上传或部署。
+
+### S3 第三阶段整改（2026-08-12）
+
+- RD-004：新增中立 `backend/internal/recipecontent/`，统一 `Content`、`Step`、旧
+  JSON/DB 兼容解码、食材分组、步骤清洗/压缩和标题推断；recipe 与 linkparse 通过
+  别名或薄适配消费同一事实来源，并增加跨包一致性测试。
+- RD-005：组合根一次构造不可变 `*credentialcipher.Box`，注入 AI Router、Runtime
+  Provider 与 App Settings；删除两份 cipher wrapper 和三套构造后覆盖协议。
+- reviewer 曾发现首次抽取弱化旧规范化语义，修复后恢复每组食材最多 10 项、旧步骤先
+  限 12 项再压缩为最多 6 步、大小写去重、首尾标点及“适量即可/就行”清洗。定向与
+  全量回归最终无阻塞问题。
+
+### S4 第四阶段整改（2026-08-12）
+
+- RD-002：B 站所有外部 I/O 收敛到 linkparse sidecar；Go 只保留输入 allowlist、业务
+  编排、AI/启发式总结、结果映射与审计，sidecar 未配置或不可用时稳定返回服务不可用，
+  不再维护不可达的 Go 直连 fallback。
+- RD-003：AI Router 成为 summary、title、flowchart 唯一协议 owner；业务包旧
+  OpenAI-compatible 客户端和运行时 probe 删除，CompatibilityLoader 仅把旧单节点配置
+  转成带明确 `Scene` 的 Router provider。
+- RD-012：抽取 parse request/error helper 和小红书 provider 公共层；sidecar 明确区分
+  输入/凭据错误 `400`、上游故障 `502` 与 provider 不可用 `503`，且凭据验证响应脱敏。
+- 独立 reviewer 对状态码映射、凭据错误分流、兼容 Provider Scene 和旧协议删除逐项复核，
+  最终无阻塞问题；残余风险为未使用真实 B 站凭据和真实上游验证。
+
+### S5 第五阶段整改（2026-08-12）
+
+- RD-009：新增窄 `PositiveInt64URLParam` helper，七组 Handler 保持原 `400 / bad_request`
+  文案和正整数语义。
+- RD-011：抽取 `useRoutedAdminList` 与 `useJobDetailDrawer`，页面继续拥有字段、文案、
+  表格列与 active filter 展示，并保留筛选、分页、`jobId` 深链和 Call/Job 抽屉互跳。
+- RD-012、RD-013、RD-015：完成 sidecar 公共层、无副作用主机资源 helper、Miniapp 日期
+  工具、Admin 测试 runner 和断言 helper 收口；两个部署入口仍保留不同发布策略。
+- C-001～C-003 不做无证据删除：废弃部署脚本变为 fail-closed 安全 tombstone，美团探测
+  POC 标记 frozen/unsupported，旧 Go 启动文档标记 archived 并指向现行权威文档。
+- 独立 reviewer 最终无阻塞问题；Admin Calls/Jobs 的真实浏览器深链、筛选、关闭抽屉
+  历史行为仍需人工验证，条件项最终删除仍需仓外使用审计。
 
 ---
 
@@ -226,7 +266,7 @@ Go 侧 B 站调用在进入 sidecar 前已执行 `extractInputURL` 严格校验�
 
 ## 4. P1：核心事实来源收口
 
-### RD-002：B 站抓取在 Go 与 Node sidecar 中维护两套完整实现
+### RD-002：B 站抓取在 Go 与 Node sidecar 中维护两套完整实现（已整改）
 
 - **位置**：
   - `backend/internal/linkparse/bilibili.go:101`
@@ -258,7 +298,7 @@ fallback 的协议栈。
 
 ---
 
-### RD-003：AI Router 已是生产唯一入口，业务包仍保留旧直连客户端
+### RD-003：AI Router 已是生产唯一入口，业务包仍保留旧直连客户端（已整改）
 
 - **位置**：
   - `backend/internal/app/ai_wiring.go:78`
@@ -295,7 +335,7 @@ client，但 `Generate` 在 Router 非 nil 时不会使用它，形成判定与�
 
 ---
 
-### RD-004：ParsedContent 契约与步骤规范化算法跨包复制
+### RD-004：ParsedContent 契约与步骤规范化算法跨包复制（已整改）
 
 - **位置**：
   - `backend/internal/linkparse/model.go:8`
@@ -337,7 +377,7 @@ worker 还要手写逐字段转换。
 
 ---
 
-### RD-005：凭据加密包装完全复制，并依赖三次“构造后覆盖”
+### RD-005：凭据加密包装完全复制，并依赖三次“构造后覆盖”（已整改）
 
 - **位置**：
   - `backend/internal/airouter/crypto.go:5`
@@ -512,7 +552,7 @@ SFC，并配合 RD-006 消除一份 WXSS。
 
 ---
 
-### RD-009：七个 Handler 完整复制 kitchenID 路径参数解析
+### RD-009：七个 Handler 完整复制 kitchenID 路径参数解析（已整改）
 
 - **位置**：
   - `backend/internal/kitchen/handler.go:138`
@@ -557,7 +597,7 @@ ID 一并泛化成反射绑定框架。
 
 ---
 
-### RD-011：Admin Calls/Jobs 重复列表控制器，任务详情编排重复三次
+### RD-011：Admin Calls/Jobs 重复列表控制器，任务详情编排重复三次（已整改）
 
 - **位置**：
   - `admin-web/src/pages/CallsPage.vue:189`
@@ -577,7 +617,7 @@ loading/error 高度同构；任务详情加载与 Call/Job drawer 互跳又在�
 
 ---
 
-### RD-012：sidecar 公共层提取不足
+### RD-012：sidecar 公共层提取不足（已整改）
 
 - **位置**：
   - `sidecars/linkparse-sidecar/providers/importer.js:6`
@@ -603,7 +643,7 @@ URL 策略保持显式。先删除无效 `off` 分支。不要一次抽成承载
 
 ---
 
-### RD-013：两份服务器发布脚本复制主机资源检测
+### RD-013：两份服务器发布脚本复制主机资源检测（已整改）
 
 - **位置**：
   - `scripts/deploy-on-server.sh:50`
@@ -637,7 +677,7 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 
 ## 6. P3：相邻改动时顺手处理
 
-### RD-015：日期格式化与 Admin 私有测试 runner 仍有小规模重复
+### RD-015：日期格式化与 Admin 私有测试 runner 仍有小规模重复（已整改）
 
 - 日期格式化分散在 `pages/app-settings/index.vue:199`、
   `pages/index/use-kitchen-space.js:607`、
@@ -660,20 +700,20 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 
 以下项目在仓库内看似冗余，但存在仓库外调用或历史资料价值，不能直接删除。
 
-### C-001：废弃部署入口
+### C-001：废弃部署入口（已安全处置，待外部证据决定删除）
 
 - `backend/scripts/deploy.sh:5` 明确标记废弃，执行只会报错并退出。
 - 删除前需检查服务器 cron、外部 CI、个人命令别名和运维文档。
 - 若保留它是为了阻止旧危险发布，应记录明确移除版本/日期，而不是无限期兼容。
 
-### C-002：美团探测 POC
+### C-002：美团探测 POC（已冻结，待外部证据决定删除）
 
 - `scripts/probe-meituan-place-link.mjs:697` 是约 750 行独立 CLI。
 - 未接入 package scripts、CI、后端或 sidecar，仅被产品设计文档引用。
 - 若已不再用于人工研究，应删除或迁到 `docs/research/tools/` 并标记
   frozen/unsupported；若仍使用，则补正式命令入口和最小纯函数测试。
 
-### C-003：旧 Go 启动设计文档
+### C-003：旧 Go 启动设计文档（已归档，待历史价值确认）
 
 - `README-go.md:1` 是 1,132 行“从 0 到 1”启动方案。
 - 全仓没有入口引用，内容仍写“Go 1.24+ / 第一版”，与当前
@@ -707,9 +747,9 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 | S0 | RD-001 URL/凭据边界 | 高影响、改动可控 | sidecar + Go 伪后缀/重定向/凭据测试 |
 | S1（已完成） | RD-007、RD-010、RD-014 与无效 stub 分支 | 低 | 全仓引用、前端/Go/sidecar 测试 |
 | S2（已完成） | RD-006、RD-008 前端产物去重 | 中 | HBuilderX 编译、WXSS 体积；截图受当次 CLI code 10 限制 |
-| S3 | RD-004、RD-005 领域/凭据事实来源 | 中高 | JSON 兼容、密钥轮换、全量竞态 |
-| S4 | RD-002、RD-003 删除双协议栈 | 高 | 直连/sidecar 决策、Router 契约、全量回归 |
-| S5 | RD-009、RD-011～RD-015 工程收口 | 低到中 | 定向测试、typecheck、脚本 PLAN_ONLY |
+| S3（已完成） | RD-004、RD-005 领域/凭据事实来源 | 中高 | JSON 兼容、密钥轮换、全量竞态 |
+| S4（已完成） | RD-002、RD-003 删除双协议栈 | 高 | sidecar-only 决策、Router 契约、全量回归 |
+| S5（已完成） | RD-009、RD-011～RD-015 工程收口 | 低到中 | 定向测试、typecheck、脚本 PLAN_ONLY |
 
 每个批次建议单独提交，S0 不与其他重构混合。
 
@@ -754,10 +794,25 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 - 独立 reviewer：无阻塞问题；确认 selector/声明等价、动态 capability class 完整、
   wrapper 对外契约与输入清空链保持。
 
+### 2026-08-12 S3～S5 整改已执行
+
+- `npm test`、`npm --prefix admin-web run typecheck`：通过。
+- `npm --prefix sidecars/linkparse-sidecar test`：66 项通过。
+- `cd backend && go test -p 1 ./... -count=1`、
+  `cd backend && go test -race ./... -count=1`、`cd backend && go vet ./...`：通过。
+- Shell `bash -n`、主机资源 helper、两个部署入口 `PLAN_ONLY` 契约、条件项安全标记测试、
+  Miniapp/Admin 静态契约守卫与 `git diff --check`：通过。
+- HBuilderX 5.15 微信小程序编译成功；微信开发者工具 `auto-preview` 成功，未上传。
+- S3、S4、S5 三名独立 reviewer 最终均为“无阻塞问题”；reviewer 提出的 ParsedContent
+  规范化语义回退、sidecar 错误分层、旧 AI probe、凭据验证分流和 Provider Scene 均已
+  在提交前修复并复审关闭。
+
 ### 未执行/限制
 
 - 未连接生产服务、数据库、Nginx 或真实 sidecar。
 - 未使用真实 `SESSDATA`，复现仅使用假值和注入式 fake fetch。
-- 微信开发者工具 CLI 当次 auto-preview 返回 code 10，未完成 date/cart/checkout/success
-  与两个智能识别面板的真实截图、滚动、安全区和点击回归；未触发预览或上传。
-- 未核查 cron、外部 CI、个人脚本，因此 C-001～C-003 只列为条件清理。
+- 最终 `auto-preview` 已成功，但 Computer Use 启动失败，仍未手工点击
+  date/cart/checkout/success 与两个智能识别面板，也未检查真实滚动和安全区；未上传。
+- Admin Calls/Jobs 未做真实浏览器深链、筛选和抽屉手工回归。
+- 未核查服务器 cron、外部 CI、个人命令别名和历史审计需求，因此 C-001～C-003 只做
+  安全处置，不执行物理删除。

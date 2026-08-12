@@ -1,5 +1,37 @@
 # Project Changelog
 
+## 2026-08-12 (代码冗余整改 S3～S5 收口)
+
+### Changed
+
+- **修改时间**：2026-08-12 22:37:07 +0800
+- **变更背景**：继续落实 `docs/code-redundancy-review-2026-07-30.md` 的剩余整改，
+  S3～S5 分别收口后端领域/凭据事实来源、B 站与 AI 双协议栈，以及 Admin、Handler、
+  sidecar、部署脚本、日期工具和测试入口的重复实现；每批完成后均由独立 review
+  subAgent 复审，再分阶段提交和推送。
+- **核心改动**：提交 `b217aef` 新增中立 `recipecontent` 包，统一 ParsedContent、旧
+  JSON/DB 解码与规范化；组合根只构造一次共享凭据密钥盒；B 站改为 sidecar-only，
+  AI Router 成为 summary/title/flowchart 唯一协议 owner，并提取 sidecar 请求/小红书
+  provider 公共层。提交 `d6c0606` 统一七组正整数 URL 参数解析、Calls/Jobs 列表与任务
+  抽屉编排、主机资源探测、日期格式化、Admin 测试 runner 和断言 helper。条件项
+  C-001～C-003 仅做安全 tombstone、frozen/unsupported 与 archived 标记，未在缺少
+  仓外使用证据时破坏性删除。
+- **影响范围**：涉及 Go 后端、linkparse sidecar、Admin Web、Miniapp 局部工具、服务器
+  发布脚本及历史文档，共两批 100 个文件变更；B 站预览/解析/凭据验证现在要求 sidecar
+  可用，不再回退 Go 直连。未修改数据库 Schema、公开 HTTP API、登录/上传契约、生产
+  配置，也未执行部署或小程序上传。
+- **兼容性或风险**：统一后的菜谱内容规则保留食材最多 10 项、旧步骤先限 12 项再压缩
+  至 6 步、大小写去重和既有文本清洗；Admin Calls/Jobs 尚缺真实浏览器深链/筛选/抽屉
+  手工回归；真实 B 站凭据与上游未验证。C-001～C-003 最终删除仍需 cron、外部 CI、
+  个人别名和历史审计价值证据。
+- **验证情况**：S3、S4、S5 三名独立 reviewer 最终均结论“无阻塞问题”。`npm test`、
+  `npm --prefix admin-web run typecheck`、sidecar 66 项、
+  `cd backend && go test -p 1 ./... -count=1`、`cd backend && go test -race ./... -count=1`、
+  `cd backend && go vet ./...`、Shell `bash -n`、资源 helper、两个 `PLAN_ONLY` 契约、
+  条件项测试和 `git diff --check` 均通过；HBuilderX 5.15 微信小程序编译及微信开发者
+  工具 `auto-preview` 成功。Computer Use 无法启动，因此未手工点击六个 S2 弹层；
+  Admin 深链/筛选/抽屉与真实 B 站上游仍为人工验证限制。
+
 ## 2026-08-12 (代码冗余整改第二阶段 S2)
 
 ### Changed
