@@ -1,5 +1,35 @@
 # Project Changelog
 
+## 2026-08-12 (代码冗余整改第二阶段 S2)
+
+### Changed
+
+- **修改时间**：2026-08-12 17:02:11 +0800
+- **变更背景**：按 `docs/code-redundancy-review-2026-07-30.md` 继续分阶段整改；第二阶段
+  S2 聚焦 RD-006 与 RD-008，解决 scoped 共享 SCSS 被 HBuilderX 完整内联到四个点菜
+  弹层，以及地点/菜谱智能识别面板复制同一展示骨架的问题。目标是在不改变业务事件、
+  校验与实际消费的视觉声明前提下，真实降低微信小程序 WXSS 产物体积。
+- **核心改动**：提交 `0a0fbb4` 将点菜弹层样式拆为公共壳、列表、操作区和四个组件
+  专属 partial，各 SFC 按需导入；删除 5 组全仓无引用 modifier。新增纯展示
+  `AddPreviewPanel` 统一 popup、解析态、入口/能力卡片、手动入口和底部输入区，两个原
+  wrapper 继续拥有 Clipboard 提示、菜谱链接预判及原 props/emits。补充静态契约守卫，
+  覆盖 uni-app 输入值转发、手动录入后的关闭顺序与 wrapper 对外事件。
+- **影响范围**：影响 Miniapp 首页的四个点菜弹层与两个智能识别入口，共修改 16 个
+  运行时/测试文件，新增 1 个共享展示组件和 6 个 SCSS partial；不修改后端 API、数据
+  结构、登录/上传链路、生产配置、部署脚本或用户可见产品需求。
+- **兼容性或风险**：实际使用的 selector 声明、动态日期/capability class、scoped
+  语义、关闭阻断、手动录入、剪贴板提示、菜谱预判和输入清空链均保持。HBuilderX 编译
+  与独立复审无法替代真机的弹层高度、滚动区、安全区和手势检查；微信开发者工具 CLI
+  当次 auto-preview 返回 code 10，六个弹层截图/点击回归未完成。本次未预览、上传、部署或
+  连接生产环境。
+- **验证情况**：独立 reviewer 结论为“无阻塞问题”。HBuilderX 5.15 微信小程序纯编译
+  成功；四个点菜弹层 WXSS 从 `57,044` 降至 `25,701 bytes`，两个智能识别面板从
+  `13,534` 降至一份共享 `7,206 bytes`，S2 合计从 `70,578` 降至
+  `32,907 bytes`，减少 `37,671 bytes`（约 `53.4%`）。`npm test`、
+  `npm --prefix admin-web run typecheck`、sidecar 58/58、
+  `cd backend && go test -p 1 ./... -count=1`、`cd backend && go vet ./...`、
+  静态契约守卫与 `git diff --check` 均通过。
+
 ## 2026-08-12 (代码冗余整改第一阶段 S1)
 
 ### Removed

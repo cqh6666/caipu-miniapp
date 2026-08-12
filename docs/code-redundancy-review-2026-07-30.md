@@ -1,27 +1,29 @@
 # 项目代码冗余设计审查报告
 
 - **审查时间**：2026-07-30 21:15:48 +0800
-- **整改更新时间**：2026-08-12 16:34:19 +0800
+- **整改更新时间**：2026-08-12 17:02:11 +0800
 - **审查基线**：`46d327da1adc46cf568f15968406de23cf930205`
 - **S0 整改落点**：`00efaab71e8fed51be470fbfc2387fd674eb6828`
 - **审查范围**：微信小程序、Admin Web、Go 后端、linkparse sidecar、发布脚本、
   根依赖与测试入口
 - **协作方式**：共 4 个 Agent 参与（主 Agent 1 个、前端/后端/工程子 Agent
   各 1 个）
-- **交付性质**：初始只读审查报告，并追加 S0 整改追踪；未连接或修改生产环境
+- **交付性质**：初始只读审查报告，并追加 S0～S2 整改追踪；未连接或修改生产环境
 
 ---
 
 ## 整改状态（更新至 2026-08-12）
 
 RD-001 已按独立安全批次完成整改；第一阶段 S1 的 RD-007、RD-010、RD-014 与
-RD-012 中的无效 stub 分支也已完成。其余问题仍保持本报告中的待办状态。
+RD-012 中的无效 stub 分支，以及第二阶段 S2 的 RD-006、RD-008 均已完成。其余问题
+仍保持本报告中的待办状态。
 
 | 提交 | 内容 | 状态 |
 | --- | --- | --- |
 | `83bf5ae` | 新增统一 URL 策略和受控出站请求客户端 | 已完成并通过定向复审 |
 | `00efaab` | B 站、小红书、视频转写及 Go sidecar 调用方接入安全边界 | 已完成并通过独立复审 |
 | `eeee960` | 删除 S1 死代码、无引用样式、遗留函数、无用依赖与无效 stub 分支 | 已完成并通过独立复审 |
+| `0a0fbb4` | 拆分点菜弹层样式并抽取智能识别共享展示组件 | 已完成并通过独立复审 |
 
 ### 事实校正
 
@@ -84,6 +86,25 @@ HTTP 入口直接把伪后缀 URL 转发给 sidecar”。
   `git diff --check`。HBuilderX 5.15 微信小程序纯编译成功，未触发自动预览或上传。
 - 后端并行全量测试曾触发一次既有 SQLite 并发用例 `SQLITE_BUSY`；目标单测、包测试
   与串行全量复跑均通过。本次未连接生产服务或执行部署。
+
+### S2 第二阶段整改（2026-08-12）
+
+- RD-006：将四个点菜弹层的 500 多行全量共享 SCSS 拆为公共壳、列表、操作区和四个
+  组件专属 partial，各 SFC 只导入实际所需样式；保留日期动态状态与所有实际消费的
+  selector，删除 5 组全仓无引用 modifier。
+- RD-008：新增纯展示 `AddPreviewPanel`，统一 popup、解析态、入口卡片、能力卡片、
+  手动入口和底部输入区；地点与菜谱 wrapper 保留原 props/emits、关闭阻断、Clipboard
+  提示、菜谱链接预判及提交后清空行为，领域判断未下沉到共享组件。
+- HBuilderX 5.15 重新编译后，四个点菜弹层 WXSS 从 `57,044` 降至 `25,701 bytes`
+  （减少 `31,343 bytes`，约 `54.9%`）；两个识别面板从 `13,534` 降至一份共享
+  `7,206 bytes`（减少 `6,328 bytes`，约 `46.8%`），两个 wrapper 不再生成 WXSS。
+  S2 合计从 `70,578` 降至 `32,907 bytes`，减少 `37,671 bytes`，约 `53.4%`。
+- 提交 `0a0fbb4` 共修改 16 个运行时/测试文件，新增 1 个展示组件和 6 个 SCSS partial；
+  独立 reviewer 核对 selector 声明、动态 class、事件链与编译产物后结论为“无阻塞问题”。
+- 验证通过：`npm test`、`npm --prefix admin-web run typecheck`、sidecar 58/58、
+  `cd backend && go test -p 1 ./... -count=1`、`cd backend && go vet ./...`、
+  HBuilderX 微信小程序纯编译、静态契约守卫与 `git diff --check`。微信开发者工具 CLI
+  当次 auto-preview 返回 code 10，未完成六个弹层的截图/点击回归，也未预览、上传或部署。
 
 ---
 
@@ -350,7 +371,7 @@ helper，不保留第二套生产初始化协议。
 
 ---
 
-### RD-006：scoped 共享 SCSS 在小程序产物中按组件完整复制
+### RD-006：scoped 共享 SCSS 在小程序产物中按组件完整复制（已整改）
 
 - **位置**：
   - `pages/index/components/meal-order-date-sheet.vue:91`
@@ -383,6 +404,13 @@ helper，不保留第二套生产初始化协议。
 - 改后重新执行 HBuilderX 微信编译，对比 WXSS 大小并逐个弹层截图回归。
 
 > 上述字节数来自现有本地开发产物，不等同于生产压缩包的最终节省量。
+
+#### 整改结果
+
+提交 `0a0fbb4` 将原文件缩为公共壳，并新增 list、actions 与四个弹层专属 partial。
+HBuilderX 5.15 重编译确认四份 WXSS 合计由 `57,044` 降至 `25,701 bytes`，减少
+`31,343 bytes`（约 `54.9%`）；独立 reviewer 确认实际使用的静态/动态 selector
+声明等价，`scoped` 语义未变化。
 
 ---
 
@@ -461,7 +489,7 @@ helper，不保留第二套生产初始化协议。
 
 ---
 
-### RD-008：两个智能识别面板仍复制同一组件骨架
+### RD-008：两个智能识别面板仍复制同一组件骨架（已整改）
 
 - **位置**：
   - `pages/index/components/add-link-preview-panel.vue:1`
@@ -474,6 +502,13 @@ helper，不保留第二套生产初始化协议。
 **建议**：抽纯展示 `AddPreviewPanel`，平台卡片和文案使用 props/slot；两个薄 wrapper
 保留各自校验，避免把领域判断塞进大量条件分支的万能组件。预计可减少约 80～110 行
 SFC，并配合 RD-006 消除一份 WXSS。
+
+#### 整改结果
+
+提交 `0a0fbb4` 新增纯展示 `AddPreviewPanel`，两个原组件变为保留领域校验与对外契约的
+薄 wrapper。HBuilderX 5.15 重编译确认两份 `6,767 bytes` WXSS 收敛为一份
+`7,206 bytes` 共享 WXSS，减少 `6,328 bytes`（约 `46.8%`），两个 wrapper 不再
+生成 WXSS；静态契约守卫覆盖输入转发、手动录入关闭顺序与原 emits。
 
 ---
 
@@ -671,7 +706,7 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 | --- | --- | --- | --- |
 | S0 | RD-001 URL/凭据边界 | 高影响、改动可控 | sidecar + Go 伪后缀/重定向/凭据测试 |
 | S1（已完成） | RD-007、RD-010、RD-014 与无效 stub 分支 | 低 | 全仓引用、前端/Go/sidecar 测试 |
-| S2 | RD-006、RD-008 前端产物去重 | 中 | HBuilderX 编译、WXSS 体积、弹层截图 |
+| S2（已完成） | RD-006、RD-008 前端产物去重 | 中 | HBuilderX 编译、WXSS 体积；截图受当次 CLI code 10 限制 |
 | S3 | RD-004、RD-005 领域/凭据事实来源 | 中高 | JSON 兼容、密钥轮换、全量竞态 |
 | S4 | RD-002、RD-003 删除双协议栈 | 高 | 直连/sidecar 决策、Router 契约、全量回归 |
 | S5 | RD-009、RD-011～RD-015 工程收口 | 低到中 | 定向测试、typecheck、脚本 PLAN_ONLY |
@@ -707,10 +742,22 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 - HBuilderX 5.15 `launch mp-weixin --compile true`：编译成功，未自动预览或上传。
 - 独立 reviewer：无阻塞问题。
 
+### 2026-08-12 S2 整改已执行
+
+- HBuilderX 5.15 `launch mp-weixin --compile true`：编译成功；四个点菜弹层与两个识别
+  面板的 WXSS 合计由 `70,578` 降至 `32,907 bytes`，减少 `53.4%`。
+- `npm test`、`npm --prefix admin-web run typecheck`、
+  `npm --prefix sidecars/linkparse-sidecar test`（58 项）：通过。
+- `cd backend && go test -p 1 ./... -count=1`、`cd backend && go vet ./...`：通过。
+- 输入事件、手动录入关闭顺序和 wrapper emits 静态守卫、SFC/产物契约核对及
+  `git diff --check`：通过。
+- 独立 reviewer：无阻塞问题；确认 selector/声明等价、动态 capability class 完整、
+  wrapper 对外契约与输入清空链保持。
+
 ### 未执行/限制
 
 - 未连接生产服务、数据库、Nginx 或真实 sidecar。
 - 未使用真实 `SESSDATA`，复现仅使用假值和注入式 fake fetch。
-- 未重新执行 HBuilderX 微信编译；RD-006 的字节数来自当前工作区已有开发产物，
-  实际改造收益需重编译确认。
+- 微信开发者工具 CLI 当次 auto-preview 返回 code 10，未完成 date/cart/checkout/success
+  与两个智能识别面板的真实截图、滚动、安全区和点击回归；未触发预览或上传。
 - 未核查 cron、外部 CI、个人脚本，因此 C-001～C-003 只列为条件清理。
