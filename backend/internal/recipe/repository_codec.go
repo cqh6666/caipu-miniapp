@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/recipecontent"
 )
 
 type scanner interface {
@@ -239,34 +241,7 @@ func bumpKitchenUpdatedAt(ctx context.Context, tx *sql.Tx, kitchenID int64, upda
 }
 
 func marshalParsedContent(content ParsedContent) (string, string, error) {
-	mainIngredients := cleanLines(content.MainIngredients)
-	secondaryIngredients := cleanLines(content.SecondaryIngredients)
-	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
-		mainIngredients, secondaryIngredients = splitIngredientLines(cleanLines(content.legacyIngredients))
-	}
-
-	ingredients, err := json.Marshal(struct {
-		MainIngredients      []string `json:"mainIngredients,omitempty"`
-		SecondaryIngredients []string `json:"secondaryIngredients,omitempty"`
-	}{
-		MainIngredients:      mainIngredients,
-		SecondaryIngredients: secondaryIngredients,
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("marshal ingredients: %w", err)
-	}
-
-	stepsValue := cleanParsedSteps(content.Steps)
-	if len(stepsValue) == 0 {
-		stepsValue = buildParsedSteps(cleanLines(content.legacySteps))
-	}
-
-	steps, err := json.Marshal(stepsValue)
-	if err != nil {
-		return "", "", fmt.Errorf("marshal steps: %w", err)
-	}
-
-	return string(ingredients), string(steps), nil
+	return recipecontent.EncodeStored(content)
 }
 
 func marshalImageURLs(imageURLs []string) (string, error) {
@@ -323,31 +298,7 @@ func unmarshalImageMetas(imageMetaJSON string) ([]RecipeImageMeta, error) {
 }
 
 func unmarshalParsedContent(ingredientsJSON, stepsJSON string) (ParsedContent, error) {
-	content := ParsedContent{}
-	if strings.TrimSpace(ingredientsJSON) != "" {
-		var grouped struct {
-			MainIngredients      []string `json:"mainIngredients"`
-			SecondaryIngredients []string `json:"secondaryIngredients"`
-		}
-		if err := json.Unmarshal([]byte(ingredientsJSON), &grouped); err == nil {
-			content.MainIngredients = grouped.MainIngredients
-			content.SecondaryIngredients = grouped.SecondaryIngredients
-		} else {
-			if err := json.Unmarshal([]byte(ingredientsJSON), &content.legacyIngredients); err != nil {
-				return ParsedContent{}, fmt.Errorf("unmarshal ingredients: %w", err)
-			}
-		}
-	}
-
-	if strings.TrimSpace(stepsJSON) != "" {
-		if err := json.Unmarshal([]byte(stepsJSON), &content.Steps); err != nil {
-			if err := json.Unmarshal([]byte(stepsJSON), &content.legacySteps); err != nil {
-				return ParsedContent{}, fmt.Errorf("unmarshal steps: %w", err)
-			}
-		}
-	}
-
-	return content, nil
+	return recipecontent.DecodeStored(ingredientsJSON, stepsJSON)
 }
 
 func nullableString(value string) any {

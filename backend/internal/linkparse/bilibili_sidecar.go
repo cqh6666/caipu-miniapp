@@ -14,14 +14,14 @@ type bilibiliFetchOptions struct {
 }
 
 func (s *Service) fetchBilibiliViaSidecar(ctx context.Context, rawInput string, opts bilibiliFetchOptions) (BilibiliParseResult, error) {
-	sidecar := s.sidecarFor(ctx)
-	if s == nil || sidecar == nil {
-		return BilibiliParseResult{}, common.NewAppError(common.CodeInternalServer, "linkparse sidecar is not configured", http.StatusInternalServerError)
-	}
-
 	inputURL, err := extractInputURL(rawInput)
 	if err != nil {
 		return BilibiliParseResult{}, err
+	}
+
+	sidecar := s.sidecarFor(ctx)
+	if s == nil || sidecar == nil {
+		return BilibiliParseResult{}, sidecarUnavailableError()
 	}
 
 	parsed, err := sidecar.parse(ctx, "/v1/parse/bilibili", sidecarParseRequest{
@@ -33,13 +33,13 @@ func (s *Service) fetchBilibiliViaSidecar(ctx context.Context, rawInput string, 
 	})
 	if err != nil {
 		if isLinkparseSidecarTimeout(err) {
-			return BilibiliParseResult{}, common.NewAppError(common.CodeBadRequest, "bilibili sidecar timed out", http.StatusBadRequest).WithErr(err)
+			return BilibiliParseResult{}, common.NewAppError(common.CodeInternalServer, "bilibili sidecar timed out", http.StatusBadGateway).WithErr(err)
 		}
 		var appErr *common.AppError
 		if errors.As(err, &appErr) {
 			return BilibiliParseResult{}, err
 		}
-		return BilibiliParseResult{}, common.NewAppError(common.CodeBadRequest, "request to bilibili sidecar failed", http.StatusBadRequest).WithErr(err)
+		return BilibiliParseResult{}, common.NewAppError(common.CodeInternalServer, "request to bilibili sidecar failed", http.StatusBadGateway).WithErr(err)
 	}
 
 	result := BilibiliParseResult{

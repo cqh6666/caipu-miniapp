@@ -2,26 +2,46 @@ package recipe
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"errors"
 	"testing"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upload"
 )
 
+const tinyFlowchartPNGDataURL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
+
+type fakeFlowchartRouter struct {
+	available bool
+	result    airouter.ChatCompletionResult
+	err       error
+	scene     airouter.Scene
+	input     airouter.ChatCompletionInput
+}
+
+func (f *fakeFlowchartRouter) IsSceneAvailable(context.Context, airouter.Scene) bool {
+	return f != nil && f.available
+}
+
+func (f *fakeFlowchartRouter) RouteChat(_ context.Context, scene airouter.Scene, input airouter.ChatCompletionInput) (airouter.ChatCompletionResult, error) {
+	f.scene = scene
+	f.input = input
+	if f.err != nil {
+		return f.result, f.err
+	}
+	if input.ValidateContent != nil {
+		if err := input.ValidateContent(f.result.Content); err != nil {
+			return f.result, err
+		}
+	}
+	return f.result, nil
+}
+
 func TestFlowchartGeneratorIsConfiguredRequiresAvailableRoute(t *testing.T) {
 	t.Parallel()
 
 	generator := NewFlowchartGenerator(FlowchartOptions{
-		AIRouter: airouter.NewService(nil, "test-secret", func(context.Context, airouter.Scene) airouter.SceneConfig {
-			return airouter.SceneConfig{
-				Scene:    airouter.SceneFlowchart,
-				Enabled:  false,
-				Strategy: airouter.StrategyPriorityFailover,
-			}
-		}, nil, nil),
+		AIRouter: &fakeFlowchartRouter{available: false},
 	}, upload.NewService(t.TempDir(), "https://static.example.com", 10))
 
 	if generator.IsConfigured() {
@@ -29,71 +49,88 @@ func TestFlowchartGeneratorIsConfiguredRequiresAvailableRoute(t *testing.T) {
 	}
 }
 
-func TestFlowchartGeneratorIsConfiguredIgnoresEmptyRuntimeLoader(t *testing.T) {
+func TestFlowchartGeneratorIsConfiguredRequiresRouter(t *testing.T) {
 	t.Parallel()
 
-	generator := NewFlowchartGenerator(FlowchartOptions{
-		RuntimeConfigLoader: func(context.Context) FlowchartRuntimeConfig {
-			return FlowchartRuntimeConfig{}
-		},
-	}, upload.NewService(t.TempDir(), "https://static.example.com", 10))
-
+	generator := NewFlowchartGenerator(FlowchartOptions{}, upload.NewService(t.TempDir(), "https://static.example.com", 10))
 	if generator.IsConfigured() {
 		t.Fatalf("IsConfigured() = true, want false")
+	}
+}
+
+func TestFlowchartGeneratorGenerateUsesSameRouter(t *testing.T) {
+	t.Parallel()
+
+	router := &fakeFlowchartRouter{
+		available: true,
+		result: airouter.ChatCompletionResult{
+			Content:         tinyFlowchartPNGDataURL,
+			ProviderID:      "image-provider",
+			Model:           "image-model",
+			Strategy:        airouter.StrategyPriorityFailover,
+			StartedProvider: "image-provider",
+			AttemptCount:    1,
+		},
+	}
+	generator := NewFlowchartGenerator(FlowchartOptions{AIRouter: router}, upload.NewService(t.TempDir(), "https://static.example.com", 10))
+
+	result, err := generator.Generate(context.Background(), Recipe{
+		Title:   "番茄牛腩",
+		Summary: "酸甜软烂",
+		ParsedContent: ParsedContent{
+			MainIngredients: []string{"牛腩 500克", "番茄 3个"},
+			Steps: []ParsedStep{
+				{Title: "焯水", Detail: "牛腩冷水下锅焯水。"},
+				{Title: "炒香", Detail: "番茄炒出汁后加入牛腩。"},
+				{Title: "炖煮", Detail: "小火炖至牛腩软烂。"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if result.ImageURL == "" || result.Provider != "image-provider" || result.Model != "image-model" {
+		t.Fatalf("Generate() result = %#v", result)
+	}
+	if router.scene != airouter.SceneFlowchart || router.input.ContentKind != "flowchart" {
+		t.Fatalf("unexpected route call: scene=%q input=%#v", router.scene, router.input)
+	}
+}
+
+func TestFlowchartGeneratorGeneratePreservesRouteFailureMetadata(t *testing.T) {
+	t.Parallel()
+
+	router := &fakeFlowchartRouter{
+		available: true,
+		result: airouter.ChatCompletionResult{
+			ProviderID:   "failed-provider",
+			Model:        "failed-model",
+			AttemptCount: 2,
+		},
+		err: errors.New("route failed"),
+	}
+	generator := NewFlowchartGenerator(FlowchartOptions{AIRouter: router}, upload.NewService(t.TempDir(), "https://static.example.com", 10))
+
+	result, err := generator.Generate(context.Background(), Recipe{
+		Title: "番茄牛腩",
+		ParsedContent: ParsedContent{Steps: []ParsedStep{
+			{Title: "焯水", Detail: "牛腩焯水。"},
+			{Title: "炒香", Detail: "番茄炒香。"},
+			{Title: "炖煮", Detail: "小火炖煮。"},
+		}},
+	})
+	if !errors.Is(err, router.err) {
+		t.Fatalf("Generate() error = %v, want %v", err, router.err)
+	}
+	if result.Provider != "failed-provider" || result.AttemptCount != 2 {
+		t.Fatalf("Generate() failure result = %#v", result)
 	}
 }
 
 func TestExtractFlowchartImageURLSupportsDataURL(t *testing.T) {
 	t.Parallel()
 
-	content := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
-	if got := extractFlowchartImageURL(content); got != content {
-		t.Fatalf("extractFlowchartImageURL(dataURL) = %q, want %q", got, content)
-	}
-}
-
-func TestFlowchartClientGenerateSupportsImageGenerationsB64(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/images/generations" {
-			t.Fatalf("unexpected path = %q", r.URL.Path)
-		}
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body error = %v", err)
-		}
-		if _, ok := payload["quality"]; ok {
-			t.Fatalf("request body unexpectedly contains quality: %#v", payload["quality"])
-		}
-		if got := payload["output_format"]; got != "png" {
-			t.Fatalf("request output_format = %#v, want %q", got, "png")
-		}
-		if _, ok := payload["response_format"]; ok {
-			t.Fatalf("request body unexpectedly contains response_format for gpt-image model: %#v", payload["response_format"])
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}]}`))
-	}))
-	defer server.Close()
-
-	client := (&FlowchartGenerator{
-		defaultConfig: FlowchartRuntimeConfig{
-			BaseURL:        server.URL,
-			Model:          "gpt-image-2",
-			EndpointMode:   "images_generations",
-			ResponseFormat: "b64_json",
-		},
-	}).clientFor(context.Background())
-	if client == nil {
-		t.Fatal("clientFor() = nil")
-	}
-
-	content, err := client.generate(context.Background(), "测试流程图 prompt")
-	if err != nil {
-		t.Fatalf("generate() error = %v", err)
-	}
-	if got := extractFlowchartImageURL(content); got == "" {
-		t.Fatalf("extractFlowchartImageURL(generate()) = empty, content = %q", content)
+	if got := extractFlowchartImageURL(tinyFlowchartPNGDataURL); got != tinyFlowchartPNGDataURL {
+		t.Fatalf("extractFlowchartImageURL(dataURL) = %q, want %q", got, tinyFlowchartPNGDataURL)
 	}
 }

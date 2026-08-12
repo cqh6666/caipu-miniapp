@@ -187,6 +187,207 @@ func TestParseBilibiliFallsBackWithoutTranscriptViaSidecar(t *testing.T) {
 	}
 }
 
+func TestBilibiliOperationsFailWhenSidecarIsNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Options{})
+	operations := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "preview", run: func() error {
+			_, err := service.PreviewBilibili(context.Background(), "https://www.bilibili.com/video/BV1xx411c7mD")
+			return err
+		}},
+		{name: "parse", run: func() error {
+			_, err := service.ParseBilibili(context.Background(), "https://www.bilibili.com/video/BV1xx411c7mD")
+			return err
+		}},
+		{name: "verify", run: func() error {
+			return service.VerifyBilibiliSessdata(context.Background(), "session-secret")
+		}},
+	}
+
+	for _, operation := range operations {
+		t.Run(operation.name, func(t *testing.T) {
+			var appErr *common.AppError
+			if err := operation.run(); !errors.As(err, &appErr) {
+				t.Fatalf("error = %v, want *common.AppError", err)
+			}
+			if appErr.HTTPStatus != http.StatusServiceUnavailable || appErr.Message != "linkparse sidecar is not configured" {
+				t.Fatalf("AppError = %#v", appErr)
+			}
+		})
+	}
+}
+
+func TestVerifyBilibiliSessdataUsesSidecarEndpoint(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/verify/bilibili-session" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sidecar-secret" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if got := r.Header.Get("X-Bilibili-SESSDATA"); got != "session-secret" {
+			t.Fatalf("X-Bilibili-SESSDATA = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"platform":"bilibili","providerUsed":"openapi","valid":true}`))
+	}))
+	defer server.Close()
+
+	service := NewService(Options{
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: server.URL,
+		LinkparseSidecarAPIKey:  "sidecar-secret",
+	})
+	if err := service.VerifyBilibiliSessdata(context.Background(), "session-secret"); err != nil {
+		t.Fatalf("VerifyBilibiliSessdata() error = %v", err)
+	}
+}
+
+func TestVerifyBilibiliSessdataMapsSidecarErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		status     int
+		body       string
+		wantStatus int
+		wantMsg    string
+	}{
+		{
+			name:       "invalid credentials",
+			status:     http.StatusBadRequest,
+			body:       `{"ok":false,"error":{"code":"invalid_credentials","message":"TOP_SECRET upstream details"}}`,
+			wantStatus: http.StatusBadRequest,
+			wantMsg:    "当前 SESSDATA 无法获取 B 站字幕，请更新后重试",
+		},
+		{
+			name:       "provider unavailable",
+			status:     http.StatusServiceUnavailable,
+			body:       `{"ok":false,"error":{"code":"provider_unavailable","message":"private sidecar details"}}`,
+			wantStatus: http.StatusServiceUnavailable,
+			wantMsg:    "bilibili session verification is unavailable",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+
+			service := NewService(Options{
+				LinkparseSidecarEnabled: true,
+				LinkparseSidecarBaseURL: server.URL,
+			})
+			var appErr *common.AppError
+			err := service.VerifyBilibiliSessdata(context.Background(), "session-secret")
+			if !errors.As(err, &appErr) {
+				t.Fatalf("error = %v, want *common.AppError", err)
+			}
+			if appErr.HTTPStatus != test.wantStatus || appErr.Message != test.wantMsg {
+				t.Fatalf("AppError = %#v", appErr)
+			}
+			if strings.Contains(appErr.Error(), "private") || strings.Contains(appErr.Error(), "TOP_SECRET") {
+				t.Fatalf("error leaked sidecar details: %v", appErr)
+			}
+		})
+	}
+}
+
+func TestBilibiliSidecarMapsFailureClasses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		status     int
+		body       string
+		wantStatus int
+		wantCode   int
+		wantMsg    string
+	}{
+		{
+			name:       "invalid request",
+			status:     http.StatusBadRequest,
+			body:       `{"ok":false,"error":{"code":"unsupported_url","message":"private input details"}}`,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   common.CodeBadRequest,
+			wantMsg:    "linkparse sidecar rejected the request",
+		},
+		{
+			name:       "upstream failure",
+			status:     http.StatusBadGateway,
+			body:       `{"ok":false,"error":{"code":"upstream_failure","message":"private upstream details"}}`,
+			wantStatus: http.StatusBadGateway,
+			wantCode:   common.CodeInternalServer,
+			wantMsg:    "linkparse sidecar upstream failed",
+		},
+		{
+			name:       "provider unavailable",
+			status:     http.StatusServiceUnavailable,
+			body:       `{"ok":false,"error":{"code":"provider_unavailable","message":"private provider details"}}`,
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   common.CodeServiceUnavailable,
+			wantMsg:    "linkparse sidecar provider is unavailable",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+
+			service := NewService(Options{
+				LinkparseSidecarEnabled: true,
+				LinkparseSidecarBaseURL: server.URL,
+			})
+			_, err := service.PreviewBilibili(context.Background(), "https://www.bilibili.com/video/BV1xx411c7mD")
+			var appErr *common.AppError
+			if !errors.As(err, &appErr) {
+				t.Fatalf("error = %v, want *common.AppError", err)
+			}
+			if appErr.HTTPStatus != test.wantStatus || appErr.Code != test.wantCode || appErr.Message != test.wantMsg {
+				t.Fatalf("AppError = %#v", appErr)
+			}
+			if strings.Contains(appErr.Error(), "private") {
+				t.Fatalf("public error leaked private details: %v", appErr)
+			}
+		})
+	}
+}
+
+func TestBilibiliSidecarTransportFailureIsBadGateway(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(Options{
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: "http://sidecar.test",
+	})
+	service.sidecar.client.Transport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial failed")
+	})
+
+	_, err := service.PreviewBilibili(context.Background(), "https://www.bilibili.com/video/BV1xx411c7mD")
+	var appErr *common.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("error = %v, want *common.AppError", err)
+	}
+	if appErr.HTTPStatus != http.StatusBadGateway || appErr.Code != common.CodeInternalServer || appErr.Message != "request to bilibili sidecar failed" {
+		t.Fatalf("AppError = %#v", appErr)
+	}
+}
+
 func TestBilibiliSidecarRejectsInvalidURLBeforeRequest(t *testing.T) {
 	tests := []struct {
 		name  string

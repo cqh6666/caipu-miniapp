@@ -54,13 +54,9 @@ type backgroundWorker interface {
 
 func New(cfg config.Config) (*App, error) {
 	logger := newLogger(cfg.LogLevel)
-	credentialVersion := cfg.CredentialsKeyVersion
-	if credentialVersion == "" {
-		credentialVersion = "v1"
-	}
-	previousCredentialKeys, err := credentialcipher.ParsePreviousKeys(cfg.CredentialsPreviousKeys)
+	credentialBox, err := buildCredentialBox(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("parse previous credential keys: %w", err)
+		return nil, err
 	}
 
 	dbConn, err := db.Open(cfg, logger)
@@ -87,11 +83,7 @@ func New(cfg config.Config) (*App, error) {
 	spaceStatsHandler := spacestats.NewHandler(spaceStatsService)
 
 	appSettingsRepo := appsettings.NewRepository(dbConn)
-	runtimeProvider := appsettings.NewRuntimeProvider(appSettingsRepo, cfg.CredentialsSecret, cfg)
-	if err := runtimeProvider.ConfigureCredentialKeys(cfg.CredentialsSecret, credentialVersion, previousCredentialKeys); err != nil {
-		_ = dbConn.Close()
-		return nil, fmt.Errorf("configure runtime credential keys: %w", err)
-	}
+	runtimeProvider := appsettings.NewRuntimeProvider(appSettingsRepo, credentialBox, cfg)
 	auditService := audit.NewService(dbConn, logger)
 	alertSender := aialert.NewSMTPSender()
 	runtimeProvider.SetAIAlertSender(alertSender)
@@ -100,15 +92,11 @@ func New(cfg config.Config) (*App, error) {
 	aiRoutingRepo := airouter.NewRepository(dbConn)
 	aiRoutingService := airouter.NewService(
 		aiRoutingRepo,
-		cfg.CredentialsSecret,
+		credentialBox,
 		buildAIRoutingCompatibilityLoader(runtimeProvider),
 		auditService,
 		aiAlertService,
 	)
-	if err := aiRoutingService.ConfigureCredentialKeys(cfg.CredentialsSecret, credentialVersion, previousCredentialKeys); err != nil {
-		_ = dbConn.Close()
-		return nil, fmt.Errorf("configure AI routing credential keys: %w", err)
-	}
 	aiRoutingService.SetTestInputBuilder(buildAIRoutingTestInputBuilder())
 	// 反向注入：aialert 通过接口消费 airouter 的运行时状态与复测能力（打破循环依赖）。
 	aiAlertService.SetProviderStatusResolver(aiRoutingService)
@@ -149,10 +137,7 @@ func New(cfg config.Config) (*App, error) {
 	addPreviewHandler := addpreview.NewHandler(addPreviewService)
 	runtimeProvider.SetBilibiliVerifier(linkParseService.VerifyBilibiliSessdata)
 	recipeFlowchart := newRecipeFlowchartGenerator(
-		cfg,
-		runtimeProvider,
 		aiRoutingService,
-		auditService,
 		uploadService,
 	)
 	recipeService := recipe.NewService(recipe.ServiceOptions{
@@ -193,11 +178,7 @@ func New(cfg config.Config) (*App, error) {
 	)
 	authHandler := auth.NewHandler(authService)
 	authMiddleware := appmiddleware.Authenticate(tokenManager, authRepo)
-	appSettingsService := appsettings.NewService(appSettingsRepo, cfg.CredentialsSecret, linkParseService, authService.EnsureCanManageAppSettings)
-	if err := appSettingsService.ConfigureCredentialKeys(cfg.CredentialsSecret, credentialVersion, previousCredentialKeys); err != nil {
-		_ = dbConn.Close()
-		return nil, fmt.Errorf("configure app settings credential keys: %w", err)
-	}
+	appSettingsService := appsettings.NewService(appSettingsRepo, credentialBox, linkParseService, authService.EnsureCanManageAppSettings)
 	appSettingsRef.service = appSettingsService
 	appSettingsHandler := appsettings.NewHandler(appSettingsService, runtimeProvider)
 	adminTokenManager := admin.NewTokenManager(cfg.AdminJWTSecret, 24*time.Hour, cfg.AdminUsername)
@@ -262,6 +243,25 @@ func New(cfg config.Config) (*App, error) {
 		RecipeImageMirror: recipeWorkers.imageMirror,
 		workers:           workers,
 	}, nil
+}
+
+func buildCredentialBox(cfg config.Config) (*credentialcipher.Box, error) {
+	credentialVersion := cfg.CredentialsKeyVersion
+	if credentialVersion == "" {
+		credentialVersion = "v1"
+	}
+	previousCredentialKeys, err := credentialcipher.ParsePreviousKeys(cfg.CredentialsPreviousKeys)
+	if err != nil {
+		return nil, fmt.Errorf("parse previous credential keys: %w", err)
+	}
+	box, err := credentialcipher.New(credentialcipher.Key{
+		Version: credentialVersion,
+		Secret:  cfg.CredentialsSecret,
+	}, previousCredentialKeys)
+	if err != nil {
+		return nil, fmt.Errorf("configure credential keys: %w", err)
+	}
+	return box, nil
 }
 
 func (a *App) Start() error {

@@ -28,7 +28,7 @@ func TestSaveSceneConcurrentUpdatesRejectStaleVersion(t *testing.T) {
 		t.Fatalf("RunMigrations() error = %v", err)
 	}
 
-	service := NewService(NewRepository(db), "test-secret", nil, nil, nil)
+	service := NewService(NewRepository(db), testCredentialBox(t, "test-secret"), nil, nil, nil)
 	start := make(chan struct{})
 	errorsCh := make(chan error, 2)
 	var wg sync.WaitGroup

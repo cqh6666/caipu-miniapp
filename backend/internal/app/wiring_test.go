@@ -39,30 +39,6 @@ func (s runtimeProviderStub) LinkparseSidecar(context.Context) appsettings.Linkp
 
 func TestBuildRuntimeConfigLoaders(t *testing.T) {
 	provider := runtimeProviderStub{
-		summary: appsettings.SummaryAIConfig{
-			BaseURL: "https://summary.example.com/v1",
-			APIKey:  "summary-secret",
-			Model:   "summary-model",
-			Timeout: 12 * time.Second,
-		},
-		title: appsettings.TitleAIConfig{
-			Enabled:     true,
-			BaseURL:     "https://title.example.com/v1",
-			APIKey:      "title-secret",
-			Model:       "title-model",
-			Stream:      true,
-			Temperature: 0.3,
-			MaxTokens:   64,
-			Timeout:     4 * time.Second,
-		},
-		flowchart: appsettings.FlowchartAIConfig{
-			BaseURL:        "https://flowchart.example.com/v1",
-			APIKey:         "flowchart-secret",
-			Model:          "flowchart-model",
-			EndpointMode:   "images_generations",
-			ResponseFormat: "b64_json",
-			Timeout:        45 * time.Second,
-		},
 		sidecar: appsettings.LinkparseSidecarConfig{
 			Enabled: true,
 			BaseURL: "https://sidecar.example.com",
@@ -72,22 +48,6 @@ func TestBuildRuntimeConfigLoaders(t *testing.T) {
 	}
 
 	linkConfig := buildLinkParseRuntimeConfigLoader(provider)(context.Background())
-	if linkConfig.SummaryAI.BaseURL != provider.summary.BaseURL ||
-		linkConfig.SummaryAI.APIKey != provider.summary.APIKey ||
-		linkConfig.SummaryAI.Model != provider.summary.Model ||
-		linkConfig.SummaryAI.Timeout != provider.summary.Timeout {
-		t.Fatalf("summary config mismatch: %#v", linkConfig.SummaryAI)
-	}
-	if linkConfig.TitleAI.BaseURL != provider.title.BaseURL ||
-		linkConfig.TitleAI.APIKey != provider.title.APIKey ||
-		linkConfig.TitleAI.Model != provider.title.Model ||
-		linkConfig.TitleAI.Enabled != provider.title.Enabled ||
-		linkConfig.TitleAI.Stream != provider.title.Stream ||
-		linkConfig.TitleAI.Temperature != provider.title.Temperature ||
-		linkConfig.TitleAI.MaxTokens != provider.title.MaxTokens ||
-		linkConfig.TitleAI.Timeout != provider.title.Timeout {
-		t.Fatalf("title config mismatch: %#v", linkConfig.TitleAI)
-	}
 	if !reflect.DeepEqual(linkConfig.LinkparseSidecar, linkparse.LinkparseSidecarConfig{
 		Enabled: true,
 		BaseURL: "https://sidecar.example.com",
@@ -95,18 +55,6 @@ func TestBuildRuntimeConfigLoaders(t *testing.T) {
 		Timeout: 20 * time.Second,
 	}) {
 		t.Fatalf("sidecar config mismatch: %#v", linkConfig.LinkparseSidecar)
-	}
-
-	flowchartConfig := buildFlowchartRuntimeConfigLoader(provider)(context.Background())
-	if !reflect.DeepEqual(flowchartConfig, recipe.FlowchartRuntimeConfig{
-		BaseURL:        provider.flowchart.BaseURL,
-		APIKey:         provider.flowchart.APIKey,
-		Model:          provider.flowchart.Model,
-		EndpointMode:   provider.flowchart.EndpointMode,
-		ResponseFormat: provider.flowchart.ResponseFormat,
-		Timeout:        provider.flowchart.Timeout,
-	}) {
-		t.Fatalf("flowchart config mismatch: %#v", flowchartConfig)
 	}
 }
 
@@ -143,6 +91,9 @@ func TestBuildAIRoutingCompatibilityLoader(t *testing.T) {
 	if got := summary.Providers[0].APIKeyMasked; got != "summ...1234" {
 		t.Fatalf("unexpected summary secret mask: %q", got)
 	}
+	if got := summary.Providers[0].Scene; got != airouter.SceneSummary {
+		t.Fatalf("unexpected summary provider scene: %q", got)
+	}
 
 	title := loader(context.Background(), airouter.SceneTitle)
 	if !title.Enabled || title.Strategy != airouter.StrategyRoundRobinFailover {
@@ -158,7 +109,7 @@ func TestBuildAIRoutingCompatibilityLoader(t *testing.T) {
 
 	flowchart := loader(context.Background(), airouter.SceneFlowchart)
 	if got := flowchart.Providers[0]; got.EndpointMode != airouter.EndpointModeImagesGenerations ||
-		got.ResponseFormat != airouter.ResponseFormatB64JSON {
+		got.ResponseFormat != airouter.ResponseFormatB64JSON || got.Scene != airouter.SceneFlowchart {
 		t.Fatalf("flowchart protocol options mismatch: %#v", got)
 	}
 

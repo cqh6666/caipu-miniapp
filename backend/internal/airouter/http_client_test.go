@@ -20,7 +20,8 @@ func (f airouterHTTPDoerFunc) Do(request *http.Request) (*http.Response, error) 
 
 func TestOpenAICompatibleUsesInjectedDoerAndRequestContextDeadline(t *testing.T) {
 	var calls atomic.Int32
-	service := NewServiceWithOptions(nil, "test-secret", nil, nil, nil, ServiceOptions{
+	service := NewServiceWithOptions(nil, nil, nil, nil, ServiceOptions{
+		CredentialBox: testCredentialBox(t, "test-secret"),
 		HTTPDoer: airouterHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 			calls.Add(1)
 			if request.Method != http.MethodPost || request.URL.String() != "https://provider.example/v1/chat/completions" {
@@ -83,7 +84,8 @@ func TestOpenAICompatibleInjectedDoerClassifiesProtocolFailures(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			service := NewServiceWithOptions(nil, "test-secret", nil, nil, nil, ServiceOptions{
+			service := NewServiceWithOptions(nil, nil, nil, nil, ServiceOptions{
+				CredentialBox: testCredentialBox(t, "test-secret"),
 				HTTPDoer: airouterHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 					if test.doErr != nil {
 						return nil, test.doErr
@@ -138,7 +140,8 @@ func TestOpenAICompatibleInjectedDoerPreservesTimeoutAndCancellation(t *testing.
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			service := NewServiceWithOptions(nil, "test-secret", nil, nil, nil, ServiceOptions{
+			service := NewServiceWithOptions(nil, nil, nil, nil, ServiceOptions{
+				CredentialBox: testCredentialBox(t, "test-secret"),
 				HTTPDoer: airouterHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 					<-request.Context().Done()
 					return nil, request.Context().Err()
@@ -163,7 +166,8 @@ func TestOpenAICompatibleInjectedDoerPreservesTimeoutAndCancellation(t *testing.
 
 func TestOpenAICompatibleFailsClosedOnEncryptedCredentialDecryptionError(t *testing.T) {
 	var calls atomic.Int32
-	service := NewServiceWithOptions(nil, "test-secret", nil, nil, nil, ServiceOptions{
+	service := NewServiceWithOptions(nil, nil, nil, nil, ServiceOptions{
+		CredentialBox: testCredentialBox(t, "test-secret"),
 		HTTPDoer: airouterHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 			calls.Add(1)
 			return airouterResponse(http.StatusOK, `{}`), nil

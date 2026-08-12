@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/recipecontent"
 )
 
 func boolPointer(value bool) *bool {
@@ -106,17 +108,15 @@ func TestHasUserProvidedParsedContentRecognizesManualContent(t *testing.T) {
 func TestNormalizeParsedContentKeepsMultiplePrimaryIngredients(t *testing.T) {
 	t.Parallel()
 
-	content := normalizeParsedContent(ParsedContent{
-		legacyIngredients: []string{
-			"牛腩 500克",
-			"番茄 3个",
-			"土豆 2个",
-			"胡萝卜 1根",
-			"洋葱 半个",
-			"盐 3克",
-			"生抽 1勺",
-		},
-	}, "main", "番茄牛腩", "牛腩")
+	content := normalizeParsedContent(recipecontent.FromLegacy([]string{
+		"牛腩 500克",
+		"番茄 3个",
+		"土豆 2个",
+		"胡萝卜 1根",
+		"洋葱 半个",
+		"盐 3克",
+		"生抽 1勺",
+	}, nil), "main", "番茄牛腩", "牛腩")
 
 	if got, want := len(content.MainIngredients), 5; got != want {
 		t.Fatalf("len(MainIngredients) = %d, want %d (%#v)", got, want, content.MainIngredients)

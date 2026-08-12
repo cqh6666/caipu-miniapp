@@ -5,13 +5,10 @@ const {
   XIAOHONGSHU_MEDIA_DOMAINS,
   isHTTPSURLAllowed
 } = require("../lib/url-policy");
+const { buildNote, normalizeMediaURL, uniqueStrings } = require("../lib/xhs-provider-common");
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
-
-function unique(items) {
-  return Array.from(new Set((items || []).map((item) => String(item || "").trim()).filter(Boolean)));
-}
 
 function cleanContent(value) {
   return String(value || "")
@@ -24,20 +21,6 @@ function cleanContent(value) {
     .trim();
 }
 
-function normalizeMediaUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    return "";
-  }
-  if (raw.startsWith("//")) {
-    return `https:${raw}`;
-  }
-  if (raw.startsWith("http://")) {
-    return `https://${raw.slice("http://".length)}`;
-  }
-  return raw;
-}
-
 function buildEchoNote(input, normalized, reason) {
   const rawText = stripUrlFromInput(input);
   if (!rawText) {
@@ -48,19 +31,12 @@ function buildEchoNote(input, normalized, reason) {
   return {
     normalized,
     quality: "degraded",
-    note: {
+    note: buildNote({
       title,
       content: rawText,
       tags: extractTags(rawText),
-      images: [],
-      videos: [],
-      coverUrl: "",
-      author: { name: "" },
-      noteType: "unknown",
-      likes: 0,
-      comments: 0,
-      favorites: 0
-    },
+      noteType: "unknown"
+    }),
     warnings: [`轻量抓取未拿到有效笔记内容，已回退到分享文本可见部分。原因：${reason}`]
   };
 }
@@ -70,19 +46,13 @@ function buildDemoNote(input, normalized) {
   return {
     normalized,
     quality: "full",
-    note: {
+    note: buildNote({
       title,
       content: "牛腩 500克\n番茄 3个\n土豆 2个\n先把牛腩焯水，再把番茄炒出沙，最后和土豆一起炖煮至软烂。",
       tags: ["stub", "演示数据"],
-      images: [],
-      videos: [],
-      coverUrl: "",
-      author: { name: "linkparse-sidecar-stub" },
-      noteType: "image",
-      likes: 0,
-      comments: 0,
-      favorites: 0
-    },
+      authorName: "linkparse-sidecar-stub",
+      noteType: "image"
+    }),
     warnings: ["当前返回来自 xiaohongshu-importer 演示数据，不代表真实小红书解析结果。"]
   };
 }
@@ -148,9 +118,9 @@ function extractContent(html, note) {
 
 function extractImages(note) {
   const imageList = Array.isArray(note?.imageList) ? note.imageList : [];
-  return unique(
+  return uniqueStrings(
     imageList
-      .map((img) => normalizeMediaUrl(img?.urlDefault || img?.urlPre || img?.url || ""))
+      .map((img) => normalizeMediaURL(img?.urlDefault || img?.urlPre || img?.url || ""))
       .filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
   );
 }
@@ -163,13 +133,13 @@ function extractVideo(note) {
 
   const candidates = [];
   for (const item of Array.isArray(stream.h264) ? stream.h264 : []) {
-    candidates.push(normalizeMediaUrl(item?.masterUrl || item?.backupUrl || ""));
+    candidates.push(normalizeMediaURL(item?.masterUrl || item?.backupUrl || ""));
   }
   for (const item of Array.isArray(stream.h265) ? stream.h265 : []) {
-    candidates.push(normalizeMediaUrl(item?.masterUrl || item?.backupUrl || ""));
+    candidates.push(normalizeMediaURL(item?.masterUrl || item?.backupUrl || ""));
   }
 
-  return unique(candidates.filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS)));
+  return uniqueStrings(candidates.filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS)));
 }
 
 function extractAuthor(note, detail) {
@@ -236,7 +206,7 @@ async function parseViaImporter(input, config) {
   const content = extractContent(fetched.html, note);
   const images = extractImages(note);
   const videos = extractVideo(note);
-  const tags = unique(
+  const tags = uniqueStrings(
     (Array.isArray(note?.tagList) ? note.tagList.map((tag) => tag?.name || "") : []).concat(extractTags(content))
   );
   const noteType = cleanContent(note?.type || (videos.length > 0 ? "video" : images.length > 0 ? "image" : "unknown")) || "unknown";
@@ -275,21 +245,19 @@ async function parseViaImporter(input, config) {
     ok: true,
     normalized: normalizedWithDetail,
     quality: "full",
-    note: {
+    note: buildNote({
       title: title || guessTitle(input) || "小红书图文草稿",
       content,
       tags,
       images,
       videos,
       coverUrl: images[0] || "",
-      author: {
-        name: extractAuthor(note, detailEntry?.detail)
-      },
+      authorName: extractAuthor(note, detailEntry?.detail),
       noteType,
       likes: counters.likes,
       comments: counters.comments,
       favorites: counters.favorites
-    },
+    }),
     warnings
   };
 }
@@ -342,5 +310,5 @@ function createImporterProvider(config) {
 
 module.exports = {
   createImporterProvider,
-  normalizeMediaUrl
+  normalizeMediaUrl: normalizeMediaURL
 };

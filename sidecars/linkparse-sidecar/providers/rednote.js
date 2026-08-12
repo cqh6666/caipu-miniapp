@@ -12,24 +12,7 @@ const {
   summarizeRuntime,
   validateCookieState
 } = require("../lib/rednote-runtime");
-
-function unique(items) {
-  return Array.from(new Set((items || []).map((item) => String(item || "").trim()).filter(Boolean)));
-}
-
-function normalizeMediaUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    return "";
-  }
-  if (raw.startsWith("//")) {
-    return `https:${raw}`;
-  }
-  if (raw.startsWith("http://")) {
-    return `https://${raw.slice("http://".length)}`;
-  }
-  return raw;
-}
+const { buildNote, normalizeMediaURL, uniqueStrings } = require("../lib/xhs-provider-common");
 
 function isAllowedRednoteRequest(rawURL, navigation = false) {
   return isHTTPSURLAllowed(
@@ -60,19 +43,13 @@ function buildEchoNote(input, normalized, reason) {
   return {
     normalized,
     quality: "degraded",
-    note: {
+    note: buildNote({
       title,
       content: rawText,
       tags: extractTags(rawText),
-      images: [],
-      videos: [],
-      coverUrl: "",
-      author: { name: "rednote-fallback" },
-      noteType: "unknown",
-      likes: 0,
-      comments: 0,
-      favorites: 0
-    },
+      authorName: "rednote-fallback",
+      noteType: "unknown"
+    }),
     warnings: [`RedNote 抓取失败，已回退到分享文本可见部分。原因：${reason}`]
   };
 }
@@ -82,19 +59,13 @@ function buildDemoNote(input, normalized) {
   return {
     normalized,
     quality: "full",
-    note: {
+    note: buildNote({
       title,
       content: "牛腩 500克\n番茄 3个\n洋葱 半个\n先焯水，再翻炒番茄，最后小火慢炖到入味。",
       tags: ["stub", "rednote", "演示数据"],
-      images: [],
-      videos: [],
-      coverUrl: "",
-      author: { name: "rednote-stub" },
-      noteType: "image",
-      likes: 0,
-      comments: 0,
-      favorites: 0
-    },
+      authorName: "rednote-stub",
+      noteType: "image"
+    }),
     warnings: ["当前返回来自 RedNote 演示数据，不代表真实小红书解析结果。"]
   };
 }
@@ -260,13 +231,13 @@ async function parseViaRednote(input, config) {
     }
 
     const extracted = await extractNoteFromPage(page);
-    const images = unique(
-      extracted.images.map(normalizeMediaUrl).filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
+    const images = uniqueStrings(
+      extracted.images.map(normalizeMediaURL).filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
     );
-    const videos = unique(
-      extracted.videos.map(normalizeMediaUrl).filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
+    const videos = uniqueStrings(
+      extracted.videos.map(normalizeMediaURL).filter((url) => isHTTPSURLAllowed(url, XIAOHONGSHU_MEDIA_DOMAINS))
     );
-    const tags = unique((extracted.tags || []).concat(extractTags(extracted.content)));
+    const tags = uniqueStrings((extracted.tags || []).concat(extractTags(extracted.content)));
 
     if (!String(extracted.content || "").trim() && images.length === 0 && videos.length === 0) {
       return {
@@ -280,24 +251,22 @@ async function parseViaRednote(input, config) {
       ok: true,
       normalized,
       quality: "full",
-      note: {
+      note: buildNote({
         title: String(extracted.title || guessTitle(input) || "小红书图文草稿").trim(),
         content: String(extracted.content || "").trim(),
         tags,
         images,
         videos,
         coverUrl: images[0] || "",
-        author: {
-          name: String(extracted.author || "").trim(),
-          avatarUrl: isHTTPSURLAllowed(normalizeMediaUrl(extracted.avatarUrl || ""), XIAOHONGSHU_MEDIA_DOMAINS)
-            ? normalizeMediaUrl(extracted.avatarUrl || "")
-            : ""
-        },
+        authorName: String(extracted.author || "").trim(),
+        authorAvatarURL: isHTTPSURLAllowed(normalizeMediaURL(extracted.avatarUrl || ""), XIAOHONGSHU_MEDIA_DOMAINS)
+          ? normalizeMediaURL(extracted.avatarUrl || "")
+          : "",
         noteType: videos.length > 0 ? "video" : "image",
         likes: parseChineseCounter(extracted.likes),
         comments: parseChineseCounter(extracted.comments),
         favorites: parseChineseCounter(extracted.favorites)
-      },
+      }),
       warnings: []
     };
   } catch (error) {

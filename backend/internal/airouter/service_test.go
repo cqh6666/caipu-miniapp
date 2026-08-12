@@ -74,7 +74,7 @@ func TestBuildSceneTestInputUsesLargerSummaryTokenBudget(t *testing.T) {
 func TestBuildSceneConfigRetainsEncryptedAPIKeyForRuntimeCalls(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(nil, "unit-test-secret", nil, nil, nil)
+	service := NewService(nil, testCredentialBox(t, "unit-test-secret"), nil, nil, nil)
 	ciphertext, err := service.cipherBox.Encrypt("sk-test-12345678")
 	if err != nil {
 		t.Fatalf("Encrypt() error = %v", err)
@@ -118,7 +118,7 @@ func TestBuildSceneConfigRetainsEncryptedAPIKeyForRuntimeCalls(t *testing.T) {
 func TestBuildSceneConfigPromotesFlowchartExtraFields(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(nil, "unit-test-secret", nil, nil, nil)
+	service := NewService(nil, testCredentialBox(t, "unit-test-secret"), nil, nil, nil)
 
 	config, err := service.buildSceneConfig(sceneRecord{
 		Scene:       SceneFlowchart,
@@ -159,7 +159,7 @@ func TestBuildSceneConfigPromotesFlowchartExtraFields(t *testing.T) {
 func TestSceneTestInputUsesInjectedBuilder(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(nil, "unit-test-secret", nil, nil, nil)
+	service := NewService(nil, testCredentialBox(t, "unit-test-secret"), nil, nil, nil)
 	service.SetTestInputBuilder(func(scene Scene) (ChatCompletionInput, bool) {
 		if scene != SceneSummary {
 			return ChatCompletionInput{}, false
@@ -208,7 +208,7 @@ func TestRouteChatRouteTestSkipsProviderAlerts(t *testing.T) {
 	defer server.Close()
 
 	alerts := &fakeAlertTracker{}
-	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+	service := NewService(nil, testCredentialBox(t, "test-secret"), func(context.Context, Scene) SceneConfig {
 		return SceneConfig{}
 	}, nil, alerts)
 
@@ -263,7 +263,7 @@ func TestRouteChatSendsExplicitStreamFalseForSummary(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+	service := NewService(nil, testCredentialBox(t, "test-secret"), func(context.Context, Scene) SceneConfig {
 		return SceneConfig{}
 	}, nil, nil)
 
@@ -320,7 +320,7 @@ func TestRouteChatSendsThinkingOptions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+	service := NewService(nil, testCredentialBox(t, "test-secret"), func(context.Context, Scene) SceneConfig {
 		return SceneConfig{}
 	}, nil, nil)
 
@@ -380,7 +380,7 @@ func TestRouteChatSendsReasoningEffortWhenThinkingEnabled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+	service := NewService(nil, testCredentialBox(t, "test-secret"), func(context.Context, Scene) SceneConfig {
 		return SceneConfig{}
 	}, nil, nil)
 
@@ -427,7 +427,7 @@ func TestRouteChatFlowchartUsesMessageImagesWhenContentIsEmpty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+	service := NewService(nil, testCredentialBox(t, "test-secret"), func(context.Context, Scene) SceneConfig {
 		return SceneConfig{}
 	}, nil, nil)
 
@@ -497,7 +497,7 @@ func TestRouteChatFlowchartUsesImageGenerationsEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(nil, "test-secret", func(context.Context, Scene) SceneConfig {
+	service := NewService(nil, testCredentialBox(t, "test-secret"), func(context.Context, Scene) SceneConfig {
 		return SceneConfig{}
 	}, nil, nil)
 

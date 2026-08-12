@@ -6,6 +6,7 @@ const {
   createBilibiliProvider,
   isSupportedBilibiliUrl,
   parseVideoRefFromURL,
+  SESSION_VERIFICATION_PROBES,
   selectSubtitle
 } = require("../providers/bilibili");
 
@@ -118,6 +119,71 @@ test("buildSubtitleText joins subtitle lines", () => {
       segments: 2
     }
   );
+});
+
+test("bilibili provider verifies SESSDATA against fixed subtitle probes", async () => {
+  const calls = [];
+  const provider = createBilibiliProvider({
+    bilibiliOpenAPIEnabled: true,
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async (url, init) => {
+      calls.push({ url, init });
+      const successfulProbe = SESSION_VERIFICATION_PROBES[1];
+      const isSuccessfulProbe = url.includes(`bvid=${successfulProbe.bvid}`) && url.includes(`cid=${successfulProbe.cid}`);
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            code: 0,
+            data: {
+              subtitle: {
+                subtitles: isSuccessfulProbe
+                  ? [{ lan: "zh-CN", subtitle_url: "https://i0.hdslb.com/subtitle.json" }]
+                  : []
+              }
+            }
+          };
+        }
+      };
+    }
+  });
+
+  assert.equal(await provider.verifySession("session-secret"), true);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((call) => call.url.startsWith("https://api.bilibili.com/x/player/v2?")));
+  assert.ok(calls.every((call) => call.init.headers.Cookie === "SESSDATA=session-secret"));
+  assert.ok(calls.every((call) => call.init.redirect === "manual"));
+});
+
+test("bilibili provider separates empty credentials, invalid credentials, and upstream failures", async () => {
+  let calls = 0;
+  const provider = createBilibiliProvider({
+    bilibiliOpenAPIEnabled: true,
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async () => {
+      calls += 1;
+      throw new Error("upstream unavailable");
+    }
+  });
+
+  assert.equal(await provider.verifySession(""), false);
+  assert.equal(calls, 0);
+  await assert.rejects(provider.verifySession("session-during-outage"), /upstream unavailable/);
+  assert.equal(calls, SESSION_VERIFICATION_PROBES.length);
+
+  const invalidProvider = createBilibiliProvider({
+    bilibiliOpenAPIEnabled: true,
+    lookupImpl: PUBLIC_LOOKUP,
+    requestImpl: async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data: { subtitle: { subtitles: [] } } };
+      }
+    })
+  });
+  assert.equal(await invalidProvider.verifySession("invalid-session"), false);
 });
 
 test("bilibili provider returns normalized transcript content", async () => {

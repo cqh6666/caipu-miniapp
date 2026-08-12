@@ -120,6 +120,12 @@ bash scripts/check-service-health.sh
 
 和 B 站自动解析相关的可选配置：
 
+- B 站预览、解析与 `SESSDATA` 验证的所有外部 I/O 统一由 linkparse sidecar 承担；
+  Go 后端只做输入 allowlist、业务编排、结果映射、AI 总结与审计。未启用 sidecar 或未配置
+  `LINKPARSE_SIDECAR_BASE_URL` 时，这三类操作稳定返回服务不可用，不再回退到 Go 直连。
+- `AI_BASE_URL`、`AI_TITLE_*`、`AI_FLOWCHART_*` 与对应运行时配置继续保留，用于 AI Router
+  的单节点兼容加载；linkparse 与流程图业务包不再自行读取这些配置或直连 Provider。
+
 - `RECIPE_AUTO_PARSE_ENABLED`
 - `RECIPE_AUTO_PARSE_INTERVAL_SECONDS`
 - `RECIPE_AUTO_PARSE_BATCH_SIZE`

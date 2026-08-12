@@ -22,15 +22,6 @@ type runtimeFieldDefinition struct {
 	DefaultValue      string
 }
 
-func (p *RuntimeProvider) ConfigureCredentialKeys(secret, version string, previous []credentialcipher.Key) error {
-	box, err := newVersionedCipherBox(secret, version, previous)
-	if err != nil {
-		return err
-	}
-	p.cipherBox = box
-	return nil
-}
-
 type runtimeGroupDefinition struct {
 	Name            string
 	Title           string
@@ -41,7 +32,7 @@ type runtimeGroupDefinition struct {
 
 type RuntimeProvider struct {
 	repo             *Repository
-	cipherBox        *cipherBox
+	cipherBox        *credentialcipher.Box
 	groups           []runtimeGroupDefinition
 	groupIndex       map[string]runtimeGroupDefinition
 	fieldIndex       map[string]runtimeFieldDefinition
@@ -53,11 +44,11 @@ type RuntimeProvider struct {
 	httpDoer         HTTPDoer
 }
 
-func NewRuntimeProvider(repo *Repository, secret string, cfg config.Config) *RuntimeProvider {
-	return NewRuntimeProviderWithOptions(repo, secret, cfg, RuntimeProviderOptions{})
+func NewRuntimeProvider(repo *Repository, box *credentialcipher.Box, cfg config.Config) *RuntimeProvider {
+	return NewRuntimeProviderWithOptions(repo, cfg, RuntimeProviderOptions{CredentialBox: box})
 }
 
-func NewRuntimeProviderWithOptions(repo *Repository, secret string, cfg config.Config, opts RuntimeProviderOptions) *RuntimeProvider {
+func NewRuntimeProviderWithOptions(repo *Repository, cfg config.Config, opts RuntimeProviderOptions) *RuntimeProvider {
 	groups := buildRuntimeGroups(cfg)
 	groupIndex := make(map[string]runtimeGroupDefinition, len(groups))
 	fieldIndex := make(map[string]runtimeFieldDefinition)
@@ -72,7 +63,7 @@ func NewRuntimeProviderWithOptions(repo *Repository, secret string, cfg config.C
 
 	return &RuntimeProvider{
 		repo:           repo,
-		cipherBox:      newCipherBox(secret),
+		cipherBox:      opts.CredentialBox,
 		groups:         groups,
 		groupIndex:     groupIndex,
 		fieldIndex:     fieldIndex,

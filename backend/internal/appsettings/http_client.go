@@ -1,6 +1,10 @@
 package appsettings
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
+)
 
 // HTTPDoer is the protocol boundary for runtime configuration probes.
 // Implementations must honor request contexts.
@@ -9,7 +13,8 @@ type HTTPDoer interface {
 }
 
 type RuntimeProviderOptions struct {
-	HTTPDoer HTTPDoer
+	CredentialBox *credentialcipher.Box
+	HTTPDoer      HTTPDoer
 }
 
 var sharedHTTPDoer HTTPDoer = &http.Client{Transport: http.DefaultTransport}

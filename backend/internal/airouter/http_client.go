@@ -1,6 +1,10 @@
 package airouter
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/credentialcipher"
+)
 
 // HTTPDoer is the package-local protocol boundary used by OpenAI-compatible
 // adapters. Implementations must honor request contexts.
@@ -9,7 +13,8 @@ type HTTPDoer interface {
 }
 
 type ServiceOptions struct {
-	HTTPDoer HTTPDoer
+	CredentialBox *credentialcipher.Box
+	HTTPDoer      HTTPDoer
 }
 
 var sharedHTTPDoer HTTPDoer = &http.Client{Transport: http.DefaultTransport}

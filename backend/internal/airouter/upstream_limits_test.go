@@ -27,7 +27,7 @@ func TestOpenAICompatibleRejectsOversizedResponses(t *testing.T) {
 			}))
 			defer server.Close()
 
-			service := NewService(nil, "test-secret", nil, nil, nil)
+			service := NewService(nil, testCredentialBox(t, "test-secret"), nil, nil, nil)
 			_, _, status, _, err := service.callOpenAICompatible(
 				context.Background(),
 				SceneConfig{Scene: SceneFlowchart},

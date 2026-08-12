@@ -34,7 +34,7 @@ const (
 
 type Service struct {
 	repo             *Repository
-	cipherBox        *cipherBox
+	cipherBox        *credentialcipher.Box
 	compatibility    CompatibilityLoader
 	testInputBuilder TestInputBuilder
 	tracker          audit.Tracker
@@ -45,22 +45,12 @@ type Service struct {
 	roundRobinNext   map[Scene]int
 }
 
-func (s *Service) ConfigureCredentialKeys(secret, version string, previous []credentialcipher.Key) error {
-	box, err := newVersionedCipherBox(secret, version, previous)
-	if err != nil {
-		return err
-	}
-	s.cipherBox = box
-	return nil
-}
-
-func NewService(repo *Repository, secret string, compatibility CompatibilityLoader, tracker audit.Tracker, alertTracker aialert.Tracker) *Service {
-	return NewServiceWithOptions(repo, secret, compatibility, tracker, alertTracker, ServiceOptions{})
+func NewService(repo *Repository, box *credentialcipher.Box, compatibility CompatibilityLoader, tracker audit.Tracker, alertTracker aialert.Tracker) *Service {
+	return NewServiceWithOptions(repo, compatibility, tracker, alertTracker, ServiceOptions{CredentialBox: box})
 }
 
 func NewServiceWithOptions(
 	repo *Repository,
-	secret string,
 	compatibility CompatibilityLoader,
 	tracker audit.Tracker,
 	alertTracker aialert.Tracker,
@@ -68,7 +58,7 @@ func NewServiceWithOptions(
 ) *Service {
 	return &Service{
 		repo:           repo,
-		cipherBox:      newCipherBox(secret),
+		cipherBox:      opts.CredentialBox,
 		compatibility:  compatibility,
 		tracker:        tracker,
 		alertTracker:   alertTracker,

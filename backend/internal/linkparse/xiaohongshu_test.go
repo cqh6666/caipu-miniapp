@@ -3,12 +3,15 @@ package linkparse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 func TestDetectParsePlatform(t *testing.T) {
@@ -401,6 +404,10 @@ func TestParseXiaohongshuReturnsTimeoutError(t *testing.T) {
 	}
 	if got := err.Error(); got != "xiaohongshu sidecar timed out" {
 		t.Fatalf("error = %q, want timeout message", got)
+	}
+	var appErr *common.AppError
+	if !errors.As(err, &appErr) || appErr.HTTPStatus != http.StatusBadGateway || appErr.Code != common.CodeInternalServer {
+		t.Fatalf("timeout AppError = %#v", appErr)
 	}
 }
 

@@ -1,19 +1,16 @@
 package linkparse
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
-	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/recipecontent"
 )
 
 type aiSummaryResponse struct {
@@ -28,137 +25,75 @@ type aiSummaryResponse struct {
 }
 
 func (r aiSummaryResponse) toParsedContent() (ParsedContent, error) {
-	steps, legacySteps, err := parseParsedContentSteps(r.Steps)
-	if err != nil {
-		return ParsedContent{}, err
-	}
-
-	return ParsedContent{
-		MainIngredients:      r.MainIngredients,
-		SecondaryIngredients: r.SecondaryIngredients,
-		Steps:                steps,
-		legacyIngredients:    r.Ingredients,
-		legacySteps:          legacySteps,
-	}, nil
-}
-
-type openAIChatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []openAIChatMessage `json:"messages"`
-	Temperature float64             `json:"temperature"`
-	Stream      *bool               `json:"stream,omitempty"`
-	MaxTokens   *int                `json:"max_tokens,omitempty"`
-}
-
-type openAIChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type openAIChatResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+	return recipecontent.DecodeFields(r.MainIngredients, r.SecondaryIngredients, r.Ingredients, r.Steps)
 }
 
 func (s *Service) summarizeBilibiliDraft(ctx context.Context, result BilibiliParseResult) (RecipeDraft, airouter.ChatCompletionResult, error) {
-	if s != nil && s.aiRouter != nil {
-		routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneSummary, airouter.ChatCompletionInput{
-			Messages:    buildBilibiliSummaryMessages(result),
-			Temperature: floatPtr(0.2),
-			ContentKind: "summary_bilibili",
-			ValidateContent: func(content string) error {
-				_, err := summaryDraftFromAIContent(content)
-				return err
-			},
-		})
-		if err != nil {
-			return RecipeDraft{}, routeResult, err
-		}
-		draft, err := summaryDraftFromAIContent(routeResult.Content)
-		if err != nil {
-			return RecipeDraft{}, airouter.ChatCompletionResult{}, err
-		}
-		return draft, routeResult, nil
+	if s == nil || s.aiRouter == nil {
+		return RecipeDraft{}, airouter.ChatCompletionResult{}, common.NewAppError(common.CodeServiceUnavailable, "summary ai is not configured", http.StatusServiceUnavailable)
 	}
-
-	client := s.summaryAIFor(ctx)
-	if client == nil {
-		return RecipeDraft{}, airouter.ChatCompletionResult{}, common.NewAppError(common.CodeInternalServer, "summary ai is not configured", http.StatusServiceUnavailable)
-	}
-	draft, err := client.summarize(ctx, result)
+	routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneSummary, airouter.ChatCompletionInput{
+		Messages:    buildBilibiliSummaryMessages(result),
+		Temperature: floatPtr(0.2),
+		ContentKind: "summary_bilibili",
+		ValidateContent: func(content string) error {
+			_, err := summaryDraftFromAIContent(content)
+			return err
+		},
+	})
 	if err != nil {
-		return RecipeDraft{}, airouter.ChatCompletionResult{}, err
+		return RecipeDraft{}, routeResult, err
 	}
-	return draft, legacyRouteResult(client.model), nil
+	draft, err := summaryDraftFromAIContent(routeResult.Content)
+	if err != nil {
+		return RecipeDraft{}, routeResult, err
+	}
+	return draft, routeResult, nil
 }
 
 func (s *Service) summarizeXiaohongshuDraft(ctx context.Context, result XiaohongshuParseResult) (RecipeDraft, airouter.ChatCompletionResult, error) {
-	if s != nil && s.aiRouter != nil {
-		routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneSummary, airouter.ChatCompletionInput{
-			Messages:    buildXiaohongshuSummaryMessages(result),
-			Temperature: floatPtr(0.2),
-			ContentKind: "summary_xiaohongshu",
-			ValidateContent: func(content string) error {
-				_, err := summaryDraftFromAIContent(content)
-				return err
-			},
-		})
-		if err != nil {
-			return RecipeDraft{}, routeResult, err
-		}
-		draft, err := summaryDraftFromAIContent(routeResult.Content)
-		if err != nil {
-			return RecipeDraft{}, airouter.ChatCompletionResult{}, err
-		}
-		return draft, routeResult, nil
+	if s == nil || s.aiRouter == nil {
+		return RecipeDraft{}, airouter.ChatCompletionResult{}, common.NewAppError(common.CodeServiceUnavailable, "summary ai is not configured", http.StatusServiceUnavailable)
 	}
-
-	client := s.summaryAIFor(ctx)
-	if client == nil {
-		return RecipeDraft{}, airouter.ChatCompletionResult{}, common.NewAppError(common.CodeInternalServer, "summary ai is not configured", http.StatusServiceUnavailable)
-	}
-	draft, err := client.summarizeXiaohongshu(ctx, result)
+	routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneSummary, airouter.ChatCompletionInput{
+		Messages:    buildXiaohongshuSummaryMessages(result),
+		Temperature: floatPtr(0.2),
+		ContentKind: "summary_xiaohongshu",
+		ValidateContent: func(content string) error {
+			_, err := summaryDraftFromAIContent(content)
+			return err
+		},
+	})
 	if err != nil {
-		return RecipeDraft{}, airouter.ChatCompletionResult{}, err
+		return RecipeDraft{}, routeResult, err
 	}
-	return draft, legacyRouteResult(client.model), nil
+	draft, err := summaryDraftFromAIContent(routeResult.Content)
+	if err != nil {
+		return RecipeDraft{}, routeResult, err
+	}
+	return draft, routeResult, nil
 }
 
 func (s *Service) refineTitleWithAI(ctx context.Context, rawTitle string) (string, airouter.ChatCompletionResult, error) {
-	if s != nil && s.aiRouter != nil {
-		routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneTitle, airouter.ChatCompletionInput{
-			Messages:    buildTitleRefineMessages(rawTitle),
-			ContentKind: "title_refine",
-			ValidateContent: func(content string) error {
-				_, err := parseTitleRefineContent(content)
-				return err
-			},
-		})
-		if err != nil {
-			return "", routeResult, err
-		}
-		title, err := parseTitleRefineContent(routeResult.Content)
-		if err != nil {
-			return "", airouter.ChatCompletionResult{}, err
-		}
-		return title, routeResult, nil
+	if s == nil || s.aiRouter == nil {
+		return "", airouter.ChatCompletionResult{}, common.NewAppError(common.CodeServiceUnavailable, "title ai is not configured", http.StatusServiceUnavailable)
 	}
-
-	client := s.titleAIFor(ctx)
-	if client == nil {
-		return "", airouter.ChatCompletionResult{}, common.NewAppError(common.CodeInternalServer, "title ai is not configured", http.StatusServiceUnavailable)
-	}
-	title, err := client.refineTitle(ctx, rawTitle)
+	routeResult, err := s.aiRouter.RouteChat(ctx, airouter.SceneTitle, airouter.ChatCompletionInput{
+		Messages:    buildTitleRefineMessages(rawTitle),
+		ContentKind: "title_refine",
+		ValidateContent: func(content string) error {
+			_, err := parseTitleRefineContent(content)
+			return err
+		},
+	})
 	if err != nil {
-		return "", airouter.ChatCompletionResult{}, err
+		return "", routeResult, err
 	}
-	return title, legacyRouteResult(client.model), nil
+	title, err := parseTitleRefineContent(routeResult.Content)
+	if err != nil {
+		return "", routeResult, err
+	}
+	return title, routeResult, nil
 }
 
 func buildBilibiliSummaryMessages(result BilibiliParseResult) []airouter.ChatMessage {
@@ -253,134 +188,8 @@ func parseTitleRefineContent(content string) (string, error) {
 	return strings.TrimSpace(response.Title), nil
 }
 
-func legacyRouteResult(model string) airouter.ChatCompletionResult {
-	return airouter.ChatCompletionResult{
-		ProviderID:   airouter.AdapterOpenAICompatible,
-		ProviderName: airouter.AdapterOpenAICompatible,
-		Model:        strings.TrimSpace(model),
-		Strategy:     airouter.StrategyPriorityFailover,
-		AttemptCount: 1,
-	}
-}
-
 func floatPtr(value float64) *float64 {
 	return &value
-}
-
-func (c *aiClient) summarize(ctx context.Context, result BilibiliParseResult) (RecipeDraft, error) {
-	startedAt := time.Now()
-	payload := openAIChatRequest{
-		Model:       c.model,
-		Temperature: 0.2,
-		Messages: []openAIChatMessage{
-			{
-				Role:    "system",
-				Content: "你是一个菜谱整理助手。请根据 B 站视频字幕和简介，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。steps 必须返回 3 到 6 步；如果原始做法更细，请合并相邻动作，不要拆得过碎，也不要超过 6 步。每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原视频确认。 " + buildIngredientPromptRuleText() + " " + buildSummaryPromptRuleText(),
-			},
-			{
-				Role:    "user",
-				Content: buildAISummaryPrompt(result),
-			},
-		},
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return RecipeDraft{}, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return RecipeDraft{}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFromError(err), 0, err, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		callErr := sanitizedUpstreamError(
-			common.CodeInternalServer,
-			fmt.Sprintf("summary AI upstream returned status %d", resp.StatusCode),
-			http.StatusBadGateway,
-			string(data),
-		)
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, callErr
-	}
-
-	var parsed openAIChatResponse
-	if err := decodeBoundedUpstreamJSON(resp.Body, maxLinkparseAIResponseBytes, "summary AI upstream", &parsed); err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, err
-	}
-	if parsed.Error != nil && parsed.Error.Message != "" {
-		callErr := sanitizedUpstreamError(common.CodeInternalServer, "summary AI upstream returned an error", http.StatusBadGateway, parsed.Error.Message)
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, callErr
-	}
-	if len(parsed.Choices) == 0 {
-		callErr := fmt.Errorf("ai response contained no choices")
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, callErr
-	}
-
-	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(content, "$1"))
-	if content == "" {
-		callErr := fmt.Errorf("ai response was empty")
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, callErr
-	}
-
-	var summary aiSummaryResponse
-	if err := json.Unmarshal([]byte(content), &summary); err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, err
-	}
-
-	parsedContent, err := summary.toParsedContent()
-	if err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "summary_bilibili",
-		})
-		return RecipeDraft{}, err
-	}
-
-	c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusSuccess, resp.StatusCode, nil, map[string]any{
-		"content_kind": "summary_bilibili",
-	})
-
-	return RecipeDraft{
-		Title:         summary.Title,
-		Ingredient:    summary.Ingredient,
-		Summary:       summary.Summary,
-		Note:          summary.Note,
-		ParsedContent: parsedContent,
-	}, nil
 }
 
 func buildAISummaryPrompt(result BilibiliParseResult) string {
@@ -455,22 +264,7 @@ func normalizeDraft(meta BilibiliParseResult, draft RecipeDraft) RecipeDraft {
 }
 
 func normalizeParsedContentDraft(content ParsedContent) ParsedContent {
-	mainIngredients := dedupeStrings(cleanLines(content.MainIngredients), 10)
-	secondaryIngredients := dedupeStrings(cleanLines(content.SecondaryIngredients), 10)
-	if len(mainIngredients) == 0 && len(secondaryIngredients) == 0 {
-		mainIngredients, secondaryIngredients = splitIngredientLines(cleanLines(content.legacyIngredients))
-	}
-
-	steps := cleanParsedSteps(content.Steps)
-	if len(steps) == 0 {
-		steps = buildParsedSteps(cleanLines(content.legacySteps))
-	}
-
-	return ParsedContent{
-		MainIngredients:      mainIngredients,
-		SecondaryIngredients: secondaryIngredients,
-		Steps:                steps,
-	}
+	return recipecontent.Normalize(content)
 }
 
 func draftImageURLs(values ...string) []string {

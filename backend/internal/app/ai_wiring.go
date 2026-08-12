@@ -16,18 +16,12 @@ import (
 )
 
 type linkParseRuntimeProvider interface {
-	SummaryAI(context.Context) appsettings.SummaryAIConfig
-	TitleAI(context.Context) appsettings.TitleAIConfig
 	LinkparseSidecar(context.Context) appsettings.LinkparseSidecarConfig
 }
 
 type aiCompatibilityRuntimeProvider interface {
 	SummaryAI(context.Context) appsettings.SummaryAIConfig
 	TitleAI(context.Context) appsettings.TitleAIConfig
-	FlowchartAI(context.Context) appsettings.FlowchartAIConfig
-}
-
-type flowchartRuntimeProvider interface {
 	FlowchartAI(context.Context) appsettings.FlowchartAIConfig
 }
 
@@ -58,18 +52,6 @@ func newLinkParseService(
 	sessdataProvider func(context.Context) string,
 ) *linkparse.Service {
 	return linkparse.NewService(linkparse.Options{
-		AIBaseURL:                cfg.AIBaseURL,
-		AIAPIKey:                 cfg.AIAPIKey,
-		AIModel:                  cfg.AIModel,
-		AITimeout:                time.Duration(cfg.AITimeoutSeconds) * time.Second,
-		AITitleEnabled:           cfg.AITitleEnabled,
-		AITitleBaseURL:           cfg.AITitleBaseURL,
-		AITitleAPIKey:            cfg.AITitleAPIKey,
-		AITitleModel:             cfg.AITitleModel,
-		AITitleStream:            cfg.AITitleStream,
-		AITitleTemperature:       cfg.AITitleTemperature,
-		AITitleMaxTokens:         cfg.AITitleMaxTokens,
-		AITitleTimeout:           time.Duration(cfg.AITitleTimeoutSeconds) * time.Second,
 		LinkparseSidecarEnabled:  cfg.LinkparseSidecarEnabled,
 		LinkparseSidecarBaseURL:  cfg.LinkparseSidecarBaseURL,
 		LinkparseSidecarTimeout:  time.Duration(cfg.LinkparseSidecarTimeoutSec) * time.Second,
@@ -83,26 +65,8 @@ func newLinkParseService(
 
 func buildLinkParseRuntimeConfigLoader(provider linkParseRuntimeProvider) linkparse.RuntimeConfigLoader {
 	return func(ctx context.Context) linkparse.RuntimeConfig {
-		summary := provider.SummaryAI(ctx)
-		title := provider.TitleAI(ctx)
 		sidecar := provider.LinkparseSidecar(ctx)
 		return linkparse.RuntimeConfig{
-			SummaryAI: linkparse.SummaryAIConfig{
-				BaseURL: summary.BaseURL,
-				APIKey:  summary.APIKey,
-				Model:   summary.Model,
-				Timeout: summary.Timeout,
-			},
-			TitleAI: linkparse.TitleAIConfig{
-				Enabled:     title.Enabled,
-				BaseURL:     title.BaseURL,
-				APIKey:      title.APIKey,
-				Model:       title.Model,
-				Stream:      title.Stream,
-				Temperature: title.Temperature,
-				MaxTokens:   title.MaxTokens,
-				Timeout:     title.Timeout,
-			},
 			LinkparseSidecar: linkparse.LinkparseSidecarConfig{
 				Enabled: sidecar.Enabled,
 				BaseURL: sidecar.BaseURL,
@@ -114,37 +78,12 @@ func buildLinkParseRuntimeConfigLoader(provider linkParseRuntimeProvider) linkpa
 }
 
 func newRecipeFlowchartGenerator(
-	cfg config.Config,
-	runtimeProvider flowchartRuntimeProvider,
 	aiRouter *airouter.Service,
-	tracker audit.Tracker,
 	uploadService *upload.Service,
 ) *recipe.FlowchartGenerator {
 	return recipe.NewFlowchartGenerator(recipe.FlowchartOptions{
-		BaseURL:             cfg.AIFlowchartBaseURL,
-		APIKey:              cfg.AIFlowchartAPIKey,
-		Model:               cfg.AIFlowchartModel,
-		EndpointMode:        cfg.AIFlowchartEndpointMode,
-		ResponseFormat:      cfg.AIFlowchartResponseFormat,
-		Timeout:             time.Duration(cfg.AIFlowchartTimeoutSeconds) * time.Second,
-		RuntimeConfigLoader: buildFlowchartRuntimeConfigLoader(runtimeProvider),
-		AIRouter:            aiRouter,
-		Tracker:             tracker,
+		AIRouter: aiRouter,
 	}, uploadService)
-}
-
-func buildFlowchartRuntimeConfigLoader(provider flowchartRuntimeProvider) recipe.RuntimeConfigLoader {
-	return func(ctx context.Context) recipe.FlowchartRuntimeConfig {
-		flowchart := provider.FlowchartAI(ctx)
-		return recipe.FlowchartRuntimeConfig{
-			BaseURL:        flowchart.BaseURL,
-			APIKey:         flowchart.APIKey,
-			Model:          flowchart.Model,
-			EndpointMode:   flowchart.EndpointMode,
-			ResponseFormat: flowchart.ResponseFormat,
-			Timeout:        flowchart.Timeout,
-		}
-	}
 }
 
 func buildAIRoutingCompatibilityLoader(runtimeProvider aiCompatibilityRuntimeProvider) airouter.CompatibilityLoader {
@@ -163,6 +102,7 @@ func buildAIRoutingCompatibilityLoader(runtimeProvider aiCompatibilityRuntimePro
 				Providers: []airouter.ProviderConfig{
 					{
 						ID:             "summary-compat",
+						Scene:          scene,
 						Name:           "兼容单节点",
 						Adapter:        airouter.AdapterOpenAICompatible,
 						Enabled:        enabled,
@@ -204,6 +144,7 @@ func buildAIRoutingCompatibilityLoader(runtimeProvider aiCompatibilityRuntimePro
 				Providers: []airouter.ProviderConfig{
 					{
 						ID:             "title-compat",
+						Scene:          scene,
 						Name:           "兼容单节点",
 						Adapter:        airouter.AdapterOpenAICompatible,
 						Enabled:        enabled,
@@ -230,6 +171,7 @@ func buildAIRoutingCompatibilityLoader(runtimeProvider aiCompatibilityRuntimePro
 				Providers: []airouter.ProviderConfig{
 					{
 						ID:             "flowchart-compat",
+						Scene:          scene,
 						Name:           "兼容单节点",
 						Adapter:        airouter.AdapterOpenAICompatible,
 						Enabled:        enabled,

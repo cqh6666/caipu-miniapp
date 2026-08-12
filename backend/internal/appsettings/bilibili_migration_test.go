@@ -6,9 +6,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -30,21 +30,22 @@ func TestBilibiliSessionOperatorContractWithFullMigrations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parser := linkparse.NewService(linkparse.Options{HTTPClient: &http.Client{
-		Transport: appSettingsRoundTripFunc(func(*http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body: io.NopCloser(strings.NewReader(`{
-					"code": 0,
-					"data": {"subtitle": {"subtitles": [
-						{"lan": "zh-CN", "lan_doc": "中文", "subtitle_url": "https://i0.hdslb.com/subtitle.json"}
-					]}}
-				}`)),
-			}, nil
-		}),
-	}})
-	service := NewService(NewRepository(database), "migration-contract-secret", parser, func(context.Context, int64) error {
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/verify/bilibili-session" {
+			t.Fatalf("unexpected sidecar path: %s", r.URL.Path)
+		}
+		if r.Header.Get("X-Bilibili-SESSDATA") == "" {
+			t.Fatal("missing bilibili session header")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"platform":"bilibili","providerUsed":"openapi","valid":true}`))
+	}))
+	defer sidecar.Close()
+	parser := linkparse.NewService(linkparse.Options{
+		LinkparseSidecarEnabled: true,
+		LinkparseSidecarBaseURL: sidecar.URL,
+	})
+	service := NewService(NewRepository(database), testCredentialBox(t, "migration-contract-secret"), parser, func(context.Context, int64) error {
 		return nil
 	})
 
@@ -130,10 +131,4 @@ func openAppSettingsMigrationTestDB(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	return database
-}
-
-type appSettingsRoundTripFunc func(*http.Request) (*http.Response, error)
-
-func (fn appSettingsRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
-	return fn(request)
 }

@@ -13,6 +13,10 @@ import (
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
+func sidecarUnavailableError() error {
+	return common.NewAppError(common.CodeServiceUnavailable, "linkparse sidecar is not configured", http.StatusServiceUnavailable)
+}
+
 type sidecarClient struct {
 	baseURL string
 	apiKey  string
@@ -74,6 +78,93 @@ type sidecarParseResponse struct {
 	Warnings []string `json:"warnings"`
 }
 
+func (c *sidecarClient) verifyBilibiliSession(ctx context.Context, sessdata string) error {
+	startedAt := time.Now()
+	const path = "/v1/verify/bilibili-session"
+	logCall := func(status string, httpStatus int, err error) {
+		if c == nil || c.tracker == nil {
+			return
+		}
+		jobCtx, ok := audit.CurrentJobContext(ctx)
+		if !ok || jobCtx.JobRunID <= 0 {
+			return
+		}
+		_ = c.tracker.LogCall(ctx, audit.CallLogInput{
+			JobRunID:     jobCtx.JobRunID,
+			Scene:        jobCtx.Scene,
+			Provider:     "linkparse-sidecar",
+			Endpoint:     path,
+			Status:       status,
+			HTTPStatus:   httpStatus,
+			LatencyMS:    time.Since(startedAt).Milliseconds(),
+			ErrorType:    audit.ErrorTypeFromError(err),
+			ErrorMessage: errorMessage(err),
+			RequestID:    common.RequestID(ctx),
+		})
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, nil)
+	if err != nil {
+		logCall(audit.CallStatusFailed, 0, err)
+		return common.ErrInternal.WithErr(err)
+	}
+	if strings.TrimSpace(c.apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.apiKey))
+	}
+	req.Header.Set("X-Bilibili-SESSDATA", strings.TrimSpace(sessdata))
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		callErr := common.NewAppError(common.CodeInternalServer, "request to bilibili sidecar failed", http.StatusBadGateway).WithErr(err)
+		logCall(audit.CallStatusFromError(err), 0, callErr)
+		return callErr
+	}
+	defer resp.Body.Close()
+
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, 2049))
+	if readErr != nil {
+		callErr := common.NewAppError(common.CodeInternalServer, "invalid linkparse sidecar response", http.StatusBadGateway).WithErr(readErr)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return callErr
+	}
+	if len(data) > 2048 {
+		callErr := common.NewAppError(common.CodeInternalServer, "linkparse sidecar response exceeded size limit", http.StatusBadGateway)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return callErr
+	}
+
+	var payload struct {
+		OK    bool `json:"ok"`
+		Valid bool `json:"valid"`
+		Error *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		callErr := common.NewAppError(common.CodeInternalServer, "invalid linkparse sidecar response", http.StatusBadGateway).WithErr(err)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return callErr
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 && payload.OK && payload.Valid {
+		logCall(audit.CallStatusSuccess, resp.StatusCode, nil)
+		return nil
+	}
+
+	if resp.StatusCode == http.StatusBadRequest {
+		message := "当前 SESSDATA 无法获取 B 站字幕，请更新后重试"
+		if payload.Error != nil && payload.Error.Code == "invalid_input" {
+			message = "SESSDATA is required"
+		}
+		callErr := common.NewAppError(common.CodeBadRequest, message, http.StatusBadRequest)
+		logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+		return callErr
+	}
+	callErr := common.NewAppError(common.CodeServiceUnavailable, "bilibili session verification is unavailable", http.StatusServiceUnavailable)
+	logCall(audit.CallStatusFailed, resp.StatusCode, callErr)
+	return callErr
+}
+
 func (c *sidecarClient) parse(ctx context.Context, path string, payload sidecarParseRequest, extraHeaders map[string]string) (sidecarParseResponse, error) {
 	startedAt := time.Now()
 	logCall := func(status string, httpStatus int, err error, meta map[string]any) {
@@ -132,8 +223,8 @@ func (c *sidecarClient) parse(ctx context.Context, path string, payload sidecarP
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		callErr := sanitizedUpstreamError(common.CodeInternalServer, "linkparse sidecar request failed", http.StatusBadGateway, string(data))
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2049))
+		callErr := mapSidecarHTTPError(resp.StatusCode, data)
 		logCall(audit.CallStatusFailed, resp.StatusCode, callErr, nil)
 		return sidecarParseResponse{}, callErr
 	}
@@ -166,6 +257,30 @@ func (c *sidecarClient) parse(ctx context.Context, path string, payload sidecarP
 	})
 
 	return parsed, nil
+}
+
+func mapSidecarHTTPError(status int, data []byte) error {
+	if len(data) > 2048 {
+		return common.NewAppError(common.CodeInternalServer, "linkparse sidecar response exceeded size limit", http.StatusBadGateway)
+	}
+
+	var payload sidecarParseResponse
+	_ = json.Unmarshal(data, &payload)
+	errorCode := ""
+	errorMessage := ""
+	if payload.Error != nil {
+		errorCode = strings.TrimSpace(payload.Error.Code)
+		errorMessage = strings.TrimSpace(payload.Error.Message)
+	}
+
+	switch {
+	case status == http.StatusBadRequest || errorCode == "invalid_input" || errorCode == "unsupported_url" || errorCode == "invalid_credentials":
+		return sanitizedUpstreamError(common.CodeBadRequest, "linkparse sidecar rejected the request", http.StatusBadRequest, errorMessage)
+	case status == http.StatusServiceUnavailable || errorCode == "provider_unavailable":
+		return sanitizedUpstreamError(common.CodeServiceUnavailable, "linkparse sidecar provider is unavailable", http.StatusServiceUnavailable, errorMessage)
+	default:
+		return sanitizedUpstreamError(common.CodeInternalServer, "linkparse sidecar upstream failed", http.StatusBadGateway, errorMessage)
+	}
 }
 
 func errorMessage(err error) string {

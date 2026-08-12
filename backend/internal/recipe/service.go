@@ -28,7 +28,6 @@ var (
 const (
 	maxRecipeImages       = 9
 	maxRecipeSummaryRunes = 24
-	maxParsedSteps        = 6
 )
 
 type Service struct {

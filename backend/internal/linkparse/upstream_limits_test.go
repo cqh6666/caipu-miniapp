@@ -21,20 +21,6 @@ func TestSidecarRejectsOversizedJSON(t *testing.T) {
 	assertUpstreamLimitError(t, err, "linkparse sidecar response exceeded size limit")
 }
 
-func TestBilibiliRejectsOversizedJSON(t *testing.T) {
-	server := oversizedJSONServer(t, maxBilibiliResponseBytes+1)
-	defer server.Close()
-
-	service := &Service{httpClient: server.Client()}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var target map[string]any
-	err = service.doJSON(req, &target)
-	assertUpstreamLimitError(t, err, "bilibili upstream response exceeded size limit")
-}
-
 func oversizedJSONServer(t *testing.T, size int64) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

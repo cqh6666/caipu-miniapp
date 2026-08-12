@@ -2,15 +2,46 @@ package linkparse
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
+	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
+
+type fakeAIRouter struct {
+	available map[airouter.Scene]bool
+	content   string
+	err       error
+	input     airouter.ChatCompletionInput
+	scene     airouter.Scene
+}
+
+func (f *fakeAIRouter) IsSceneAvailable(_ context.Context, scene airouter.Scene) bool {
+	return f != nil && f.available[scene]
+}
+
+func (f *fakeAIRouter) RouteChat(_ context.Context, scene airouter.Scene, input airouter.ChatCompletionInput) (airouter.ChatCompletionResult, error) {
+	f.scene = scene
+	f.input = input
+	result := airouter.ChatCompletionResult{
+		Content:      f.content,
+		ProviderID:   "fake-provider",
+		Model:        "fake-model",
+		AttemptCount: 1,
+	}
+	if f.err != nil {
+		return result, f.err
+	}
+	if input.ValidateContent != nil {
+		if err := input.ValidateContent(f.content); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
 
 func TestExtractInputURL(t *testing.T) {
 	t.Parallel()
@@ -44,63 +75,6 @@ func TestSupportedPlatformHostsRequireDNSLabelBoundary(t *testing.T) {
 	}
 	if SupportsXiaohongshuURL("https://xiaohongshu.com.attacker.example/explore/1") {
 		t.Fatal("xiaohongshu fake suffix must be rejected")
-	}
-}
-
-func TestFetchSubtitleRejectsUntrustedHostWithoutSendingSessdata(t *testing.T) {
-	called := false
-	svc := NewService(Options{HTTPClient: &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
-		called = true
-		return nil, errors.New("unexpected request")
-	})}})
-	if _, err := svc.fetchSubtitleFile(context.Background(), "https://attacker.example/subtitle.json", "secret-cookie"); err == nil {
-		t.Fatal("expected untrusted subtitle URL rejection")
-	}
-	if called {
-		t.Fatal("untrusted subtitle URL must be rejected before HTTP request")
-	}
-}
-
-func TestParseVideoRef(t *testing.T) {
-	t.Parallel()
-
-	u, err := url.Parse("https://www.bilibili.com/video/BV1xx411c7mD?p=3")
-	if err != nil {
-		t.Fatalf("url.Parse returned error: %v", err)
-	}
-
-	ref, ok := parseVideoRef(u)
-	if !ok {
-		t.Fatal("parseVideoRef returned false")
-	}
-	if ref.BVID != "BV1xx411c7mD" {
-		t.Fatalf("parseVideoRef BVID = %q", ref.BVID)
-	}
-	if ref.Page != 3 {
-		t.Fatalf("parseVideoRef Page = %d", ref.Page)
-	}
-}
-
-func TestBuildSubtitleText(t *testing.T) {
-	t.Parallel()
-
-	text, count := buildSubtitleText(bilibiliSubtitleFile{
-		Body: []struct {
-			From    float64 `json:"from"`
-			To      float64 `json:"to"`
-			Content string  `json:"content"`
-		}{
-			{Content: "准备牛肉 300克"},
-			{Content: " "},
-			{Content: "锅里加油翻炒"},
-		},
-	})
-
-	if count != 2 {
-		t.Fatalf("buildSubtitleText count = %d, want 2", count)
-	}
-	if text != "准备牛肉 300克\n锅里加油翻炒" {
-		t.Fatalf("buildSubtitleText text = %q", text)
 	}
 }
 
@@ -245,47 +219,6 @@ func TestSanitizePreviewTitle(t *testing.T) {
 	}
 }
 
-func TestRefineTitleUsesConfiguredRequestParameters(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req openAIChatRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		if req.Stream == nil || *req.Stream {
-			t.Fatalf("Stream = %#v, want false", req.Stream)
-		}
-		if req.Temperature != 0 {
-			t.Fatalf("Temperature = %v, want 0", req.Temperature)
-		}
-		if req.MaxTokens == nil || *req.MaxTokens != 64 {
-			t.Fatalf("MaxTokens = %#v, want 64", req.MaxTokens)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"香菜牛肉\"}"}}]}`))
-	}))
-	defer server.Close()
-
-	client := &aiClient{
-		baseURL:     server.URL,
-		model:       "demo-title-model",
-		httpClient:  &http.Client{},
-		stream:      false,
-		temperature: 0,
-		maxTokens:   64,
-	}
-
-	title, err := client.refineTitle(context.Background(), "【香菜牛肉最好吃的做法~-哔哩哔哩】")
-	if err != nil {
-		t.Fatalf("refineTitle returned error: %v", err)
-	}
-	if got, want := title, "香菜牛肉"; got != want {
-		t.Fatalf("title = %q, want %q", got, want)
-	}
-}
-
 func TestFinalizePreviewTitleDefaultsToRuleSource(t *testing.T) {
 	t.Parallel()
 
@@ -300,25 +233,51 @@ func TestFinalizePreviewTitleDefaultsToRuleSource(t *testing.T) {
 	}
 }
 
+func TestSummarizeBilibiliDraftUsesRouter(t *testing.T) {
+	t.Parallel()
+
+	router := &fakeAIRouter{
+		available: map[airouter.Scene]bool{airouter.SceneSummary: true},
+		content:   `{"title":"番茄牛腩","ingredient":"牛腩、番茄","summary":"炖至软烂。","mainIngredients":["牛腩 500克","番茄 3个"],"secondaryIngredients":["盐 3克"],"steps":[{"title":"焯水","detail":"牛腩冷水下锅焯水。"},{"title":"炒香","detail":"番茄炒出汁。"},{"title":"炖煮","detail":"加入牛腩炖至软烂。"}],"note":"回看原视频确认火候。"}`,
+	}
+	service := &Service{aiRouter: router}
+	draft, routeResult, err := service.summarizeBilibiliDraft(context.Background(), BilibiliParseResult{
+		Title:        "番茄牛腩教程",
+		SubtitleText: "牛腩焯水，番茄炒出汁后炖煮。",
+	})
+	if err != nil {
+		t.Fatalf("summarizeBilibiliDraft() error = %v", err)
+	}
+	if draft.Title != "番茄牛腩" || len(draft.ParsedContent.Steps) != 3 {
+		t.Fatalf("draft = %#v", draft)
+	}
+	if routeResult.ProviderID != "fake-provider" || router.scene != airouter.SceneSummary || router.input.ContentKind != "summary_bilibili" {
+		t.Fatalf("unexpected route result/input: result=%#v scene=%q input=%#v", routeResult, router.scene, router.input)
+	}
+}
+
+func TestSummaryAndTitleRequireRouter(t *testing.T) {
+	t.Parallel()
+
+	service := &Service{}
+	_, _, summaryErr := service.summarizeBilibiliDraft(context.Background(), BilibiliParseResult{})
+	_, _, titleErr := service.refineTitleWithAI(context.Background(), "番茄牛腩")
+	for name, err := range map[string]error{"summary": summaryErr, "title": titleErr} {
+		var appErr *common.AppError
+		if !errors.As(err, &appErr) || appErr.HTTPStatus != 503 {
+			t.Fatalf("%s error = %v, want 503 app error", name, err)
+		}
+	}
+}
+
 func TestFinalizePreviewTitleMarksAISourceWhenRefinedTitleWins(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"蒜香排骨\"}"}}]}`))
-	}))
-	defer server.Close()
-
-	service := &Service{
-		titleAI: &aiClient{
-			baseURL:     server.URL,
-			model:       "demo-title-model",
-			httpClient:  &http.Client{},
-			stream:      false,
-			temperature: 0,
-			maxTokens:   64,
-		},
+	router := &fakeAIRouter{
+		available: map[airouter.Scene]bool{airouter.SceneTitle: true},
+		content:   `{"title":"蒜香排骨"}`,
 	}
+	service := &Service{aiRouter: router}
 
 	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨最好吃的做法~-哔哩哔哩】")
 	if got.Title != "蒜香排骨" {
@@ -327,26 +286,18 @@ func TestFinalizePreviewTitleMarksAISourceWhenRefinedTitleWins(t *testing.T) {
 	if got.Source != "ai" {
 		t.Fatalf("Source = %q, want %q", got.Source, "ai")
 	}
+	if router.scene != airouter.SceneTitle || router.input.ContentKind != "title_refine" {
+		t.Fatalf("unexpected route input: scene=%q input=%#v", router.scene, router.input)
+	}
 }
 
 func TestFinalizePreviewTitleFallsBackToRuleWhenAIRequestFails(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":{"message":"boom"}}`, http.StatusBadGateway)
-	}))
-	defer server.Close()
-
-	service := &Service{
-		titleAI: &aiClient{
-			baseURL:     server.URL,
-			model:       "demo-title-model",
-			httpClient:  &http.Client{},
-			stream:      false,
-			temperature: 0,
-			maxTokens:   64,
-		},
-	}
+	service := &Service{aiRouter: &fakeAIRouter{
+		available: map[airouter.Scene]bool{airouter.SceneTitle: true},
+		err:       errors.New("boom"),
+	}}
 
 	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨】")
 	if got.Title != "蒜香排骨" {
@@ -360,23 +311,10 @@ func TestFinalizePreviewTitleFallsBackToRuleWhenAIRequestFails(t *testing.T) {
 func TestFinalizePreviewTitleFallsBackToRuleWhenAIScoreLower(t *testing.T) {
 	t.Parallel()
 
-	// AI returns a vague non-dish word which scores lower than the rule result.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"厨房日记\"}"}}]}`))
-	}))
-	defer server.Close()
-
-	service := &Service{
-		titleAI: &aiClient{
-			baseURL:     server.URL,
-			model:       "demo-title-model",
-			httpClient:  &http.Client{},
-			stream:      false,
-			temperature: 0,
-			maxTokens:   64,
-		},
-	}
+	service := &Service{aiRouter: &fakeAIRouter{
+		available: map[airouter.Scene]bool{airouter.SceneTitle: true},
+		content:   `{"title":"厨房日记"}`,
+	}}
 
 	got := service.finalizePreviewTitle(context.Background(), "【蒜香排骨】做法分享")
 	if got.Title != "蒜香排骨" {
@@ -390,23 +328,10 @@ func TestFinalizePreviewTitleFallsBackToRuleWhenAIScoreLower(t *testing.T) {
 func TestFinalizePreviewTitleFallsBackToRuleWhenAIReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
-	// AI correctly declines to extract a dish name by returning empty title.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"title\":\"\"}"}}]}`))
-	}))
-	defer server.Close()
-
-	service := &Service{
-		titleAI: &aiClient{
-			baseURL:     server.URL,
-			model:       "demo-title-model",
-			httpClient:  &http.Client{},
-			stream:      false,
-			temperature: 0,
-			maxTokens:   64,
-		},
-	}
+	service := &Service{aiRouter: &fakeAIRouter{
+		available: map[airouter.Scene]bool{airouter.SceneTitle: true},
+		content:   `{"title":""}`,
+	}}
 
 	got := service.finalizePreviewTitle(context.Background(), "【红烧排骨】")
 	if got.Title != "红烧排骨" {

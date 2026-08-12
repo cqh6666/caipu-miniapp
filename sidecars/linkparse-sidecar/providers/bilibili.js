@@ -11,6 +11,11 @@ const {
 const BVID_PATTERN = /(BV[0-9A-Za-z]{10})/i;
 const AVID_PATTERN = /(?:^|\/|[?&])av([0-9]+)/i;
 const PREFERRED_SUBTITLE_LANGS = ["zh-CN", "zh-Hans", "zh-Hant", "zh", "ai-zh"];
+const SESSION_VERIFICATION_PROBES = [
+  { bvid: "BV1frwnepEE7", cid: 27914735061 },
+  { bvid: "BV1gY411C7BY", cid: 1026481904 },
+  { bvid: "BV1Pw4m1k7pU", cid: 1621665057 }
+];
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
 
@@ -274,6 +279,30 @@ function createBilibiliProvider(config) {
     name: "openapi",
     enabled: config.bilibiliOpenAPIEnabled,
     requiresLogin: false,
+    async verifySession(sessdata) {
+      const value = safeTrim(sessdata);
+      if (!value) {
+        return false;
+      }
+
+      let successfulProbeCount = 0;
+      let lastError = null;
+      for (const probe of SESSION_VERIFICATION_PROBES) {
+        try {
+          const result = await fetchSubtitles(probe.bvid, probe.cid, value, config);
+          successfulProbeCount += 1;
+          if (selectSubtitle(result.subtitles)) {
+            return true;
+          }
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (successfulProbeCount === 0 && lastError) {
+        throw lastError;
+      }
+      return false;
+    },
     async parse(input, options = {}) {
       const sessdata = safeTrim(options.sessdata);
       const includeTranscript = !!options.includeTranscript;
@@ -360,5 +389,6 @@ module.exports = {
   createBilibiliProvider,
   isSupportedBilibiliUrl,
   parseVideoRefFromURL,
+  SESSION_VERIFICATION_PROBES,
   selectSubtitle
 };

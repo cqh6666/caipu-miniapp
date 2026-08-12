@@ -246,16 +246,12 @@ func (w *AutoParseWorker) processOne(parent context.Context, item Recipe) error 
 	defer stateCancel()
 
 	if err := w.repo.ApplyAutoParseResult(stateCtx, item.ID, claimToken, parseSource, parseError, finishedAt, Recipe{
-		Title:      result.RecipeDraft.Title,
-		Ingredient: result.RecipeDraft.Ingredient,
-		Summary:    result.RecipeDraft.Summary,
-		ImageURL:   strings.TrimSpace(result.RecipeDraft.ImageURL),
-		ImageURLs:  cleanAutoParseImages(append(result.RecipeDraft.ImageURLs, strings.TrimSpace(result.RecipeDraft.ImageURL))),
-		ParsedContent: ParsedContent{
-			MainIngredients:      append([]string{}, result.RecipeDraft.ParsedContent.MainIngredients...),
-			SecondaryIngredients: append([]string{}, result.RecipeDraft.ParsedContent.SecondaryIngredients...),
-			Steps:                mapParsedSteps(result.RecipeDraft.ParsedContent.Steps),
-		},
+		Title:         result.RecipeDraft.Title,
+		Ingredient:    result.RecipeDraft.Ingredient,
+		Summary:       result.RecipeDraft.Summary,
+		ImageURL:      strings.TrimSpace(result.RecipeDraft.ImageURL),
+		ImageURLs:     cleanAutoParseImages(append(result.RecipeDraft.ImageURLs, strings.TrimSpace(result.RecipeDraft.ImageURL))),
+		ParsedContent: result.RecipeDraft.ParsedContent,
 	}); err != nil {
 		if errors.Is(err, ErrStaleJobResult) || errors.Is(err, ErrAutoParseContentChanged) {
 			w.logger.Warn("discarded stale recipe auto-parse result", "recipeID", item.ID, "reason", err)
@@ -363,17 +359,6 @@ func buildAutoParseSource(result linkparse.RecipeParseOutcome) string {
 	}
 
 	return source
-}
-
-func mapParsedSteps(steps []linkparse.ParsedStep) []ParsedStep {
-	items := make([]ParsedStep, 0, len(steps))
-	for _, step := range steps {
-		items = append(items, ParsedStep{
-			Title:  strings.TrimSpace(step.Title),
-			Detail: strings.TrimSpace(step.Detail),
-		})
-	}
-	return items
 }
 
 func cleanAutoParseImages(imageURLs []string) []string {

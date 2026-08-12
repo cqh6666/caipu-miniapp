@@ -4,6 +4,7 @@ const { createImporterProvider } = require("./providers/importer");
 const { createRednoteProvider } = require("./providers/rednote");
 const { buildNormalized, isSupportedXHSUrl } = require("./lib/normalize");
 const { enrichTranscriptIfNeeded } = require("./lib/transcript");
+const { parseError, readParseRequest } = require("./lib/parse-request");
 
 function getEnvBool(key, fallback) {
   const raw = String(process.env[key] || "").trim().toLowerCase();
@@ -45,18 +46,6 @@ function readConfig() {
 function sendJSON(res, status, payload) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
-}
-
-async function readJSON(req) {
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-  const body = Buffer.concat(chunks).toString("utf8").trim();
-  if (!body) {
-    return {};
-  }
-  return JSON.parse(body);
 }
 
 function ensureAuthorized(req, config) {
@@ -199,8 +188,8 @@ async function runProviderChain({
     } catch (error) {
       result = {
         ok: false,
-        errorCode: "provider_unavailable",
-        errorMessage: error instanceof Error ? error.message : String(error || "provider failed")
+        errorCode: "upstream_failure",
+        errorMessage: "provider request failed"
       };
     }
     if (!result.ok) {
@@ -212,7 +201,7 @@ async function runProviderChain({
       lastError = {
         code: result.errorCode || "provider_unavailable",
         message: result.errorMessage || "provider failed",
-        retryable: false
+        retryable: result.errorCode === "upstream_failure"
       };
       continue;
     }
@@ -278,58 +267,29 @@ async function finalizeResponse(response) {
   };
 }
 
+function providerErrorStatus(error) {
+  switch (String(error?.code || "").trim()) {
+    case "invalid_input":
+    case "unsupported_url":
+    case "invalid_credentials":
+      return 400;
+    case "provider_unavailable":
+      return 503;
+    default:
+      return 502;
+  }
+}
+
 async function handleParseXiaohongshu(req, res, config, providers) {
-  let payload;
-  try {
-    payload = await readJSON(req);
-  } catch (error) {
-    return sendJSON(res, 400, {
-      ok: false,
-      platform: "xiaohongshu",
-      providerRequested: "",
-      providerUsed: "",
-      error: {
-        code: "invalid_input",
-        message: "invalid json body",
-        retryable: false
-      },
-      warnings: []
-    });
+  const request = await readParseRequest(req, "xiaohongshu", config.xiaohongshuDefaultProvider);
+  if (request.error) {
+    return sendJSON(res, request.error.status, request.error.payload);
   }
-
-  const input = String(payload.input || "").trim();
-  const providerRequested = String(payload.provider || config.xiaohongshuDefaultProvider || "auto").trim().toLowerCase() || "auto";
-  const includeDebug = !!payload.includeDebug;
-  const includeTranscript = !!payload.includeTranscript;
-
-  if (!input) {
-    return sendJSON(res, 400, {
-      ok: false,
-      platform: "xiaohongshu",
-      providerRequested,
-      providerUsed: "",
-      error: {
-        code: "invalid_input",
-        message: "input is required",
-        retryable: false
-      },
-      warnings: []
-    });
-  }
+  const { input, providerRequested, includeDebug, includeTranscript } = request;
 
   if (!isSupportedXHSUrl(input)) {
-    return sendJSON(res, 400, {
-      ok: false,
-      platform: "xiaohongshu",
-      providerRequested,
-      providerUsed: "",
-      error: {
-        code: "unsupported_url",
-        message: "unsupported xiaohongshu url",
-        retryable: false
-      },
-      warnings: []
-    });
+    const error = parseError("xiaohongshu", providerRequested, "unsupported_url", "unsupported xiaohongshu url");
+    return sendJSON(res, error.status, error.payload);
   }
 
   const response = await runProviderChain({
@@ -343,62 +303,20 @@ async function handleParseXiaohongshu(req, res, config, providers) {
       normalizeXiaohongshuResponse(result, input, providerRequested, providerName, includeTranscript, config)
   });
 
-  return sendJSON(res, 200, await finalizeResponse(response));
+  return sendJSON(res, response.ok ? 200 : providerErrorStatus(response.error), await finalizeResponse(response));
 }
 
 async function handleParseBilibili(req, res, config, providers) {
-  let payload;
-  try {
-    payload = await readJSON(req);
-  } catch (error) {
-    return sendJSON(res, 400, {
-      ok: false,
-      platform: "bilibili",
-      providerRequested: "",
-      providerUsed: "",
-      error: {
-        code: "invalid_input",
-        message: "invalid json body",
-        retryable: false
-      },
-      warnings: []
-    });
+  const request = await readParseRequest(req, "bilibili", config.bilibiliDefaultProvider);
+  if (request.error) {
+    return sendJSON(res, request.error.status, request.error.payload);
   }
-
-  const input = String(payload.input || "").trim();
-  const providerRequested = String(payload.provider || config.bilibiliDefaultProvider || "auto").trim().toLowerCase() || "auto";
-  const includeDebug = !!payload.includeDebug;
-  const includeTranscript = !!payload.includeTranscript;
+  const { input, providerRequested, includeDebug, includeTranscript } = request;
   const sessdata = String(req.headers["x-bilibili-sessdata"] || "").trim();
 
-  if (!input) {
-    return sendJSON(res, 400, {
-      ok: false,
-      platform: "bilibili",
-      providerRequested,
-      providerUsed: "",
-      error: {
-        code: "invalid_input",
-        message: "input is required",
-        retryable: false
-      },
-      warnings: []
-    });
-  }
-
   if (!isSupportedBilibiliUrl(input)) {
-    return sendJSON(res, 400, {
-      ok: false,
-      platform: "bilibili",
-      providerRequested,
-      providerUsed: "",
-      error: {
-        code: "unsupported_url",
-        message: "unsupported bilibili url",
-        retryable: false
-      },
-      warnings: []
-    });
+    const error = parseError("bilibili", providerRequested, "unsupported_url", "unsupported bilibili url");
+    return sendJSON(res, error.status, error.payload);
   }
 
   const response = await runProviderChain({
@@ -415,7 +333,72 @@ async function handleParseBilibili(req, res, config, providers) {
       normalizeBilibiliResponse(result, providerRequested, providerName)
   });
 
-  return sendJSON(res, 200, await finalizeResponse(response));
+  return sendJSON(res, response.ok ? 200 : providerErrorStatus(response.error), await finalizeResponse(response));
+}
+
+async function handleVerifyBilibiliSession(req, res, providers) {
+  const sessdata = String(req.headers["x-bilibili-sessdata"] || "").trim();
+  if (!sessdata) {
+    return sendJSON(res, 400, {
+      ok: false,
+      platform: "bilibili",
+      providerUsed: "",
+      error: {
+        code: "invalid_input",
+        message: "SESSDATA is required",
+        retryable: false
+      }
+    });
+  }
+
+  const provider = providers.bilibili.openapi;
+  if (!provider || !provider.enabled || typeof provider.verifySession !== "function") {
+    return sendJSON(res, 503, {
+      ok: false,
+      platform: "bilibili",
+      providerUsed: "",
+      error: {
+        code: "provider_unavailable",
+        message: "bilibili provider is unavailable",
+        retryable: false
+      }
+    });
+  }
+
+  let valid;
+  try {
+    valid = await provider.verifySession(sessdata);
+  } catch {
+    return sendJSON(res, 502, {
+      ok: false,
+      platform: "bilibili",
+      providerUsed: "openapi",
+      error: {
+        code: "upstream_failure",
+        message: "bilibili session verification upstream is unavailable",
+        retryable: true
+      }
+    });
+  }
+  if (!valid) {
+    return sendJSON(res, 400, {
+      ok: false,
+      platform: "bilibili",
+      providerUsed: "openapi",
+      error: {
+        code: "invalid_credentials",
+        message: "当前 SESSDATA 无法获取 B 站字幕，请更新后重试",
+        retryable: false
+      }
+    });
+  }
+
+  return sendJSON(res, 200, {
+    ok: true,
+    platform: "bilibili",
+    providerUsed: "openapi",
+    valid: true
+  });
 }
 
 async function getRednoteStatus(providers) {
@@ -548,6 +531,10 @@ function createServer(config) {
 
     if (req.method === "POST" && req.url === "/v1/parse/bilibili") {
       return handleParseBilibili(req, res, config, providers);
+    }
+
+    if (req.method === "POST" && req.url === "/v1/verify/bilibili-session") {
+      return handleVerifyBilibiliSession(req, res, providers);
     }
 
     return sendJSON(res, 404, {

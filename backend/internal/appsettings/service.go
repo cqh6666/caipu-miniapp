@@ -16,24 +16,15 @@ type AccessAuthorizer func(context.Context, int64) error
 
 type Service struct {
 	repo      *Repository
-	cipherBox *cipherBox
+	cipherBox *credentialcipher.Box
 	parser    *linkparse.Service
 	authorize AccessAuthorizer
 }
 
-func (s *Service) ConfigureCredentialKeys(secret, version string, previous []credentialcipher.Key) error {
-	box, err := newVersionedCipherBox(secret, version, previous)
-	if err != nil {
-		return err
-	}
-	s.cipherBox = box
-	return nil
-}
-
-func NewService(repo *Repository, secret string, parser *linkparse.Service, authorize AccessAuthorizer) *Service {
+func NewService(repo *Repository, box *credentialcipher.Box, parser *linkparse.Service, authorize AccessAuthorizer) *Service {
 	return &Service{
 		repo:      repo,
-		cipherBox: newCipherBox(secret),
+		cipherBox: box,
 		parser:    parser,
 		authorize: authorize,
 	}

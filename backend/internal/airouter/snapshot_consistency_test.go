@@ -61,7 +61,7 @@ INSERT INTO ai_route_providers (
 `); err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(NewRepository(db), "snapshot-secret", nil, nil, nil)
+	service := NewService(NewRepository(db), testCredentialBox(t, "snapshot-secret"), nil, nil, nil)
 
 	start := make(chan struct{})
 	errCh := make(chan error, 8)

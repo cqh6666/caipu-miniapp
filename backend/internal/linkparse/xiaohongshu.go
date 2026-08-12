@@ -1,16 +1,12 @@
 package linkparse
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
@@ -160,7 +156,7 @@ func (s *Service) parseXiaohongshu(ctx context.Context, rawInput string, opts xh
 func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xhsFetchOptions) (XiaohongshuParseResult, error) {
 	sidecar := s.sidecarFor(ctx)
 	if s == nil || sidecar == nil {
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "linkparse sidecar is not configured", http.StatusInternalServerError)
+		return XiaohongshuParseResult{}, sidecarUnavailableError()
 	}
 
 	inputURL, err := extractSupportedURL(rawInput)
@@ -178,13 +174,13 @@ func (s *Service) fetchXiaohongshu(ctx context.Context, rawInput string, opts xh
 	}, nil)
 	if err != nil {
 		if isLinkparseSidecarTimeout(err) {
-			return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "xiaohongshu sidecar timed out", http.StatusBadRequest).WithErr(err)
+			return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "xiaohongshu sidecar timed out", http.StatusBadGateway).WithErr(err)
 		}
 		var appErr *common.AppError
 		if errors.As(err, &appErr) {
 			return XiaohongshuParseResult{}, err
 		}
-		return XiaohongshuParseResult{}, common.NewAppError(common.CodeBadRequest, "request to xiaohongshu sidecar failed", http.StatusBadRequest).WithErr(err)
+		return XiaohongshuParseResult{}, common.NewAppError(common.CodeInternalServer, "request to xiaohongshu sidecar failed", http.StatusBadGateway).WithErr(err)
 	}
 
 	result := XiaohongshuParseResult{
@@ -262,122 +258,6 @@ func buildXiaohongshuHeuristicNote(meta XiaohongshuParseResult) string {
 		base += " 当前解析策略：" + strings.TrimSpace(meta.ProviderUsed) + "。"
 	}
 	return base
-}
-
-func (c *aiClient) summarizeXiaohongshu(ctx context.Context, result XiaohongshuParseResult) (RecipeDraft, error) {
-	startedAt := time.Now()
-	payload := openAIChatRequest{
-		Model:       c.model,
-		Temperature: 0.2,
-		Messages: []openAIChatMessage{
-			{
-				Role:    "system",
-				Content: "你是一个菜谱整理助手。请根据小红书图文笔记正文、标签和图片描述线索，提炼适合家庭复刻的菜谱草稿。必须只返回 JSON，不要输出额外说明。JSON 结构必须是 {\"title\":\"\",\"ingredient\":\"\",\"summary\":\"\",\"mainIngredients\":[],\"secondaryIngredients\":[],\"steps\":[{\"title\":\"\",\"detail\":\"\"}],\"note\":\"\"}。steps 必须返回 3 到 6 步；如果原始做法更细，请合并相邻动作，不要拆得过碎，也不要超过 6 步。每一步都要有简短 title 和完整 detail，尽量保留明确的食材名、用量、顺序、火候和动作；不确定的信息不要编造，可以在 note 里提醒用户回看原笔记和配图确认。 " + buildIngredientPromptRuleText() + " " + buildSummaryPromptRuleText(),
-			},
-			{
-				Role:    "user",
-				Content: buildXiaohongshuAISummaryPrompt(result),
-			},
-		},
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return RecipeDraft{}, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return RecipeDraft{}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFromError(err), 0, err, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		callErr := sanitizedUpstreamError(
-			common.CodeInternalServer,
-			fmt.Sprintf("summary AI upstream returned status %d", resp.StatusCode),
-			http.StatusBadGateway,
-			string(data),
-		)
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, callErr
-	}
-
-	var parsed openAIChatResponse
-	if err := decodeBoundedUpstreamJSON(resp.Body, maxLinkparseAIResponseBytes, "summary AI upstream", &parsed); err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, err
-	}
-	if parsed.Error != nil && parsed.Error.Message != "" {
-		callErr := sanitizedUpstreamError(common.CodeInternalServer, "summary AI upstream returned an error", http.StatusBadGateway, parsed.Error.Message)
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, callErr
-	}
-	if len(parsed.Choices) == 0 {
-		callErr := fmt.Errorf("ai response contained no choices")
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, callErr
-	}
-
-	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(content, "$1"))
-	if content == "" {
-		callErr := fmt.Errorf("ai response was empty")
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, callErr
-	}
-
-	var summary aiSummaryResponse
-	if err := json.Unmarshal([]byte(content), &summary); err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, err
-	}
-
-	parsedContent, err := summary.toParsedContent()
-	if err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "summary_xiaohongshu",
-		})
-		return RecipeDraft{}, err
-	}
-
-	c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusSuccess, resp.StatusCode, nil, map[string]any{
-		"content_kind": "summary_xiaohongshu",
-	})
-
-	return RecipeDraft{
-		Title:         summary.Title,
-		Ingredient:    summary.Ingredient,
-		Summary:       summary.Summary,
-		Note:          summary.Note,
-		ParsedContent: parsedContent,
-	}, nil
 }
 
 func buildXiaohongshuAISummaryPrompt(result XiaohongshuParseResult) string {

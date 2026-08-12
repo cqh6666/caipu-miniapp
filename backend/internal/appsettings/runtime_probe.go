@@ -1,9 +1,7 @@
 package appsettings
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -13,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/aialert"
-	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/logging"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/upstream"
@@ -63,27 +60,6 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 	startedAt := time.Now()
 
 	switch groupName {
-	case "ai.summary", "ai.title":
-		timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(resolved["timeout_seconds"]))
-		if timeoutSeconds <= 0 {
-			timeoutSeconds = 10
-		}
-		result = testOpenAICompatible(ctx, p.httpDoer, resolved["base_url"], resolved["api_key"], resolved["model"], time.Duration(timeoutSeconds)*time.Second)
-	case "ai.flowchart":
-		timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(resolved["timeout_seconds"]))
-		if timeoutSeconds <= 0 {
-			timeoutSeconds = 10
-		}
-		result = testFlowchartCompatible(
-			ctx,
-			p.httpDoer,
-			resolved["base_url"],
-			resolved["api_key"],
-			resolved["model"],
-			resolved["endpoint_mode"],
-			resolved["response_format"],
-			time.Duration(timeoutSeconds)*time.Second,
-		)
 	case "sidecar.linkparse":
 		timeoutSeconds, _ := strconv.Atoi(strings.TrimSpace(resolved["timeout_seconds"]))
 		if timeoutSeconds <= 0 {
@@ -154,131 +130,6 @@ func (p *RuntimeProvider) TestRuntimeGroup(ctx context.Context, subject, request
 	})
 
 	return result, nil
-}
-
-func testOpenAICompatible(ctx context.Context, doer HTTPDoer, baseURL, apiKey, model string, timeout time.Duration) GroupTestResult {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	model = strings.TrimSpace(model)
-	if baseURL == "" || model == "" {
-		return GroupTestResult{OK: false, Message: "缺少 base_url 或 model，无法测试。"}
-	}
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-
-	body, _ := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "user", "content": "ping"},
-		},
-		"max_tokens": 1,
-		"stream":     false,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return runtimeProbeFailure(ctx, "openai-compatible", "创建测试请求失败，请检查 base_url。", 0, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if strings.TrimSpace(apiKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	}
-
-	resp, err := executeRuntimeProbe(ctx, doer, req, timeout)
-	if err != nil {
-		if upstream.IsResponseTooLarge(err) {
-			return runtimeProbeFailure(ctx, "openai-compatible", "测试失败：上游响应超过大小限制。", 0, err)
-		}
-		return runtimeProbeFailure(ctx, "openai-compatible", "测试请求失败，请检查地址、网络和超时配置。", 0, err)
-	}
-
-	if resp.status < 200 || resp.status >= 300 {
-		return runtimeProbeFailure(
-			ctx,
-			"openai-compatible",
-			"测试失败：上游返回状态码 "+strconv.Itoa(resp.status)+"。",
-			resp.status,
-			runtimeProbeBodyError(resp.body),
-		)
-	}
-
-	return GroupTestResult{OK: true, Message: "连接成功"}
-}
-
-func testFlowchartCompatible(ctx context.Context, doer HTTPDoer, baseURL, apiKey, model, endpointMode, responseFormat string, timeout time.Duration) GroupTestResult {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	model = strings.TrimSpace(model)
-	if baseURL == "" || model == "" {
-		return GroupTestResult{OK: false, Message: "缺少 base_url 或 model，无法测试。"}
-	}
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-
-	path := "/chat/completions"
-	body := []byte{}
-	switch strings.ToLower(strings.TrimSpace(endpointMode)) {
-	case "", "chat", "chat_completions", "chat/completions":
-		body, _ = json.Marshal(map[string]any{
-			"model": model,
-			"messages": []map[string]string{
-				{"role": "user", "content": "ping"},
-			},
-			"max_tokens": 1,
-			"stream":     false,
-		})
-	case "images", "images_generations", "images/generations":
-		path = "/images/generations"
-		payload := map[string]any{
-			"model":         model,
-			"prompt":        "请生成一张最简单的测试流程图图片，只用于验证链路。",
-			"output_format": "png",
-		}
-		switch strings.ToLower(strings.TrimSpace(responseFormat)) {
-		case "", "auto":
-		case "image_url", "image-url", "url":
-			if !airouter.IsGPTImageModel(model) {
-				payload["response_format"] = "image_url"
-			}
-		case "b64_json", "b64-json", "base64":
-			if !airouter.IsGPTImageModel(model) {
-				payload["response_format"] = "b64_json"
-			}
-		default:
-			return GroupTestResult{OK: false, Message: "response_format 非法，应为 auto / image_url / b64_json"}
-		}
-		body, _ = json.Marshal(payload)
-	default:
-		return GroupTestResult{OK: false, Message: "endpoint_mode 非法，应为 chat_completions 或 images_generations"}
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(body))
-	if err != nil {
-		return runtimeProbeFailure(ctx, "flowchart-compatible", "创建测试请求失败，请检查 base_url。", 0, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if strings.TrimSpace(apiKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	}
-
-	resp, err := executeRuntimeProbe(ctx, doer, req, timeout)
-	if err != nil {
-		if upstream.IsResponseTooLarge(err) {
-			return runtimeProbeFailure(ctx, "flowchart-compatible", "测试失败：上游响应超过大小限制。", 0, err)
-		}
-		return runtimeProbeFailure(ctx, "flowchart-compatible", "测试请求失败，请检查地址、网络和超时配置。", 0, err)
-	}
-
-	if resp.status < 200 || resp.status >= 300 {
-		return runtimeProbeFailure(
-			ctx,
-			"flowchart-compatible",
-			"测试失败：上游返回状态码 "+strconv.Itoa(resp.status)+"。",
-			resp.status,
-			runtimeProbeBodyError(resp.body),
-		)
-	}
-
-	return GroupTestResult{OK: true, Message: "连接成功"}
 }
 
 func testSidecarHealth(ctx context.Context, doer HTTPDoer, baseURL, apiKey string, timeout time.Duration) GroupTestResult {

@@ -1,20 +1,14 @@
 package linkparse
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/airouter"
 	"github.com/cqh6666/caipu-miniapp/backend/internal/audit"
-	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
 
 var (
@@ -282,116 +276,4 @@ func trimTrailingPreviewTag(title string) string {
 		value = strings.TrimSpace(value[:lastBracket])
 	}
 	return value
-}
-
-func (c *aiClient) refineTitle(ctx context.Context, rawTitle string) (string, error) {
-	startedAt := time.Now()
-	stream := c != nil && c.stream
-	maxTokens := 64
-	if c != nil && c.maxTokens > 0 {
-		maxTokens = c.maxTokens
-	}
-	temperature := 0.0
-	if c != nil {
-		temperature = c.temperature
-	}
-
-	msgs := buildTitleRefineMessages(rawTitle)
-	openAIMsgs := make([]openAIChatMessage, len(msgs))
-	for i, m := range msgs {
-		openAIMsgs[i] = openAIChatMessage{Role: m.Role, Content: m.Content}
-	}
-
-	payload := openAIChatRequest{
-		Model:       c.model,
-		Temperature: temperature,
-		Stream:      &stream,
-		MaxTokens:   &maxTokens,
-		Messages:    openAIMsgs,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFromError(err), 0, err, map[string]any{
-			"content_kind": "title_refine",
-		})
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		callErr := sanitizedUpstreamError(
-			common.CodeInternalServer,
-			fmt.Sprintf("title AI upstream returned status %d", resp.StatusCode),
-			http.StatusBadGateway,
-			string(data),
-		)
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "title_refine",
-		})
-		return "", callErr
-	}
-
-	var parsed openAIChatResponse
-	if err := decodeBoundedUpstreamJSON(resp.Body, maxLinkparseAIResponseBytes, "title AI upstream", &parsed); err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "title_refine",
-		})
-		return "", err
-	}
-	if parsed.Error != nil && parsed.Error.Message != "" {
-		callErr := sanitizedUpstreamError(common.CodeInternalServer, "title AI upstream returned an error", http.StatusBadGateway, parsed.Error.Message)
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "title_refine",
-		})
-		return "", callErr
-	}
-	if len(parsed.Choices) == 0 {
-		callErr := fmt.Errorf("title ai response contained no choices")
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "title_refine",
-		})
-		return "", callErr
-	}
-
-	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	content = strings.TrimSpace(codeFencePattern.ReplaceAllString(content, "$1"))
-	if content == "" {
-		callErr := fmt.Errorf("title ai response was empty")
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, callErr, map[string]any{
-			"content_kind": "title_refine",
-		})
-		return "", callErr
-	}
-
-	var response struct {
-		Title string `json:"title"`
-	}
-	if err := json.Unmarshal([]byte(content), &response); err != nil {
-		c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusFailed, resp.StatusCode, err, map[string]any{
-			"content_kind": "title_refine",
-		})
-		return "", err
-	}
-
-	c.logCall(ctx, startedAt, "/chat/completions", audit.CallStatusSuccess, resp.StatusCode, nil, map[string]any{
-		"content_kind": "title_refine",
-	})
-	return strings.TrimSpace(response.Title), nil
 }

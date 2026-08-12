@@ -12,9 +12,7 @@ import (
 )
 
 const (
-	maxLinkparseAIResponseBytes int64 = 2 << 20
-	maxSidecarResponseBytes     int64 = 4 << 20
-	maxBilibiliResponseBytes    int64 = 4 << 20
+	maxSidecarResponseBytes int64 = 4 << 20
 )
 
 func decodeBoundedUpstreamJSON(reader io.Reader, maxBytes int64, label string, dst any) error {

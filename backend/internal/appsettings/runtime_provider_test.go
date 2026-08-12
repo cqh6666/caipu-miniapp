@@ -3,7 +3,6 @@ package appsettings
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -203,51 +202,6 @@ func TestRuntimeProviderProbeInjectedDoerBoundsResponseAndHonorsCancellation(t *
 	})
 }
 
-func TestRuntimeProviderTestRuntimeGroupUsesImageGenerationEndpointForFlowchart(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/images/generations" {
-			t.Fatalf("unexpected path = %q", r.URL.Path)
-		}
-		if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "Bearer flowchart-secret" {
-			t.Fatalf("Authorization header = %q, want %q", got, "Bearer flowchart-secret")
-		}
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body error = %v", err)
-		}
-		if _, ok := payload["quality"]; ok {
-			t.Fatalf("request body unexpectedly contains quality: %#v", payload["quality"])
-		}
-		if got := payload["output_format"]; got != "png" {
-			t.Fatalf("request output_format = %#v, want %q", got, "png")
-		}
-		if _, ok := payload["response_format"]; ok {
-			t.Fatalf("request body unexpectedly contains response_format for gpt-image model: %#v", payload["response_format"])
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="}]}`))
-	}))
-	defer server.Close()
-
-	result := testFlowchartCompatible(
-		ctx,
-		nil,
-		server.URL,
-		"flowchart-secret",
-		"gpt-image-2",
-		"images_generations",
-		"b64_json",
-		0,
-	)
-	if !result.OK {
-		t.Fatalf("testFlowchartCompatible().OK = false, message = %q", result.Message)
-	}
-}
-
 func TestRuntimeProbesDoNotExposeUpstreamErrorBodies(t *testing.T) {
 	t.Parallel()
 
@@ -258,11 +212,7 @@ func TestRuntimeProbesDoNotExposeUpstreamErrorBodies(t *testing.T) {
 	}))
 	defer server.Close()
 
-	results := []GroupTestResult{
-		testOpenAICompatible(context.Background(), nil, server.URL, "secret", "model", time.Second),
-		testFlowchartCompatible(context.Background(), nil, server.URL, "secret", "model", "chat_completions", "auto", time.Second),
-		testSidecarHealth(context.Background(), nil, server.URL, "secret", time.Second),
-	}
+	results := []GroupTestResult{testSidecarHealth(context.Background(), nil, server.URL, "secret", time.Second)}
 	for _, result := range results {
 		if result.OK || !strings.Contains(result.Message, "502") {
 			t.Fatalf("unexpected probe result: %#v", result)
@@ -278,7 +228,7 @@ func TestRuntimeProbesDoNotExposeUpstreamErrorBodies(t *testing.T) {
 func TestRuntimeProbeDoesNotExposeTransportTarget(t *testing.T) {
 	t.Parallel()
 
-	result := testOpenAICompatible(context.Background(), nil, "http://127.0.0.1:1/private/provider", "secret", "model", 100*time.Millisecond)
+	result := testSidecarHealth(context.Background(), nil, "http://127.0.0.1:1/private/provider", "secret", 100*time.Millisecond)
 	if result.OK || !strings.Contains(result.Message, "请检查地址、网络和超时配置") {
 		t.Fatalf("unexpected probe result: %#v", result)
 	}
@@ -517,7 +467,8 @@ func newRuntimeProviderForTestWithOptions(t *testing.T, opts RuntimeProviderOpti
 	}
 
 	repo := NewRepository(db)
-	return NewRuntimeProviderWithOptions(repo, "test-secret", config.Config{
+	opts.CredentialBox = testCredentialBox(t, "test-secret")
+	return NewRuntimeProviderWithOptions(repo, config.Config{
 		AIBaseURL:                  "https://default.example.com/v1",
 		AIModel:                    "default-model",
 		AITimeoutSeconds:           30,

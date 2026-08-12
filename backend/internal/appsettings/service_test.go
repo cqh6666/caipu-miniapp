@@ -191,7 +191,7 @@ END;
 }
 
 func TestCipherBoxRoundTrip(t *testing.T) {
-	box := newCipherBox("test-secret")
+	box := testCredentialBox(t, "test-secret")
 	plain := "abc123%2C456"
 
 	ciphertext, err := box.Encrypt(plain)
