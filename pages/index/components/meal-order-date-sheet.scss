@@ -1,0 +1,126 @@
+.meal-order-date-grid {
+	margin-top: 22rpx;
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10rpx;
+}
+
+.meal-order-date-card {
+	padding: 18rpx 12rpx;
+	border-radius: 20rpx;
+	background: rgba(255, 255, 255, 0.96);
+	border: 1px solid rgba(91, 74, 59, 0.08);
+	box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+	display: flex;
+	flex-direction: column;
+	gap: 8rpx;
+	text-align: center;
+}
+
+.meal-order-date-card--draft,
+.meal-order-date-card--editing {
+	background: linear-gradient(180deg, rgba(255, 247, 239, 0.98) 0%, rgba(255, 241, 228, 0.98) 100%);
+	border-color: rgba(210, 149, 101, 0.18);
+}
+
+.meal-order-date-card--submitted {
+	background: linear-gradient(180deg, rgba(255, 250, 244, 0.98) 0%, rgba(246, 238, 229, 0.98) 100%);
+	border-color: rgba(120, 103, 86, 0.12);
+}
+
+.meal-order-date-card--active {
+	background: linear-gradient(180deg, #6d5441 0%, #584233 100%);
+	border-color: rgba(109, 84, 65, 0.5);
+	box-shadow: 0 14rpx 24rpx rgba(74, 56, 42, 0.16);
+}
+
+.meal-order-date-card__label {
+	font-size: 24rpx;
+	font-weight: 700;
+	color: #4c3e31;
+}
+
+.meal-order-date-card__date {
+	font-size: 21rpx;
+	color: #7d6f63;
+}
+
+.meal-order-date-card__meta {
+	margin-top: 4rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8rpx;
+}
+
+.meal-order-date-card__badge {
+	min-height: 38rpx;
+	padding: 0 12rpx;
+	border-radius: 999rpx;
+	background: rgba(247, 232, 214, 0.9);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-date-card__badge--submitted {
+	background: rgba(239, 232, 224, 0.96);
+}
+
+.meal-order-date-card__badge--editing {
+	background: rgba(248, 226, 210, 0.96);
+}
+
+.meal-order-date-card__badge-text {
+	font-size: 20rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #8d6247;
+}
+
+.meal-order-date-card__badge--submitted .meal-order-date-card__badge-text {
+	color: #766555;
+}
+
+.meal-order-date-card__badge--editing .meal-order-date-card__badge-text {
+	color: #b0604b;
+}
+
+.meal-order-date-card__meta-text {
+	font-size: 19rpx;
+	line-height: 1.4;
+	color: #8f7f72;
+}
+
+.meal-order-date-card--active .meal-order-date-card__label,
+.meal-order-date-card--active .meal-order-date-card__date,
+.meal-order-date-card--active .meal-order-date-card__meta-text {
+	color: #fff7ef;
+}
+
+.meal-order-date-card--active .meal-order-date-card__badge {
+	background: rgba(255, 247, 237, 0.18);
+}
+
+.meal-order-date-card--active .meal-order-date-card__badge-text {
+	color: #fff7ef;
+}
+
+.meal-order-date-picker {
+	margin-top: 14rpx;
+	height: 88rpx;
+	padding: 0 22rpx;
+	border-radius: 22rpx;
+	background: rgba(255, 255, 255, 0.96);
+	border: 1px dashed rgba(91, 74, 59, 0.18);
+	box-shadow: 0 8rpx 16rpx rgba(56, 44, 30, 0.04);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.meal-order-date-picker__text {
+	font-size: 25rpx;
+	font-weight: 600;
+	color: #5b4a3b;
+}

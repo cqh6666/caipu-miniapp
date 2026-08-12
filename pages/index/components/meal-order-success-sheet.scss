@@ -1,0 +1,80 @@
+.meal-order-sheet--success {
+	background:
+		radial-gradient(circle at top right, rgba(255, 227, 200, 0.72) 0%, rgba(255, 227, 200, 0) 34%),
+		#f8f4ee;
+}
+
+.meal-order-success-hero {
+	margin-top: 18rpx;
+	padding: 28rpx 24rpx;
+	border-radius: 24rpx;
+	background:
+		radial-gradient(circle at top left, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0) 40%),
+		linear-gradient(145deg, #f3d7bf 0%, #e8c3a7 100%);
+	border: 1px solid rgba(190, 129, 82, 0.14);
+	box-shadow:
+		0 14rpx 26rpx rgba(97, 70, 47, 0.08),
+		inset 0 1rpx 0 rgba(255, 255, 255, 0.7);
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 12rpx;
+}
+
+.meal-order-success-hero__icon {
+	width: 60rpx;
+	height: 60rpx;
+	border-radius: 18rpx;
+	background: linear-gradient(180deg, #6f8c62 0%, #5f7a54 100%);
+	box-shadow: 0 10rpx 18rpx rgba(72, 96, 58, 0.18);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-success-hero__title {
+	font-size: 30rpx;
+	font-weight: 700;
+	line-height: 1.32;
+	color: #34281f;
+}
+
+.meal-order-success-hero__desc {
+	font-size: 23rpx;
+	line-height: 1.6;
+	color: #6f5948;
+}
+
+.meal-order-success-card {
+	margin-top: 14rpx;
+	padding: 20rpx 18rpx;
+	border-radius: 20rpx;
+	background: rgba(255, 255, 255, 0.92);
+	border: 1px solid rgba(91, 74, 59, 0.06);
+	box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+}
+
+.meal-order-success-card__label {
+	display: block;
+	font-size: 21rpx;
+	font-weight: 700;
+	line-height: 1.2;
+	color: #9c8067;
+}
+
+.meal-order-success-card__summary {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 25rpx;
+	font-weight: 700;
+	line-height: 1.5;
+	color: #2f2923;
+}
+
+.meal-order-success-card__note {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 22rpx;
+	line-height: 1.6;
+	color: #7c6d60;
+}

@@ -131,4 +131,7 @@ export default {
 
 <style lang="scss" scoped>
 @import './meal-order-sheet.scss';
+@import './meal-order-list-sheet.scss';
+@import './meal-order-actions.scss';
+@import './meal-order-checkout-sheet.scss';
 </style>

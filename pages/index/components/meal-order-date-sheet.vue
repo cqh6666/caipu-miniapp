@@ -89,4 +89,5 @@ export default {
 
 <style lang="scss" scoped>
 @import './meal-order-sheet.scss';
+@import './meal-order-date-sheet.scss';
 </style>

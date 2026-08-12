@@ -56,6 +56,8 @@ import {
   buildFlowchartImageCacheEntry,
   resolveVisibleImageIndex,
 } from "../pages/recipe-detail/use-recipe-images";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 function assertEqual<T>(actual: T, expected: T, label: string) {
   if (actual !== expected) throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
@@ -141,6 +143,34 @@ assertEqual(previewController.stop(previewRunId), true, "预览流程主动停�
 assertEqual(previewController.stop(previewRunId), false, "旧预览流程不能重复收尾");
 assertEqual(clearedPreviewTimer, 1, "预览流程清理计时器");
 assertEqual(previewStates.at(-1)?.isParsing, false, "预览流程停止后复位状态");
+
+const sharedPreviewPanelSource = readFileSync(
+  resolve(process.cwd(), "pages/index/components/add-preview-panel.vue"),
+  "utf8",
+);
+const linkPreviewPanelSource = readFileSync(
+  resolve(process.cwd(), "pages/index/components/add-link-preview-panel.vue"),
+  "utf8",
+);
+const recipePreviewPanelSource = readFileSync(
+  resolve(process.cwd(), "pages/index/components/add-recipe-preview-panel.vue"),
+  "utf8",
+);
+assertEqual(sharedPreviewPanelSource.includes('@input="handleInput"'), true, "共享预览面板监听输入事件");
+assertEqual(sharedPreviewPanelSource.includes("event.detail.value"), true, "共享预览面板读取 uni-app 输入值");
+assertEqual(sharedPreviewPanelSource.includes("this.$emit('input-change'"), true, "共享预览面板转发输入值");
+for (const [label, source] of [
+  ["地点", linkPreviewPanelSource],
+  ["菜谱", recipePreviewPanelSource],
+] as const) {
+  assertEqual(source.includes('@input-change="handleInputTextChange"'), true, `${label}预览面板接收输入值`);
+  assertEqual(
+    /this\.\$emit\(['"]manual-entry['"]\)\s+this\.\$emit\(['"]close['"]\)/.test(source),
+    true,
+    `${label}手动录入保持关闭语义`,
+  );
+  assertEqual(source.includes("emits: ['close', 'manual-entry', 'paste']"), true, `${label}预览面板对外事件契约`);
+}
 
 assertEqual(easeOutCubic(0), 0, "数字缓动起点");
 assertEqual(easeOutCubic(1), 1, "数字缓动终点");

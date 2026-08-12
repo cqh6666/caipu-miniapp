@@ -1,0 +1,117 @@
+.soft-empty {
+	margin-top: 20rpx;
+	padding: 64rpx 30rpx;
+	border-radius: 22rpx;
+	background: rgba(255, 255, 255, 0.84);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	gap: 16rpx;
+}
+
+.soft-empty__icon {
+	width: 76rpx;
+	height: 76rpx;
+	border-radius: 22rpx;
+	background: rgba(255, 248, 240, 0.96);
+	box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.85), 0 8rpx 16rpx rgba(56, 44, 30, 0.05);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.soft-empty__text {
+	font-size: 24rpx;
+	line-height: 1.6;
+	color: #8d847a;
+}
+
+.meal-order-cart-list {
+	max-height: 46vh;
+	margin-top: 20rpx;
+}
+
+.meal-order-cart-stack,
+.meal-order-checkout-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10rpx;
+}
+
+.meal-order-cart-item,
+.meal-order-checkout-item {
+	padding: 16rpx;
+	border-radius: 18rpx;
+	background: rgba(255, 255, 255, 0.96);
+	border: 1px solid rgba(91, 74, 59, 0.06);
+	box-shadow: 0 10rpx 18rpx rgba(56, 44, 30, 0.04);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12rpx;
+}
+
+.meal-order-cart-item--link,
+.meal-order-checkout-item--link {
+	transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.meal-order-cart-item--hover,
+.meal-order-checkout-item--hover {
+	background: #fffaf4;
+	box-shadow: 0 12rpx 24rpx rgba(56, 44, 30, 0.06);
+	transform: translateY(-1px);
+}
+
+.meal-order-cart-item__title,
+.meal-order-checkout-item__title {
+	display: block;
+	font-size: 25rpx;
+	font-weight: 700;
+	color: #2f2923;
+}
+
+.meal-order-cart-empty {
+	margin-top: 0;
+}
+
+.meal-order-card-thumb {
+	width: 84rpx;
+	height: 84rpx;
+	border-radius: 18rpx;
+	background: rgba(245, 236, 227, 0.9);
+	border: 1px solid rgba(91, 74, 59, 0.06);
+	box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.82);
+	overflow: hidden;
+	flex-shrink: 0;
+}
+
+.meal-order-card-thumb__image,
+.meal-order-card-thumb__placeholder {
+	width: 100%;
+	height: 100%;
+}
+
+.meal-order-card-thumb__image {
+	display: block;
+}
+
+.meal-order-card-thumb__placeholder {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.meal-order-card-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10rpx;
+	margin-top: 8rpx;
+}
+
+.meal-order-card-meta__text {
+	font-size: 20rpx;
+	line-height: 1.2;
+	color: #8b7b6e;
+}
