@@ -19,6 +19,18 @@ for expected in '- build admin-web: yes' '- cpu: 2 vCPU' '- memory: 2048 MiB' '-
   fi
 done
 
+backend_plan="$(env "${common_env[@]}" DEPLOY_SCOPE=backend bash "$ROOT_DIR/scripts/deploy-on-server.sh")"
+if ! grep -Fq -- '- run backend tests on server: no' <<< "$backend_plan"; then
+  echo "backend PLAN_ONLY must skip remote tests by default" >&2
+  exit 1
+fi
+
+backend_test_plan="$(env "${common_env[@]}" DEPLOY_SCOPE=backend RUN_BACKEND_TESTS=1 bash "$ROOT_DIR/scripts/deploy-on-server.sh")"
+if ! grep -Fq -- '- run backend tests on server: yes' <<< "$backend_test_plan"; then
+  echo "backend PLAN_ONLY did not preserve explicit remote test opt-in" >&2
+  exit 1
+fi
+
 sidecar_plan="$(env "${common_env[@]}" SIDECAR_INSTALL_MODE=always bash "$ROOT_DIR/scripts/deploy-linkparse-sidecar-on-server.sh")"
 for expected in '- install sidecar deps: yes' '- restart sidecar: yes' '- cpu: 2 vCPU'; do
   if ! grep -Fq -- "$expected" <<< "$sidecar_plan"; then

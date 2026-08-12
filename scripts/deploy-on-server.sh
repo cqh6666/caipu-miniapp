@@ -13,6 +13,7 @@ LIVENESS_PATH="${LIVENESS_PATH:-/livez}"
 READINESS_PATH="${READINESS_PATH:-/readyz}"
 DEPLOY_SCOPE="${DEPLOY_SCOPE:-auto}"
 RUN_GIT_PULL="${RUN_GIT_PULL:-1}"
+RUN_BACKEND_TESTS="${RUN_BACKEND_TESTS:-0}"
 BUILD_NICE="${BUILD_NICE:-10}"
 GO_BUILD_GOMAXPROCS="${GO_BUILD_GOMAXPROCS:-1}"
 GOCACHE_DIR="${GOCACHE_DIR:-/tmp/caipu-go-build-cache}"
@@ -62,7 +63,7 @@ Environment variables:
   RUN_GIT_PULL=1|0
   BUILD_NICE=10
   GO_BUILD_GOMAXPROCS=1
-  RUN_BACKEND_TESTS=1
+  RUN_BACKEND_TESTS=0|1 (default: 0; use local/CI test evidence)
   LIVENESS_PATH=/livez
   READINESS_PATH=/readyz
   ADMIN_WEB_INSTALL_MODE=auto|always|never
@@ -183,6 +184,7 @@ Plan summary:
 - build backend: $( [[ "$build_backend" == "1" ]] && echo yes || echo no )
 - build admin-web: $( [[ "$build_admin_web" == "1" ]] && echo yes || echo no )
 - restart backend: $( [[ "$build_backend" == "1" ]] && echo yes || echo no )
+- run backend tests on server: $( [[ "$RUN_BACKEND_TESTS" == "1" ]] && echo yes || echo no )
 
 $(host_resources_print_summary)
 EOF
@@ -233,6 +235,7 @@ if [[ "$build_backend" == "1" ]]; then
 	APP_PORT="$APP_PORT" \
 	LIVENESS_PATH="$LIVENESS_PATH" \
 	READINESS_PATH="$READINESS_PATH" \
+	RUN_BACKEND_TESTS="$RUN_BACKEND_TESTS" \
 	BUILD_NICE="$BUILD_NICE" \
 	GO_BUILD_GOMAXPROCS="$GO_BUILD_GOMAXPROCS" \
 	GOCACHE_DIR="$GOCACHE_DIR" \

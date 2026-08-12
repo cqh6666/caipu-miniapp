@@ -95,7 +95,8 @@ bash scripts/check-service-health.sh
   release 的迁移是否全部应用、SQLite 父目录和 uploads 是否可写。就绪响应头
   `X-Release-ID` 与 JSON 的 release/commit/build time/Go toolchain 由构建时 ldflags 注入。
 - 服务器源码发布统一使用仓库根目录的
-  `bash scripts/deploy-backend-on-server.sh`。脚本先测试和校验配置，再做 SQLite Online
+  `bash scripts/deploy-backend-on-server.sh`。低配生产机默认不运行全量 Go 测试，需先有
+  本地或 CI 测试证据；脚本会校验配置，再做 SQLite Online
   Backup、在备份副本预演迁移、构建 `releases/<release-id>`、原子切换 `current`，重启后
   要求连续 readiness 成功且 release ID 相符；失败恢复上一二进制，不自动反向执行 SQL。
   每个 release 的 `manifest.env` 同时记录二进制 SHA-256、Git commit、构建时间、Go

@@ -132,6 +132,7 @@
     原子切换和连续 `/readyz` 校验；失败时恢复上一二进制，但不会反向回滚数据库迁移
   - 对当前这台 `2 vCPU / 1.9 GiB RAM / 0 swap` 的线上机：
     - 默认允许 `backend` 单独构建
+    - 后端发布默认不在服务器运行全量 `go test ./...`，应先使用本地或 CI 测试证据
     - 默认拒绝 `admin-web` 构建
     - `linkparse-sidecar` 只有在 `npm install` 必须执行时才会被拦下
   - 真正需要在维护窗口硬跑前端或 sidecar 的依赖安装时，显式带：

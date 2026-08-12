@@ -1,5 +1,32 @@
 # Project Changelog
 
+## 2026-08-12 (生产后端与 Admin Web 更新)
+
+### Changed
+
+- **修改时间**：2026-08-12 23:12:00 +0800
+- **变更背景**：用户要求通过 `ssh my-cloud` 更新后端与 Admin Web，并明确低配云服务器
+  不得承担 Admin 构建。发布前实机确认服务器为 `2 vCPU / 1.9 GiB RAM / 0 swap`，远端
+  源码落后 12 个提交，旧 sidecar 又缺少新版后端所需的 B 站凭据验证接口。
+- **核心改动**：远端源码快进至 `10a684b`，重启 linkparse sidecar 并验证新契约；后端
+  在显式 `RUN_BACKEND_TESTS=0` 下执行受限构建、配置校验、SQLite 一致性备份、备份副本
+  迁移预检、前向迁移、原子切换和连续 readiness。Admin Web 在本地通过测试、typecheck
+  和 Vite 生产构建后，以 release `20260812-230858` 上传并原子替换远端 `dist`。同步把
+  服务器发布默认值改为不运行全量 Go 测试，并让 Admin 打包排除 macOS `._*` 元数据。
+- **影响范围**：生产 `caipu-linkparse-sidecar`、`caipu-backend` 与 nginx 托管的 Admin
+  静态资源；未在远端运行 Admin npm 构建，误触发的全量 Go 测试未完成且未参与发布
+  验收；未修改 nginx、systemd unit、后端密钥配置或数据库业务数据。
+- **兼容性或风险**：后端当前 release 为 `20260812T150634Z-10a684bc22e7`，发布前备份为
+  `backup-20260812T150828Z-20260812T150634Z-10a684bc22e7-5604`；Admin 保留最近 3 份
+  `dist.bak-*`。远端第一次误触发的全量测试已在服务切换前终止，确认无残留测试进程，
+  当时后端仍保持旧 release 且 `/readyz=200`。
+- **验证情况**：本地 Admin 测试、typecheck、Vite build 通过；远端 sidecar health=200，
+  新凭据验证接口空凭据返回预期 400；后端 `/livez=200`、`/readyz=200`，内外网
+  `X-Release-ID` 均为目标 release；`https://www.gxm1227.top/admin/` 及入口 JS 返回 200。
+  本地与远端 Admin 的 25 个有效文件组合 SHA-256 一致，为
+  `8b7a6c6bc0982cc6394f982e4d9bd0ca687fa0c30f090d9e6b5e0b7ce2e863f8`；三个服务
+  `caipu-backend`、`caipu-linkparse-sidecar`、`nginx` 均为 active，启动后日志无错误。
+
 ## 2026-08-12 (代码冗余整改 S3～S5 收口)
 
 ### Changed

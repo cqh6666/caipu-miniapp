@@ -87,7 +87,7 @@ bash scripts/deploy-backend-on-server.sh
 
 顺序固定为：
 
-1. `git pull --ff-only` 并运行 `go test ./...`；
+1. `git pull --ff-only`；全量 `go test ./...` 默认应在本地或 CI 完成，低配生产机不运行；
 2. 构建注入 release ID、commit、build time、Go toolchain 的临时 release，并执行
    `-check-config`；
 3. 用 `sqlite3 .backup` 创建发布前一致性备份；
@@ -105,7 +105,8 @@ SQL。若新迁移本身破坏旧二进制兼容性，应停止自动发布并�
 
 ```bash
 PLAN_ONLY=1 bash scripts/deploy-backend-on-server.sh
-RUN_BACKEND_TESTS=0 bash scripts/deploy-backend-on-server.sh   # 仅紧急窗口，需另有 CI 证据
+RUN_BACKEND_TESTS=0 bash scripts/deploy-backend-on-server.sh   # 默认值，要求已有本地或 CI 证据
+RUN_BACKEND_TESTS=1 bash scripts/deploy-backend-on-server.sh   # 仅资源充足且明确需要时使用
 READY_ATTEMPTS=45 READY_CONSECUTIVE_SUCCESSES=5 \
   bash scripts/deploy-backend-on-server.sh
 ```

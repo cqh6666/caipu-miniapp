@@ -4,9 +4,9 @@
 方便后续排障、发版和迁移。文档只记录结构、路径、端口、服务名和配置
 入口，不记录任何真实密钥。
 
-仓库文档更新时间：`2026-07-16 14:00 CST`
+仓库文档更新时间：`2026-08-12 23:12 CST`
 
-生产主机最后实机核对为：`2026-07-16 14:00 CST`。后端已完成版本化 release、在线备份、
+生产主机最后实机核对为：`2026-08-12 23:12 CST`。后端已完成版本化 release、在线备份、
 readiness、Go `1.26.5` 构建身份与最小权限 unit 的生产迁移，并已应用主机全局 journald
 `512M/14day` 留存策略；异机备份、故障注入、真实回滚和 ops-health 外部告警仍待执行，
 下文不把这些待办提前当成线上事实。
@@ -110,7 +110,7 @@ Internet
 - `current` 原子指向 `releases/<release-id>`；
 - 只允许写 `backend/data`，启用 `NoNewPrivileges`、`PrivateTmp`、
   `ProtectSystem=strict`、`ProtectHome=true` 和 `UMask=0077`；
-- 当前 release 为 `20260716T043954Z-c928d193493a`，commit 为 `c928d19`，二进制实际和
+- 当前 release 为 `20260812T150634Z-10a684bc22e7`，commit 为 `10a684b`，二进制实际和
   manifest/健康接口均报告 Go `1.26.5`；
 - 每日 `caipu-backend-backup.timer` 与每周 `caipu-backend-restore-drill.timer` 已启用；
 - 主机全局 journald `512M/14day` 已于 2026-07-16 13:42 应用；用户确认不导出历史日志后，
@@ -307,6 +307,11 @@ bash scripts/deploy-backend-on-server.sh
 连续成功且 `X-Release-ID` 与目标一致才成功。失败恢复上一二进制，不自动反向执行 SQL。
 生产旧 unit 已于 2026-07-16 迁移完成；后续禁止恢复为直接覆盖 `bin/server` 的发布方式。
 
+2026-08-12 实机确认当前低配服务器不适合运行全量 `go test ./...`。发布入口现默认
+`RUN_BACKEND_TESTS=0`，要求先取得本地或 CI 测试证据；只有资源充足且明确需要时才可显式
+设置 `RUN_BACKEND_TESTS=1`。配置校验、受限 Go 构建、SQLite 一致性备份、迁移预检、
+release 原子切换和双健康检查仍在服务器执行。
+
 说明：
 
 - 当前推荐按服务拆开执行：
@@ -374,6 +379,9 @@ DOMAIN=www.gxm1227.top \
   “服务器本机构建”路线，更适合作为维护窗口里的兜底方案。
 - `admin-web` 是静态站点，不需要单独的 `systemd` 常驻服务。
 - 当前由 `nginx` 直接托管 `/srv/caipu-miniapp/admin-web/dist`。
+- 2026-08-12 已从本地构建并上传 Admin release `20260812-230858`；25 个有效文件的
+  组合 SHA-256 为 `8b7a6c6bc0982cc6394f982e4d9bd0ca687fa0c30f090d9e6b5e0b7ce2e863f8`，
+  远端保留最近 3 份 `dist.bak-*` 备份。
 - 纯静态资源更新通常不需要重启 `nginx`；如果改了 nginx 配置，才需要：
 
 ```bash

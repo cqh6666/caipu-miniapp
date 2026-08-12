@@ -198,7 +198,7 @@ cleanup() {
 trap cleanup EXIT
 
 log "packaging dist"
-"$TAR_BIN" -C "$ADMIN_DIR" -czf "$archive_path" dist
+COPYFILE_DISABLE=1 "$TAR_BIN" --exclude='._*' -C "$ADMIN_DIR" -czf "$archive_path" dist
 
 ssh_cmd=("$SSH_BIN")
 scp_cmd=("$SCP_BIN")
