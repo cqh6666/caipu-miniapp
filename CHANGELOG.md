@@ -1,5 +1,37 @@
 # Project Changelog
 
+## 2026-08-12 (代码冗余整改第一阶段 S1)
+
+### Removed
+
+- **修改时间**：2026-08-12 16:34:19 +0800
+- **变更背景**：用户要求创建至多 5 个 subAgent，按
+  `docs/code-redundancy-review-2026-07-30.md` 分阶段完成整改；第一阶段 S1 聚焦
+  RD-007、RD-010、RD-014 与 sidecar importer 无效 stub 分支，目标是在不引入新抽象
+  和不改变业务契约的前提下，先缩小后续重构面。
+- **核心改动**：由前端、后端、依赖/sidecar 三个实施 subAgent 并行清理，并由第 4 个
+  subAgent 独立复审。提交 `eeee960` 删除 4 个只写不读前端状态、3 条末端不消费的
+  prop 链、随机推荐 `contextText` 死契约、零调用成员/导出、无用 import 与经全仓检索
+  确认的孤儿样式；删除 8 个无引用 Go 符号，同时保留 Bilibili 设置事务内私有 upsert、
+  CAS 与审计入口；移除根依赖 `clipboard`、`dayjs` 及 4 个仅由 clipboard 引入的
+  传递依赖；删除 importer 与默认失败返回等价的 `stubMode === "off"` 分支。运行时代码
+  与配置共修改 29 个文件，新增 8 行、删除 796 行。
+- **影响范围**：影响 Miniapp 首页与详情页的内部状态/props/样式、Admin AI Provider
+  孤儿 CSS、后端 airouter/appsettings/invite/linkparse/recipe 私有未调用实现、根 npm
+  依赖树和 importer 内部控制流；不修改外部 API、数据库结构、持久化格式、生产配置、
+  部署脚本或用户可见产品需求。
+- **兼容性或风险**：随机推荐不再生成和传递从未展示的推荐上下文文案，但展示、重抽
+  与详情跳转保持原行为；已删除状态原本仅写不读，现有 kitchen ID 与同步上下文并发守卫
+  仍保留。动态 class、跨组件实际消费样式、Bilibili 私有事务写入及 CAS/审计路径均未删。
+  本次未执行生产部署、自动预览或上传。
+- **验证情况**：独立 reviewer 结论为“无阻塞问题”。`npm test`、
+  `npm --prefix admin-web run typecheck`、sidecar 58/58、
+  `cd backend && go test -p 1 ./... -count=1`、`cd backend && go vet ./...`、
+  `npm ci --ignore-scripts --dry-run`、SFC 解析、Node 语法检查、全仓符号/selector 引用
+  守卫及 `git diff --check` 均通过；HBuilderX 5.15 微信小程序纯编译成功。本地
+  `npm prune --ignore-scripts` 清理 6 个旧包并报告 0 漏洞。后端并行全量测试曾出现一次
+  既有 SQLite 并发用例 `SQLITE_BUSY`，目标单测、包测试与串行全量复跑均通过。
+
 ## 2026-07-31 (linkparse 出站安全边界与审查整改)
 
 ### Fixed

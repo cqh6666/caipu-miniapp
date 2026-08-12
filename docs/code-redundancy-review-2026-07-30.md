@@ -1,7 +1,7 @@
 # 项目代码冗余设计审查报告
 
 - **审查时间**：2026-07-30 21:15:48 +0800
-- **整改更新时间**：2026-07-31 15:22:36 +0800
+- **整改更新时间**：2026-08-12 16:34:19 +0800
 - **审查基线**：`46d327da1adc46cf568f15968406de23cf930205`
 - **S0 整改落点**：`00efaab71e8fed51be470fbfc2387fd674eb6828`
 - **审查范围**：微信小程序、Admin Web、Go 后端、linkparse sidecar、发布脚本、
@@ -12,14 +12,16 @@
 
 ---
 
-## 整改状态（2026-07-31）
+## 整改状态（更新至 2026-08-12）
 
-RD-001 已按独立安全批次完成整改，其余 RD-002～RD-015 仍保持本报告中的待办状态。
+RD-001 已按独立安全批次完成整改；第一阶段 S1 的 RD-007、RD-010、RD-014 与
+RD-012 中的无效 stub 分支也已完成。其余问题仍保持本报告中的待办状态。
 
 | 提交 | 内容 | 状态 |
 | --- | --- | --- |
 | `83bf5ae` | 新增统一 URL 策略和受控出站请求客户端 | 已完成并通过定向复审 |
 | `00efaab` | B 站、小红书、视频转写及 Go sidecar 调用方接入安全边界 | 已完成并通过独立复审 |
+| `eeee960` | 删除 S1 死代码、无引用样式、遗留函数、无用依赖与无效 stub 分支 | 已完成并通过独立复审 |
 
 ### 事实校正
 
@@ -61,6 +63,27 @@ HTTP 入口直接把伪后缀 URL 转发给 sidecar”。
   解析结果。生产仍需用容器网络、防火墙或受控代理阻止 loopback、RFC1918、
   link-local、metadata、CGNAT 和 ULA 出站流量。
 - 本次未执行部署、生产连通性测试或任何生产配置变更。
+
+### S1 第一阶段整改（2026-08-12）
+
+- RD-007：删除 4 个只写不读状态、3 条末端不消费的 prop 链、随机推荐
+  `contextText` 整条死契约、首页/详情页零调用成员、零消费导出、无用 import，及
+  Miniapp/Admin 中经全仓检索确认无引用的样式规则；保留动态 class 与跨组件实际消费
+  的规则。
+- RD-010：删除 8 个无引用 Go 符号。Bilibili 设置仍保留事务内私有 upsert，现行保存
+  继续走同事务 CAS 与审计入口；生产装配继续使用带 options 的 worker 构造器。
+- RD-014：从根 `package.json` 与 lockfile 删除 `clipboard`、`dayjs`，并清理仅由
+  `clipboard` 引入的 4 个传递依赖；未为“用上依赖”改写日期或剪贴板代码。
+- RD-012：删除 importer 中与默认失败返回逐字相同的
+  `stubMode === "off"` 分支，`demo`、`echo`、`off` 与未知值行为保持不变。
+- 本阶段共修改 29 个运行时/配置文件，新增 8 行、删除 796 行；独立 reviewer 最终
+  结论为“无阻塞问题”。
+- 验证通过：`npm test`、`npm --prefix admin-web run typecheck`、sidecar 58/58、
+  `cd backend && go test -p 1 ./... -count=1`、`cd backend && go vet ./...`、
+  `npm ci --ignore-scripts --dry-run`、静态引用守卫、SFC 解析、Node 语法检查与
+  `git diff --check`。HBuilderX 5.15 微信小程序纯编译成功，未触发自动预览或上传。
+- 后端并行全量测试曾触发一次既有 SQLite 并发用例 `SQLITE_BUSY`；目标单测、包测试
+  与串行全量复跑均通过。本次未连接生产服务或执行部署。
 
 ---
 
@@ -365,7 +388,7 @@ helper，不保留第二套生产初始化协议。
 
 ## 5. P2：可分批收口
 
-### RD-007：前端积累了死状态、死契约与无引用样式
+### RD-007：前端积累了死状态、死契约与无引用样式（已整改）
 
 #### A. 只写不读状态
 
@@ -474,7 +497,7 @@ ID 一并泛化成反射绑定框架。
 
 ---
 
-### RD-010：后端存在一组确认无引用的遗留函数
+### RD-010：后端存在一组确认无引用的遗留函数（已整改）
 
 - **位置**：
   - `backend/internal/airouter/repository.go:181`
@@ -537,7 +560,8 @@ loading/error 高度同构；任务详情加载与 Call/Job drawer 互跳又在�
 1. importer/rednote 的 `unique`、媒体 URL 归一化、echo/demo note 骨架。
 2. XHS/Bilibili handler 的 JSON 解析、空输入、错误 envelope、provider 选择、
    chain 调用和响应收尾。
-3. importer 的 `stubMode === "off"` 分支与紧随其后的默认返回完全相同。
+3. importer 的 `stubMode === "off"` 分支与紧随其后的默认返回完全相同
+   （该分支已在 S1 删除）。
 
 **建议**：分别抽 `xhs-provider-common` 与窄的 parse request/error helper；平台抓取与
 URL 策略保持显式。先删除无效 `off` 分支。不要一次抽成承载所有平台差异的万能框架。
@@ -561,7 +585,7 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 
 ---
 
-### RD-014：根工程保留两个完全未使用的直接依赖
+### RD-014：根工程保留两个完全未使用的直接依赖（已整改）
 
 - **位置**：
   - `package.json:28`
@@ -646,7 +670,7 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
 | 批次 | 内容 | 风险 | 验收 |
 | --- | --- | --- | --- |
 | S0 | RD-001 URL/凭据边界 | 高影响、改动可控 | sidecar + Go 伪后缀/重定向/凭据测试 |
-| S1 | RD-007、RD-010、RD-014 与无效 stub 分支 | 低 | 全仓引用、前端/Go/sidecar 测试 |
+| S1（已完成） | RD-007、RD-010、RD-014 与无效 stub 分支 | 低 | 全仓引用、前端/Go/sidecar 测试 |
 | S2 | RD-006、RD-008 前端产物去重 | 中 | HBuilderX 编译、WXSS 体积、弹层截图 |
 | S3 | RD-004、RD-005 领域/凭据事实来源 | 中高 | JSON 兼容、密钥轮换、全量竞态 |
 | S4 | RD-002、RD-003 删除双协议栈 | 高 | 直连/sidecar 决策、Router 契约、全量回归 |
@@ -670,6 +694,18 @@ CPU、内存、Swap、低资源判断、低优先级执行和摘要输出约 60 
   provider 公共骨架与脚本资源探测重复。
 - sidecar fake fetch 最小复现：确认伪后缀被接受且 B 站 Cookie 被附加。
 - `git status --short`：审查阶段无代码改动。
+
+### 2026-08-12 S1 整改已执行
+
+- `npm test`、`npm --prefix admin-web run typecheck`：通过。
+- `npm --prefix sidecars/linkparse-sidecar test`：58 项通过。
+- `cd backend && go test -p 1 ./... -count=1`、`cd backend && go vet ./...`：通过。
+- `npm ci --ignore-scripts --dry-run`、`npm prune --ignore-scripts`：lockfile 一致，
+  本地清理 6 个已移除依赖，审计 0 漏洞。
+- 目标符号与 selector 全仓引用守卫、SFC 解析、Node 语法检查、
+  `git diff --check`：通过。
+- HBuilderX 5.15 `launch mp-weixin --compile true`：编译成功，未自动预览或上传。
+- 独立 reviewer：无阻塞问题。
 
 ### 未执行/限制
 
