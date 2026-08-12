@@ -15,6 +15,7 @@ import {
 import { getAccessToken } from '../../utils/session-storage'
 import { ensureUploadedImage } from '../../utils/upload-api'
 import { appConfig } from '../../utils/app-config'
+import { formatDateTime } from '../../utils/date-time'
 import { defineIndexPageModule } from './page-module'
 
 const inviteShareFallbackImageUrl = '/static/invite-share-cover.png'
@@ -602,18 +603,11 @@ export const kitchenInviteComputed = {
 		return !!appConfig.inviteShareEnabled
 	},
 	inviteExpiresText() {
-		if (!this.activeInvite?.expiresAt) return '--'
-		const raw = this.activeInvite.expiresAt.replace(/\+\d{2}:\d{2}$/, '')
-		const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T')
-		const expiresAt = new Date(normalized)
-		if (Number.isNaN(expiresAt.getTime())) {
-			return raw.replace('T', ' ').slice(5, 16)
-		}
-		const month = String(expiresAt.getMonth() + 1).padStart(2, '0')
-		const day = String(expiresAt.getDate()).padStart(2, '0')
-		const hours = String(expiresAt.getHours()).padStart(2, '0')
-		const minutes = String(expiresAt.getMinutes()).padStart(2, '0')
-		return `${month}-${day} ${hours}:${minutes}`
+		const expiresAt = String(this.activeInvite?.expiresAt || '').replace(/\+\d{2}:\d{2}$/, '')
+		return formatDateTime(expiresAt, {
+			withYear: false,
+			emptyText: '--'
+		})
 	},
 	inviteRemainingUsesText() {
 		if (!this.activeInvite) return '--'

@@ -1,3 +1,5 @@
+import { formatDateTime as formatSharedDateTime } from '../../utils/date-time'
+
 export const ACTIVE_PARSE_STATUSES = ['pending', 'processing']
 export const ACTIVE_FLOWCHART_STATUSES = ['pending', 'processing']
 export const parseStatusMetaMap = {
@@ -73,10 +75,11 @@ function buildWaitHint(kind, status = '', queueAhead = 0, waitSeconds = 0) {
 export const buildParseWaitHint = (status, queueAhead, waitSeconds) => buildWaitHint('parse', status, queueAhead, waitSeconds)
 export const buildFlowchartWaitHint = (status, queueAhead, waitSeconds) => buildWaitHint('flowchart', status, queueAhead, waitSeconds)
 export function formatDateTime(value = '') {
-	const date = new Date(value)
-	if (Number.isNaN(date.getTime())) return ''
-	const pad = (value) => `${value}`.padStart(2, '0')
-	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+	return formatSharedDateTime(value, {
+		withYear: true,
+		emptyText: '',
+		invalidText: ''
+	})
 }
 export function createRecipeJobPollingController(poll, interval = 2200) {
 	let timer = null

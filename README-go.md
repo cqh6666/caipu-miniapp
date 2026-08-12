@@ -1,5 +1,11 @@
 # caipu-miniapp Go Backend Start Doc
 
+> [!WARNING]
+> **Archived / 非权威历史设计。** 本文仅保留 0 到 1 阶段的设计轨迹，内容未随现行代码、
+> Go 工具链、安全约束和版本化发布流程持续更新，不得作为实现、联调或生产运维依据。
+> 当前后端说明以 [`backend/README.md`](backend/README.md) 为准，部署流程以
+> [`docs/backend-deploy-quickstart.md`](docs/backend-deploy-quickstart.md) 为准。
+
 这份文档用于指导 `caipu-miniapp` 的 Go 后端项目从 0 到 1 落地。目标不是一次性覆盖所有未来需求，而是提供一套足够稳、足够清晰、能够尽快开工的后端骨架和实现边界。
 
 适用范围：

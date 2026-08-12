@@ -23,12 +23,7 @@ import type {
   AIRoutingSceneConfig,
   SettingAuditRecord,
 } from "../src/types";
-
-function assertEqual<T>(actual: T, expected: T, label: string) {
-  if (actual !== expected) {
-    throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
-  }
-}
+import { assertEqual } from "../../tests/check-assertions";
 
 const alertItem = {
   providerId: "provider-1",

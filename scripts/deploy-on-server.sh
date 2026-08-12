@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/lib/host-resources.sh"
 REPO_DIR="${REPO_DIR:-$ROOT_DIR}"
 BACKEND_DIR="${BACKEND_DIR:-${REPO_DIR}/backend}"
 ADMIN_WEB_DIR="${ADMIN_WEB_DIR:-${REPO_DIR}/admin-web}"
@@ -47,71 +48,8 @@ ensure_go_in_path() {
   return 1
 }
 
-run_low_priority() {
-  if has_cmd ionice; then
-    ionice -c3 nice -n "$BUILD_NICE" "$@"
-    return
-  fi
-
-  nice -n "$BUILD_NICE" "$@"
-}
-
-read_cpu_count() {
-  if has_cmd nproc; then
-    nproc
-    return
-  fi
-
-  echo 1
-}
-
-read_mem_total_mb() {
-  awk '/MemTotal:/ { printf "%d\n", $2 / 1024 }' /proc/meminfo
-}
-
-read_swap_total_mb() {
-  awk '/SwapTotal:/ { printf "%d\n", $2 / 1024 }' /proc/meminfo
-}
-
-is_low_resource_host() {
-  local cpu_count mem_total_mb swap_total_mb
-
-  cpu_count="$(read_cpu_count)"
-  mem_total_mb="$(read_mem_total_mb)"
-  swap_total_mb="$(read_swap_total_mb)"
-
-  if (( cpu_count < LOW_RESOURCE_MIN_CPU )); then
-    return 0
-  fi
-
-  if (( mem_total_mb < LOW_RESOURCE_MIN_MEM_MB )); then
-    return 0
-  fi
-
-  if (( swap_total_mb < LOW_RESOURCE_MIN_SWAP_MB )); then
-    return 0
-  fi
-
-  return 1
-}
-
 requires_heavy_frontend_build() {
   [[ "$build_admin_web" == "1" ]]
-}
-
-print_resource_summary() {
-  local cpu_count mem_total_mb swap_total_mb
-
-  cpu_count="$(read_cpu_count)"
-  mem_total_mb="$(read_mem_total_mb)"
-  swap_total_mb="$(read_swap_total_mb)"
-
-  cat <<EOF
-Host resources:
-- cpu: ${cpu_count} vCPU
-- memory: ${mem_total_mb} MiB
-- swap: ${swap_total_mb} MiB
-EOF
 }
 
 print_usage() {
@@ -246,7 +184,7 @@ Plan summary:
 - build admin-web: $( [[ "$build_admin_web" == "1" ]] && echo yes || echo no )
 - restart backend: $( [[ "$build_backend" == "1" ]] && echo yes || echo no )
 
-$(print_resource_summary)
+$(host_resources_print_summary)
 EOF
   exit 0
 fi
@@ -260,11 +198,11 @@ if [[ "$build_backend" == "0" && "$build_admin_web" == "0" ]]; then
   exit 0
 fi
 
-if is_low_resource_host && requires_heavy_frontend_build && [[ "$ALLOW_LOW_RESOURCE_BUILD" != "1" ]]; then
+if host_resources_is_low_resource "$LOW_RESOURCE_MIN_CPU" "$LOW_RESOURCE_MIN_MEM_MB" "$LOW_RESOURCE_MIN_SWAP_MB" && requires_heavy_frontend_build && [[ "$ALLOW_LOW_RESOURCE_BUILD" != "1" ]]; then
   cat <<EOF
 Refusing to run admin-web build on this low-resource host.
 
-$(print_resource_summary)
+$(host_resources_print_summary)
 
 Requested work:
 - build backend: $( [[ "$build_backend" == "1" ]] && echo yes || echo no )
@@ -281,7 +219,7 @@ EOF
   exit 2
 fi
 
-if is_low_resource_host && [[ "$build_backend" == "1" ]] && [[ "$build_admin_web" == "0" ]]; then
+if host_resources_is_low_resource "$LOW_RESOURCE_MIN_CPU" "$LOW_RESOURCE_MIN_MEM_MB" "$LOW_RESOURCE_MIN_SWAP_MB" && [[ "$build_backend" == "1" ]] && [[ "$build_admin_web" == "0" ]]; then
   log "low-resource host detected; allowing backend-only build, but admin-web build remains blocked by default"
 fi
 
@@ -308,7 +246,7 @@ if [[ "$build_admin_web" == "1" ]]; then
 
   if [[ "$install_admin_deps" == "1" ]]; then
     log "installing admin-web dependencies"
-    run_low_priority env \
+    host_resources_run_low_priority "$BUILD_NICE" env \
       npm_config_cache="$NPM_CACHE_DIR" \
       npm_config_audit=false \
       npm_config_fund=false \
@@ -317,7 +255,7 @@ if [[ "$build_admin_web" == "1" ]]; then
     log "skipping npm install because lockfile did not change"
   fi
 
-  run_low_priority env \
+  host_resources_run_low_priority "$BUILD_NICE" env \
     NODE_OPTIONS="$ADMIN_WEB_NODE_OPTIONS" \
     npm_config_cache="$NPM_CACHE_DIR" \
     npm run build

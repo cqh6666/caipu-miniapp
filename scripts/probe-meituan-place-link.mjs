@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Frozen research artifact: unsupported, not part of production parsing or CI.
+// Keep the original path for historical design references; do not treat its
+// output or network behavior as a maintained product contract.
 const DEFAULT_INPUT =
 	'【旺记碳烤肥牛·烤肉大排档（北滘悦然里店）】快来试试这家餐厅吧！ 【地址：顺德区人昌路2号（华美达和悦然里中间停车场）】【电话：17303028852】@美团 http://dpurl.cn/4zWiEohz'
 
@@ -695,6 +698,7 @@ async function queryAmapPOI(copied, options) {
 }
 
 async function main() {
+	console.error('[unsupported] frozen Meituan research probe; results are non-authoritative and may drift')
 	const args = parseArgs(process.argv.slice(2))
 	const stdin = await readStdin()
 	const input = normalizeText(args.inputParts.join(' ') || stdin || DEFAULT_INPUT)

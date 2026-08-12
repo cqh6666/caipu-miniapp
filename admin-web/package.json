@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "npm run test:ai-provider-utils && npm run test:dashboard-utils && npm run test:admin-csrf && node tests/ai-provider-component-render.check.mjs",
+    "test": "node scripts/run-checks.mjs tests/ai-provider-utils.check.ts tests/dashboard-distribution.check.ts tests/admin-csrf.check.ts tests/admin-list-composables.check.ts && node tests/ai-provider-component-render.check.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "test:ai-provider-utils": "esbuild tests/ai-provider-utils.check.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=/tmp/caipu-admin-ai-provider-utils-test.mjs && node /tmp/caipu-admin-ai-provider-utils-test.mjs",
-    "test:dashboard-utils": "esbuild tests/dashboard-distribution.check.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=/tmp/caipu-admin-dashboard-utils-test.mjs && node /tmp/caipu-admin-dashboard-utils-test.mjs",
-    "test:admin-csrf": "esbuild tests/admin-csrf.check.ts --bundle --platform=node --format=esm --alias:@=./src --outfile=/tmp/caipu-admin-csrf-test.mjs && node /tmp/caipu-admin-csrf-test.mjs",
+    "test:ai-provider-utils": "node scripts/run-checks.mjs tests/ai-provider-utils.check.ts",
+    "test:dashboard-utils": "node scripts/run-checks.mjs tests/dashboard-distribution.check.ts",
+    "test:admin-csrf": "node scripts/run-checks.mjs tests/admin-csrf.check.ts",
     "build": "vite build",
     "preview": "vite preview"
   },

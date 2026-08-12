@@ -84,6 +84,7 @@ import {
 	getBilibiliSessionSetting,
 	updateBilibiliSessionSetting
 } from '../../utils/app-settings-api'
+import { formatDateTime } from '../../utils/date-time'
 
 const statusMetaMap = {
 	unconfigured: { label: '未配置', tone: 'idle' },
@@ -115,6 +116,13 @@ export default {
 		}
 	},
 	methods: {
+		formatDateTime(value) {
+			return formatDateTime(value, {
+				withYear: false,
+				emptyText: '暂无',
+				invalidText: (raw) => raw.replace('T', ' ').slice(0, 16)
+			})
+		},
 		async loadSetting() {
 			if (this.isLoading) return
 			this.isLoading = true
@@ -195,20 +203,6 @@ export default {
 					})
 				}
 			})
-		},
-		formatDateTime(value) {
-			const raw = String(value || '').trim()
-			if (!raw) return '暂无'
-			const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T')
-			const date = new Date(normalized)
-			if (Number.isNaN(date.getTime())) {
-				return raw.replace('T', ' ').slice(0, 16)
-			}
-			const month = String(date.getMonth() + 1).padStart(2, '0')
-			const day = String(date.getDate()).padStart(2, '0')
-			const hours = String(date.getHours()).padStart(2, '0')
-			const minutes = String(date.getMinutes()).padStart(2, '0')
-			return `${month}-${day} ${hours}:${minutes}`
 		}
 	}
 }

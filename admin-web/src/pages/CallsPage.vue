@@ -130,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppShell from '@/components/AppShell.vue'
@@ -140,7 +140,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import CallDetailDrawer from '@/components/CallDetailDrawer.vue'
 import JobDetailDrawer from '@/components/JobDetailDrawer.vue'
 import * as adminApi from '@/api/admin'
-import type { CallLogRecord, JobRunRecord, PaginationResult } from '@/types'
+import type { CallLogRecord } from '@/types'
 import {
   callStatusOptions,
   displayCallStatus,
@@ -150,7 +150,8 @@ import {
   sceneOptions,
   toneForStatus
 } from '@/utils/admin-display'
-import { buildRouteQuery, readDateRange, readQueryNumber, readQueryString, writeDateRange, type DateRangeValue } from '@/utils/route-query'
+import { useJobDetailDrawer } from '@/composables/useJobDetailDrawer'
+import { useRoutedAdminList } from '@/composables/useRoutedAdminList'
 import { useResponsive } from '@/composables/useResponsive'
 import { useLastRefreshed } from '@/composables/useLastRefreshed'
 
@@ -160,124 +161,56 @@ const route = useRoute()
 const router = useRouter()
 const { isCompactLayout } = useResponsive()
 
-const page = ref(1)
-const loading = ref(false)
-const errorMessage = ref('')
-const timeRange = ref<DateRangeValue>([])
-const filters = reactive({
-  scene: '',
-  status: '',
-  provider: '',
-  model: '',
-  requestId: ''
+const {
+  applyFilters,
+  errorMessage,
+  filters,
+  handlePageChange,
+  loadList: loadCalls,
+  loading,
+  page,
+  removeFilter,
+  resetFilters,
+  result,
+  syncStateFromRoute,
+  timeRange
+} = useRoutedAdminList<CallLogRecord, {
+  scene: string
+  status: string
+  provider: string
+  model: string
+  requestId: string
+}>({
+  route,
+  router,
+  initialFilters: { scene: '', status: '', provider: '', model: '', requestId: '' },
+  fields: [
+    { key: 'scene' },
+    { key: 'status' },
+    { key: 'provider' },
+    { key: 'model' },
+    { key: 'requestId' }
+  ],
+  fetchList: async (query) => (await adminApi.listCalls(query)).result,
+  loadErrorMessage: '加载调用失败',
+  onLoaded: markRefreshed
 })
-
-const result = ref<PaginationResult<CallLogRecord>>({
-  items: [],
-  total: 0,
-  page: 1,
-  pageSize: 20
+const {
+  callDrawerVisible,
+  jobDetail,
+  jobDetailLoading,
+  jobDrawerVisible,
+  openCallDetail,
+  openJobDetail,
+  selectedCall
+} = useJobDetailDrawer({
+  loadDetail: adminApi.getJobDetail,
+  onError: (error) => ElMessage.error(error instanceof Error ? error.message : '加载任务详情失败')
 })
-
-const callDrawerVisible = ref(false)
-const selectedCall = ref<CallLogRecord | null>(null)
-const jobDrawerVisible = ref(false)
-const jobDetailLoading = ref(false)
-const jobDetail = ref<{ job: JobRunRecord; calls: CallLogRecord[] } | null>(null)
 const actionColumnFixed = computed(() => (isCompactLayout.value ? false : 'right'))
-
-function syncStateFromRoute() {
-  page.value = readQueryNumber(route.query, 'page', 1)
-  filters.scene = readQueryString(route.query, 'scene')
-  filters.status = readQueryString(route.query, 'status')
-  filters.provider = readQueryString(route.query, 'provider')
-  filters.model = readQueryString(route.query, 'model')
-  filters.requestId = readQueryString(route.query, 'requestId')
-  timeRange.value = readDateRange(route.query)
-}
-
-function buildListRouteQuery(nextPage = page.value) {
-  return buildRouteQuery({
-    page: nextPage > 1 ? nextPage : undefined,
-    scene: filters.scene || undefined,
-    status: filters.status || undefined,
-    provider: filters.provider || undefined,
-    model: filters.model || undefined,
-    requestId: filters.requestId || undefined,
-    ...writeDateRange(timeRange.value)
-  })
-}
-
-function buildRequestQuery() {
-  const query = new URLSearchParams()
-  query.set('page', String(page.value))
-  query.set('pageSize', '20')
-  if (filters.scene) query.set('scene', filters.scene)
-  if (filters.status) query.set('status', filters.status)
-  if (filters.provider) query.set('provider', filters.provider)
-  if (filters.model) query.set('model', filters.model)
-  if (filters.requestId) query.set('requestId', filters.requestId)
-  if (timeRange.value.length) {
-    query.set('timeFrom', timeRange.value[0].toISOString())
-    query.set('timeTo', timeRange.value[1].toISOString())
-  }
-  return query
-}
-
-async function loadCalls() {
-  loading.value = true
-  errorMessage.value = ''
-  try {
-    const data = await adminApi.listCalls(buildRequestQuery())
-    result.value = data.result
-    markRefreshed()
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '加载调用失败'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function applyFilters() {
-  const nextQuery = buildListRouteQuery(1)
-  if (JSON.stringify(route.query) === JSON.stringify(nextQuery)) {
-    page.value = 1
-    await loadCalls()
-    return
-  }
-  await router.replace({ query: nextQuery })
-}
-
-async function resetFilters() {
-  filters.scene = ''
-  filters.status = ''
-  filters.provider = ''
-  filters.model = ''
-  filters.requestId = ''
-  timeRange.value = []
-  if (!Object.keys(route.query).length) {
-    page.value = 1
-    await loadCalls()
-    return
-  }
-  await router.replace({ query: {} })
-}
-
-async function handlePageChange(nextPage: number) {
-  await router.replace({ query: buildListRouteQuery(nextPage) })
-}
 
 function labelFor(options: { label: string; value: string }[], value: string) {
   return options.find((item) => item.value === value)?.label || value
-}
-
-function removeFilter(key: 'scene' | 'status' | 'provider' | 'model' | 'requestId' | 'timeRange') {
-  if (key === 'timeRange') {
-    timeRange.value = []
-  } else {
-    filters[key] = ''
-  }
-  void applyFilters()
 }
 
 const activeFilters = computed(() => {
@@ -308,26 +241,6 @@ const activeFilters = computed(() => {
 })
 
 const hasActiveFilters = computed(() => activeFilters.value.length > 0)
-
-function openCallDetail(call: CallLogRecord) {
-  selectedCall.value = call
-  callDrawerVisible.value = true
-}
-
-async function openJobDetail(jobId: number) {
-  callDrawerVisible.value = false
-  jobDrawerVisible.value = true
-  jobDetailLoading.value = true
-  try {
-    const data = await adminApi.getJobDetail(jobId)
-    jobDetail.value = data
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载任务详情失败')
-    jobDetail.value = null
-  } finally {
-    jobDetailLoading.value = false
-  }
-}
 
 watch(
   () => route.fullPath,

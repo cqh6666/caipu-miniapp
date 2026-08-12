@@ -2,7 +2,6 @@ package mealplan
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -25,7 +24,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kitchenID, err := parseKitchenID(r)
+	kitchenID, err := common.PositiveInt64URLParam(r, "kitchenID")
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -49,7 +48,7 @@ func (h *Handler) SaveDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kitchenID, err := parseKitchenID(r)
+	kitchenID, err := common.PositiveInt64URLParam(r, "kitchenID")
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -85,7 +84,7 @@ func (h *Handler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kitchenID, err := parseKitchenID(r)
+	kitchenID, err := common.PositiveInt64URLParam(r, "kitchenID")
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -121,7 +120,7 @@ func (h *Handler) CreateDraftFromSubmitted(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	kitchenID, err := parseKitchenID(r)
+	kitchenID, err := common.PositiveInt64URLParam(r, "kitchenID")
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -151,7 +150,7 @@ func (h *Handler) DeleteDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kitchenID, err := parseKitchenID(r)
+	kitchenID, err := common.PositiveInt64URLParam(r, "kitchenID")
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -181,7 +180,7 @@ func (h *Handler) DeleteSubmitted(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kitchenID, err := parseKitchenID(r)
+	kitchenID, err := common.PositiveInt64URLParam(r, "kitchenID")
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -202,18 +201,4 @@ func (h *Handler) DeleteSubmitted(w http.ResponseWriter, r *http.Request) {
 	common.WriteData(w, http.StatusOK, map[string]any{
 		"store": store,
 	})
-}
-
-func parseKitchenID(r *http.Request) (int64, error) {
-	kitchenID := strings.TrimSpace(chi.URLParam(r, "kitchenID"))
-	if kitchenID == "" {
-		return 0, common.NewAppError(common.CodeBadRequest, "kitchenID is required", http.StatusBadRequest)
-	}
-
-	value, err := strconv.ParseInt(kitchenID, 10, 64)
-	if err != nil || value <= 0 {
-		return 0, common.NewAppError(common.CodeBadRequest, "invalid kitchenID", http.StatusBadRequest)
-	}
-
-	return value, nil
 }

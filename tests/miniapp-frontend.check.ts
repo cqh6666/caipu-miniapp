@@ -6,7 +6,7 @@ import {
 } from "../pages/index/use-recipe-library";
 import { createEmptyPlaceDraft, filterPlaces, placeLibraryModule } from "../pages/index/use-place-library";
 import { createMealOrderDraftSyncController, mealOrderModule, upsertMealOrderItem } from "../pages/index/use-meal-order";
-import { buildInviteShareTitle, kitchenSpaceModule, memberRoleLabel } from "../pages/index/use-kitchen-space";
+import { buildInviteShareTitle, kitchenInviteComputed, kitchenSpaceModule, memberRoleLabel } from "../pages/index/use-kitchen-space";
 import { buildPlaceDraftFromCandidate, smartAddModule } from "../pages/index/use-smart-add";
 import {
   defineIndexPageModule,
@@ -20,6 +20,7 @@ import {
   readClipboardText,
 } from "../pages/index/use-add-preview-flow";
 import { createCountUpController, easeOutCubic } from "../utils/count-up";
+import { formatDateTime as formatSharedDateTime } from "../utils/date-time";
 import { createImageDisplayController } from "../utils/image-cache";
 import { normalizePublicAppConfig } from "../utils/public-app-config-api";
 import { createChunkDecoder } from "../utils/diet-assistant-stream-decoder";
@@ -58,10 +59,7 @@ import {
 } from "../pages/recipe-detail/use-recipe-images";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-
-function assertEqual<T>(actual: T, expected: T, label: string) {
-  if (actual !== expected) throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
-}
+import { assertEqual } from "./check-assertions";
 
 const recipes = [
   { id: "1", title: "番茄炒蛋", mealType: "main", status: "wishlist" },
@@ -93,6 +91,15 @@ assertEqual(buildPlaceDraftFromCandidate({ name: "候选店" }, { source: "share
 
 assertEqual(buildInviteShareTitle({ kitchenName: "周末厨房" }).includes("空间"), true, "空间邀请文案");
 assertEqual(memberRoleLabel("owner"), "创建者", "成员角色文案");
+assertEqual(formatSharedDateTime("", { emptyText: "暂无" }), "暂无", "日期空值文案参数化");
+assertEqual(formatSharedDateTime("2026-08-12T14:05:00", { withYear: false }), "08-12 14:05", "日期省略年份");
+assertEqual(formatSharedDateTime("2026-08-12T14:05:00"), "2026-08-12 14:05", "日期保留年份");
+assertEqual(formatSharedDateTime("invalid", { invalidText: "非法" }), "非法", "日期非法值文案参数化");
+assertEqual(
+  kitchenInviteComputed.inviteExpiresText.call({ activeInvite: { expiresAt: "2026-08-12T14:05:00+08:00" } }),
+  "08-12 14:05",
+  "邀请过期时间保留原偏移处理语义",
+);
 assertEqual(upsertMealOrderItem([], { recipeId: "1", titleSnapshot: "菜" }).length, 1, "菜单条目新增");
 const indexModules = [placeLibraryModule, recipeLibraryModule, mealOrderModule, kitchenSpaceModule, smartAddModule];
 const installedIndexModules = installIndexPageModules(indexModules);

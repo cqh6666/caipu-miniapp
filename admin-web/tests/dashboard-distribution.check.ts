@@ -3,10 +3,7 @@ import {
   middleEllipsis,
   normalizeDistributionItems,
 } from "../src/utils/dashboard-distribution";
-
-function assertEqual<T>(actual: T, expected: T, label: string) {
-  if (actual !== expected) throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
-}
+import { assertEqual } from "../../tests/check-assertions";
 
 const ranked = buildDistributionRankItems([
   { name: "", total: 99, successRate: 0.5 },

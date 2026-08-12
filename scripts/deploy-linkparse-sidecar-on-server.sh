@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT_DIR/scripts/lib/host-resources.sh"
 REPO_DIR="${REPO_DIR:-$ROOT_DIR}"
 SIDECAR_DIR="${SIDECAR_DIR:-${REPO_DIR}/sidecars/linkparse-sidecar}"
 SERVICE_NAME="${SERVICE_NAME:-caipu-linkparse-sidecar}"
@@ -19,73 +20,6 @@ HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:8091/v1/health}"
 
 log() {
   echo "==> $*"
-}
-
-has_cmd() {
-  command -v "$1" >/dev/null 2>&1
-}
-
-run_low_priority() {
-  if has_cmd ionice; then
-    ionice -c3 nice -n "$BUILD_NICE" "$@"
-    return
-  fi
-
-  nice -n "$BUILD_NICE" "$@"
-}
-
-read_cpu_count() {
-  if has_cmd nproc; then
-    nproc
-    return
-  fi
-
-  echo 1
-}
-
-read_mem_total_mb() {
-  awk '/MemTotal:/ { printf "%d\n", $2 / 1024 }' /proc/meminfo
-}
-
-read_swap_total_mb() {
-  awk '/SwapTotal:/ { printf "%d\n", $2 / 1024 }' /proc/meminfo
-}
-
-is_low_resource_host() {
-  local cpu_count mem_total_mb swap_total_mb
-
-  cpu_count="$(read_cpu_count)"
-  mem_total_mb="$(read_mem_total_mb)"
-  swap_total_mb="$(read_swap_total_mb)"
-
-  if (( cpu_count < LOW_RESOURCE_MIN_CPU )); then
-    return 0
-  fi
-
-  if (( mem_total_mb < LOW_RESOURCE_MIN_MEM_MB )); then
-    return 0
-  fi
-
-  if (( swap_total_mb < LOW_RESOURCE_MIN_SWAP_MB )); then
-    return 0
-  fi
-
-  return 1
-}
-
-print_resource_summary() {
-  local cpu_count mem_total_mb swap_total_mb
-
-  cpu_count="$(read_cpu_count)"
-  mem_total_mb="$(read_mem_total_mb)"
-  swap_total_mb="$(read_swap_total_mb)"
-
-  cat <<EOF
-Host resources:
-- cpu: ${cpu_count} vCPU
-- memory: ${mem_total_mb} MiB
-- swap: ${swap_total_mb} MiB
-EOF
 }
 
 print_usage() {
@@ -177,7 +111,7 @@ Plan summary:
 - install sidecar deps: $( [[ "$install_sidecar_deps" == "1" ]] && echo yes || echo no )
 - restart sidecar: $( [[ "$restart_sidecar" == "1" ]] && echo yes || echo no )
 
-$(print_resource_summary)
+$(host_resources_print_summary)
 EOF
   exit 0
 fi
@@ -191,11 +125,11 @@ if [[ "$install_sidecar_deps" == "0" && "$restart_sidecar" == "0" ]]; then
   exit 0
 fi
 
-if is_low_resource_host && [[ "$install_sidecar_deps" == "1" ]] && [[ "$ALLOW_LOW_RESOURCE_BUILD" != "1" ]]; then
+if host_resources_is_low_resource "$LOW_RESOURCE_MIN_CPU" "$LOW_RESOURCE_MIN_MEM_MB" "$LOW_RESOURCE_MIN_SWAP_MB" && [[ "$install_sidecar_deps" == "1" ]] && [[ "$ALLOW_LOW_RESOURCE_BUILD" != "1" ]]; then
   cat <<EOF
 Refusing to run sidecar npm install on this low-resource host.
 
-$(print_resource_summary)
+$(host_resources_print_summary)
 
 Requested work:
 - install sidecar deps: $( [[ "$install_sidecar_deps" == "1" ]] && echo yes || echo no )
@@ -214,7 +148,7 @@ cd "$SIDECAR_DIR"
 
 if [[ "$install_sidecar_deps" == "1" ]]; then
   log "installing sidecar dependencies"
-  run_low_priority env \
+  host_resources_run_low_priority "$BUILD_NICE" env \
     npm_config_cache="$NPM_CACHE_DIR" \
     npm_config_audit=false \
     npm_config_fund=false \

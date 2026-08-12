@@ -2,10 +2,6 @@ package spacestats
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/cqh6666/caipu-miniapp/backend/internal/common"
 )
@@ -25,7 +21,7 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kitchenID, err := parseKitchenID(r)
+	kitchenID, err := common.PositiveInt64URLParam(r, "kitchenID")
 	if err != nil {
 		common.WriteError(w, err)
 		return
@@ -40,18 +36,4 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	common.WriteData(w, http.StatusOK, map[string]any{
 		"stats": stats,
 	})
-}
-
-func parseKitchenID(r *http.Request) (int64, error) {
-	kitchenID := strings.TrimSpace(chi.URLParam(r, "kitchenID"))
-	if kitchenID == "" {
-		return 0, common.NewAppError(common.CodeBadRequest, "kitchenID is required", http.StatusBadRequest)
-	}
-
-	value, err := strconv.ParseInt(kitchenID, 10, 64)
-	if err != nil || value <= 0 {
-		return 0, common.NewAppError(common.CodeBadRequest, "invalid kitchenID", http.StatusBadRequest)
-	}
-
-	return value, nil
 }

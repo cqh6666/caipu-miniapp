@@ -282,6 +282,7 @@ import { use, type ComposeOption } from 'echarts/core'
 import type { BarSeriesOption, LineSeriesOption } from 'echarts/charts'
 import AppShell from '@/components/AppShell.vue'
 import { useLastRefreshed } from '@/composables/useLastRefreshed'
+import { useJobDetailDrawer } from '@/composables/useJobDetailDrawer'
 import { useDashboardCharts, type DashboardChartKey } from '@/composables/useDashboardCharts'
 import HealthRing from '@/components/HealthRing.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -290,7 +291,7 @@ import JobDetailDrawer from '@/components/JobDetailDrawer.vue'
 import CallDetailDrawer from '@/components/CallDetailDrawer.vue'
 import DistributionPanel from '@/components/dashboard/DistributionPanel.vue'
 import * as adminApi from '@/api/admin'
-import type { CallLogRecord, DashboardOverview, ServerHealthOverview, TrendBucket } from '@/types'
+import type { DashboardOverview, ServerHealthOverview, TrendBucket } from '@/types'
 import {
   displayHealthStatus,
   displayJobStatus,
@@ -350,11 +351,18 @@ const overviewError = ref('')
 const serverHealthError = ref('')
 const trendError = ref('')
 
-const jobDrawerVisible = ref(false)
-const jobDetailLoading = ref(false)
-const jobDetail = ref<{ job: DashboardOverview['recentFailures'][number]; calls: CallLogRecord[] } | null>(null)
-const callDrawerVisible = ref(false)
-const selectedCall = ref<CallLogRecord | null>(null)
+const {
+  callDrawerVisible,
+  jobDetail,
+  jobDetailLoading,
+  jobDrawerVisible,
+  openCallDetail,
+  openJobDetail,
+  selectedCall
+} = useJobDetailDrawer({
+  loadDetail: adminApi.getJobDetail,
+  onError: (error) => ElMessage.error(error instanceof Error ? error.message : '加载任务详情失败')
+})
 
 const trendRange = computed(() => {
   if (overviewWindow.value >= 720) return '30d'
@@ -766,26 +774,6 @@ function buildJobsPageQuery(job?: DashboardOverview['recentFailures'][number]) {
     status: job?.status || undefined,
     jobId: job?.id || undefined
   })
-}
-
-async function openJobDetail(jobId: number) {
-  callDrawerVisible.value = false
-  jobDrawerVisible.value = true
-  jobDetailLoading.value = true
-  try {
-    const data = await adminApi.getJobDetail(jobId)
-    jobDetail.value = data
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载任务详情失败')
-    jobDetail.value = null
-  } finally {
-    jobDetailLoading.value = false
-  }
-}
-
-function openCallDetail(call: CallLogRecord) {
-  selectedCall.value = call
-  callDrawerVisible.value = true
 }
 
 function openJobDetailPage(job: DashboardOverview['recentFailures'][number]) {
