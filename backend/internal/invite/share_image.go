@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
@@ -342,20 +341,6 @@ func replaceKitchenLabel(value string) string {
 	return strings.ReplaceAll(strings.TrimSpace(value), "厨房", "空间")
 }
 
-func inviterInitial(name string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "厨"
-	}
-
-	r, _ := utf8.DecodeRuneInString(name)
-	if r == utf8.RuneError {
-		return "厨"
-	}
-
-	return strings.ToUpper(string(r))
-}
-
 func formatShareExpiryText(value, status string) string {
 	if strings.TrimSpace(status) == statusExpired {
 		return "当前不可加入"
@@ -421,15 +406,6 @@ func drawLayeredShadow(img *image.RGBA, rect image.Rectangle, radius int) {
 func drawMiniChip(img *image.RGBA, rect image.Rectangle, label string, background color.Color, foreground color.Color, face font.Face) {
 	fillRoundedRect(img, rect, rect.Dy()/2, background)
 	drawCenteredText(img, rect, label, face, foreground)
-}
-
-func drawMetricCard(img *image.RGBA, rect image.Rectangle, label string, value string, meta string, valueFace font.Face, metaFace font.Face) {
-	fillRoundedRect(img, rect, 24, shareImageCardBackground)
-	strokeRoundedRect(img, rect, 24, 2, shareImageCardBorder, shareImageCardBackground)
-
-	drawText(img, rect.Min.X+20, rect.Min.Y+34, label, metaFace, shareImageTextMuted)
-	drawText(img, rect.Min.X+20, rect.Min.Y+84, value, valueFace, shareImageTextPrimary)
-	drawText(img, rect.Min.X+20, rect.Min.Y+120, meta, metaFace, shareImageTextMuted)
 }
 
 func mustFace(face font.Face, err error) font.Face {

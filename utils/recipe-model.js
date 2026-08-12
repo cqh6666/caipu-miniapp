@@ -418,18 +418,3 @@ export function formatRecipeLink(link = '') {
 	const cleaned = link.replace(/^https?:\/\//, '').replace(/^www\./, '').split('?')[0]
 	return cleaned.length > 32 ? `${cleaned.slice(0, 29)}...` : cleaned
 }
-
-export function getRecipeSecondaryText(recipe = {}) {
-	const ingredient = (recipe.ingredient || '').trim()
-	const note = (recipe.note || '').trim()
-	const link = (recipe.link || '').trim()
-
-	if (ingredient && note) return `${ingredient} · ${note}`
-	if (ingredient) return ingredient
-	if (note) return note
-	if (link) return formatRecipeLink(link)
-
-	const mealLabel = mealTypeLabelMap[recipe.mealType] || '早餐'
-	const statusLabel = statusLabelMap[recipe.status] || '想吃'
-	return `${mealLabel} · ${statusLabel}`
-}

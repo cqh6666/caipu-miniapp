@@ -418,29 +418,6 @@ func resolveAutoParseTitleSource(current Recipe, draft Recipe) string {
 	return normalizeTitleSource(current.TitleSource)
 }
 
-func mergeRecipeImageURLs(groups ...[]string) []string {
-	items := make([]string, 0, maxRecipeImages)
-	seen := make(map[string]struct{}, maxRecipeImages)
-	for _, group := range groups {
-		for _, value := range group {
-			value = strings.TrimSpace(value)
-			if value == "" {
-				continue
-			}
-			if _, exists := seen[value]; exists {
-				continue
-			}
-			seen[value] = struct{}{}
-			items = append(items, value)
-			if len(items) >= maxRecipeImages {
-				return items
-			}
-		}
-	}
-
-	return items
-}
-
 func cleanRecipeImageURLs(values []string) []string {
 	items := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))

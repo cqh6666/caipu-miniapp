@@ -69,10 +69,6 @@ LIMIT 1
 	return record, nil
 }
 
-func (r *Repository) UpsertBilibiliSession(ctx context.Context, record bilibiliSessionRecord) error {
-	return upsertBilibiliSession(ctx, r.db, record)
-}
-
 func upsertBilibiliSession(ctx context.Context, store bilibiliStore, record bilibiliSessionRecord) error {
 	_, err := store.ExecContext(ctx, `
 INSERT INTO app_bilibili_settings (

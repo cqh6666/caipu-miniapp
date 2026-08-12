@@ -140,12 +140,6 @@ export function isPlaceholderNickname(value = '') {
 	return isFallbackNickname(nickname) || PLACEHOLDER_NICKNAMES.has(nickname.toLowerCase())
 }
 
-export function isProfileIncomplete(user = {}) {
-	const nickname = String(user?.nickname || '').trim()
-	const avatarUrl = String(user?.avatarUrl || '').trim()
-	return !avatarUrl || isPlaceholderNickname(nickname)
-}
-
 function isLegacyProfileRequestError(error) {
 	const message = String(error?.message || '').trim().toLowerCase()
 	const statusCode = Number(error?.statusCode) || 0

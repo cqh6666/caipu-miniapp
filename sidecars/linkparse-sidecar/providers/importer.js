@@ -331,14 +331,6 @@ function createImporterProvider(config) {
         }
       }
 
-      if (config.stubMode === "off") {
-        return {
-          ok: false,
-          errorCode: live.errorCode || "note_unavailable",
-          errorMessage: live.errorMessage || "xiaohongshu-importer provider failed"
-        };
-      }
-
       return {
         ok: false,
         errorCode: live.errorCode || "note_unavailable",

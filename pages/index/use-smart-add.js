@@ -6,7 +6,6 @@ import { createRecipeFromDraft, getCachedRecipes } from '../../utils/recipe-stor
 import { stringifyRecipeParsedContent } from '../../utils/recipe-model'
 import { createEmptyDraft } from './constants'
 import { detectDraftLinkPlatform, extractSupportedDraftLink, guessDraftTitleFromShareText, normalizeDraftAutoTitle } from './draft-link'
-import { formatMealOrderDateText } from './meal-order'
 import { defineIndexPageModule } from './page-module'
 import { createAddPreviewFlowController, delay } from './use-add-preview-flow'
 

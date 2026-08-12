@@ -6,7 +6,6 @@
 	<library-header-section
 		:is-library-meal-order-mode="isLibraryMealOrderMode"
 		:library-header-title="libraryHeaderTitle"
-		:library-header-summary="libraryHeaderSummary"
 		:has-meal-order-spotlight-record="!!mealOrderSpotlightRecord"
 		:meal-order-spotlight-date-text="mealOrderSpotlightDateText"
 		:meal-order-spotlight-weekday="mealOrderSpotlightWeekday"
@@ -175,7 +174,6 @@ import RecipeCardItem from './recipe-card-item.vue'
 const props = defineProps({
 	isLibraryMealOrderMode: Boolean,
 	libraryHeaderTitle: String,
-	libraryHeaderSummary: String,
 	mealOrderSpotlightRecord: Object,
 	mealOrderSpotlightDateText: String,
 	mealOrderSpotlightWeekday: String,

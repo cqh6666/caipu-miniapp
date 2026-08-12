@@ -76,12 +76,6 @@ function pickFirstNonEmptySummary(recipe = {}) {
 	return ''
 }
 
-export function buildRecipeListSummary(recipe = {}) {
-	const value = pickFirstNonEmptySummary(recipe)
-	if (!value) return RECIPE_LIST_SUMMARY_PLACEHOLDER
-	return truncateTextByRune(value, 24)
-}
-
 export function buildRecipeCoverVersion(recipe = {}) {
 	return buildRecipeImageVersion(recipe)
 }

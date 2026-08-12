@@ -207,10 +207,6 @@ func choosePreviewTitleCandidate(title string) string {
 	return best
 }
 
-func isLowConfidencePreviewTitle(title string) bool {
-	return scorePreviewTitleCandidate(title) < 5
-}
-
 func scorePreviewTitleCandidate(title string) int {
 	value := strings.TrimSpace(title)
 	if value == "" {

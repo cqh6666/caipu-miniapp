@@ -330,7 +330,6 @@ async refreshKitchenMembers(options = {}) {
 	const targetKitchenId = Number(kitchenId) || 0
 	if (!targetKitchenId) {
 		this.kitchenMembers = []
-		this.kitchenMembersKitchenId = 0
 		return []
 	}
 
@@ -340,13 +339,11 @@ async refreshKitchenMembers(options = {}) {
 		const items = await listKitchenMembers(targetKitchenId)
 		if (targetKitchenId === getCurrentKitchenId()) {
 			this.kitchenMembers = items
-			this.kitchenMembersKitchenId = targetKitchenId
 		}
 		return items
 	} catch (error) {
 		if (targetKitchenId === getCurrentKitchenId()) {
 			this.kitchenMembers = []
-			this.kitchenMembersKitchenId = targetKitchenId
 		}
 		if (!silent) {
 			uni.showToast({
@@ -737,9 +734,8 @@ export const kitchenSpaceModule = defineIndexPageModule({
 		...kitchenInviteComputed
 	},
 	lifecycle: {
-		onKitchenChange({ nextKitchenId = 0 } = {}) {
+		onKitchenChange() {
 			this.kitchenMembers = []
-			this.kitchenMembersKitchenId = nextKitchenId
 			this.spaceStatsRemote = null
 			this.spaceStatsRemoteKitchenId = 0
 			this.spaceStatsAutoSyncKitchenId = 0

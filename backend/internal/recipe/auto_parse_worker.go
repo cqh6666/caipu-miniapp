@@ -44,17 +44,6 @@ type AutoParseWorkerOptions struct {
 	StaleProcessingThreshold time.Duration
 }
 
-func NewAutoParseWorker(logger *slog.Logger, repo *Repository, parser *linkparse.Service, enabled bool, interval time.Duration, batchSize int) *AutoParseWorker {
-	return NewAutoParseWorkerWithOptions(AutoParseWorkerOptions{
-		Logger:    logger,
-		Repo:      repo,
-		Parser:    parser,
-		Enabled:   enabled,
-		Interval:  interval,
-		BatchSize: batchSize,
-	})
-}
-
 func NewAutoParseWorkerWithOptions(opts AutoParseWorkerOptions) *AutoParseWorker {
 	maxAttempts := opts.MaxAttempts
 	if maxAttempts <= 0 {

@@ -3,7 +3,7 @@ import { buildRecipeCoverVersion, extractRecipeImages } from './recipe-card'
 import { loadPublicAppConfig } from '../../utils/public-app-config-api'
 import { buildImageCacheKey, createImageDisplayController } from '../../utils/image-cache'
 import { createActionFeedbackController } from '../../utils/action-feedback'
-import { mealTypeLabelMap, toggleRecipeStatusById } from '../../utils/recipe-store'
+import { toggleRecipeStatusById } from '../../utils/recipe-store'
 import { formatMealOrderHeaderTitle, normalizeMealOrderDate } from './meal-order'
 import { writeRecentSearches } from './storage'
 import { MAX_RECENT_SEARCHES, searchSuggestionKeywordsByMeal, statusMap } from './constants'
@@ -110,27 +110,13 @@ buildTonightPickPool() {
 	}
 	return visible
 },
-buildTonightPickContext(pool = []) {
-	if (!pool.length) return ''
-	if (this.hasSearchKeyword) {
-		return `根据“${this.trimmedSearchKeyword}”挑了一道`
-	}
-	if (this.activeStatus !== 'all') {
-		return `从${this.currentMealLabel}的${this.currentStatusLabel}里挑了一道`
-	}
-	if (pool.every((recipe) => recipe.status === 'wishlist')) {
-		return `先从${this.currentMealLabel}里想吃的菜里挑了一道`
-	}
-	return `从${this.currentMealLabel}里挑了一道`
-},
 pickTonightRecipe(pool = [], excludeRecipeId = '') {
 	return pickRandomRecipe(Array.isArray(pool) ? pool.filter(Boolean) : [], excludeRecipeId)
 },
-presentTonightPick(recipe = null, pool = [], contextText = '', motionMode = 'enter') {
+presentTonightPick(recipe = null, pool = [], motionMode = 'enter') {
 	if (!recipe?.id) return
 	this.randomPickRecipeId = recipe.id
 	this.randomPickPoolRecipeIds = pool.map((item) => item.id).filter(Boolean)
-	this.randomPickContextText = contextText
 	this.randomPickMotionMode = motionMode === 'swap' ? 'swap' : 'enter'
 	this.randomPickTick += 1
 	this.showRandomPickSheet = true
@@ -145,7 +131,6 @@ presentTonightPick(recipe = null, pool = [], contextText = '', motionMode = 'ent
 closeRandomPickSheet() {
 	this.showRandomPickSheet = false
 	this.randomPickRecipeId = ''
-	this.randomPickContextText = ''
 	this.randomPickPoolRecipeIds = []
 	this.randomPickMotionMode = 'enter'
 },
@@ -155,7 +140,7 @@ rerollTonightPick() {
 		.filter(Boolean)
 	if (pool.length < 2) return
 	const picked = this.pickTonightRecipe(pool, this.randomPickRecipeId)
-	this.presentTonightPick(picked, pool, this.randomPickContextText, 'swap')
+	this.presentTonightPick(picked, pool, 'swap')
 },
 openRandomPickDetail(recipeId = '') {
 	const targetRecipeId = String(recipeId || this.randomPickRecipeId || '').trim()
@@ -538,9 +523,6 @@ openMealOrderRecipeDetail(item = {}) {
 	}
 	this.openRecipeDetail(recipeId)
 },
-nextStatusText(status) {
-	return status === 'done' ? '标记想吃' : '标记吃过'
-},
 toggleRecipeStatus(recipeId) {
 	this.toggleRecipeStatusAsync(recipeId)
 },
@@ -708,9 +690,6 @@ export const recipeListComputed = {
 }
 
 export const recipeSearchComputed = {
-	doneRecipes() {
-		return this.recipes.filter((recipe) => recipe.status === 'done')
-	},
 	trimmedSearchKeyword() {
 		return String(this.searchKeyword || '').trim()
 	},
@@ -734,9 +713,6 @@ export const recipeHeaderComputed = {
 			return ''
 		}
 		return this.librarySummary
-	},
-	wishlistRecipes() {
-		return this.recipes.filter((recipe) => recipe.status === 'wishlist')
 	}
 }
 

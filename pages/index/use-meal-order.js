@@ -75,7 +75,6 @@ async loadMealOrderStore(options = {}) {
 	const { silent = true } = options
 	const kitchenId = Number(getCurrentKitchenId()) || 0
 	if (!kitchenId) {
-		this.mealOrderStoreLoadedKitchenId = 0
 		this.applyMealOrderStore(createEmptyMealOrderStore())
 		return createEmptyMealOrderStore()
 	}
@@ -96,7 +95,6 @@ async loadMealOrderStore(options = {}) {
 			return normalizeMealOrderStore(this.mealOrderStore)
 		}
 		this.applyMealOrderStore(store)
-		this.mealOrderStoreLoadedKitchenId = kitchenId
 		return store
 	} catch (error) {
 		if (!silent) {
@@ -194,7 +192,6 @@ async syncMealOrderDraft(options = {}) {
 			kitchenId === Number(this.currentKitchenId)
 		) {
 			this.applyMealOrderStore(store)
-			this.mealOrderStoreLoadedKitchenId = kitchenId
 		}
 		return store
 	} catch (error) {
@@ -304,7 +301,7 @@ drawTonight() {
 		return
 	}
 	const picked = this.pickTonightRecipe(pool)
-	this.presentTonightPick(picked, pool, this.buildTonightPickContext(pool), 'enter')
+	this.presentTonightPick(picked, pool, 'enter')
 },
 openMealOrderDateSheet() {
 	if (!getCurrentKitchenId()) {
@@ -439,7 +436,6 @@ async submitMealOrder() {
 			return
 		}
 		this.applyMealOrderStore(store)
-		this.mealOrderStoreLoadedKitchenId = kitchenId
 		this.showMealOrderCheckoutSheet = false
 		this.showMealOrderCartSheet = false
 		this.isMealOrderMode = false
@@ -693,7 +689,6 @@ export const mealOrderModule = defineIndexPageModule({
 	lifecycle: {
 		onKitchenChange({ nextKitchenId = 0 } = {}) {
 			this.mealOrderSyncContextID += 1
-			this.mealOrderStoreLoadedKitchenId = 0
 			this.mealOrderLocalVersion += 1
 			this.resetMealOrderState()
 			if (nextKitchenId) this.loadMealOrderStore({ silent: true })

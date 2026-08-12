@@ -52,7 +52,6 @@
 				:class="appModePaneMotionClass"
 				:is-library-meal-order-mode="isLibraryMealOrderMode"
 				:library-header-title="libraryHeaderTitle"
-				:library-header-summary="libraryHeaderSummary"
 				:meal-order-spotlight-record="mealOrderSpotlightRecord"
 				:meal-order-spotlight-date-text="mealOrderSpotlightDateText"
 				:meal-order-spotlight-weekday="mealOrderSpotlightWeekday"
@@ -438,8 +437,6 @@
 		<place-candidate-sheet
 			:show="showPlaceCandidateSheet"
 			:candidates="placeCandidates"
-			:extracted="placeExtracted"
-			:source="placeParseSource"
 			@close="closePlaceCandidateSheet"
 			@select-candidate="handleSelectCandidate"
 			@manual-entry="handleManualEntry"
@@ -488,7 +485,6 @@
 			:show="showRandomPickSheet && !!randomPickCard"
 			:card="randomPickCard"
 			:cover-src="randomPickCoverSrc"
-			:context-text="randomPickContextText"
 			:can-reroll="randomPickCanReroll"
 			:motion-mode="randomPickMotionMode"
 			:reveal-key="randomPickRevealKey"
@@ -637,8 +633,6 @@ export default {
 				{ label: '去过', value: 'visited', icon: 'checkmark-circle' }
 			],
 			places: [],
-			placeSyncErrorMessage: '',
-			isLoadingPlaces: false,
 			showPlaceEditSheet: false,
 			showPlaceDetailSheet: false,
 			showPlaceExperienceSheet: false,
@@ -695,7 +689,6 @@ export default {
 			mealOrderDate: '',
 			mealOrderLastSubmittedDate: '',
 			mealOrderStore: createEmptyMealOrderStore(),
-			mealOrderStoreLoadedKitchenId: 0,
 			mealOrderSpotlightIndex: 0,
 			mealOrderSpotlightMotionDirection: '',
 			mealOrderSpotlightMotionTick: 0,
@@ -722,7 +715,6 @@ export default {
 			currentKitchenName: '',
 			currentKitchenRole: '',
 			kitchenMembers: [],
-			kitchenMembersKitchenId: 0,
 			isLeavingKitchen: false,
 			activeInvite: null,
 			inviteCodeCopied: false,
@@ -755,7 +747,6 @@ export default {
 			recipePreviewTimeoutRefreshTimer: null,
 			showRandomPickSheet: false,
 			randomPickRecipeId: '',
-			randomPickContextText: '',
 			randomPickPoolRecipeIds: [],
 			randomPickMotionMode: 'enter',
 			randomPickTick: 0,
@@ -997,7 +988,6 @@ export default {
 				this.syncErrorMessage = ''
 				this.applyPlaces(getCachedPlaces())
 				this.kitchenMembers = []
-				this.kitchenMembersKitchenId = 0
 				return cachedRecipes
 			}
 
@@ -1022,7 +1012,6 @@ export default {
 					this.applyRecipes(getCachedRecipes())
 					this.applyPlaces(getCachedPlaces())
 				this.kitchenMembers = []
-				this.kitchenMembersKitchenId = 0
 				if (!silent) {
 					uni.showToast({
 						title: error?.message || '同步失败',

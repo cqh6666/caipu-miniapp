@@ -84,9 +84,7 @@ export default {
 	name: 'PlaceCandidateSheetV2',
 	props: {
 		show: { type: Boolean, default: false },
-		candidates: { type: Array, default: () => [] },
-		extracted: { type: Object, default: () => ({}) },
-		source: { type: String, default: 'meituan' }
+		candidates: { type: Array, default: () => [] }
 	},
 	emits: ['close', 'select-candidate', 'manual-entry'],
 	methods: {

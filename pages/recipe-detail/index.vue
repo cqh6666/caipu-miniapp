@@ -212,8 +212,7 @@ import {
 	reparseRecipeById,
 	setRecipePinnedById,
 	statusLabelMap,
-	statusOptions,
-	updateRecipeById
+	statusOptions
 } from '../../utils/recipe-store'
 import { buildImageCacheKey, createImageDisplayController } from '../../utils/image-cache'
 import {
@@ -578,12 +577,6 @@ export default {
 			}
 			return '将根据来源链接更新当前食材和步骤。'
 		},
-		parseActionText() {
-			if (this.isReparseSubmitting) return '整理中...'
-			if (!this.parseStatusValue) return '开始整理'
-			if (this.parseStatusValue === 'failed') return '再试一次'
-			return '重新整理'
-		},
 		pinActionText() {
 			if (this.isPinSubmitting) return '处理中...'
 			return this.isPinned ? '取消置顶' : '置顶'
@@ -847,9 +840,6 @@ export default {
 		},
 		async ensureFlowchartShareImagePath() {
 			return this.getRecipeShareController().ensureFlowchartImage()
-		},
-		async createFlowchartSquareImage() {
-			return this.getRecipeShareController().createSquareImage()
 		},
 		buildRecipeShareConfig({ channel = 'message', flowchartShareImage = '' } = {}) {
 			return this.getRecipeShareController().config({ channel, flowchartShareImage })
@@ -1243,9 +1233,6 @@ export default {
 				this.recipeId,
 				this.currentStepCompletionKeys
 			)
-		},
-		persistCompletedSteps() {
-			this.getStepCompletionController().persist(this.recipeId)
 		},
 		async handleGenerateFlowchart() {
 			// P1 修复：公开只读模式禁止生成流程图（防御性兜底，模板已 v-if 隐藏 CTA）

@@ -524,23 +524,6 @@
 			linear-gradient(180deg, rgba(255, 254, 252, 0.98), rgba(255, 251, 246, 0.95));
 	}
 
-	.detail-card--flowchart {
-		background:
-			radial-gradient(circle at top right, rgba(255, 233, 211, 0.52) 0%, rgba(255, 233, 211, 0) 34%),
-			linear-gradient(180deg, rgba(255, 254, 252, 0.98), rgba(255, 250, 245, 0.95));
-		border-color: rgba(181, 136, 94, 0.08);
-		box-shadow:
-			0 18rpx 32rpx rgba(70, 54, 40, 0.05),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.72);
-	}
-
-	.detail-card--content {
-		background:
-			radial-gradient(circle at top right, rgba(236, 243, 232, 0.42) 0%, rgba(236, 243, 232, 0) 34%),
-			linear-gradient(180deg, rgba(255, 254, 252, 0.98), rgba(251, 251, 248, 0.95));
-		border-color: rgba(103, 132, 104, 0.06);
-	}
-
 	.detail-card--quiet {
 		background:
 			linear-gradient(180deg, rgba(255, 254, 252, 0.96), rgba(250, 246, 241, 0.92));
@@ -643,11 +626,6 @@
 	.detail-card__icon-action--active {
 		transform: scale(0.94);
 		background: rgba(245, 239, 232, 0.96);
-	}
-
-	.detail-card__icon-action--disabled {
-		opacity: 0.5;
-		pointer-events: none;
 	}
 
 	/* 后台生成中：非交互 chip，明确告知用户「正在生成」，避免点击 ⋯ 后跳出无意义的 dead-click 菜单 */
@@ -811,10 +789,6 @@
 		color: #9e9387;
 	}
 
-	.detail-card--flowchart {
-		overflow: hidden;
-	}
-
 	.flowchart-hint {
 		margin-top: 18rpx;
 		padding: 14rpx 18rpx;
@@ -846,14 +820,6 @@
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.42);
 		transform: scale(1);
 		transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-	}
-
-	.flowchart-panel--active {
-		border-color: rgba(123, 96, 72, 0.12);
-		box-shadow:
-			0 10rpx 20rpx rgba(70, 54, 40, 0.052),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.42);
-		transform: scale(0.994);
 	}
 
 	.flowchart-panel__image-shell {
@@ -925,20 +891,6 @@
 		font-size: 24rpx;
 		font-weight: 700;
 		color: rgba(255, 249, 242, 0.84);
-	}
-
-	.flowchart-panel__footer {
-		padding: 14rpx 20rpx 18rpx;
-		display: flex;
-		align-items: center;
-		justify-content: flex-start;
-	}
-
-	.flowchart-panel__caption {
-		font-size: 22rpx;
-		line-height: 1.4;
-		color: #94a3b8;
-		letter-spacing: 0.2rpx;
 	}
 
 	.flowchart-empty {
@@ -1034,8 +986,7 @@
 		color: #6e5f50;
 	}
 
-	.detail-parse__desc,
-	.detail-parse__meta {
+	.detail-parse__desc {
 		display: block;
 		line-height: 1.6;
 	}
@@ -1045,12 +996,6 @@
 		font-size: 23rpx;
 		color: #5e544b;
 		word-break: break-all;
-	}
-
-	.detail-parse__meta {
-		margin-top: 6rpx;
-		font-size: 21rpx;
-		color: #978b80;
 	}
 
 	.parsed-section {
@@ -1444,10 +1389,6 @@
 		color: #675c51;
 	}
 
-	.detail-footer__text--danger {
-		color: #b4664c;
-	}
-
 	.detail-footer__text--primary {
 		color: #ffffff;
 	}
@@ -1591,10 +1532,6 @@
 		padding: 22rpx 24rpx;
 		font-size: 26rpx;
 		line-height: 1.6;
-	}
-
-	.editor-textarea--large {
-		min-height: 220rpx;
 	}
 
 	.editor-structured {

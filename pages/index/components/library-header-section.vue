@@ -79,10 +79,6 @@ export default {
 			type: String,
 			default: ''
 		},
-		libraryHeaderSummary: {
-			type: String,
-			default: ''
-		},
 		hasMealOrderSpotlightRecord: {
 			type: Boolean,
 			default: false

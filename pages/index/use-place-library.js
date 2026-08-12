@@ -46,12 +46,6 @@ export function createPlaceDraftFromPlace(place = {}) {
 	})
 }
 
-export function normalizePlaceList(places = []) {
-	return Array.isArray(places)
-		? places.map((item) => normalizePlace(item)).filter((item) => item.id)
-		: []
-}
-
 export function filterPlaces(places = [], status = 'all', keyword = '') {
 	const normalizedKeyword = String(keyword || '').trim().toLowerCase()
 	return places.filter((place) => {
@@ -97,13 +91,10 @@ export const placeLibraryMethods = {
 		this.applyPlaces(getCachedPlaces())
 
 		try {
-			this.isLoadingPlaces = true
 			const places = await loadPlaces({ forceRefresh: true })
-			this.placeSyncErrorMessage = ''
 			this.applyPlaces(places)
 			return places
 		} catch (error) {
-			this.placeSyncErrorMessage = error?.message || '同步打卡点失败'
 			this.applyPlaces(getCachedPlaces())
 			if (!silent) {
 				uni.showToast({
@@ -112,8 +103,6 @@ export const placeLibraryMethods = {
 				})
 			}
 			return this.places
-		} finally {
-			this.isLoadingPlaces = false
 		}
 	},
 	openPlaceCreateSheet() {

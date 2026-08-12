@@ -101,10 +101,6 @@ export default {
 			type: String,
 			default: ''
 		},
-		contextText: {
-			type: String,
-			default: ''
-		},
 		canReroll: {
 			type: Boolean,
 			default: false
